@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M0 — 骨架 + SPEC + 双平台 CI
-- **当前任务**：`M0-7` LICENSE 建档：`LICENSE-MIT`、`LICENSE-APACHE`、`Cargo.toml` license 字段、README 一致
+- **当前任务**：`M0-8` 发布 `0.1.0-alpha.1`（人工执行，crates.io 凭据不进 CI）
 - **阶段状态**：进行中
 
 ## 已完成
@@ -27,6 +27,7 @@
 - `M0-4`（2026-11-11）：最小可运行 TUI——启动时加载当前目录条目（目录在前、名称不区分大小写排序，目录带 `/` 后缀），底部 1 行状态栏显示 cwd 与条目数；`q` / `Ctrl-C` 退出；仅忽略 `Press` 事件（Windows 会多发 `Release`）。共 4 项单测（键位、排序、渲染），门禁全绿。
 - `M0-5`（2026-11-11）：`.github/workflows/ci.yml`——`ubuntu-latest` + `windows-latest` 矩阵，步骤 checkout → dtolnay/stable（含 rustfmt/clippy）→ rust-cache → `fmt --check` / `clippy -D warnings` / `build --locked` / `test --locked`。**CI 状态绿待验证**：策略为 M0-7 完成后统一 push 触发一次双平台运行（本地无 TTY 也无法观察 CI）。
 - `M0-6`（2026-11-11）：`--version` / `-V` / `--help` / `-h` 旗标（TUI 初始化前处理，无 TTY 可跑）；未知参数 stderr 提示并以 exit 2 退出；`tests/cli.rs` 3 项冒烟（版本输出、帮助输出、未知参数非零退出）。
+- `M0-7`（2026-11-11）：`LICENSE-MIT` / `LICENSE-APACHE` 全文建档，`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段原本即一致，未改动。`cargo package --list` 验证通过（含两个 LICENSE 文件）。遗留：manifest 无 `repository`/`homepage` 的 warning 留待 M0-8 发布前补。
 
 ## 进行中
 
@@ -34,10 +35,9 @@
 
 ## 下一步
 
-1. `M0-7`：LICENSE 建档（`LICENSE-MIT`、`LICENSE-APACHE`、`Cargo.toml` license 字段、README 一致）。
-2. `M0-8`：M0 全部任务完成且双平台 CI 全绿后，人工发布 `0.1.0-alpha.1` 并用 `cargo install` 验证。
-3. 跑通 M0 验收，进入 M1。
-4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变 M0 优先级）。
+1. `M0-8`：M0 全部任务完成且双平台 CI 全绿后，人工发布 `0.1.0-alpha.1` 并用 `cargo install` 验证。
+2. 跑通 M0 验收，进入 M1。
+3. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变 M0 优先级）。
 
 ## 阻塞与风险
 

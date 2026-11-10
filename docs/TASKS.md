@@ -18,7 +18,7 @@
 - [x] M0-4 显示当前目录列表 + 状态栏 + `q` 退出
 - [x] M0-5 配置 GitHub Actions：ubuntu + windows 跑 fmt/clippy/build/test
 - [x] M0-6 增加 `--version` / `--help` 冒烟测试
-- [ ] M0-7 LICENSE 建档：新增 `LICENSE-MIT`、`LICENSE-APACHE`；`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段与文件一致
+- [x] M0-7 LICENSE 建档：新增 `LICENSE-MIT`、`LICENSE-APACHE`；`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段与文件一致
 - [ ] M0-8 发布 `0.1.0-alpha.1`：前置条件为 M0 全部任务完成且 `ubuntu-latest` + `windows-latest` CI 全绿；发布前复查 crate 名称占用、跑 `cargo package` 检查；人工执行真实发布（crates.io 凭据不放入 CI，该任务不在 CI 自动运行）；发布后用 `cargo install rvifm --version 0.1.0-alpha.1` 验证二进制可装可跑
 
 ## M1 — 核心浏览、多标签与 vim 按键
