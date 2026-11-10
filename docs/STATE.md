@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M0 — 骨架 + SPEC + 双平台 CI
-- **当前任务**：`M0-4` 显示当前目录列表 + 状态栏 + `q` 退出
+- **当前任务**：`M0-5` 配置 GitHub Actions：ubuntu + windows 跑 fmt/clippy/build/test
 - **阶段状态**：进行中
 
 ## 已完成
@@ -24,6 +24,7 @@
 - Office / 许可证 / crates.io 名称定稿（2026-11-11）：`office_oxide ~0.1.16`；`MIT OR Apache-2.0`；`rvifm` 已确认可用（备选 `rvifm-tui` / `rvifm-cli`，二进制名保持 `rvifm`）。见 `docs/SPEC.md` §6.1、`docs/NOTES.md` §4.8。
 - `M0-1`（2026-11-11）：Cargo 项目骨架落地——`Cargo.toml`（edition 2024，license 字段留待 M0-7）、`src/main.rs` 占位（事件循环在 M0-3 接入）、`.github/workflows/` 目录占位（CI 配置在 M0-5）；`Cargo.lock` 入库。fmt / clippy / build / test 全绿，二进制裸跑与带参运行均 exit 0 无 panic。
 - `M0-3`（2026-11-11）：接入 `ratatui 0.30` 事件循环骨架（`src/app.rs`）：`ratatui::init/restore` 管理终端生命周期，循环 = 绘制 → 阻塞读事件 → 分发；骨架阶段 `Ctrl-C` 退出（`q` 留给 M0-4）；渲染经 `TestBackend` 单测验证，无 TTY 冒烟确认进入备用屏渲染无 panic。
+- `M0-4`（2026-11-11）：最小可运行 TUI——启动时加载当前目录条目（目录在前、名称不区分大小写排序，目录带 `/` 后缀），底部 1 行状态栏显示 cwd 与条目数；`q` / `Ctrl-C` 退出；仅忽略 `Press` 事件（Windows 会多发 `Release`）。共 4 项单测（键位、排序、渲染），门禁全绿。
 
 ## 进行中
 
@@ -31,13 +32,12 @@
 
 ## 下一步
 
-1. `M0-4`：显示当前目录列表 + 状态栏 + `q` 退出。
-2. `M0-5`：配置 GitHub Actions（ubuntu + windows）。
-3. `M0-6`：增加 `--version` / `--help` 冒烟测试。
-4. `M0-7`：LICENSE 建档（`LICENSE-MIT`、`LICENSE-APACHE`、`Cargo.toml` license 字段、README 一致）。
-5. `M0-8`：M0 全部任务完成且双平台 CI 全绿后，人工发布 `0.1.0-alpha.1` 并用 `cargo install` 验证。
-6. 跑通 M0 验收，进入 M1。
-7. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变 M0 优先级）。
+1. `M0-5`：配置 GitHub Actions（ubuntu + windows）。
+2. `M0-6`：增加 `--version` / `--help` 冒烟测试。
+3. `M0-7`：LICENSE 建档（`LICENSE-MIT`、`LICENSE-APACHE`、`Cargo.toml` license 字段、README 一致）。
+4. `M0-8`：M0 全部任务完成且双平台 CI 全绿后，人工发布 `0.1.0-alpha.1` 并用 `cargo install` 验证。
+5. 跑通 M0 验收，进入 M1。
+6. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变 M0 优先级）。
 
 ## 阻塞与风险
 
