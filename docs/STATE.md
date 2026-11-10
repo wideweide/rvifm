@@ -32,7 +32,7 @@
 
 ## 进行中
 
-- 无。
+- `M0-8` 人工发布：机器可执行部分已就绪——版本 `0.1.0-alpha.1`、`repository` 字段、README 状态行刷新、`cargo package`（19 文件 / 64.4KiB）与 `cargo package --list` 通过、crates.io 名称复查 404 未被占用（2026-11-11）。**待人工**：① `cargo publish`（需 crates.io 凭据，不在 CI/Agent 内执行）；② `cargo install rvifm --version 0.1.0-alpha.1` 验证。
 
 ## 下一步
 
