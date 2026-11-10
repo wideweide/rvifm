@@ -1,0 +1,16 @@
+# 构建产物
+/target/
+**/target/
+
+# 实验与 spike 产物
+/2026-11-10/
+
+# 本地截图/临时目录
+.screenshots/
+*.tmp
+*.log
+
+# 编辑器与系统文件
+.DS_Store
+.idea/
+.vscode/
