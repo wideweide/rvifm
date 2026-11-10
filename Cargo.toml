@@ -1,0 +1,9 @@
+[package]
+name = "rvifm"
+version = "0.1.0"
+edition = "2024"
+description = "Vim-style TUI file manager written in Rust; references vifm's interaction model, not a fork"
+readme = "README.md"
+# license 字段在 M0-7（LICENSE 建档：LICENSE-MIT / LICENSE-APACHE）时补齐。
+
+[dependencies]

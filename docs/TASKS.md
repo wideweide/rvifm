@@ -12,7 +12,7 @@
 
 ## M0 — 骨架 + SPEC + 双平台 CI
 
-- [ ] M0-1 初始化 Cargo 项目与目录结构（`src/`、`docs/`、`.github/workflows/`）
+- [x] M0-1 初始化 Cargo 项目与目录结构（`src/`、`docs/`、`.github/workflows/`）
 - [x] M0-2 固化 SPEC.md 的 MUST / SIMPLIFIED / OUT_OF_SCOPE 分级（由 harness 初始化提供初稿）
 - [ ] M0-3 实现 ratatui + crossterm 事件循环骨架
 - [ ] M0-4 显示当前目录列表 + 状态栏 + `q` 退出
