@@ -7,3 +7,4 @@ readme = "README.md"
 # license 字段在 M0-7（LICENSE 建档：LICENSE-MIT / LICENSE-APACHE）时补齐。
 
 [dependencies]
+ratatui = "0.30.2"
