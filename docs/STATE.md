@@ -25,9 +25,10 @@
 - `M0-1`（2026-11-11）：Cargo 项目骨架落地——`Cargo.toml`（edition 2024，license 字段留待 M0-7）、`src/main.rs` 占位（事件循环在 M0-3 接入）、`.github/workflows/` 目录占位（CI 配置在 M0-5）；`Cargo.lock` 入库。fmt / clippy / build / test 全绿，二进制裸跑与带参运行均 exit 0 无 panic。
 - `M0-3`（2026-11-11）：接入 `ratatui 0.30` 事件循环骨架（`src/app.rs`）：`ratatui::init/restore` 管理终端生命周期，循环 = 绘制 → 阻塞读事件 → 分发；骨架阶段 `Ctrl-C` 退出（`q` 留给 M0-4）；渲染经 `TestBackend` 单测验证，无 TTY 冒烟确认进入备用屏渲染无 panic。
 - `M0-4`（2026-11-11）：最小可运行 TUI——启动时加载当前目录条目（目录在前、名称不区分大小写排序，目录带 `/` 后缀），底部 1 行状态栏显示 cwd 与条目数；`q` / `Ctrl-C` 退出；仅忽略 `Press` 事件（Windows 会多发 `Release`）。共 4 项单测（键位、排序、渲染），门禁全绿。
-- `M0-5`（2026-11-11）：`.github/workflows/ci.yml`——`ubuntu-latest` + `windows-latest` 矩阵，步骤 checkout → dtolnay/stable（含 rustfmt/clippy）→ rust-cache → `fmt --check` / `clippy -D warnings` / `build --locked` / `test --locked`。**CI 状态绿待验证**：策略为 M0-7 完成后统一 push 触发一次双平台运行（本地无 TTY 也无法观察 CI）。
+- `M0-5`（2026-11-11）：`.github/workflows/ci.yml`——`ubuntu-latest` + `windows-latest` 矩阵，步骤 checkout → dtolnay/stable（含 rustfmt/clippy）→ rust-cache → `fmt --check` / `clippy -D warnings` / `build --locked` / `test --locked`。**CI 已验证全绿**（run [42875515797](https://github.com/wideweide/rvifm/actions/runs/42875515797)，M0-7 提交触发，两 job 全部步骤 success）。
 - `M0-6`（2026-11-11）：`--version` / `-V` / `--help` / `-h` 旗标（TUI 初始化前处理，无 TTY 可跑）；未知参数 stderr 提示并以 exit 2 退出；`tests/cli.rs` 3 项冒烟（版本输出、帮助输出、未知参数非零退出）。
 - `M0-7`（2026-11-11）：`LICENSE-MIT` / `LICENSE-APACHE` 全文建档，`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段原本即一致，未改动。`cargo package --list` 验证通过（含两个 LICENSE 文件）。遗留：manifest 无 `repository`/`homepage` 的 warning 留待 M0-8 发布前补。
+- **M0 验收自检（2026-11-11，除 M0-8 外全部通过）**：build 成功且 rvifm 可启动 ✓；TUI 显示目录列表与状态栏（TestBackend 单测）✓；`q`/`Ctrl-C` 退出无 panic（单测；真机交互冒烟待用户）✓；`--version`/`--help` 输出且 exit 0 ✓；SPEC 分级与 PLAN 一致（M0-2）✓；双平台 CI 绿 ✓。剩余：M0-8 人工发布。
 
 ## 进行中
 
