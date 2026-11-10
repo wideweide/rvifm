@@ -15,7 +15,7 @@
 - [x] M0-1 初始化 Cargo 项目与目录结构（`src/`、`docs/`、`.github/workflows/`）
 - [x] M0-2 固化 SPEC.md 的 MUST / SIMPLIFIED / OUT_OF_SCOPE 分级（由 harness 初始化提供初稿）
 - [x] M0-3 实现 ratatui + crossterm 事件循环骨架
-- [ ] M0-4 显示当前目录列表 + 状态栏 + `q` 退出
+- [x] M0-4 显示当前目录列表 + 状态栏 + `q` 退出
 - [ ] M0-5 配置 GitHub Actions：ubuntu + windows 跑 fmt/clippy/build/test
 - [ ] M0-6 增加 `--version` / `--help` 冒烟测试
 - [ ] M0-7 LICENSE 建档：新增 `LICENSE-MIT`、`LICENSE-APACHE`；`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段与文件一致
