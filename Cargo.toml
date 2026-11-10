@@ -1,10 +1,11 @@
 [package]
 name = "rvifm"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
 description = "Vim-style TUI file manager written in Rust; references vifm's interaction model, not a fork"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/wideweide/rvifm"
 
 [dependencies]
 ratatui = "0.30.2"

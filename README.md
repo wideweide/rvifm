@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：仓库只包含 harness 文档脚手架，尚无实现代码。** 第一个执行任务是 `M0-1`，执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)。
+**当前状态：M0 骨架完成——最小 TUI 可运行，双平台 CI 绿，`0.1.0-alpha.1` 发布准备中。** 执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)。
 
 ## 文档导航
 
@@ -123,7 +123,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ## 快速开始
 
-> 以下命令对应目标形态；当前仓库尚无代码，M0 完成后才可执行。
+> 以下命令对应目标形态；`cargo install rvifm` 在 `0.1.0-alpha.1` 发布到 crates.io 后可用，本地可直接 `cargo run`。
 
 ```bash
 # 构建
