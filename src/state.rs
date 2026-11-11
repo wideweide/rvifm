@@ -41,8 +41,7 @@ impl AppState {
         &self.tabs[self.active]
     }
 
-    /// M1-1 光标移动（j/k）与 M1-2 目录切换使用。
-    #[allow(dead_code)]
+    /// 当前 tab 的可变访问（j/k、目录切换等动作使用）。
     pub fn active_tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
     }
