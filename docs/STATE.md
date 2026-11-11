@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M1 — 核心浏览、多标签与 vim 按键（M0 已完成并发布 `0.1.0-alpha.1`）
-- **当前任务**：`M1-1` 目录列表渲染与光标移动 `j/k`
+- **当前任务**：`M1-2` 进入/返回目录 `l/h`、刷新
 - **阶段状态**：M0 已完成；M1 进行中
 
 ## 已完成
@@ -31,6 +31,7 @@
 - **M0 验收自检（2026-11-11，除 M0-8 外全部通过）**：build 成功且 rvifm 可启动 ✓；TUI 显示目录列表与状态栏（TestBackend 单测）✓；`q`/`Ctrl-C` 退出无 panic（单测；真机交互冒烟待用户）✓；`--version`/`--help` 输出且 exit 0 ✓；SPEC 分级与 PLAN 一致（M0-2）✓；双平台 CI 绿 ✓。剩余：M0-8 人工发布。
 - **M0-8 完成（2026-11-11）**：`cargo publish` 成功，[rvifm 0.1.0-alpha.1](https://crates.io/crates/rvifm) 上线（API 确认 max_version）；`cargo install rvifm --version 0.1.0-alpha.1` 成功，安装版 `--version` 输出 `0.1.0-alpha.1` 且 exit 0。**M0 阶段全部任务完成，阶段关闭。**
 - `M1-0`（2026-11-11）：`src/tab.rs` 落地 `Location`（Physical/Archive，显示 `host:/inner/path`）、`FileItem`、`SearchState`、`Tab`（location/entries/cursor/scroll/search/history）；`src/state.rs` 落地 `AppState`（tabs + active + 全局 undo_stack）与预留 `tab_id` 的 `UndoableOp` 占位。渲染改由 `AppState.active_tab()` 驱动，行为与 M0 一致；未接线字段用带任务指向的 `#[allow(dead_code)]` 标注。9 单测 + 3 冒烟全绿。
+- `M1-1`（2026-11-11）：`Tab::move_cursor(delta)` 钳制两端、空目录 no-op；`j/k` 接入 `handle_key`；渲染改用 `ListState` + `highlight_style(REVERSED)` 高亮选中行（TestBackend 断言 modifier）。13 单测 + 3 冒烟全绿。
 
 ## 进行中
 
@@ -38,8 +39,8 @@
 
 ## 下一步
 
-1. `M1-1`：目录列表渲染与光标移动 `j/k`。
-2. `M1-2`～`M1-7`：进退目录、翻页、状态栏元数据、多标签、搜索（顺序见 [TASKS.md](TASKS.md)）。
+1. `M1-2`：进入/返回目录 `l/h`、刷新。
+2. `M1-3`～`M1-7`：翻页、状态栏元数据、多标签、tab 状态独立验证、搜索（顺序见 [TASKS.md](TASKS.md)）。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 

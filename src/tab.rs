@@ -47,8 +47,8 @@ pub struct SearchState {
 }
 
 /// 每标签独立状态：位置、条目、光标、滚动、搜索、历史（SPEC §4.2）。
-/// `cursor`/`scroll` 由 M1-1/M1-3 读写，`search` 由 M1-7 读写，
-/// `history` 由 M1-2 读写；M1-0 仅落地形状。
+/// `scroll` 由 M1-3 翻页读写，`search` 由 M1-7 读写，`history` 由 M1-2 写入；
+/// `cursor`/`location`/`entries` 已接线。
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Tab {
@@ -71,6 +71,16 @@ impl Tab {
             search: None,
             history: Vec::new(),
         })
+    }
+
+    /// 光标移动（M1-1）：`delta` 为正向下。空目录为 no-op，两端钳制不越界。
+    pub fn move_cursor(&mut self, delta: isize) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let max = self.entries.len() as isize - 1;
+        let next = self.cursor as isize + delta;
+        self.cursor = next.clamp(0, max) as usize;
     }
 }
 
@@ -125,5 +135,32 @@ mod tests {
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["zdir", "apple.txt"]);
+    }
+
+    #[test]
+    fn move_cursor_clamps_at_bounds() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        assert_eq!(tab.cursor, 0);
+        tab.move_cursor(1);
+        assert_eq!(tab.cursor, 1);
+        tab.move_cursor(10);
+        assert_eq!(tab.cursor, 2); // 末尾钳制
+        tab.move_cursor(-10);
+        assert_eq!(tab.cursor, 0); // 顶部钳制
+        tab.move_cursor(-1);
+        assert_eq!(tab.cursor, 0);
+    }
+
+    #[test]
+    fn move_cursor_is_noop_on_empty_dir() {
+        let tmp = TempDir::new().unwrap();
+        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        tab.move_cursor(1);
+        tab.move_cursor(-1);
+        assert_eq!(tab.cursor, 0);
     }
 }

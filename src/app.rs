@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, Ke
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, Paragraph};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use crate::state::AppState;
 use crate::tab::Tab;
@@ -19,13 +19,30 @@ fn is_quit_key(key: KeyEvent) -> bool {
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)))
 }
 
+/// 分发按键到当前 tab；返回 `true` 表示请求退出。
+/// M1-1：`j`/`k` 移动光标；其余动作随 M1-2+ 逐步接入。
+fn handle_key(tab: &mut Tab, key: KeyEvent) -> bool {
+    if is_quit_key(key) {
+        return true;
+    }
+    if key.kind != KeyEventKind::Press {
+        return false;
+    }
+    match key.code {
+        KeyCode::Char('j') => tab.move_cursor(1),
+        KeyCode::Char('k') => tab.move_cursor(-1),
+        _ => {}
+    }
+    false
+}
+
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
-    let state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
+    let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
     loop {
         terminal.draw(|frame| render(frame, &state))?;
         if let Event::Key(key) = event::read()?
-            && is_quit_key(key)
+            && handle_key(state.active_tab_mut(), key)
         {
             return Ok(());
         }
@@ -49,7 +66,12 @@ fn render(frame: &mut Frame, state: &AppState) {
             ListItem::new(Line::from(label))
         })
         .collect();
-    frame.render_widget(List::new(list_items), list_area);
+    let mut list_state = ListState::default().with_selected(Some(tab.cursor));
+    frame.render_stateful_widget(
+        List::new(list_items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        list_area,
+        &mut list_state,
+    );
 
     let status = Line::from(vec![
         Span::styled(
@@ -95,6 +117,47 @@ mod tests {
             ..KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
         };
         assert!(!is_quit_key(release));
+    }
+
+    #[test]
+    fn j_k_move_cursor_and_q_quits() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        assert!(!handle_key(
+            &mut tab,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)
+        ));
+        assert_eq!(tab.cursor, 1);
+        assert!(!handle_key(
+            &mut tab,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)
+        ));
+        assert_eq!(tab.cursor, 0);
+        assert!(handle_key(
+            &mut tab,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
+        ));
+    }
+
+    #[test]
+    fn render_highlights_cursor_row() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["a", "b", "c"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        state.active_tab_mut().cursor = 1;
+
+        let backend = ratatui::backend::TestBackend::new(40, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
     }
 
     #[test]
