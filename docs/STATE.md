@@ -68,7 +68,7 @@
 - `M6-2`（2026-11-12）：`:help` 帮助覆盖层为正式帮助页——覆盖导航（j/k/l/h/gg/G/Ctrl-u/d）、搜索（/ n/N =）、选择与标记（v/t/:tag）、文件操作（dd/u/:rename/:move/:copy/:mkdir/:touch/:cd/:q）、多标签（:tabnew/:tabclose/:tabmove/gt/gT/N gt）；任意键返回。66 单测 + 3 冒烟全绿。
 - `M6-4`（2026-11-12）：大目录性能检查——10,500 项真实目录：加载 + 单帧渲染（TestBackend）断言各 < 2s（宽松 CI 安全上限）；退出路径逐键响应、不经过批量渲染，无阻塞。67 单测 + 3 冒烟全绿。
 - `M6-3`（2026-11-12）：README 更新（状态行、特性清单、里程碑表 M0–M5 已完成/M6 进行中、pick/record 标注为 M8 后续）+ `Cargo.toml` 版本 → `0.1.0`。
-- `M6-5`（2026-11-12）：发布门禁通过——ci.yml 增加 tag（v*）触发的 `release` job（双平台 `--release --locked` + `--version` 冒烟 + tar.gz 归档上传），修复 push 触发器缺 `tags` 过滤的问题；tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 双平台 test + release 全部 success，归档 rvifm-ubuntu/windows-latest 产出；本地 Win2016 `--release` 冒烟通过（`rvifm 0.1.0`，exit 0）。**遗留：crates.io `0.1.0` 发布为人工步骤（需新 token），流程同 M0-8。**
+- `M6-5`（2026-11-12）：发布门禁通过——ci.yml 增加 tag（v*）触发的 `release` job（双平台 `--release --locked` + `--version` 冒烟 + tar.gz 归档上传），修复 push 触发器缺 `tags` 过滤的问题；tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 双平台 test + release 全部 success，归档 rvifm-ubuntu/windows-latest 产出；本地 Win2016 `--release` 冒烟通过（`rvifm 0.1.0`，exit 0）。crates.io `0.1.0` 已发布（[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版 `rvifm --version` 输出正确；用户授权使用本机已存凭据并延续至后续发布）。
 - **M6 阶段验收自检（2026-11-12，ACCEPTANCE §8）**：错误处理覆盖常见失败路径（状态栏提示）✓；帮助页覆盖核心按键与命令 ✓；README 声明"参考 vifm，非严格兼容"与运行时依赖 ✓；>10k 项可滚动、退出不阻塞 ✓；`v0.1.0` tag 已创建 ✓；发布门禁（CI 双平台全绿 + release 归档 + Win2016 手动冒烟 + Linux `--version`）✓。**M6 阶段关闭。**
 
 ## 进行中
