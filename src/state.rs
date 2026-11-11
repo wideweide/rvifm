@@ -194,6 +194,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::tab::{Location, SearchState, Tab};
+    use std::collections::HashSet;
     use std::path::PathBuf;
 
     fn tab_at(path: &str) -> Tab {
@@ -205,6 +206,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            tags: HashSet::new(),
         }
     }
 
@@ -217,6 +219,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            tags: HashSet::new(),
         }
     }
 
