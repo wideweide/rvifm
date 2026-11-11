@@ -120,6 +120,25 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             state.move_tab(n);
             Ok(false)
         }
+        Some("rename") => {
+            // M2-3：重命名选中条目（新名字不含空白；含空格的名字在 M5-4 统一解析）。
+            let new_name = parts
+                .next()
+                .ok_or_else(|| "rename: 缺少新名字".to_owned())?;
+            let tab = state.active_tab();
+            let path = tab
+                .entries
+                .get(tab.cursor)
+                .map(|item| tab.location.base_dir().join(&item.name))
+                .ok_or_else(|| "rename: 无选中条目".to_owned())?;
+            let op = ops::rename_to(state.active, &path, new_name)
+                .map_err(|e| format!("rename: {e}"))?;
+            state.undo_stack.push(op);
+            if let Some(tab) = state.tabs.get_mut(state.active) {
+                let _ = tab.refresh();
+            }
+            Ok(false)
+        }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
 }
@@ -1087,6 +1106,42 @@ mod tests {
         // 空栈再按 u：明确提示，无 panic。
         undo_last(&mut state, &mut msg);
         assert_eq!(msg.as_deref(), Some("无可撤销操作"));
+    }
+
+    #[test]
+    fn exec_rename_and_undo() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("old.txt"), "O").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        // 重命名选中条目（cursor 0 = old.txt）。
+        assert_eq!(exec_command(&mut state, "rename new.txt"), Ok(false));
+        assert!(!tmp.path().join("old.txt").exists());
+        assert!(tmp.path().join("new.txt").exists());
+        assert_eq!(state.undo_stack.len(), 1);
+        // 列表已刷新。
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .all(|i| i.name != "old.txt")
+        );
+
+        // `u` 撤销 → 回到 old.txt。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.is_none());
+        assert!(tmp.path().join("old.txt").exists());
+        assert!(!tmp.path().join("new.txt").exists());
+
+        // 错误路径：缺参数、目标已存在（均有提示，不 panic）。
+        assert_eq!(
+            exec_command(&mut state, "rename"),
+            Err("rename: 缺少新名字".to_owned())
+        );
+        let err = exec_command(&mut state, "rename old.txt").unwrap_err();
+        assert!(err.starts_with("rename: 目标已存在"), "err: {err}");
     }
 
     #[test]
