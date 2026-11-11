@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-12
-- **当前阶段**：M6 — 打磨与 v0.1.0 发布（M0–M5 已完成）
-- **当前任务**：`M6-5` 发布门禁：CI 双平台全绿 + `--release` 产物 + Windows/Linux 冒烟
-- **阶段状态**：M0 已完成（已发布）；M1–M5 已完成；M6 进行中
+- **当前阶段**：M7 — 归档浏览（只读 VFS）（M0–M6 已完成，v0.1.0 已 tag）
+- **当前任务**：`M7-1` 定义 `Location` 与 `ArchiveFs` trait
+- **阶段状态**：M0–M6 已完成（v0.1.0 tag 已打、CI release 归档绿；crates.io `0.1.0` 发布待人工）；M7 进行中
 
 ## 已完成
 
@@ -65,20 +65,20 @@
 - `M6-2`（2026-11-12）：`:help` 帮助覆盖层为正式帮助页——覆盖导航（j/k/l/h/gg/G/Ctrl-u/d）、搜索（/ n/N =）、选择与标记（v/t/:tag）、文件操作（dd/u/:rename/:move/:copy/:mkdir/:touch/:cd/:q）、多标签（:tabnew/:tabclose/:tabmove/gt/gT/N gt）；任意键返回。66 单测 + 3 冒烟全绿。
 - `M6-4`（2026-11-12）：大目录性能检查——10,500 项真实目录：加载 + 单帧渲染（TestBackend）断言各 < 2s（宽松 CI 安全上限）；退出路径逐键响应、不经过批量渲染，无阻塞。67 单测 + 3 冒烟全绿。
 - `M6-3`（2026-11-12）：README 更新（状态行、特性清单、里程碑表 M0–M5 已完成/M6 进行中、pick/record 标注为 M8 后续）+ `Cargo.toml` 版本 → `0.1.0`。
-- `M6-5`（2026-11-12，进行中）：ci.yml 增加 tag 触发（v*）的 `release` job——双平台 `--release --locked` 构建 + `--version` 冒烟 + tar.gz 归档上传（needs: test）；本地 Win2016 冒烟在发布门禁检查中执行。
+- `M6-5`（2026-11-12）：发布门禁通过——ci.yml 增加 tag（v*）触发的 `release` job（双平台 `--release --locked` + `--version` 冒烟 + tar.gz 归档上传），修复 push 触发器缺 `tags` 过滤的问题；tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 双平台 test + release 全部 success，归档 rvifm-ubuntu/windows-latest 产出；本地 Win2016 `--release` 冒烟通过（`rvifm 0.1.0`，exit 0）。**遗留：crates.io `0.1.0` 发布为人工步骤（需新 token），流程同 M0-8。**
+- **M6 阶段验收自检（2026-11-12，ACCEPTANCE §8）**：错误处理覆盖常见失败路径（状态栏提示）✓；帮助页覆盖核心按键与命令 ✓；README 声明"参考 vifm，非严格兼容"与运行时依赖 ✓；>10k 项可滚动、退出不阻塞 ✓；`v0.1.0` tag 已创建 ✓；发布门禁（CI 双平台全绿 + release 归档 + Win2016 手动冒烟 + Linux `--version`）✓。**M6 阶段关闭。**
 
 ## 进行中
 
-- 无。
+- crates.io `0.1.0` 人工发布（用户执行，需新 token；publish → `cargo install rvifm --version 0.1.0` 验证）。
 
 ## 下一步
 
-1. `M6-1`：错误处理与确认提示。
-2. `M6-2`～`M6-5`：帮助页、README 与 v0.1.0 tag、大目录性能、发布门禁（顺序见 [TASKS.md](TASKS.md)）。
-3. M6 完成后跑阶段验收与 v0.1.0 发布门禁（[ACCEPTANCE.md](ACCEPTANCE.md) §8）。
-3. M2 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §4），确认 `u` 可逆闭环。
-3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
-4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
+1. crates.io `0.1.0` 人工发布（用户）。
+2. `M7-1`：定义 `Location` 与 `ArchiveFs` trait。
+3. `M7-2`～`M7-9`：ZipFs/TarFs、导航接入、错误处理、压缩变体（顺序见 [TASKS.md](TASKS.md)）。
+4. M7 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §9）。
+5. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 
 ## 阻塞与风险
 
