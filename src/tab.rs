@@ -73,6 +73,8 @@ pub struct Tab {
     pub history: Vec<Location>,
     /// 可视选择锚点（`v` 进入时的 cursor；None = 非可视模式，M3-1）。
     pub visual: Option<usize>,
+    /// glob 过滤模式（M4-2，`=` 设置；None = 不过滤）。
+    pub filter: Option<String>,
     /// `t` 标记的文件名集合（tag：文件级标记，供 M3 批量操作。
     /// **tag ≠ mark**——mark 是路径跳转标记，本项目不实现，见 SPEC OUT_OF_SCOPE）。
     pub tags: HashSet<String>,
@@ -89,6 +91,7 @@ impl Tab {
             search: None,
             history: Vec::new(),
             visual: None,
+            filter: None,
             tags: HashSet::new(),
         })
     }
@@ -155,12 +158,26 @@ impl Tab {
         let Location::Physical(dir) = &self.location else {
             return Ok(());
         };
-        self.entries = load_entries(dir)?;
+        let mut entries = load_entries(dir)?;
+        if let Some(pat) = &self.filter {
+            entries.retain(|item| glob_match(pat, &item.name));
+        }
+        self.entries = entries;
         self.cursor = self.cursor.min(self.entries.len().saturating_sub(1));
         self.visual = self
             .visual
             .map(|a| a.min(self.entries.len().saturating_sub(1)));
         Ok(())
+    }
+
+    /// 应用/清除 glob 过滤（M4-2，`=`）。空 pattern 清除过滤；应用后光标与选区归零。
+    pub fn apply_filter(&mut self, pattern: &str) {
+        let pat = pattern.trim().to_owned();
+        self.filter = if pat.is_empty() { None } else { Some(pat) };
+        if self.refresh().is_ok() {
+            self.cursor = 0;
+            self.visual = None;
+        }
     }
 
     /// 进入/退出可视选择（M3-1，`v`）。空目录为 no-op。
@@ -259,6 +276,23 @@ fn query_matches(name: &str, query: &str) -> bool {
     } else {
         name.to_lowercase().contains(query)
     }
+}
+
+/// 简单 glob 匹配（M4-2）：支持 `*`（任意序列）与 `?`（单字符），不区分大小写。
+pub(crate) fn glob_match(pattern: &str, name: &str) -> bool {
+    let p: Vec<char> = pattern.chars().flat_map(char::to_lowercase).collect();
+    let s: Vec<char> = name.chars().flat_map(char::to_lowercase).collect();
+    fn m(p: &[char], s: &[char]) -> bool {
+        if p.is_empty() {
+            return s.is_empty();
+        }
+        match p[0] {
+            '*' => (0..=s.len()).any(|i| m(&p[1..], &s[i..])),
+            '?' => !s.is_empty() && m(&p[1..], &s[1..]),
+            c => !s.is_empty() && s[0] == c && m(&p[1..], &s[1..]),
+        }
+    }
+    m(&p, &s)
 }
 
 fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
@@ -477,6 +511,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            filter: None,
             tags: HashSet::new(),
         };
         root_tab.return_parent();

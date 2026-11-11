@@ -53,6 +53,8 @@ enum Outcome {
     EnterCommand,
     /// 请求进入搜索输入模式（`/`，M1-7）。
     EnterSearch,
+    /// 请求进入过滤输入模式（`=`，M4-2）。
+    EnterFilter,
     /// 请求确认删除（`dd`，M2-2）：携带待删完整路径。
     ConfirmDelete(PathBuf),
 }
@@ -66,6 +68,8 @@ enum InputMode {
     Command { input: String },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。
     Search { input: String },
+    /// 过滤输入模式：正在输入 `=` 后的内容（M4-2）。
+    Filter { input: String },
     /// 删除确认模式：`y` 执行，其余取消（M2-2）。
     Confirm { path: PathBuf },
     /// 标记批量删除确认模式（`:tag delete`，M3-3）。
@@ -448,6 +452,10 @@ fn handle_key(
             input.count = None;
             return Outcome::EnterSearch;
         }
+        KeyCode::Char('=') => {
+            input.count = None;
+            return Outcome::EnterFilter;
+        }
         KeyCode::Char('n') => {
             input.count = None;
             run_search(state, msg, true);
@@ -579,6 +587,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         submit_search(&mut state, &line, &mut msg);
                     }
                 },
+                InputMode::Filter { input } => match command_input(input, key) {
+                    CmdInput::Continue => {}
+                    CmdInput::Cancel => mode = InputMode::Normal,
+                    CmdInput::Submit => {
+                        let line = std::mem::take(input);
+                        mode = InputMode::Normal;
+                        state.active_tab_mut().apply_filter(&line);
+                        msg = None;
+                    }
+                },
                 InputMode::Confirm { path } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
@@ -615,6 +633,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                         Outcome::EnterSearch => {
                             mode = InputMode::Search {
+                                input: String::new(),
+                            };
+                        }
+                        Outcome::EnterFilter => {
+                            mode = InputMode::Filter {
                                 input: String::new(),
                             };
                         }
@@ -670,6 +693,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input } => Line::from(format!("/{input}")),
+        InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
         InputMode::ConfirmTagDelete => {
             let n = tab.tagged_count();
@@ -697,6 +721,10 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             ];
             if let Some(s) = &tab.search {
                 spans.push(Span::from(format!("  /{}", s.query)));
+            }
+            if let Some(f) = &tab.filter {
+                // M4-2：过滤指示。
+                spans.push(Span::from(format!("  [filter: {f}]")));
             }
             if let Some((lo, hi)) = visual_range {
                 // M3-1：可视选择指示（含行数，闭区间）。
@@ -768,6 +796,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            filter: None,
             tags: HashSet::new(),
         }
     }
@@ -1861,6 +1890,92 @@ mod tests {
             other => panic!("expected Done, got {other:?}"),
         }
         assert!(exec_command_impl(&mut state, "tag snort").is_err());
+    }
+
+    #[test]
+    fn glob_match_patterns() {
+        // M4-2：`*` 与 `?` 语义，大小写不敏感。
+        assert!(crate::tab::glob_match("*.txt", "a.txt"));
+        assert!(crate::tab::glob_match("*.TXT", "a.txt"));
+        assert!(crate::tab::glob_match("a*", "a.txt"));
+        assert!(crate::tab::glob_match("a*b", "ab"));
+        assert!(crate::tab::glob_match("a*b", "axxb"));
+        assert!(!crate::tab::glob_match("a*b", "axxbyy")); // 模式耗尽后仍有剩余字符
+        assert!(crate::tab::glob_match("a*b*", "axxbyy"));
+        assert!(crate::tab::glob_match("a?c", "abc"));
+        assert!(!crate::tab::glob_match("*.txt", "a.rs"));
+        assert!(!crate::tab::glob_match("a?c", "ac"));
+        assert!(!crate::tab::glob_match("a?c", "abbc"));
+        assert!(!crate::tab::glob_match("a*b", "ba"));
+    }
+
+    #[test]
+    fn filter_apply_and_clear() {
+        // M4-2：= 应用 glob 过滤，空 pattern 清除；光标归零。
+        let tmp = TempDir::new().unwrap();
+        for name in ["a.txt", "b.txt", "c.rs", "sub"] {
+            if name == "sub" {
+                fs::create_dir(tmp.path().join(name)).unwrap();
+            } else {
+                fs::write(tmp.path().join(name), "").unwrap();
+            }
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut input = InputState::default();
+
+        assert_eq!(
+            press(
+                &mut state,
+                &mut input,
+                KeyCode::Char('='),
+                KeyModifiers::NONE
+            ),
+            Outcome::EnterFilter
+        );
+
+        // 提交 "*.txt" → 只剩两个 txt（目录 sub 被滤掉）。
+        state.active_tab_mut().apply_filter("*.txt");
+        let names: Vec<&str> = state
+            .active_tab()
+            .entries
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect();
+        assert_eq!(names, ["a.txt", "b.txt"]);
+        assert_eq!(state.active_tab().cursor, 0);
+
+        // 过滤视图内导航 + 再过滤不叠加异常。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 1);
+        state.active_tab_mut().apply_filter("a*");
+        assert_eq!(state.active_tab().entries.len(), 1);
+
+        // 空 pattern 清除过滤 → refresh 恢复全部条目。
+        state.active_tab_mut().apply_filter("");
+        assert!(state.active_tab().filter.is_none());
+        assert_eq!(state.active_tab().entries.len(), 4);
+    }
+
+    #[test]
+    fn render_shows_filter_indicator() {
+        let (_tmp, mut state) = make_state(3);
+        state.active_tab_mut().filter = Some("*.txt".to_owned());
+
+        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let status = (0..120u16)
+            .map(|x| buffer[(x, 7)].symbol())
+            .collect::<String>();
+        assert!(status.contains("[filter: *.txt]"), "status: {status}");
     }
 
     #[test]
