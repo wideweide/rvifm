@@ -28,7 +28,7 @@
 - [x] M1-2 进入/返回目录 `l/h`、刷新
 - [x] M1-3 `gg/G`、`Ctrl-u/Ctrl-d`
 - [x] M1-4 状态栏显示路径、选中项、文件大小/权限
-- [ ] M1-5 多标签：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`
+- [x] M1-5 多标签：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`
 - [ ] M1-6 每个 tab 独立的 `Location`、光标、滚动、搜索状态
 - [ ] M1-7 基础搜索 `/` 与 `n/N`（M4 再扩展过滤）
 
