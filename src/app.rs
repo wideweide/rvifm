@@ -166,8 +166,9 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let op = ops::rename_to(state.active, &path, new_name)
                 .map_err(|e| format!("rename: {e}"))?;
             state.undo_stack.push(op);
+            let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh();
+                let _ = tab.refresh(cfg);
             }
             Ok(ExecOutcome::Done { msg: None })
         }
@@ -186,8 +187,9 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let op =
                 ops::move_to(state.active, &path, &target).map_err(|e| format!("move: {e}"))?;
             state.undo_stack.push(op);
+            let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh();
+                let _ = tab.refresh(cfg);
             }
             Ok(ExecOutcome::Done { msg: None })
         }
@@ -207,8 +209,9 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let op =
                 ops::copy_to(state.active, &path, &target).map_err(|e| format!("copy: {e}"))?;
             state.undo_stack.push(op);
+            let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh();
+                let _ = tab.refresh(cfg);
             }
             Ok(ExecOutcome::Done { msg: None })
         }
@@ -261,8 +264,9 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                             }
                         }
                     }
+                    let cfg = state.config;
                     if let Some(tab) = state.tabs.get_mut(state.active) {
-                        let _ = tab.refresh();
+                        let _ = tab.refresh(cfg);
                         // M3-4：批量操作完成后清空标记状态。
                         tab.clear_tags();
                     }
@@ -291,8 +295,9 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             };
             let op = result.map_err(|e| format!("{cmd}: {e}"))?;
             state.undo_stack.push(op);
+            let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh();
+                let _ = tab.refresh(cfg);
             }
             Ok(ExecOutcome::Done { msg: None })
         }
@@ -442,11 +447,13 @@ fn handle_key(
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
-            state.active_tab_mut().enter_selected();
+            let cfg = state.config;
+            state.active_tab_mut().enter_selected(cfg);
         }
         KeyCode::Char('h') => {
             input.count = None;
-            state.active_tab_mut().return_parent();
+            let cfg = state.config;
+            state.active_tab_mut().return_parent(cfg);
         }
         KeyCode::Char('/') => {
             input.count = None;
@@ -476,12 +483,13 @@ fn handle_key(
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
 fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf) {
     let tab_id = state.active;
+    let cfg = state.config;
     match ops::delete_to_trash(tab_id, &path) {
         Ok(op) => {
             state.undo_stack.push(op);
             *msg = None;
             if let Some(tab) = state.tabs.get_mut(tab_id)
-                && let Err(e) = tab.refresh()
+                && let Err(e) = tab.refresh(cfg)
             {
                 *msg = Some(format!("刷新失败: {e}"));
             }
@@ -514,8 +522,9 @@ fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>) {
             }
         }
     }
+    let cfg = state.config;
     if let Some(tab) = state.tabs.get_mut(state.active) {
-        let _ = tab.refresh();
+        let _ = tab.refresh(cfg);
         // M3-4：批量删除完成后清空标记状态。
         tab.clear_tags();
     }
@@ -538,8 +547,9 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
             *msg = Some(format!("已撤销: {}", op.describe()));
             // 刷新受影响 tab（M2-7：跨 tab 撤销刷新原 tab；tab 已关闭则跳过，
             // 磁盘恢复不受影响；设计取向为"当前 tab 不变"，ACCEPTANCE §4）。
+            let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(op.tab_id())
-                && let Err(e) = tab.refresh()
+                && let Err(e) = tab.refresh(cfg)
             {
                 *msg = Some(format!("刷新失败: {e}"));
             }
@@ -552,13 +562,17 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
 }
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
-    let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
     // M5-1：启动加载用户配置；缺失用默认值，语法错误在状态栏提示（不退出）。
     let mut msg: Option<String> = None;
-    match config::load() {
-        Ok(cfg) => state.config = cfg,
-        Err(e) => msg = Some(e),
-    }
+    let config = match config::load() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            msg = Some(e);
+            config::Config::default()
+        }
+    };
+    let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?, config)?);
+    state.config = config;
     let mut input = InputState::default();
     let mut mode = InputMode::default();
     loop {
@@ -598,7 +612,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     CmdInput::Submit => {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
-                        state.active_tab_mut().apply_filter(&line);
+                        let cfg = state.config;
+                        state.active_tab_mut().apply_filter(&line, cfg);
                         msg = None;
                     }
                 },
@@ -755,6 +770,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use crate::tab::Location;
     use std::collections::HashSet;
     use std::fs;
@@ -788,7 +804,7 @@ mod tests {
         for i in 0..n {
             fs::write(tmp.path().join(format!("f{i:02}")), "").unwrap();
         }
-        let state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         (tmp, state)
     }
 
@@ -1218,7 +1234,7 @@ mod tests {
         for name in ["alpha", "beta", "Beta2", "gamma"] {
             fs::write(tmp.path().join(name), "").unwrap();
         }
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         submit_search(&mut state, "beta", &mut msg);
@@ -1233,7 +1249,7 @@ mod tests {
         for name in ["alpha", "beta", "Beta2", "gamma"] {
             fs::write(tmp.path().join(name), "").unwrap();
         }
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut input = InputState::default();
         let mut msg = None;
 
@@ -1322,7 +1338,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("target.txt"), "T").unwrap();
         fs::write(tmp.path().join("keep.txt"), "K").unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut input = InputState::default();
 
         // 排序后 keep.txt(0) / target.txt(1)，把光标放到 target.txt。
@@ -1377,7 +1393,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("gone.txt");
         fs::write(&file, "G").unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         execute_delete(&mut state, &mut msg, file.clone());
@@ -1403,7 +1419,7 @@ mod tests {
     fn exec_rename_and_undo() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("old.txt"), "O").unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         // 重命名选中条目（cursor 0 = old.txt）。
@@ -1444,7 +1460,7 @@ mod tests {
         let sub = tmp.path().join("sub");
         fs::create_dir(&sub).unwrap();
         fs::write(tmp.path().join("m.txt"), "M").unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         // 排序后 sub/(0) 在前，m.txt 在 1：把光标放到 m.txt。
@@ -1476,7 +1492,7 @@ mod tests {
         assert!(err.starts_with("move: 目标目录不存在"), "err: {err}");
 
         // 防自嵌套：刷新后只剩 sub/（cursor 钳制到 0），把目录移入自身内部被拒绝。
-        state.active_tab_mut().refresh().unwrap();
+        state.active_tab_mut().refresh(Config::default()).unwrap();
         let err = exec_command(&mut state, &format!("move {target}")).unwrap_err();
         assert!(err.contains("不能把目录移动到其自身内部"), "err: {err}");
     }
@@ -1484,7 +1500,7 @@ mod tests {
     #[test]
     fn exec_mkdir_touch_and_undo() {
         let tmp = TempDir::new().unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         // mkdir → 目录出现并入栈；u 移除。
@@ -1522,7 +1538,7 @@ mod tests {
     fn consecutive_ops_undo_in_reverse() {
         // M2-6：mkdir → touch → rename 连续三步，三次 `u` 逆序还原。
         let tmp = TempDir::new().unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         assert_eq!(exec_command(&mut state, "mkdir d"), Ok(false));
@@ -1556,7 +1572,7 @@ mod tests {
     #[test]
     fn tabclose_reports_irreversible() {
         let (_tmp, mut state) = make_state(1);
-        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+        state.push_tab(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
 
         // 非最后一个 tab：关闭成功并提示不可撤销。
         match exec_command_impl(&mut state, "tabclose") {
@@ -1581,8 +1597,8 @@ mod tests {
         let file = dir_a.path().join("x.txt");
         fs::write(&file, "X").unwrap();
 
-        let mut state = AppState::new(Tab::from_physical(dir_a.path()).unwrap());
-        state.push_tab(Tab::from_physical(dir_b.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(dir_a.path(), Config::default()).unwrap());
+        state.push_tab(Tab::from_physical(dir_b.path(), Config::default()).unwrap());
         state.active = 0;
 
         // 在 tab 1 删除 x.txt（entries = [x.txt]，cursor 0）。
@@ -1613,7 +1629,7 @@ mod tests {
         let sub = tmp.path().join("sub");
         fs::create_dir(&sub).unwrap();
         fs::write(tmp.path().join("c.txt"), "C").unwrap();
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
         // 排序后 sub/(0) 在前，c.txt 在 1。
@@ -1643,7 +1659,7 @@ mod tests {
 
         // 空目录 no-op。
         let empty_tmp = TempDir::new().unwrap();
-        let mut empty = Tab::from_physical(empty_tmp.path()).unwrap();
+        let mut empty = Tab::from_physical(empty_tmp.path(), Config::default()).unwrap();
         empty.toggle_visual();
         assert!(empty.visual.is_none());
 
@@ -1708,7 +1724,7 @@ mod tests {
         assert_eq!(state.active_tab().visual_range(), Some((0, 1)));
 
         // 每 tab 独立（第二个 tab 无选区；tab0 锚点保持 1）。
-        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+        state.push_tab(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
         assert!(state.active_tab().visual.is_none());
         assert_eq!(state.tabs[0].visual, Some(1));
     }
@@ -1779,13 +1795,13 @@ mod tests {
         assert_eq!(state.active_tab().tagged_count(), 1);
 
         // 每 tab 独立。
-        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+        state.push_tab(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
         assert_eq!(state.active_tab().tagged_count(), 0);
         assert_eq!(state.tabs[0].tagged_count(), 1);
 
         // 空目录 no-op。
         let empty_tmp = TempDir::new().unwrap();
-        let mut empty = Tab::from_physical(empty_tmp.path()).unwrap();
+        let mut empty = Tab::from_physical(empty_tmp.path(), Config::default()).unwrap();
         empty.toggle_tag();
         assert_eq!(empty.tagged_count(), 0);
     }
@@ -1822,7 +1838,7 @@ mod tests {
         fs::write(tmp.path().join("a.txt"), "A").unwrap();
         fs::write(tmp.path().join("b.txt"), "B").unwrap();
         fs::write(tmp.path().join("c.txt"), "C").unwrap(); // 不标记
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
 
         // 标记 a.txt、b.txt（排序后 a(0) b(1) c(2)）。
         state.active_tab_mut().tags.insert("a.txt".to_owned());
@@ -1865,7 +1881,7 @@ mod tests {
         // 在当前目录新建 d.txt / e.txt 并标记，验证批量删除 + 逐条 u。
         fs::write(tmp.path().join("d.txt"), "D").unwrap();
         fs::write(tmp.path().join("e.txt"), "E").unwrap();
-        state.active_tab_mut().refresh().unwrap();
+        state.active_tab_mut().refresh(Config::default()).unwrap();
         state.active_tab_mut().clear_tags();
         state.active_tab_mut().tags.insert("d.txt".to_owned());
         state.active_tab_mut().tags.insert("e.txt".to_owned());
@@ -1925,7 +1941,7 @@ mod tests {
                 fs::write(tmp.path().join(name), "").unwrap();
             }
         }
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut input = InputState::default();
 
         assert_eq!(
@@ -1939,7 +1955,9 @@ mod tests {
         );
 
         // 提交 "*.txt" → 只剩两个 txt（目录 sub 被滤掉）。
-        state.active_tab_mut().apply_filter("*.txt");
+        state
+            .active_tab_mut()
+            .apply_filter("*.txt", Config::default());
         let names: Vec<&str> = state
             .active_tab()
             .entries
@@ -1957,11 +1975,11 @@ mod tests {
             KeyModifiers::NONE,
         );
         assert_eq!(state.active_tab().cursor, 1);
-        state.active_tab_mut().apply_filter("a*");
+        state.active_tab_mut().apply_filter("a*", Config::default());
         assert_eq!(state.active_tab().entries.len(), 1);
 
         // 空 pattern 清除过滤 → refresh 恢复全部条目。
-        state.active_tab_mut().apply_filter("");
+        state.active_tab_mut().apply_filter("", Config::default());
         assert!(state.active_tab().filter.is_none());
         assert_eq!(state.active_tab().entries.len(), 4);
     }
@@ -2004,7 +2022,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("hello.txt"), "").unwrap();
         fs::create_dir(tmp.path().join("sub")).unwrap();
-        let state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
 
         let backend = ratatui::backend::TestBackend::new(80, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
