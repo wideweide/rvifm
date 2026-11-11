@@ -30,6 +30,15 @@ impl Location {
             ),
         }
     }
+
+    /// `:tabnew` 的落点目录：Physical 为该目录；Archive 为宿主目录
+    /// （归档内新建标签复用宿主，M7 再细化）。
+    pub fn base_dir(&self) -> &Path {
+        match self {
+            Location::Physical(p) => p,
+            Location::Archive { host, .. } => host,
+        }
+    }
 }
 
 /// 单个目录项。M1-4 起携带大小与权限摘要。

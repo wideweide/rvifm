@@ -46,11 +46,63 @@ impl AppState {
         &mut self.tabs[self.active]
     }
 
-    /// 新建标签并切换为 active（键位接线在 M1-5）。
-    #[allow(dead_code)]
+    /// 新建标签并切换为 active（M1-5 `:tabnew`）。
     pub fn push_tab(&mut self, tab: Tab) {
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
+    }
+
+    /// 切换到下一个 tab（循环；M1-5 `gt`）。
+    pub fn next_tab(&mut self) {
+        self.active = (self.active + 1) % self.tabs.len();
+    }
+
+    /// 切换到上一个 tab（循环；M1-5 `gT`）。
+    pub fn prev_tab(&mut self) {
+        self.active = (self.active + self.tabs.len() - 1) % self.tabs.len();
+    }
+
+    /// 跳到第 n 个 tab（1 起始，越界钳制；M1-5 `N gt`）。
+    pub fn goto_tab(&mut self, n: usize) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        self.active = n.saturating_sub(1).min(self.tabs.len() - 1);
+    }
+
+    /// 关闭当前 tab；若关闭的是最后一个 tab 返回 `true`（调用方退出应用）。
+    pub fn close_tab(&mut self) -> bool {
+        self.tabs.remove(self.active);
+        if self.tabs.is_empty() {
+            return true;
+        }
+        if self.active >= self.tabs.len() {
+            self.active = self.tabs.len() - 1;
+        }
+        false
+    }
+
+    /// 移动当前 tab 到 1 起始位置 `n`；`None` 表示移到末尾（M1-5 `:tabmove`）。
+    pub fn move_tab(&mut self, n: Option<usize>) {
+        let tab = self.tabs.remove(self.active);
+        let idx = n
+            .map(|n| n.saturating_sub(1).min(self.tabs.len()))
+            .unwrap_or(self.tabs.len());
+        self.tabs.insert(idx, tab);
+        self.active = idx;
+    }
+
+    /// 以当前 tab 的落点目录新建标签（M1-5 `:tabnew`）。
+    /// 目录读取失败时返回 `false`，不产生副作用。
+    pub fn new_tab_here(&mut self) -> bool {
+        let dir = self.active_tab().location.base_dir().to_path_buf();
+        match Tab::from_physical(&dir) {
+            Ok(tab) => {
+                self.push_tab(tab);
+                true
+            }
+            Err(_) => false,
+        }
     }
 }
 
