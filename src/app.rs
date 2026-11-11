@@ -31,6 +31,8 @@ fn handle_key(tab: &mut Tab, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Char('j') => tab.move_cursor(1),
         KeyCode::Char('k') => tab.move_cursor(-1),
+        KeyCode::Char('l') | KeyCode::Enter => tab.enter_selected(),
+        KeyCode::Char('h') => tab.return_parent(),
         _ => {}
     }
     false

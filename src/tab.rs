@@ -82,6 +82,51 @@ impl Tab {
         let next = self.cursor as isize + delta;
         self.cursor = next.clamp(0, max) as usize;
     }
+
+    /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
+    /// 读取失败时不导航、不产生副作用（错误提示在 M6-1 接入）。
+    /// 归档内导航在 M7 接入，当前仅物理目录。
+    pub fn enter_selected(&mut self) {
+        let Some(item) = self.entries.get(self.cursor) else {
+            return;
+        };
+        if !item.is_dir {
+            return;
+        }
+        let Location::Physical(base) = &self.location else {
+            return;
+        };
+        let target = base.join(&item.name);
+        let Ok(entries) = load_entries(&target) else {
+            return;
+        };
+        self.history.push(self.location.clone());
+        self.location = Location::Physical(target);
+        self.entries = entries;
+        self.cursor = 0;
+        self.scroll = 0;
+    }
+
+    /// 返回父目录（M1-2，`h`）。已在文件系统根时为 no-op（ACCEPTANCE §3）。
+    pub fn return_parent(&mut self) {
+        let Location::Physical(base) = &self.location else {
+            return;
+        };
+        let Some(parent) = base.parent() else {
+            return;
+        };
+        if parent == base {
+            return;
+        }
+        let Ok(entries) = load_entries(parent) else {
+            return;
+        };
+        self.history.push(self.location.clone());
+        self.location = Location::Physical(parent.to_path_buf());
+        self.entries = entries;
+        self.cursor = 0;
+        self.scroll = 0;
+    }
 }
 
 /// 读取并排序目录条目：目录在前，名称不区分大小写。
@@ -162,5 +207,70 @@ mod tests {
         tab.move_cursor(1);
         tab.move_cursor(-1);
         assert_eq!(tab.cursor, 0);
+    }
+
+    #[test]
+    fn enter_selected_navigates_and_records_history() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("sub").join("inner.txt"), "").unwrap();
+        fs::write(tmp.path().join("file.txt"), "").unwrap();
+        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+
+        // 排序后 "sub/" 在第 0 位（目录优先）。
+        tab.enter_selected();
+        assert_eq!(tab.location, Location::Physical(tmp.path().join("sub")));
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["inner.txt"]);
+        assert_eq!(tab.cursor, 0);
+        assert_eq!(
+            tab.history,
+            vec![Location::Physical(tmp.path().to_path_buf())]
+        );
+    }
+
+    #[test]
+    fn enter_selected_ignores_files_and_missing_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("file.txt"), "").unwrap();
+        fs::create_dir(tmp.path().join("gone")).unwrap();
+        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+
+        // 光标落在文件上：no-op。
+        tab.cursor = 1; // "file.txt"（"gone" 为目录在前）
+        tab.enter_selected();
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert!(tab.history.is_empty());
+
+        // 目录在加载后被删除：读取失败，不导航。
+        fs::remove_dir(tmp.path().join("gone")).unwrap();
+        tab.cursor = 0;
+        tab.enter_selected();
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert!(tab.history.is_empty());
+    }
+
+    #[test]
+    fn return_parent_goes_up_and_noop_at_root() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let mut tab = Tab::from_physical(&tmp.path().join("sub")).unwrap();
+
+        tab.return_parent();
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert_eq!(tab.history.len(), 1);
+
+        // 根目录：parent() 为 None（Windows 盘根同理），no-op。
+        let mut root_tab = Tab {
+            location: Location::Physical(PathBuf::from("C:\\")),
+            entries: Vec::new(),
+            cursor: 0,
+            scroll: 0,
+            search: None,
+            history: Vec::new(),
+        };
+        root_tab.return_parent();
+        assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));
+        assert!(root_tab.history.is_empty());
     }
 }
