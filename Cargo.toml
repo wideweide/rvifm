@@ -11,6 +11,7 @@ repository = "https://github.com/wideweide/rvifm"
 ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.2.1"
+zip = "9.5.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"

@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-12
 - **当前阶段**：M7 — 归档浏览（只读 VFS）（M0–M6 已完成，v0.1.0 已 tag）
-- **当前任务**：`M7-1` 定义 `Location` 与 `ArchiveFs` trait
+- **当前任务**：`M7-3` 实现 `TarFs`（基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`
 - **阶段状态**：M0–M6 已完成（v0.1.0 tag 已打、CI release 归档绿；crates.io `0.1.0` 发布待人工）；M7 进行中
 
 ## 已完成
@@ -58,6 +58,9 @@
 - **M4 阶段验收自检（2026-11-11，ACCEPTANCE §6）**：`/` 定位 + `n/N` 循环 ✓；glob 过滤生效、过滤后光标与状态栏正确 ✓；归档/文件夹内搜索复用同一链路（find_match 作用于 tab.entries，M7 接入后自动生效）✓；无 marks 相关命令或按键 ✓。**M4 阶段关闭。**
 - `M5-1`（2026-11-11）：TOML 配置读取——新增 `serde`/`toml` 依赖；`src/config.rs`：`Config{show_hidden, sort_dirs_first, ignore_case_sort}`（`#[serde(default)]` 逐键回退）、平台路径（Windows `%APPDATA%\rvifm\config.toml` / Unix `$XDG_CONFIG_HOME` 或 `~/.config`）、`load()`（缺失→默认值不退出；解析失败→"配置解析失败: …" 提示）；启动时加载并挂到 `AppState.config`，错误进状态栏。65 单测 + 3 冒烟全绿。
 - `M5-2`（2026-11-11）：基本选项生效——`load_entries(dir, &Config)` 按 `show_hidden` 跳过 `.` 开头条目、按 `sort_dirs_first`/`ignore_case_sort` 排序；配置经 `from_physical`/`refresh`/`apply_filter`/导航全部接线（`Config` 为 Copy）。65 单测 + 3 冒烟全绿。
+- `M6`（2026-11-12）：M6 全阶段完成（M6-1 导航错误提示、M6-2 帮助页、M6-3 README+版本 0.1.0+tag `v0.1.0`、M6-4 10.5k 项性能检查、M6-5 发布门禁：tag 触发 release job 双平台绿 + tar.gz 归档 + Win2016 本地冒烟）。tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 全部 success。**遗留：crates.io `0.1.0` 人工发布。**
+- `M7-1`（2026-11-12）：`src/archive.rs`——`ArchiveFs` trait（list/read/metadata/host，read 为 `&mut` 因 zip 随机访问 API）+ `ArchiveEntry` + `normalize_inner`（统一 `/`、去点段、防逃逸根）+ 内存 MockFs 测试验证 trait 形状。
+- `M7-2`（2026-11-12）：`ZipFs`（zip 9.5.1）——开档建索引（文件名→(索引, 解压大小) 缓存，list 不触碰 ZipArchive）+ 显式/隐式父目录集合；list/read/metadata/host 实现；损坏 zip 返回 InvalidData 不 panic。**修复**：隐式父目录收集不得把文件自身插入 dirs。71 单测 + 3 冒烟全绿。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
 - **M5 阶段验收自检（2026-11-12，ACCEPTANCE §7）**：启动读取 TOML，缺失用默认值不退出 ✓；基本选项（隐藏文件/排序）生效 ✓；`:q/:cd/:mkdir/:touch/:help` 可用 ✓；多标签命令与 M5 解析共存 ✓；配置语法错误有可理解提示不 panic ✓。**M5 阶段关闭。**
