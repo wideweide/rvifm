@@ -44,6 +44,29 @@ pub fn config_path() -> PathBuf {
     base.join("rvifm").join("config.toml")
 }
 
+/// 数据目录（frecency 数据库与降级文件）：Windows `%LOCALAPPDATA%\rvifm`；
+/// Unix `$XDG_DATA_HOME/rvifm`，缺省 `~/.local/share/rvifm`（M8-3）。
+pub fn data_dir() -> PathBuf {
+    let base = if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("share"))
+            })
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    base.join("rvifm")
+}
+
+/// frecency 数据库文件路径（M8-3）。
+pub fn frecency_db_path() -> PathBuf {
+    data_dir().join("frecency.redb")
+}
+
 /// 从路径加载配置：缺失 → 默认值；读取/解析失败 → 可理解的错误信息。
 pub fn load_from(path: &std::path::Path) -> Result<Config, String> {
     match std::fs::read_to_string(path) {

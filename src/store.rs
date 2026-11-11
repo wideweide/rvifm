@@ -177,6 +177,27 @@ impl Store {
         tx.commit().map_err(io_err("meta 提交失败"))?;
         Ok(())
     }
+
+    /// 删除 `tick <= upto` 的已合并事件（compaction 裁剪，M8-5）。
+    pub fn prune_events_le(&self, upto: u64) -> std::io::Result<()> {
+        let tx = self
+            .db
+            .begin_write()
+            .map_err(io_err("events 裁剪事务失败"))?;
+        {
+            let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
+            let keys: Vec<u64> = events
+                .range(..=upto)
+                .map_err(io_err("events 范围读取失败"))?
+                .filter_map(|pair| pair.ok().map(|(k, _)| k.value()))
+                .collect();
+            for k in keys {
+                events.remove(k).map_err(io_err("events 删除失败"))?;
+            }
+        }
+        tx.commit().map_err(io_err("events 裁剪提交失败"))?;
+        Ok(())
+    }
 }
 
 fn io_err<E: std::fmt::Display>(msg: &'static str) -> impl Fn(E) -> std::io::Error {

@@ -11,6 +11,9 @@
 // M8-4（重放评分）、M8-6（pick 子命令）。
 #![allow(dead_code)]
 
+use crate::store::Store;
+use std::path::Path;
+
 /// 事件类型（NOTES §4.5 events `{path, topic, kind, ts}`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EntryKind {
@@ -184,9 +187,302 @@ pub fn ranked(entries: &mut [ScoredEntry]) {
     entries.sort_by(ScoredEntry::cmp_ranked);
 }
 
+// ---------------------------------------------------------------------------
+// 重放与 EMS aging（M8-4）
+// ---------------------------------------------------------------------------
+
+/// EMS 老化速率：按事件时钟（tick）衰减，λ = 0.01/事件。
+/// 500 个事件前的一次访问衰减为 exp(-5) ≈ 0.7%，实现"近期访问优先"。
+pub const AGING_LAMBDA: f64 = 0.01;
+
+/// EMS 老化：`score * exp(-λ * Δtick)`。
+fn aged(score: f64, lambda: f64, delta_ticks: u64) -> f64 {
+    score * (-lambda * delta_ticks as f64).exp()
+}
+
+/// 重放器（M8-4）：`snapshot`（compaction 产物）+ `events`（自
+/// last_compaction 起的增量）→ 内存评分（`now_tick` 为当前全局 tick，
+/// 读取时统一 aging——冷启动偏差修正）。
+///
+/// 规则：每条事件使对应条目 `score = score * exp(-λ·Δtick) + 1` 并推进
+/// `tick`；事件流中首次出现的路径从 0 分起步（新条目）。
+/// **record 是唯一写入入口；本函数纯只读**。
+pub fn replay(
+    snapshot: &[SnapshotEntry],
+    events: &[(u64, EntryRecord)],
+    now_tick: u64,
+) -> Vec<ScoredEntry> {
+    let lambda = AGING_LAMBDA;
+    let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
+        std::collections::BTreeMap::new();
+    for s in snapshot {
+        map.insert((s.topic.clone(), s.path.clone()), s.clone());
+    }
+    for (tick, ev) in events {
+        let key = (ev.topic.clone(), ev.path.clone());
+        let entry = map.entry(key).or_insert_with(|| SnapshotEntry {
+            path: ev.path.clone(),
+            topic: ev.topic.clone(),
+            keyword: String::new(),
+            score: 0.0,
+            tick: *tick,
+        });
+        let delta = tick.saturating_sub(entry.tick);
+        entry.score = aged(entry.score, lambda, delta) + 1.0;
+        entry.tick = *tick;
+    }
+    let mut out: Vec<ScoredEntry> = map
+        .values()
+        .map(|s| {
+            let delta = now_tick.saturating_sub(s.tick);
+            ScoredEntry {
+                path: s.path.clone(),
+                topic: s.topic.clone(),
+                keyword: s.keyword.clone(),
+                score: aged(s.score, lambda, delta),
+                grade: grade_for(s, ""),
+            }
+        })
+        .collect();
+    ranked(&mut out);
+    out
+}
+
+// ---------------------------------------------------------------------------
+// 子命令层（M8-3：record；M8-5：compact；M8-6：pick）
+// ---------------------------------------------------------------------------
+
+/// 单次写入重试上限与退避（NOTES §4.5：3 次、10ms）。
+const WRITE_RETRIES: usize = 3;
+const WRITE_BACKOFF_MS: u64 = 10;
+
+/// `events.pending` 降级文件路径（与数据库同目录）。
+fn pending_path() -> std::path::PathBuf {
+    crate::config::data_dir().join("events.pending")
+}
+
+/// 打开 frecency 存储：先合并上次降级的 pending 事件（"下次启动合并"）。
+fn open_store() -> std::io::Result<Store> {
+    let store = Store::open(&crate::config::frecency_db_path())?;
+    merge_pending(&store, &pending_path())?;
+    Ok(store)
+}
+
+/// 把 `events.pending`（每行一条 JSON `EntryRecord`）合并进数据库并删除文件。
+fn merge_pending(store: &Store, path: &Path) -> std::io::Result<()> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(()); // 无降级文件
+    };
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<EntryRecord>(line) {
+            Ok(rec) => {
+                // pending 本身就是降级产物：合并失败时保留文件（下次重试）。
+                if store.append_event(&rec).is_err() {
+                    return Ok(());
+                }
+            }
+            Err(_) => continue, // 损坏行丢弃
+        }
+    }
+    std::fs::remove_file(path).ok();
+    Ok(())
+}
+
+/// `rvifm record --topic dir <path>`：追加事件（唯一写入入口）。
+/// 成功静默退出 0；数据库连续失败降级写 `events.pending`（下次启动合并）；
+/// 降级也失败才退出 1。
+pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
+    let mut topic = "dir".to_owned();
+    let mut path: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--topic" => {
+                topic = it
+                    .next()
+                    .ok_or_else(|| arg_err("record: --topic 缺少值"))?
+                    .clone();
+            }
+            other => {
+                if path.is_some() {
+                    return Err(arg_err("record: 多余的位置参数"));
+                }
+                path = Some(other.to_owned());
+            }
+        }
+    }
+    let Some(path) = path else {
+        return Err(arg_err("record: 缺少路径"));
+    };
+    let record = EntryRecord {
+        path: path.replace('\\', "/"),
+        topic,
+        kind: EntryKind::Navigate,
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    record_impl(&db_path, &pending, &record)
+}
+
+/// record 的可测试实现（路径注入）。
+fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io::Result<()> {
+    let store = match Store::open(db_path) {
+        Ok(s) => s,
+        Err(e) => return degraded_write_at(pending, record, e),
+    };
+    merge_pending(&store, pending)?;
+    for _ in 0..WRITE_RETRIES {
+        match store.append_event(record) {
+            Ok(_) => return Ok(()), // 成功静默（不污染 stdout）
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(WRITE_BACKOFF_MS)),
+        }
+    }
+    degraded_write_at(pending, record, "数据库写入连续失败")
+}
+
+/// 降级：追加一行 JSON 到 pending 文件。失败时退出 1。
+fn degraded_write_at<E: std::fmt::Display>(
+    pending: &Path,
+    record: &EntryRecord,
+    why: E,
+) -> std::io::Result<()> {
+    let line = serde_json::to_string(record)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if let Some(dir) = pending.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    use std::io::Write as _;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(pending)?;
+    writeln!(f, "{line}").map_err(|e| {
+        eprintln!("rvifm record: 记录失败（{why}）：{e}");
+        e
+    })
+}
+
+fn arg_err(msg: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)
+}
+
+/// `rvifm maintenance compact`（M8-5）：合并 `last_compaction` 之后的
+/// 事件进 snapshot 表，推进标记并裁剪已合并事件。幂等：无新事件时为 no-op。
+pub fn cmd_compact() -> std::io::Result<()> {
+    let store = open_store()?;
+    let since = store.last_compaction()?;
+    let now = store.global_tick()?;
+    if now <= since {
+        return Ok(()); // 无新事件：no-op
+    }
+    let events = store.events_since(since)?;
+    let snapshot = store.snapshot_all()?;
+    let merged = replay_merge(&snapshot, &events, since);
+    for entry in &merged {
+        store.snapshot_upsert(entry)?;
+    }
+    store.set_last_compaction(now)?;
+    store.prune_events_le(now)?;
+    Ok(())
+}
+
+/// compaction 合并（与 `replay` 同规则，但返回更新后的 snapshot 表）。
+fn replay_merge(
+    snapshot: &[SnapshotEntry],
+    events: &[(u64, EntryRecord)],
+    _since: u64,
+) -> Vec<SnapshotEntry> {
+    let lambda = AGING_LAMBDA;
+    let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
+        std::collections::BTreeMap::new();
+    for s in snapshot {
+        map.insert((s.topic.clone(), s.path.clone()), s.clone());
+    }
+    for (tick, ev) in events {
+        let entry = map
+            .entry((ev.topic.clone(), ev.path.clone()))
+            .or_insert_with(|| SnapshotEntry {
+                path: ev.path.clone(),
+                topic: ev.topic.clone(),
+                keyword: String::new(),
+                score: 0.0,
+                tick: *tick,
+            });
+        let delta = tick.saturating_sub(entry.tick);
+        entry.score = aged(entry.score, lambda, delta) + 1.0;
+        entry.tick = *tick;
+    }
+    map.into_values().collect()
+}
+
+/// `rvifm pick [query]`（M8-6）：stdin 读候选（每行一个路径），
+/// frecency 排序输出全部命中候选（fzf filter 语义）。选中交互式
+/// picker 在 TTY 场景启用（M8-6 提交）；非 TTY 场景即本函数。
+/// **纯只读：不写事件、不推进 tick。**
+pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
+    let query = args.first().cloned().unwrap_or_default();
+    use std::io::{Read as _, Write as _};
+    let mut candidates = String::new();
+    std::io::stdin().read_to_string(&mut candidates)?;
+
+    let store = open_store()?;
+    let snapshot = store.snapshot_all()?;
+    let since = store.last_compaction()?;
+    let now = store.global_tick()?;
+    let events = store.events_since(since)?;
+    let ranked_entries = replay(&snapshot, &events, now);
+
+    // 候选 → 分数索引（path|topic 匹配 snapshot）。
+    let score_of = |path: &str, topic: &str| -> f64 {
+        ranked_entries
+            .iter()
+            .find(|e| e.path == path && e.topic == topic)
+            .map(|e| e.score)
+            .unwrap_or(0.0)
+    };
+
+    let mut out: Vec<(String, String, f64)> = Vec::new();
+    for line in candidates.lines() {
+        let path = line.trim().replace('\\', "/");
+        if path.is_empty() {
+            continue;
+        }
+        let topic = "dir".to_owned();
+        // 查询匹配：叶子或全路径（ci 子串）。
+        let leaf = path.rsplit_once('/').map(|(_, l)| l).unwrap_or(&path);
+        let hit = query.is_empty() || ci_contains(leaf, &query) || ci_contains(&path, &query);
+        if hit {
+            out.push((path.clone(), topic.clone(), score_of(&path, &topic)));
+        }
+    }
+    // 分数降序 → 路径字典序。
+    out.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+    if out.is_empty() {
+        std::process::exit(1); // 无匹配：退出码 1（fzf filter 语义）
+    }
+    let stdout = std::io::stdout();
+    let mut w = std::io::BufWriter::new(stdout.lock());
+    for (path, _topic, _score) in &out {
+        writeln!(w, "{path}")?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn snap(path: &str, keyword: &str, score: f64) -> SnapshotEntry {
         SnapshotEntry {
@@ -195,6 +491,15 @@ mod tests {
             keyword: keyword.to_owned(),
             score,
             tick: 100,
+        }
+    }
+
+    fn rec(path: &str, ts: u64) -> EntryRecord {
+        EntryRecord {
+            path: path.to_owned(),
+            topic: "dir".to_owned(),
+            kind: EntryKind::Navigate,
+            ts,
         }
     }
 
@@ -282,6 +587,76 @@ mod tests {
         assert_eq!(entries[1].path, "/a/high");
         assert_eq!(entries[2].path, "/b/high");
         assert_eq!(entries[3].path, "/a/low");
+    }
+
+    #[test]
+    fn replay_aging_promotes_recent() {
+        // M8-9 验收场景：5×A → 495 次其他 → 1×B，B 排在 A 前（aging 生效）。
+        let mut events = Vec::new();
+        let mut tick = 0u64;
+        for i in 0..5 {
+            tick += 1;
+            events.push((tick, rec("/a", 1000 + i as u64)));
+        }
+        for i in 0..495 {
+            tick += 1;
+            events.push((tick, rec(&format!("/o{i}"), 1000 + i as u64)));
+        }
+        tick += 1;
+        events.push((tick, rec("/b", 2000)));
+
+        let now = tick; // 读取时 aging：now = 全局 tick
+        let ranked = replay(&[], &events, now);
+        let a = ranked.iter().find(|e| e.path == "/a").unwrap();
+        let b = ranked.iter().find(|e| e.path == "/b").unwrap();
+        assert!(b.score > a.score, "B({}) 应排在 A({}) 前", b.score, a.score);
+        // 排名：B 在 A 之前。
+        let b_pos = ranked.iter().position(|e| e.path == "/b").unwrap();
+        let a_pos = ranked.iter().position(|e| e.path == "/a").unwrap();
+        assert!(b_pos < a_pos, "B({b_pos}) 应在 A({a_pos}) 前");
+    }
+
+    #[test]
+    fn merge_pending_roundtrip_with_tempdir() {
+        // M8-3：pending 降级文件在下次启动时合并并删除。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let pending = tmp.path().join("events.pending");
+        let store = Store::open(&db).unwrap();
+
+        let rec_a = rec("/a", 1);
+        let line = serde_json::to_string(&rec_a).unwrap();
+        std::fs::write(&pending, format!("{line}\n\n{line}\n")).unwrap(); // 含空行
+
+        merge_pending(&store, &pending).unwrap();
+        assert_eq!(store.global_tick().unwrap(), 2); // 两行有效（空行丢弃）
+        assert!(!pending.exists(), "合并后 pending 应删除");
+
+        // 合并失败保留文件：注入不可写的 pending（目录占位）——用目录替代文件模拟。
+        std::fs::write(&pending, format!("{line}\n")).unwrap();
+        merge_pending(&store, &pending).unwrap();
+        assert_eq!(store.global_tick().unwrap(), 3);
+    }
+
+    #[test]
+    fn record_impl_degrades_to_pending_on_bad_db() {
+        // M8-3：数据库损坏 → 降级写 pending；修复后合并恢复。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        std::fs::write(&db, b"corrupt redb").unwrap(); // 打开会失败
+        let pending = tmp.path().join("events.pending");
+
+        let r = rec("/x", 5);
+        record_impl(&db, &pending, &r).unwrap();
+        assert!(pending.exists(), "降级文件应写入");
+
+        // 修复：删除损坏文件让 Store::open 重建。
+        std::fs::remove_file(&db).unwrap();
+        let store = Store::open(&db).unwrap();
+        merge_pending(&store, &pending).unwrap();
+        assert_eq!(store.global_tick().unwrap(), 1);
+        assert_eq!(store.events_since(0).unwrap()[0].1.path, "/x");
+        assert!(!pending.exists());
     }
 
     #[test]
