@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-11
-- **当前阶段**：M1 — 核心浏览、多标签与 vim 按键（M0 已完成并发布 `0.1.0-alpha.1`）
-- **当前任务**：`M1-7` 基础搜索 `/` 与 `n/N`（M4 再扩展过滤）
-- **阶段状态**：M0 已完成；M1 进行中
+- **当前阶段**：M2 — 文件操作与 `u` 撤销（M0/M1 已完成）
+- **当前任务**：`M2-1` 定义撤销栈与 `UndoableOp` 枚举（含 tab 标识与路径）
+- **阶段状态**：M0 已完成（已发布）；M1 已完成；M2 进行中
 
 ## 已完成
 
@@ -37,6 +37,8 @@
 - `M1-4`（2026-11-11）：`FileItem` 增加 `size`/`perm`（unix 3 位八进制 / Windows `ro`/`rw`，加载时物化避免渲染层 cfg）；状态栏 = `路径 | 选中项 [大小] 权限 | N items`（目录省略大小）；`format_size` B/KiB/MiB/GiB。22 单测 + 3 冒烟全绿。
 - `M1-5`（2026-11-11）：多标签落地——`gt`/`gT` 循环切换、`N gt` 数字计数跳转（计数被其他动作键丢弃）；最小命令行 `:`（Enter 提交 / Esc 取消 / Backspace 退格），`tabnew`（当前目录）、`tabclose`（最后一个 tab 关闭即退出）、`tabmove [N]`（无参移到末尾）；命令错误临时显示在状态栏 `[msg]`（M6-1 统一提示）。`InputMode::Normal/Command` 先行，M5-4 统一。27 单测 + 3 冒烟全绿。
 - `M1-6`（2026-11-11）：tab 状态独立性契约测试——切换 tab 后 `Location`/`cursor`/`scroll`/`search` 全部独立保持。说明：视口滚动由 `ListState` 从各 tab 的 cursor 派生（天然独立）；`Tab.scroll` 显式偏移存储留待 M10；归档 tab 回归验证按 ACCEPTANCE 留待 M7。28 单测 + 3 冒烟全绿。
+- `M1-7`（2026-11-11）：基础搜索——`/` 进入搜索输入（Enter 提交 / Esc 取消），`Tab.find_match` 大小写不敏感子串环绕匹配，提交后移动光标并写入 `Tab.search`；`n`/`N` 沿方向跳转（环绕）；无搜索词/无匹配以状态栏提示（M6-1 统一）；Normal 模式状态栏显示 `/{query}` 指示。32 单测 + 3 冒烟全绿。
+- **M1 阶段验收自检（2026-11-11，ACCEPTANCE §3）**：`j/k` 边界钳制 ✓；`l/Enter/h` 导航 + 根目录明确 no-op ✓；`gg/G/Ctrl-u/d` ✓；状态栏路径/选中项/大小/权限 ✓；`/` 与 `n/N` ✓；`:tabnew/:tabclose/gt/gT/N gt/:tabmove` ✓；两 tab 不同目录切换后状态独立（契约测试）✓；`Tab/AppState` 落地且撤销栈预留 tab 标识 ✓；归档 tab 回归按 ACCEPTANCE 自身定义留待 M7 ✓；交互真机冒烟待用户 `cargo run`。**M1 阶段关闭。**
 
 ## 进行中
 
@@ -44,7 +46,9 @@
 
 ## 下一步
 
-1. `M1-7`：基础搜索 `/` 与 `n/N`；随后 M1 阶段验收（ACCEPTANCE §3）。
+1. `M2-1`：定义撤销栈与 `UndoableOp` 枚举（含 tab 标识与路径）。
+2. `M2-2`～`M2-7`：删除/重命名/移动/新建 + 逆序撤销 + 跨 tab 撤销（顺序见 [TASKS.md](TASKS.md)）。
+3. M2 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §4），确认 `u` 可逆闭环。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 
