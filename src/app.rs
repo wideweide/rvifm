@@ -1,6 +1,7 @@
 //! 事件循环：绘制目录列表与状态栏 → 阻塞等待事件 → 分发按键。
 //!
-//! M1-0 起渲染基于 `AppState` / `Tab`；导航与光标移动在 M1-1/M1-2 接入。
+//! M1-3 起支持多键序列（`g` 前缀：`gg`；`gt`/`gT` 在 M1-5 接入）与
+//! `Ctrl-u`/`Ctrl-d` 半页翻页。
 
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -19,20 +20,50 @@ fn is_quit_key(key: KeyEvent) -> bool {
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)))
 }
 
-/// 分发按键到当前 tab；返回 `true` 表示请求退出。
-/// M1-1：`j`/`k` 移动光标；其余动作随 M1-2+ 逐步接入。
-fn handle_key(tab: &mut Tab, key: KeyEvent) -> bool {
+/// `g` 前缀多键序列的待决状态（超时可配置在 M10 键位系统接入）。
+#[derive(Debug, Default, PartialEq, Eq)]
+enum Pending {
+    #[default]
+    None,
+    /// 已按下 `g`，等待第二键。
+    G,
+}
+
+/// 分发按键；返回 `true` 表示请求退出。
+///
+/// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
+/// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`q`/`Ctrl-C`。
+fn handle_key(state: &mut AppState, pending: &mut Pending, key: KeyEvent, viewport_h: u16) -> bool {
+    if key.kind != KeyEventKind::Press {
+        return false; // Release 先过滤，避免误消费待决序列。
+    }
+
+    // `g` 前缀序列：待决态优先于退出与普通分发；任意第二键结束序列
+    // （未知第二键整体丢弃，包括 `q`/`Ctrl-C`）。
+    if *pending == Pending::G {
+        *pending = Pending::None;
+        if key.code == KeyCode::Char('g') {
+            state.active_tab_mut().cursor_top();
+        }
+        // `gt` / `gT` 在 M1-5 接入多标签切换。
+        return false;
+    }
+
     if is_quit_key(key) {
         return true;
     }
-    if key.kind != KeyEventKind::Press {
-        return false;
-    }
+
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let half = (viewport_h.saturating_sub(1) / 2).max(1) as isize;
     match key.code {
-        KeyCode::Char('j') => tab.move_cursor(1),
-        KeyCode::Char('k') => tab.move_cursor(-1),
-        KeyCode::Char('l') | KeyCode::Enter => tab.enter_selected(),
-        KeyCode::Char('h') => tab.return_parent(),
+        KeyCode::Char('g') => *pending = Pending::G,
+        KeyCode::Char('G') => state.active_tab_mut().cursor_bottom(),
+        KeyCode::Char('d') if ctrl => state.active_tab_mut().move_cursor(half),
+        KeyCode::Char('u') if ctrl => state.active_tab_mut().move_cursor(-half),
+        KeyCode::Char('j') => state.active_tab_mut().move_cursor(1),
+        KeyCode::Char('k') => state.active_tab_mut().move_cursor(-1),
+        KeyCode::Char('l') | KeyCode::Enter => state.active_tab_mut().enter_selected(),
+        KeyCode::Char('h') => state.active_tab_mut().return_parent(),
         _ => {}
     }
     false
@@ -41,10 +72,13 @@ fn handle_key(tab: &mut Tab, key: KeyEvent) -> bool {
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
+    let mut pending = Pending::default();
     loop {
         terminal.draw(|frame| render(frame, &state))?;
+        // 列表区高度 = 终端高度 - 状态栏 1 行。
+        let viewport_h = terminal.size()?.height.saturating_sub(1);
         if let Event::Key(key) = event::read()?
-            && handle_key(state.active_tab_mut(), key)
+            && handle_key(&mut state, &mut pending, key, viewport_h)
         {
             return Ok(());
         }
@@ -91,6 +125,25 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// 测试辅助：viewport 高度 10（半页步进 4）。
+    fn press(
+        state: &mut AppState,
+        pending: &mut Pending,
+        code: KeyCode,
+        mods: KeyModifiers,
+    ) -> bool {
+        handle_key(state, pending, KeyEvent::new(code, mods), 10)
+    }
+
+    fn make_state(n: usize) -> (TempDir, AppState) {
+        let tmp = TempDir::new().unwrap();
+        for i in 0..n {
+            fs::write(tmp.path().join(format!("f{i:02}")), "").unwrap();
+        }
+        let state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        (tmp, state)
+    }
+
     #[test]
     fn q_and_ctrl_c_quit() {
         assert!(is_quit_key(KeyEvent::new(
@@ -122,35 +175,141 @@ mod tests {
     }
 
     #[test]
-    fn j_k_move_cursor_and_q_quits() {
-        let tmp = TempDir::new().unwrap();
-        for name in ["a", "b", "c"] {
-            fs::write(tmp.path().join(name), "").unwrap();
-        }
-        let mut tab = Tab::from_physical(tmp.path()).unwrap();
-        assert!(!handle_key(
-            &mut tab,
-            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)
+    fn j_k_move_cursor() {
+        let (_tmp, mut state) = make_state(3);
+        let mut pending = Pending::default();
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE
         ));
-        assert_eq!(tab.cursor, 1);
-        assert!(!handle_key(
-            &mut tab,
-            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)
+        assert_eq!(state.active_tab().cursor, 1);
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('k'),
+            KeyModifiers::NONE
         ));
-        assert_eq!(tab.cursor, 0);
-        assert!(handle_key(
-            &mut tab,
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
+        assert_eq!(state.active_tab().cursor, 0);
+    }
+
+    #[test]
+    fn gg_and_g_jump_top_and_bottom() {
+        let (_tmp, mut state) = make_state(5);
+        let mut pending = Pending::default();
+
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('G'),
+            KeyModifiers::NONE
+        ));
+        assert_eq!(state.active_tab().cursor, 4);
+
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ));
+        assert_eq!(pending, Pending::G); // 等待第二键
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ));
+        assert_eq!(pending, Pending::None);
+        assert_eq!(state.active_tab().cursor, 0);
+    }
+
+    #[test]
+    fn unknown_g_sequence_is_discarded() {
+        let (_tmp, mut state) = make_state(3);
+        let mut pending = Pending::default();
+        // `g` 后跟未知第二键：序列丢弃，不产生移动，也不退出。
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ));
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('x'),
+            KeyModifiers::NONE
+        ));
+        assert_eq!(pending, Pending::None);
+        assert_eq!(state.active_tab().cursor, 0);
+        // 序列内的 `q` 被当作第二键丢弃，之后的 `q` 才退出。
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ));
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('q'),
+            KeyModifiers::NONE
+        ));
+        assert!(press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('q'),
+            KeyModifiers::NONE
         ));
     }
 
     #[test]
+    fn ctrl_u_d_half_page() {
+        let (_tmp, mut state) = make_state(20);
+        let mut pending = Pending::default();
+
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL
+        ));
+        assert_eq!(state.active_tab().cursor, 4); // (10-1)/2 = 4
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL
+        ));
+        assert_eq!(state.active_tab().cursor, 8);
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL
+        ));
+        assert_eq!(state.active_tab().cursor, 4);
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL
+        ));
+        assert_eq!(state.active_tab().cursor, 0);
+        // 顶部继续 Ctrl-u：钳制不越界。
+        assert!(!press(
+            &mut state,
+            &mut pending,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL
+        ));
+        assert_eq!(state.active_tab().cursor, 0);
+    }
+
+    #[test]
     fn render_highlights_cursor_row() {
-        let tmp = TempDir::new().unwrap();
-        for name in ["a", "b", "c"] {
-            fs::write(tmp.path().join(name), "").unwrap();
-        }
-        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let (_tmp, mut state) = make_state(3);
         state.active_tab_mut().cursor = 1;
 
         let backend = ratatui::backend::TestBackend::new(40, 6);
