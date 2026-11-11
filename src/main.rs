@@ -6,6 +6,8 @@
 //! M8 将扩展 `pick` / `record` 子命令。
 
 mod app;
+mod state;
+mod tab;
 
 fn main() -> std::io::Result<()> {
     match std::env::args().nth(1).as_deref() {

@@ -1,9 +1,6 @@
 //! 事件循环：绘制目录列表与状态栏 → 阻塞等待事件 → 分发按键。
 //!
-//! M0 阶段只显示当前目录（SPEC §5 M0 SIMPLIFIED），不做导航与文件操作；
-//! 导航/刷新/多标签在 M1 接入。
-
-use std::path::{Path, PathBuf};
+//! M1-0 起渲染基于 `AppState` / `Tab`；导航与光标移动在 M1-1/M1-2 接入。
 
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -12,41 +9,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Paragraph};
 
-/// 单个目录项。M0 只需要名字与是否目录；元数据在 M1-4 扩展。
-struct FileItem {
-    name: String,
-    is_dir: bool,
-}
-
-/// M0 的应用状态：当前目录与启动时一次性加载的条目。
-struct App {
-    cwd: PathBuf,
-    items: Vec<FileItem>,
-}
-
-impl App {
-    fn new(cwd: PathBuf) -> std::io::Result<Self> {
-        let items = load_entries(&cwd)?;
-        Ok(Self { cwd, items })
-    }
-}
-
-/// 读取并排序目录条目：目录在前，名称不区分大小写。
-fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
-    let mut items = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let is_dir = entry.file_type()?.is_dir();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        items.push(FileItem { name, is_dir });
-    }
-    items.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
-    Ok(items)
-}
+use crate::state::AppState;
+use crate::tab::Tab;
 
 /// 判断按键是否请求退出：`q` 或 `Ctrl-C`。
 fn is_quit_key(key: KeyEvent) -> bool {
@@ -57,9 +21,9 @@ fn is_quit_key(key: KeyEvent) -> bool {
 
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
-    let app = App::new(std::env::current_dir()?)?;
+    let state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
     loop {
-        terminal.draw(|frame| render(frame, &app))?;
+        terminal.draw(|frame| render(frame, &state))?;
         if let Event::Key(key) = event::read()?
             && is_quit_key(key)
         {
@@ -68,12 +32,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     }
 }
 
-fn render(frame: &mut Frame, app: &App) {
+fn render(frame: &mut Frame, state: &AppState) {
+    let tab = state.active_tab();
     let [list_area, status_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    let list_items: Vec<ListItem> = app
-        .items
+    let list_items: Vec<ListItem> = tab
+        .entries
         .iter()
         .map(|item| {
             let label = if item.is_dir {
@@ -88,10 +53,10 @@ fn render(frame: &mut Frame, app: &App) {
 
     let status = Line::from(vec![
         Span::styled(
-            app.cwd.to_string_lossy().into_owned(),
+            tab.location.display_path(),
             Style::new().add_modifier(Modifier::BOLD),
         ),
-        Span::from(format!(" | {} items", app.items.len())),
+        Span::from(format!(" | {} items", tab.entries.len())),
     ]);
     frame.render_widget(Paragraph::new(status), status_area);
 }
@@ -133,30 +98,15 @@ mod tests {
     }
 
     #[test]
-    fn entries_sorted_dirs_first_case_insensitive() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir(tmp.path().join("zdir")).unwrap();
-        fs::create_dir(tmp.path().join("adir")).unwrap();
-        fs::write(tmp.path().join("Banana.txt"), "").unwrap();
-        fs::write(tmp.path().join("apple.txt"), "").unwrap();
-
-        let items = load_entries(tmp.path()).unwrap();
-        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
-        assert_eq!(names, ["adir", "zdir", "apple.txt", "Banana.txt"]);
-        assert!(items[0].is_dir);
-        assert!(!items[2].is_dir);
-    }
-
-    #[test]
-    fn renders_list_and_status_bar() {
+    fn renders_active_tab_list_and_status_bar() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("hello.txt"), "").unwrap();
         fs::create_dir(tmp.path().join("sub")).unwrap();
-        let app = App::new(tmp.path().to_path_buf()).unwrap();
+        let state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
 
         let backend = ratatui::backend::TestBackend::new(80, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        terminal.draw(|frame| render(frame, &app)).unwrap();
+        terminal.draw(|frame| render(frame, &state)).unwrap();
         let buffer = terminal.backend().buffer().clone();
         let row = |y: u16| {
             (0..80u16)
@@ -167,7 +117,7 @@ mod tests {
         // 目录在前并带 `/` 后缀。
         assert!(row(0).contains("sub/"));
         assert!(row(1).contains("hello.txt"));
-        // 状态栏显示当前目录与条目数。
+        // 状态栏显示当前位置与条目数。
         let dir_name = tmp
             .path()
             .file_name()

@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M1 — 核心浏览、多标签与 vim 按键（M0 已完成并发布 `0.1.0-alpha.1`）
-- **当前任务**：`M1-0` 定义 `Tab` / `AppState` 结构：tabs 列表 + active 索引 + 独立状态字段
+- **当前任务**：`M1-1` 目录列表渲染与光标移动 `j/k`
 - **阶段状态**：M0 已完成；M1 进行中
 
 ## 已完成
@@ -30,6 +30,7 @@
 - `M0-7`（2026-11-11）：`LICENSE-MIT` / `LICENSE-APACHE` 全文建档，`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段原本即一致，未改动。`cargo package --list` 验证通过（含两个 LICENSE 文件）。遗留：manifest 无 `repository`/`homepage` 的 warning 留待 M0-8 发布前补。
 - **M0 验收自检（2026-11-11，除 M0-8 外全部通过）**：build 成功且 rvifm 可启动 ✓；TUI 显示目录列表与状态栏（TestBackend 单测）✓；`q`/`Ctrl-C` 退出无 panic（单测；真机交互冒烟待用户）✓；`--version`/`--help` 输出且 exit 0 ✓；SPEC 分级与 PLAN 一致（M0-2）✓；双平台 CI 绿 ✓。剩余：M0-8 人工发布。
 - **M0-8 完成（2026-11-11）**：`cargo publish` 成功，[rvifm 0.1.0-alpha.1](https://crates.io/crates/rvifm) 上线（API 确认 max_version）；`cargo install rvifm --version 0.1.0-alpha.1` 成功，安装版 `--version` 输出 `0.1.0-alpha.1` 且 exit 0。**M0 阶段全部任务完成，阶段关闭。**
+- `M1-0`（2026-11-11）：`src/tab.rs` 落地 `Location`（Physical/Archive，显示 `host:/inner/path`）、`FileItem`、`SearchState`、`Tab`（location/entries/cursor/scroll/search/history）；`src/state.rs` 落地 `AppState`（tabs + active + 全局 undo_stack）与预留 `tab_id` 的 `UndoableOp` 占位。渲染改由 `AppState.active_tab()` 驱动，行为与 M0 一致；未接线字段用带任务指向的 `#[allow(dead_code)]` 标注。9 单测 + 3 冒烟全绿。
 
 ## 进行中
 
@@ -37,8 +38,8 @@
 
 ## 下一步
 
-1. `M1-0`：定义 `Tab` / `AppState` 结构（tabs + active + 独立状态字段；撤销栈预留 tab 标识）。
-2. `M1-1`～`M1-7`：目录列表渲染与 `j/k`、进退目录、翻页、状态栏元数据、多标签、搜索（顺序见 [TASKS.md](TASKS.md)）。
+1. `M1-1`：目录列表渲染与光标移动 `j/k`。
+2. `M1-2`～`M1-7`：进退目录、翻页、状态栏元数据、多标签、搜索（顺序见 [TASKS.md](TASKS.md)）。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 

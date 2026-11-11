@@ -23,7 +23,7 @@
 
 ## M1 — 核心浏览、多标签与 vim 按键
 
-- [ ] M1-0 定义 `Tab` / `AppState` 结构：tabs 列表 + active 索引 + 独立状态字段
+- [x] M1-0 定义 `Tab` / `AppState` 结构：tabs 列表 + active 索引 + 独立状态字段
 - [ ] M1-1 目录列表渲染与光标移动 `j/k`
 - [ ] M1-2 进入/返回目录 `l/h`、刷新
 - [ ] M1-3 `gg/G`、`Ctrl-u/Ctrl-d`
