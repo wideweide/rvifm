@@ -109,8 +109,19 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tab::Location;
+    use crate::tab::{Location, SearchState, Tab};
     use std::path::PathBuf;
+
+    fn tab_at(path: &str) -> Tab {
+        Tab {
+            location: Location::Physical(PathBuf::from(path)),
+            entries: Vec::new(),
+            cursor: 0,
+            scroll: 0,
+            search: None,
+            history: Vec::new(),
+        }
+    }
 
     fn tab(path: &str) -> Tab {
         Tab {
@@ -149,6 +160,42 @@ mod tests {
         // 切换后 tab 0 的光标与滚动独立保持。
         assert_eq!(s.tabs[0].cursor, 3);
         assert_eq!(s.tabs[0].scroll, 5);
+    }
+
+    #[test]
+    fn per_tab_state_independent() {
+        // M1-6 验收：两个 tab 打开不同目录，切换后各自状态独立保持。
+        let mut s = AppState::new(tab_at("C:/a"));
+        s.push_tab(tab_at("C:/b"));
+        s.active = 0; // push_tab 会切到新 tab，归位到第一个
+
+        s.active_tab_mut().cursor = 3;
+        s.active_tab_mut().scroll = 5;
+        s.active_tab_mut().search = Some(SearchState {
+            query: "abc".to_owned(),
+        });
+
+        // 切到 tab b：未被 a 的状态污染。
+        s.next_tab();
+        assert_eq!(
+            s.active_tab().location,
+            Location::Physical(PathBuf::from("C:/b"))
+        );
+        assert_eq!(s.active_tab().cursor, 0);
+        assert_eq!(s.active_tab().scroll, 0);
+        assert!(s.active_tab().search.is_none());
+        s.active_tab_mut().cursor = 7;
+        s.active_tab_mut().scroll = 9;
+
+        // 切回 tab a：光标、滚动、搜索状态全部保持。
+        s.prev_tab();
+        assert_eq!(
+            s.active_tab().location,
+            Location::Physical(PathBuf::from("C:/a"))
+        );
+        assert_eq!(s.active_tab().cursor, 3);
+        assert_eq!(s.active_tab().scroll, 5);
+        assert_eq!(s.active_tab().search.as_ref().unwrap().query, "abc");
     }
 
     #[test]
