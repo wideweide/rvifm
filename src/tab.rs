@@ -118,7 +118,6 @@ impl Tab {
         if self.entries.is_empty() || query.is_empty() {
             return None;
         }
-        let q = query.to_lowercase();
         let len = self.entries.len();
         for i in 0..len {
             let idx = if forward {
@@ -126,7 +125,7 @@ impl Tab {
             } else {
                 (start + len - i % len) % len
             };
-            if self.entries[idx].name.to_lowercase().contains(&q) {
+            if query_matches(&self.entries[idx].name, query) {
                 return Some(idx);
             }
         }
@@ -253,6 +252,15 @@ impl Tab {
 }
 
 /// 读取并排序目录条目：目录在前，名称不区分大小写。
+/// 智能大小写匹配（M4-1）：查询含大写字母时区分大小写，否则不区分（vim/vifm smartcase）。
+fn query_matches(name: &str, query: &str) -> bool {
+    if query.chars().any(char::is_uppercase) {
+        name.contains(query)
+    } else {
+        name.to_lowercase().contains(query)
+    }
+}
+
 fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
     let mut items = Vec::new();
     for entry in std::fs::read_dir(dir)? {
@@ -370,6 +378,19 @@ mod tests {
         tab.move_cursor(1);
         tab.move_cursor(-1);
         assert_eq!(tab.cursor, 0);
+    }
+
+    #[test]
+    fn query_matches_smart_case() {
+        // 全小写查询：不区分大小写。
+        assert!(query_matches("Beta2.txt", "beta"));
+        assert!(query_matches("beta.txt", "beta"));
+        // 含大写查询：区分大小写。
+        assert!(query_matches("Beta2.txt", "Beta"));
+        assert!(!query_matches("beta.txt", "Beta"));
+        assert!(!query_matches("BETA.txt", "Beta"));
+        // 子串语义保持。
+        assert!(query_matches("report-2026.txt", "2026"));
     }
 
     #[test]
