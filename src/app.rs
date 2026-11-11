@@ -74,6 +74,8 @@ enum InputMode {
     Confirm { path: PathBuf },
     /// 标记批量删除确认模式（`:tag delete`，M3-3）。
     ConfirmTagDelete,
+    /// 帮助覆盖层（`:help`，M5-3；任意键返回）。
+    Help,
 }
 
 /// 命令行单键处理结果。
@@ -109,6 +111,8 @@ fn command_input(input: &mut String, key: KeyEvent) -> CmdInput {
 enum ExecOutcome {
     /// 关闭最后一个 tab，应用退出。
     Quit,
+    /// 打开帮助覆盖层（`:help`，M5-3；完整帮助页在 M6-2）。
+    EnterHelp,
     /// 命令完成，可携带状态栏提示。
     Done { msg: Option<String> },
     /// 请求确认批量删除标记文件（`:tag delete`，M3-3）。
@@ -126,6 +130,24 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     let mut parts = line.split_whitespace();
     match parts.next() {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("q" | "quit") => Ok(ExecOutcome::Quit),
+        Some("cd") => {
+            // M5-3：切换当前 tab 到目标目录（保留原名导航语义）。
+            let dir_arg = parts.next().ok_or_else(|| "cd: 缺少目录".to_owned())?;
+            let target = PathBuf::from(dir_arg);
+            if !target.is_dir() {
+                return Err(format!("cd: 目录不存在: {dir_arg}"));
+            }
+            let cfg = state.config;
+            let tab = state.active_tab_mut();
+            tab.history.push(tab.location.clone());
+            tab.location = Location::Physical(target);
+            tab.cursor = 0;
+            tab.scroll = 0;
+            let _ = tab.refresh(cfg);
+            Ok(ExecOutcome::Done { msg: None })
+        }
+        Some("help") => Ok(ExecOutcome::EnterHelp),
         Some("tabnew") => {
             if state.new_tab_here() {
                 Ok(ExecOutcome::Done { msg: None })
@@ -589,6 +611,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         mode = InputMode::Normal;
                         match exec_command_impl(&mut state, line.trim()) {
                             Ok(ExecOutcome::Quit) => return Ok(()),
+                            Ok(ExecOutcome::EnterHelp) => mode = InputMode::Help,
                             Ok(ExecOutcome::Done { msg: m }) => msg = m,
                             Ok(ExecOutcome::ConfirmTagDelete) => {
                                 mode = InputMode::ConfirmTagDelete;
@@ -629,6 +652,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             _ => mode = InputMode::Normal,
                         }
                     }
+                }
+                InputMode::Help => {
+                    // 任意键返回（M5-3 最小帮助覆盖层；完整帮助页在 M6-2）。
+                    mode = InputMode::Normal;
                 }
                 InputMode::ConfirmTagDelete => {
                     if key.kind == KeyEventKind::Press {
@@ -710,10 +737,27 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         &mut list_state,
     );
 
+    if matches!(mode, InputMode::Help) {
+        // 帮助覆盖层（M5-3）。
+        let text = "rvifm 按键（任意键返回）\n\
+            \n  j/k 移动    l/Enter 进入    h 返回\n\
+            gg/G 首/末  Ctrl-u/d 半页\n\
+            / 搜索    n/N 下/上一匹配    = 过滤\n\
+            v 可视选择    t 标记    :tag delete|copy|move <目录>\n\
+            dd 删除    u 撤销\n\
+            :rename/:move/:copy/:mkdir/:touch/:cd/:q/:help\n\
+            :tabnew/:tabclose/:tabmove    gt/gT/N gt 切换标签";
+        frame.render_widget(
+            Paragraph::new(text).block(ratatui::widgets::Block::bordered().title("帮助")),
+            frame.area(),
+        );
+        return;
+    }
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input } => Line::from(format!("/{input}")),
         InputMode::Filter { input } => Line::from(format!("={input}")),
+        InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
         InputMode::ConfirmTagDelete => {
             let n = tab.tagged_count();
@@ -1999,6 +2043,48 @@ mod tests {
             .map(|x| buffer[(x, 7)].symbol())
             .collect::<String>();
         assert!(status.contains("[filter: *.txt]"), "status: {status}");
+    }
+
+    #[test]
+    fn exec_q_cd_help_unified_parse() {
+        // M5-3 + M5-4：最小命令子集与多标签命令在同一解析器共存。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("x.txt"), "X").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // :cd 到不存在目录 → 错误；存在 → 导航。
+        assert!(exec_command_impl(&mut state, "cd Z:/nope").is_err());
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        assert!(matches!(
+            exec_command_impl(&mut state, &format!("cd {}", sub.display())),
+            Ok(ExecOutcome::Done { msg: None })
+        ));
+        assert_eq!(state.active_tab().location, Location::Physical(sub.clone()));
+
+        // :q 请求退出。
+        assert_eq!(exec_command_impl(&mut state, "q"), Ok(ExecOutcome::Quit));
+
+        // :help 请求帮助层。
+        assert_eq!(
+            exec_command_impl(&mut state, "help"),
+            Ok(ExecOutcome::EnterHelp)
+        );
+
+        // M5-4：多标签命令与文件命令共存不冲突（tabnew → touch → tabmove）。
+        assert!(matches!(
+            exec_command_impl(&mut state, "tabnew"),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        assert!(matches!(
+            exec_command_impl(&mut state, "touch y.txt"),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        assert!(matches!(
+            exec_command_impl(&mut state, "tabmove 1"),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        assert_eq!(state.tabs.len(), 2);
     }
 
     #[test]

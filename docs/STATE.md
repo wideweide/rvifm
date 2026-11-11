@@ -2,10 +2,10 @@
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
-- **更新时间**：2026-11-11
-- **当前阶段**：M5 — 配置与最小命令模式（M0–M4 已完成）
-- **当前任务**：`M5-3` 最小 `:` 命令子集：`:q`、`:cd`、`:mkdir`、`:touch`、`:help`
-- **阶段状态**：M0 已完成（已发布）；M1–M4 已完成；M5 进行中
+- **更新时间**：2026-11-12
+- **当前阶段**：M6 — 打磨与 v0.1.0 发布（M0–M5 已完成）
+- **当前任务**：`M6-1` 错误处理与确认提示
+- **阶段状态**：M0 已完成（已发布）；M1–M5 已完成；M6 进行中
 
 ## 已完成
 
@@ -58,6 +58,9 @@
 - **M4 阶段验收自检（2026-11-11，ACCEPTANCE §6）**：`/` 定位 + `n/N` 循环 ✓；glob 过滤生效、过滤后光标与状态栏正确 ✓；归档/文件夹内搜索复用同一链路（find_match 作用于 tab.entries，M7 接入后自动生效）✓；无 marks 相关命令或按键 ✓。**M4 阶段关闭。**
 - `M5-1`（2026-11-11）：TOML 配置读取——新增 `serde`/`toml` 依赖；`src/config.rs`：`Config{show_hidden, sort_dirs_first, ignore_case_sort}`（`#[serde(default)]` 逐键回退）、平台路径（Windows `%APPDATA%\rvifm\config.toml` / Unix `$XDG_CONFIG_HOME` 或 `~/.config`）、`load()`（缺失→默认值不退出；解析失败→"配置解析失败: …" 提示）；启动时加载并挂到 `AppState.config`，错误进状态栏。65 单测 + 3 冒烟全绿。
 - `M5-2`（2026-11-11）：基本选项生效——`load_entries(dir, &Config)` 按 `show_hidden` 跳过 `.` 开头条目、按 `sort_dirs_first`/`ignore_case_sort` 排序；配置经 `from_physical`/`refresh`/`apply_filter`/导航全部接线（`Config` 为 Copy）。65 单测 + 3 冒烟全绿。
+- `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
+- `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
+- **M5 阶段验收自检（2026-11-12，ACCEPTANCE §7）**：启动读取 TOML，缺失用默认值不退出 ✓；基本选项（隐藏文件/排序）生效 ✓；`:q/:cd/:mkdir/:touch/:help` 可用 ✓；多标签命令与 M5 解析共存 ✓；配置语法错误有可理解提示不 panic ✓。**M5 阶段关闭。**
 
 ## 进行中
 
@@ -65,9 +68,9 @@
 
 ## 下一步
 
-1. `M5-1`：TOML 配置文件读取。
-2. `M5-2`～`M5-4`：基本选项配置、最小 `:` 命令子集、统一命令解析（顺序见 [TASKS.md](TASKS.md)）。
-3. M5 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §7）。
+1. `M6-1`：错误处理与确认提示。
+2. `M6-2`～`M6-5`：帮助页、README 与 v0.1.0 tag、大目录性能、发布门禁（顺序见 [TASKS.md](TASKS.md)）。
+3. M6 完成后跑阶段验收与 v0.1.0 发布门禁（[ACCEPTANCE.md](ACCEPTANCE.md) §8）。
 3. M2 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §4），确认 `u` 可逆闭环。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
