@@ -1,6 +1,6 @@
 [package]
 name = "rvifm"
-version = "0.1.0-alpha.1"
+version = "0.1.0"
 edition = "2024"
 description = "Vim-style TUI file manager written in Rust; references vifm's interaction model, not a fork"
 readme = "README.md"

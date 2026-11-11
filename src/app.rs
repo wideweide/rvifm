@@ -2092,6 +2092,32 @@ mod tests {
     }
 
     #[test]
+    fn large_directory_load_and_render_fast() {
+        // M6-4：>10k 项大目录——加载与单帧渲染有界，退出不经过批量渲染（逐键响应）。
+        let tmp = TempDir::new().unwrap();
+        for i in 0..10_500u32 {
+            std::fs::write(tmp.path().join(format!("f{i}.txt")), "").unwrap();
+        }
+
+        let t0 = std::time::Instant::now();
+        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let load = t0.elapsed();
+        assert_eq!(state.active_tab().entries.len(), 10_500);
+
+        let t1 = std::time::Instant::now();
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let draw = t1.elapsed();
+
+        // 宽松上限（CI 速度波动安全）：加载与单帧渲染均 < 2s。
+        assert!(load.as_secs() < 2, "load too slow: {load:?}");
+        assert!(draw.as_secs() < 2, "draw too slow: {draw:?}");
+    }
+
+    #[test]
     fn render_highlights_cursor_row() {
         let (_tmp, mut state) = make_state(3);
         state.active_tab_mut().cursor = 1;
