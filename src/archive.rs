@@ -133,6 +133,12 @@ impl std::fmt::Debug for ZipFs {
     }
 }
 
+impl std::fmt::Debug for TarFs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TarFs").field("host", &self.host).finish()
+    }
+}
+
 impl ArchiveFs for ZipFs {
     fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
         let dir = normalize_inner(dir);
@@ -183,11 +189,187 @@ impl ArchiveFs for ZipFs {
     }
 }
 
+/// tar 归档实现（M7-3，基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`/`.tgz`。
+/// tar 无中央目录：开档时流式扫描一遍建立
+/// `路径 → (数据块在解码流中的偏移, 大小, 是否目录)` 索引。
+/// `.tar` 读取用 seek 惰性取数据；`.tar.gz` 每次读取从头解码跳过（内存
+/// 受最大单成员约束，代价是每次读取 O(n) 解压——典型归档可接受）。
+pub struct TarFs {
+    host: PathBuf,
+    compressed: bool,
+    index: BTreeMap<String, (u64, u64, bool)>,
+    dirs: BTreeSet<String>,
+}
+
+/// tar 解码器：裸 tar（可 seek）或 gzip 解压流（不可 seek）。
+enum Decoder {
+    Plain(std::fs::File),
+    Gz(Box<flate2::read::GzDecoder<std::fs::File>>),
+}
+
+impl Decoder {
+    fn open(host: &Path, compressed: bool) -> std::io::Result<Self> {
+        let file = std::fs::File::open(host)?;
+        Ok(if compressed {
+            Decoder::Gz(Box::new(flate2::read::GzDecoder::new(file)))
+        } else {
+            Decoder::Plain(file)
+        })
+    }
+
+    /// 跳过解码流的前 `n` 字节：Plain 用 seek，Gz 读穿透（O(n) 解压）。
+    fn skip(&mut self, n: u64) -> std::io::Result<()> {
+        match self {
+            Decoder::Plain(f) => {
+                use std::io::Seek;
+                Seek::seek(f, std::io::SeekFrom::Start(n))?;
+                Ok(())
+            }
+            Decoder::Gz(g) => {
+                let mut sink = std::io::sink();
+                std::io::copy(&mut g.take(n), &mut sink).map(|_| ())
+            }
+        }
+    }
+}
+
+impl Read for Decoder {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Decoder::Plain(f) => f.read(buf),
+            Decoder::Gz(g) => g.read(buf),
+        }
+    }
+}
+
+impl TarFs {
+    /// 按扩展名判定压缩：`.tar.gz` / `.tgz` 走 gzip，其余按裸 tar。
+    fn is_compressed(host: &Path) -> bool {
+        let name = host
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        name.ends_with(".tar.gz") || name.ends_with(".tgz")
+    }
+
+    /// 打开 tar 归档并建立成员索引。损坏归档返回 InvalidData，不 panic。
+    pub fn open(host: &Path) -> std::io::Result<Self> {
+        let compressed = Self::is_compressed(host);
+        let mut decoder = Decoder::open(host, compressed)?;
+        let mut archive = tar::Archive::new(&mut decoder);
+        let mut index = BTreeMap::new();
+        let mut dirs = BTreeSet::new();
+        for entry in archive
+            .entries()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+        {
+            let entry =
+                entry.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let raw = entry
+                .path()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                .to_string_lossy()
+                .into_owned();
+            let norm = normalize_inner(&raw);
+            if norm.is_empty() {
+                continue;
+            }
+            let is_dir = entry.header().entry_type().is_dir();
+            let size = entry.header().size().unwrap_or(0);
+            let pos = entry.raw_file_position();
+            if is_dir {
+                dirs.insert(norm);
+            } else {
+                // 隐式父目录：只收集祖先前缀，不把文件自身插入 dirs。
+                let parts: Vec<&str> = norm.split('/').collect();
+                for i in 0..parts.len().saturating_sub(1) {
+                    dirs.insert(parts[..=i].join("/"));
+                }
+                index.insert(norm, (pos, size, false));
+            }
+        }
+        Ok(Self {
+            host: host.to_path_buf(),
+            compressed,
+            index,
+            dirs,
+        })
+    }
+
+    /// 从解码流读取指定数据块（pos 即数据起始，raw_file_position 语义）。
+    fn read_block(&self, pos: u64, size: u64) -> std::io::Result<Vec<u8>> {
+        let mut decoder = Decoder::open(&self.host, self.compressed)?;
+        decoder.skip(pos)?;
+        let mut buf = vec![0u8; size as usize];
+        decoder.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+}
+
+impl ArchiveFs for TarFs {
+    fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
+        let dir = normalize_inner(dir);
+        let mut out: BTreeMap<String, (bool, u64, String)> = BTreeMap::new();
+        for name in &self.dirs {
+            let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
+            if parent == dir {
+                out.insert(leaf.to_owned(), (true, 0, name.clone()));
+            }
+        }
+        for (name, &(pos, size, is_dir)) in &self.index {
+            let _ = pos;
+            let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
+            if parent == dir {
+                out.insert(leaf.to_owned(), (is_dir, size, name.clone()));
+            }
+        }
+        Ok(out
+            .into_values()
+            .map(|(is_dir, size, path)| ArchiveEntry { path, is_dir, size })
+            .collect())
+    }
+
+    fn read(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        let path = normalize_inner(path);
+        let &(pos, size, is_dir) = self
+            .index
+            .get(&path)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))?;
+        if is_dir {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "目录不可读",
+            ));
+        }
+        self.read_block(pos, size)
+    }
+
+    fn metadata(&self, path: &str) -> std::io::Result<ArchiveEntry> {
+        let path = normalize_inner(path);
+        if self.dirs.contains(&path) {
+            return Ok(ArchiveEntry {
+                path,
+                is_dir: true,
+                size: 0,
+            });
+        }
+        let &(_pos, size, is_dir) = self
+            .index
+            .get(&path)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))?;
+        Ok(ArchiveEntry { path, is_dir, size })
+    }
+
+    fn host(&self) -> &Path {
+        &self.host
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::io::Write as _;
+    use std::io::Write;
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -334,6 +516,101 @@ mod tests {
         std::fs::write(&zip_path, b"PKgarbage").unwrap();
         let err = ZipFs::open(&zip_path).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    fn make_test_tar(path: &Path, gz: bool) {
+        // M7-3：构造与 zip 测试同构的 tar（显式目录、嵌套文件、隐式父目录）。
+        let file = std::fs::File::create(path).unwrap();
+        let enc: Box<dyn Write> = if gz {
+            Box::new(flate2::write::GzEncoder::new(
+                file,
+                flate2::Compression::default(),
+            ))
+        } else {
+            Box::new(file)
+        };
+        let mut b = tar::Builder::new(enc);
+
+        let mut hdr = tar::Header::new_gnu();
+        hdr.set_entry_type(tar::EntryType::Directory);
+        hdr.set_path("src/").unwrap();
+        hdr.set_size(0);
+        hdr.set_cksum();
+        b.append(&hdr, std::io::empty()).unwrap();
+
+        let data = b"fn main() {}".to_vec();
+        let mut hdr = tar::Header::new_gnu();
+        hdr.set_path("src/main.rs").unwrap();
+        hdr.set_size(data.len() as u64);
+        hdr.set_cksum();
+        b.append(&hdr, data.as_slice()).unwrap();
+
+        let data = b"hi".to_vec();
+        let mut hdr = tar::Header::new_gnu();
+        hdr.set_path("readme.md").unwrap();
+        hdr.set_size(data.len() as u64);
+        hdr.set_cksum();
+        b.append(&hdr, data.as_slice()).unwrap();
+
+        let data = b"ABC".to_vec();
+        let mut hdr = tar::Header::new_gnu();
+        hdr.set_path("deep/nested/blob.bin").unwrap();
+        hdr.set_size(data.len() as u64);
+        hdr.set_cksum();
+        b.append(&hdr, data.as_slice()).unwrap();
+
+        b.into_inner().unwrap();
+    }
+
+    #[test]
+    fn tar_fs_plain_and_gz_roundtrip() {
+        // M7-3：.tar 与 .tar.gz 两种形态同语义。
+        for gz in [false, true] {
+            let tmp = TempDir::new().unwrap();
+            let p = if gz {
+                tmp.path().join("t.tar.gz")
+            } else {
+                tmp.path().join("t.tar")
+            };
+            make_test_tar(&p, gz);
+            let mut fs = TarFs::open(&p).unwrap();
+
+            let root = fs.list("").unwrap();
+            let names: Vec<(&str, bool)> =
+                root.iter().map(|e| (e.path.as_str(), e.is_dir)).collect();
+            assert_eq!(
+                names,
+                [("deep", true), ("readme.md", false), ("src", true)],
+                "gz={gz}"
+            );
+
+            let src = fs.list("src").unwrap();
+            assert_eq!(src.len(), 1);
+            assert_eq!(src[0].path, "src/main.rs");
+            assert_eq!(fs.read("src/main.rs").unwrap(), b"fn main() {}");
+            assert_eq!(fs.read("deep/nested/blob.bin").unwrap(), b"ABC");
+            assert_eq!(fs.metadata("readme.md").unwrap().size, 2);
+            assert!(fs.metadata("deep").unwrap().is_dir);
+            assert!(fs.read("src").is_err());
+        }
+    }
+
+    #[test]
+    fn tar_fs_corrupt_returns_error_not_panic() {
+        // M7-3/M7-7 前置：损坏 tar/gzip 返回 InvalidData 而非 panic。
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("bad.tar");
+        std::fs::write(&p, b"not a tar at all").unwrap();
+        assert_eq!(
+            TarFs::open(&p).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+        let p = tmp.path().join("bad.tar.gz");
+        std::fs::write(&p, [0x1f, 0x8b, b'g', b'a', b'r']).unwrap();
+        assert_eq!(
+            TarFs::open(&p).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
     }
 
     #[test]

@@ -8,8 +8,10 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/wideweide/rvifm"
 
 [dependencies]
+flate2 = "1.1.11"
 ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
+tar = "0.4.46"
 toml = "1.2.1"
 zip = "9.5.1"
 
