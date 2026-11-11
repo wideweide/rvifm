@@ -194,32 +194,62 @@ impl ArchiveFs for ZipFs {
 /// `路径 → (数据块在解码流中的偏移, 大小, 是否目录)` 索引。
 /// `.tar` 读取用 seek 惰性取数据；`.tar.gz` 每次读取从头解码跳过（内存
 /// 受最大单成员约束，代价是每次读取 O(n) 解压——典型归档可接受）。
+/// `.xz` 无纯 Rust 可 seek 解码器：开档时整体解压入内存（受归档解压后体积
+/// 约束），典型归档可接受；`.bz2`/`.zst` 走流式读穿透。
 pub struct TarFs {
     host: PathBuf,
-    compressed: bool,
+    kind: TarKind,
     index: BTreeMap<String, (u64, u64, bool)>,
     dirs: BTreeSet<String>,
 }
 
 type Children = std::collections::BTreeMap<String, (bool, u64, String)>;
 
-/// tar 解码器：裸 tar（可 seek）或 gzip 解压流（不可 seek）。
+/// tar 压缩形态（M7-8 扩展到五种）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TarKind {
+    Plain,
+    Gz,
+    Bz,
+    Zst,
+    Xz,
+}
+
+/// tar 解码器：按形态分派。
+/// - Plain 可 seek；Gz/Bz/Zst 流式读穿透跳过；
+/// - Xz 已在开档时整体解压为内存游标（可 seek）。
 enum Decoder {
     Plain(std::fs::File),
     Gz(Box<flate2::read::GzDecoder<std::fs::File>>),
+    Bz(Box<bzip2_rs::DecoderReader<std::fs::File>>),
+    Zst(Box<ruzstd::decoding::StreamingDecoder<std::fs::File, ruzstd::decoding::FrameDecoder>>),
+    Xz(std::io::Cursor<Vec<u8>>),
 }
 
 impl Decoder {
-    fn open(host: &Path, compressed: bool) -> std::io::Result<Self> {
+    fn open(host: &Path, kind: TarKind) -> std::io::Result<Self> {
         let file = std::fs::File::open(host)?;
-        Ok(if compressed {
-            Decoder::Gz(Box::new(flate2::read::GzDecoder::new(file)))
-        } else {
-            Decoder::Plain(file)
+        Ok(match kind {
+            TarKind::Plain => Decoder::Plain(file),
+            TarKind::Gz => Decoder::Gz(Box::new(flate2::read::GzDecoder::new(file))),
+            TarKind::Bz => Decoder::Bz(Box::new(bzip2_rs::DecoderReader::new(file))),
+            TarKind::Zst => Decoder::Zst(Box::new(
+                ruzstd::decoding::StreamingDecoder::new(file).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                })?,
+            )),
+            TarKind::Xz => {
+                let mut raw = Vec::new();
+                (&file).read_to_end(&mut raw)?;
+                let mut out = Vec::new();
+                lzma_rs::xz_decompress(&mut std::io::Cursor::new(raw), &mut out)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Decoder::Xz(std::io::Cursor::new(out))
+            }
         })
     }
 
-    /// 跳过解码流的前 `n` 字节：Plain 用 seek，Gz 读穿透（O(n) 解压）。
+    /// 跳过解码流的前 `n` 字节：Plain/Xz 用 seek，其余流式读穿透（O(n) 解压）。
     fn skip(&mut self, n: u64) -> std::io::Result<()> {
         match self {
             Decoder::Plain(f) => {
@@ -227,9 +257,22 @@ impl Decoder {
                 Seek::seek(f, std::io::SeekFrom::Start(n))?;
                 Ok(())
             }
+            Decoder::Xz(c) => {
+                use std::io::Seek;
+                Seek::seek(c, std::io::SeekFrom::Start(n))?;
+                Ok(())
+            }
             Decoder::Gz(g) => {
                 let mut sink = std::io::sink();
                 std::io::copy(&mut g.take(n), &mut sink).map(|_| ())
+            }
+            Decoder::Bz(b) => {
+                let mut sink = std::io::sink();
+                std::io::copy(&mut b.take(n), &mut sink).map(|_| ())
+            }
+            Decoder::Zst(z) => {
+                let mut sink = std::io::sink();
+                std::io::copy(&mut z.take(n), &mut sink).map(|_| ())
             }
         }
     }
@@ -240,24 +283,39 @@ impl Read for Decoder {
         match self {
             Decoder::Plain(f) => f.read(buf),
             Decoder::Gz(g) => g.read(buf),
+            Decoder::Bz(b) => b.read(buf),
+            Decoder::Zst(z) => z.read(buf),
+            Decoder::Xz(c) => c.read(buf),
         }
     }
 }
 
 impl TarFs {
-    /// 按扩展名判定压缩：`.tar.gz` / `.tgz` 走 gzip，其余按裸 tar。
-    fn is_compressed(host: &Path) -> bool {
+    /// 按扩展名判定压缩形态：`.tar.gz`/`.tgz`、`.tar.bz2`、`.tar.zst`、
+    /// `.tar.xz`，其余按裸 tar（M7-3 + M7-8）。
+    fn detect_kind(host: &Path) -> TarKind {
         let name = host
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        name.ends_with(".tar.gz") || name.ends_with(".tgz")
+        let n = name.to_lowercase();
+        if n.ends_with(".tar.gz") || n.ends_with(".tgz") {
+            TarKind::Gz
+        } else if n.ends_with(".tar.bz2") {
+            TarKind::Bz
+        } else if n.ends_with(".tar.zst") {
+            TarKind::Zst
+        } else if n.ends_with(".tar.xz") {
+            TarKind::Xz
+        } else {
+            TarKind::Plain
+        }
     }
 
     /// 打开 tar 归档并建立成员索引。损坏归档返回 InvalidData，不 panic。
     pub fn open(host: &Path) -> std::io::Result<Self> {
-        let compressed = Self::is_compressed(host);
-        let mut decoder = Decoder::open(host, compressed)?;
+        let kind = Self::detect_kind(host);
+        let mut decoder = Decoder::open(host, kind)?;
         let mut archive = tar::Archive::new(&mut decoder);
         let mut index = BTreeMap::new();
         let mut dirs = BTreeSet::new();
@@ -292,7 +350,7 @@ impl TarFs {
         }
         Ok(Self {
             host: host.to_path_buf(),
-            compressed,
+            kind,
             index,
             dirs,
         })
@@ -300,7 +358,7 @@ impl TarFs {
 
     /// 从解码流读取指定数据块（pos 即数据起始，raw_file_position 语义）。
     fn read_block(&self, pos: u64, size: u64) -> std::io::Result<Vec<u8>> {
-        let mut decoder = Decoder::open(&self.host, self.compressed)?;
+        let mut decoder = Decoder::open(&self.host, self.kind)?;
         decoder.skip(pos)?;
         let mut buf = vec![0u8; size as usize];
         decoder.read_exact(&mut buf)?;
@@ -371,7 +429,13 @@ impl ArchiveFs for TarFs {
 /// `.7z`/`.rar` 不在内——按 M7-9 提示解压（调用方负责）。
 pub fn is_archive_file(name: &str) -> bool {
     let n = name.to_lowercase();
-    n.ends_with(".zip") || n.ends_with(".tar") || n.ends_with(".tar.gz") || n.ends_with(".tgz")
+    n.ends_with(".zip")
+        || n.ends_with(".tar")
+        || n.ends_with(".tar.gz")
+        || n.ends_with(".tgz")
+        || n.ends_with(".tar.bz2")
+        || n.ends_with(".tar.zst")
+        || n.ends_with(".tar.xz")
 }
 
 /// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）：`.7z` / `.rar`。
@@ -643,6 +707,47 @@ mod tests {
             assert_eq!(fs.metadata("readme.md").unwrap().size, 2);
             assert!(fs.metadata("deep").unwrap().is_dir);
             assert!(fs.read("src").is_err());
+        }
+    }
+
+    #[test]
+    fn tar_fs_xz_roundtrip() {
+        // M7-8：.tar.xz——开档时整体解压入内存（xz 无纯 Rust 可 seek 解码器）。
+        let tmp = TempDir::new().unwrap();
+        let plain = tmp.path().join("t.tar");
+        make_test_tar(&plain, false);
+        let p = tmp.path().join("t.tar.xz");
+        let mut raw = std::io::BufReader::new(std::fs::File::open(&plain).unwrap());
+        let mut out = Vec::new();
+        lzma_rs::xz_compress(&mut raw, &mut out).unwrap();
+        std::fs::write(&p, out).unwrap();
+
+        let mut fs = TarFs::open(&p).unwrap();
+        let root = fs.list("").unwrap();
+        let names: Vec<(&str, bool)> = root.iter().map(|e| (e.path.as_str(), e.is_dir)).collect();
+        assert_eq!(names, [("deep", true), ("readme.md", false), ("src", true)]);
+        assert_eq!(fs.read("src/main.rs").unwrap(), b"fn main() {}");
+        assert_eq!(fs.metadata("readme.md").unwrap().size, 2);
+    }
+
+    #[test]
+    fn tar_fs_bz2_and_zst_fixtures_roundtrip() {
+        // M7-8：.tar.bz2（bzip2-rs 解码）与 .tar.zst（ruzstd 解码）——
+        // 解码器无编码器，夹具由 CLI/python 生成并提交在 tests/fixtures/。
+        for name in ["t.tar.bz2", "t.tar.zst"] {
+            let p = std::path::Path::new("tests/fixtures").join(name);
+            let mut fs = TarFs::open(&p).unwrap();
+            let root = fs.list("").unwrap();
+            let names: Vec<(&str, bool)> =
+                root.iter().map(|e| (e.path.as_str(), e.is_dir)).collect();
+            assert_eq!(
+                names,
+                [("deep", true), ("readme.md", false), ("src", true)],
+                "fixture={name}"
+            );
+            // CLI tar 由 echo 生成，内容带尾换行。
+            assert_eq!(fs.read("src/main.rs").unwrap(), b"fn main() {}\n");
+            assert_eq!(fs.metadata("readme.md").unwrap().size, 3);
         }
     }
 
