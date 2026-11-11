@@ -11,8 +11,11 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
+use std::path::PathBuf;
+
+use crate::ops;
 use crate::state::AppState;
-use crate::tab::{SearchState, Tab};
+use crate::tab::{Location, SearchState, Tab};
 
 /// 判断按键是否请求退出：`q` 或 `Ctrl-C`。
 fn is_quit_key(key: KeyEvent) -> bool {
@@ -21,13 +24,15 @@ fn is_quit_key(key: KeyEvent) -> bool {
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)))
 }
 
-/// `g` 前缀多键序列的待决状态（超时可配置在 M10 键位系统接入）。
+/// `g`/`d` 前缀多键序列的待决状态（超时可配置在 M10 键位系统接入）。
 #[derive(Debug, Default, PartialEq, Eq)]
 enum Pending {
     #[default]
     None,
     /// 已按下 `g`，等待第二键。
     G,
+    /// 已按下 `d`，等待第二键（`dd` 删除，M2-2）。
+    D,
 }
 
 /// Normal 模式输入状态：`g` 待决 + 数字计数（`N gt` 用，M1-5）。
@@ -48,6 +53,8 @@ enum Outcome {
     EnterCommand,
     /// 请求进入搜索输入模式（`/`，M1-7）。
     EnterSearch,
+    /// 请求确认删除（`dd`，M2-2）：携带待删完整路径。
+    ConfirmDelete(PathBuf),
 }
 
 /// 输入模式（M5-4 统一模式系统前先持有最小集合）。
@@ -59,6 +66,8 @@ enum InputMode {
     Command { input: String },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。
     Search { input: String },
+    /// 删除确认模式：`y` 执行，其余取消（M2-2）。
+    Confirm { path: PathBuf },
 }
 
 /// 命令行单键处理结果。
@@ -154,7 +163,7 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
 ///
 /// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
 /// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`gt`/`gT`/`N gt`、
-/// `/`、`n`/`N`、`q`/`Ctrl-C`、`:`。
+/// `/`、`n`/`N`、`dd`（删除确认）、`u`（撤销）、`q`/`Ctrl-C`、`:`。
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
@@ -195,6 +204,22 @@ fn handle_key(
         return Outcome::Continue;
     }
 
+    // `d` 前缀序列：`dd` 请求确认删除光标条目（M2-2）；
+    // 第二键非 `d` 时整体丢弃。
+    if input.pending == Pending::D {
+        input.pending = Pending::None;
+        input.count = None;
+        if key.code == KeyCode::Char('d') {
+            let tab = state.active_tab();
+            if let (Location::Physical(base), Some(item)) =
+                (&tab.location, tab.entries.get(tab.cursor))
+            {
+                return Outcome::ConfirmDelete(base.join(&item.name));
+            }
+        }
+        return Outcome::Continue;
+    }
+
     if is_quit_key(key) {
         return Outcome::Quit;
     }
@@ -206,6 +231,14 @@ fn handle_key(
         KeyCode::Char('G') => state.active_tab_mut().cursor_bottom(),
         KeyCode::Char('d') if ctrl => state.active_tab_mut().move_cursor(half),
         KeyCode::Char('u') if ctrl => state.active_tab_mut().move_cursor(-half),
+        KeyCode::Char('d') => {
+            input.count = None;
+            input.pending = Pending::D;
+        }
+        KeyCode::Char('u') => {
+            input.count = None;
+            undo_last(state, msg);
+        }
         KeyCode::Char('j') => {
             input.count = None;
             state.active_tab_mut().move_cursor(1);
@@ -243,6 +276,45 @@ fn handle_key(
     Outcome::Continue
 }
 
+/// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
+fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf) {
+    let tab_id = state.active;
+    match ops::delete_to_trash(tab_id, &path) {
+        Ok(op) => {
+            state.undo_stack.push(op);
+            *msg = None;
+            if let Some(tab) = state.tabs.get_mut(tab_id)
+                && let Err(e) = tab.refresh()
+            {
+                *msg = Some(format!("刷新失败: {e}"));
+            }
+        }
+        Err(e) => *msg = Some(format!("删除失败: {e}")),
+    }
+}
+
+/// `u` 撤销（M2-2）：弹出最近操作并执行逆操作；失败回退入栈保留可重试。
+fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
+    let Some(op) = state.undo_stack.pop() else {
+        *msg = Some("无可撤销操作".to_owned());
+        return;
+    };
+    match ops::undo_op(&op) {
+        Ok(()) => {
+            *msg = None;
+            // 刷新受影响 tab（tab 索引在 tabclose 后可能偏移，跨 tab 撤销在 M2-7 完善）。
+            if let Some(tab) = state.tabs.get_mut(op.tab_id())
+                && let Err(e) = tab.refresh()
+            {
+                *msg = Some(format!("刷新失败: {e}"));
+            }
+        }
+        Err(e) => {
+            state.undo_stack.push(op);
+            *msg = Some(format!("撤销失败: {e}"));
+        }
+    }
+}
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
@@ -277,6 +349,19 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         submit_search(&mut state, &line, &mut msg);
                     }
                 },
+                InputMode::Confirm { path } => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                let path = std::mem::take(path);
+                                mode = InputMode::Normal;
+                                execute_delete(&mut state, &mut msg, path);
+                            }
+                            _ => mode = InputMode::Normal,
+                        }
+                    }
+                }
                 InputMode::Normal => {
                     match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
                         Outcome::Continue => {}
@@ -290,6 +375,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             mode = InputMode::Search {
                                 input: String::new(),
                             };
+                        }
+                        Outcome::ConfirmDelete(path) => {
+                            mode = InputMode::Confirm { path };
                         }
                     }
                 }
@@ -325,6 +413,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input } => Line::from(format!("/{input}")),
+        InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
         InputMode::Normal => {
             let selected = match tab.entries.get(tab.cursor) {
                 Some(item) => {
@@ -919,6 +1008,85 @@ mod tests {
             ),
             Outcome::EnterSearch
         );
+    }
+
+    #[test]
+    fn dd_requests_confirm_and_discards_other_second_key() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("target.txt"), "T").unwrap();
+        fs::write(tmp.path().join("keep.txt"), "K").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut input = InputState::default();
+
+        // 排序后 keep.txt(0) / target.txt(1)，把光标放到 target.txt。
+        state.active_tab_mut().cursor = 1;
+        assert_eq!(
+            press(
+                &mut state,
+                &mut input,
+                KeyCode::Char('d'),
+                KeyModifiers::NONE
+            ),
+            Outcome::Continue
+        );
+        assert_eq!(input.pending, Pending::D);
+        let outcome = press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        match outcome {
+            Outcome::ConfirmDelete(p) => assert_eq!(p, tmp.path().join("target.txt")),
+            other => panic!("expected ConfirmDelete, got {other:?}"),
+        }
+
+        // `d` 后跟其他键：序列整体丢弃，不产生确认请求。
+        let mut input2 = InputState::default();
+        assert_eq!(
+            press(
+                &mut state,
+                &mut input2,
+                KeyCode::Char('d'),
+                KeyModifiers::NONE
+            ),
+            Outcome::Continue
+        );
+        assert_eq!(
+            press(
+                &mut state,
+                &mut input2,
+                KeyCode::Char('x'),
+                KeyModifiers::NONE
+            ),
+            Outcome::Continue
+        );
+        assert_eq!(input2.pending, Pending::None);
+        assert!(state.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn execute_delete_then_undo_restores() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("gone.txt");
+        fs::write(&file, "G").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        execute_delete(&mut state, &mut msg, file.clone());
+        assert!(msg.is_none());
+        assert!(!file.exists(), "file should be staged out of the dir");
+        assert_eq!(state.undo_stack.len(), 1);
+
+        undo_last(&mut state, &mut msg);
+        assert!(msg.is_none());
+        assert!(file.exists());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "G");
+        assert!(state.undo_stack.is_empty());
+
+        // 空栈再按 u：明确提示，无 panic。
+        undo_last(&mut state, &mut msg);
+        assert_eq!(msg.as_deref(), Some("无可撤销操作"));
     }
 
     #[test]

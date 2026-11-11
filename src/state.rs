@@ -10,8 +10,12 @@ use crate::tab::Tab;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum UndoableOp {
-    /// 删除：`path` 为被删路径（可恢复删除的 undo 在 M2-2 接入）。
-    Delete { tab_id: usize, path: PathBuf },
+    /// 删除（可恢复）：`path` 为原路径，`staged` 为应用内暂存路径（undo 移回）。
+    Delete {
+        tab_id: usize,
+        path: PathBuf,
+        staged: PathBuf,
+    },
     /// 重命名：`from` → `to`（undo 反向）。
     Rename {
         tab_id: usize,
@@ -270,6 +274,7 @@ mod tests {
         s.undo_stack.push(UndoableOp::Delete {
             tab_id: 0,
             path: PathBuf::from("C:/a/x.txt"),
+            staged: PathBuf::from("C:/trash/1-x.txt"),
         });
         s.undo_stack.push(UndoableOp::Move {
             tab_id: 1,

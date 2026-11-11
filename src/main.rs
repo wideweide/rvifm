@@ -6,6 +6,7 @@
 //! M8 将扩展 `pick` / `record` 子命令。
 
 mod app;
+mod ops;
 mod state;
 mod tab;
 
