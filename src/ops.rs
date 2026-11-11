@@ -143,6 +143,49 @@ pub fn move_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result
     })
 }
 
+/// 复制（M2-4b，`:copy <目标目录>`；SPEC §5 M2 MUST）：复制到 `target_dir`
+/// （保留原名）。undo = 删除生成的副本（`Create` 语义）。
+pub fn copy_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result<UndoableOp> {
+    if !target_dir.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("目标目录不存在: {}", target_dir.display()),
+        ));
+    }
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "无效路径"))?;
+    let to = target_dir.join(name);
+    if to.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("目标已存在: {}", to.display()),
+        ));
+    }
+    // 防自嵌套：把目录复制到其自身内部会无限递归。
+    if to.starts_with(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "不能把目录复制到其自身内部",
+        ));
+    }
+    if path.is_dir() {
+        copy_dir(path, &to)?;
+        Ok(UndoableOp::Create {
+            tab_id,
+            path: to,
+            recursive: true,
+        })
+    } else {
+        fs::copy(path, &to)?;
+        Ok(UndoableOp::Create {
+            tab_id,
+            path: to,
+            recursive: false,
+        })
+    }
+}
+
 /// 新建名字校验（M2-5）：仅当前目录下的合法新名字。
 fn validate_new_name(base: &Path, name: &str) -> std::io::Result<PathBuf> {
     if name.is_empty() || name.contains('/') || name.contains('\\') {
@@ -165,14 +208,22 @@ fn validate_new_name(base: &Path, name: &str) -> std::io::Result<PathBuf> {
 pub fn create_dir(tab_id: usize, base: &Path, name: &str) -> std::io::Result<UndoableOp> {
     let path = validate_new_name(base, name)?;
     fs::create_dir(&path)?;
-    Ok(UndoableOp::Create { tab_id, path })
+    Ok(UndoableOp::Create {
+        tab_id,
+        path,
+        recursive: false,
+    })
 }
 
 /// 新建空文件（M2-5，`:touch <名字>`）。
 pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<UndoableOp> {
     let path = validate_new_name(base, name)?;
     fs::File::create(&path)?;
-    Ok(UndoableOp::Create { tab_id, path })
+    Ok(UndoableOp::Create {
+        tab_id,
+        path,
+        recursive: false,
+    })
 }
 
 /// 撤销执行（`u`）：按操作类型逆操作。
@@ -222,13 +273,20 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
             }
             move_path(to, from)
         }
-        UndoableOp::Create { path, .. } => {
+        UndoableOp::Create {
+            path, recursive, ..
+        } => {
             if !path.exists() {
                 return Ok(()); // 已不存在：等同已撤销
             }
-            // 非空目录保护性报错，避免连带删除用户后续放入的内容。
             if path.is_dir() {
-                fs::remove_dir(path)
+                if *recursive {
+                    // 目录树整体为新建产物（copy 目录）：整树移除。
+                    fs::remove_dir_all(path)
+                } else {
+                    // 非空目录保护性报错，避免连带删除用户后续放入的内容。
+                    fs::remove_dir(path)
+                }
             } else {
                 fs::remove_file(path)
             }
@@ -391,6 +449,56 @@ mod tests {
         fs::write(tmp.path().join("d").join("keep.txt"), "K").unwrap();
         assert!(undo_op(&dir_op).is_err());
         assert!(tmp.path().join("d").is_dir());
+    }
+
+    #[test]
+    fn copy_to_and_undo_removes_copy() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let file = tmp.path().join("c.txt");
+        fs::write(&file, "C").unwrap();
+
+        // 文件复制：源保留，副本出现；undo 移除副本。
+        let op = copy_to(0, &file, &sub).unwrap();
+        assert!(matches!(op, UndoableOp::Create { .. }));
+        assert!(file.exists(), "复制不移动源");
+        assert_eq!(fs::read_to_string(sub.join("c.txt")).unwrap(), "C");
+        undo_op(&op).unwrap();
+        assert!(!sub.join("c.txt").exists());
+        assert!(file.exists());
+    }
+
+    #[test]
+    fn copy_dir_and_undo_removes_tree() {
+        let tmp = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let dir = tmp.path().join("tree");
+        fs::create_dir_all(dir.join("inner")).unwrap();
+        fs::write(dir.join("inner").join("a.txt"), "A").unwrap();
+
+        let op = copy_to(0, &dir, dst.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dst.path().join("tree").join("inner").join("a.txt")).unwrap(),
+            "A"
+        );
+        undo_op(&op).unwrap();
+        assert!(!dst.path().join("tree").exists());
+    }
+
+    #[test]
+    fn copy_rejects_missing_dir_collision_and_self_nest() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("c.txt");
+        fs::write(&file, "C").unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("c.txt"), "X").unwrap();
+
+        assert!(copy_to(0, &file, &tmp.path().join("nope")).is_err());
+        assert!(copy_to(0, &file, &sub).is_err()); // 同名冲突
+        assert!(copy_to(0, &sub, &sub).is_err()); // 自嵌套
+        assert_eq!(fs::read_to_string(&file).unwrap(), "C");
     }
 
     #[test]

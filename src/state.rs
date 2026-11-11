@@ -28,8 +28,13 @@ pub enum UndoableOp {
         from: PathBuf,
         to: PathBuf,
     },
-    /// 新建目录/文件：undo 即移除 `path`（M2-5 接入）。
-    Create { tab_id: usize, path: PathBuf },
+    /// 新建目录/文件：undo 即移除 `path`。`recursive` 标记目录树整体为新建产物
+    /// （copy 目录，M2-4b），undo 可整树移除；mkdir 只允许移除空目录（保护内容）。
+    Create {
+        tab_id: usize,
+        path: PathBuf,
+        recursive: bool,
+    },
 }
 
 #[allow(dead_code)] // 消费方：M2-2 起的撤销执行路径

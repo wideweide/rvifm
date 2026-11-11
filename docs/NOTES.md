@@ -57,6 +57,7 @@
 - 重做 `Ctrl-r` 为可选能力，不阻塞 M2。
 - 归档内只读，不进入撤销栈。
 - **删除可恢复路径选型（2026-11-11，M2-2）**：选**应用内暂存**而非 OS 回收站——`trash` crate 的 restore API 无法精确对齐单次操作（恢复粒度/匹配不可控），应用内暂存能保证 `u` 精确可逆。实现：move 到 `trash_dir`（Windows `%LOCALAPPDATA%\rvifm\trash`，Unix `$XDG_DATA_HOME` 或 `~/.local/share` 下 `rvifm/trash`），跨盘回退 copy+delete；undo = 暂存移回原位（父目录缺失则重建；原位被占用则报错防覆盖）；撤销失败时操作回栈保留可重试。`UndoableOp::Delete` 因此携带 `staged` 字段。
+- **TASKS 缺"复制"任务冲突（2026-11-11，M2-4b）**：ACCEPTANCE §4 与 SPEC §5 M2 MUST 均含"复制"，但 TASKS.md M2 清单无对应任务。按 AGENTS.md 冲突优先级（SPEC > TASKS）在 M2-7 轮补实现并登记任务 `M2-4b`（勾选态）。复制 undo 映射为 `Create` 语义（删除副本），`recursive` 标记区分 copy 目录树（整树移除）与 mkdir（仅空目录）。`p`（PutCopy）键位仍在 M10。
 
 ### 4.3 marks 与 tag
 
