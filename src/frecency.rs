@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 /// 事件类型（NOTES §4.5 events `{path, topic, kind, ts}`）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EntryKind {
     /// shell 真正 `cd` 成功 / 文件管理器跳转目录。
     Navigate,
@@ -22,7 +22,7 @@ pub enum EntryKind {
 
 /// 访问事件记录（append-only；M8-2 起持久化到 redb `events` 表，
 /// key 为单调递增 tick）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntryRecord {
     /// 路径（内部统一 `/`）。
     pub path: String,
@@ -35,7 +35,7 @@ pub struct EntryRecord {
 
 /// snapshot 条目（compaction 产物；redb `snapshot` 表，key = `path + topic`）。
 /// `keyword` 非空 = 书签；`score` 为最后一次重放后的 EMS 分数；`tick` 用于 aging。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotEntry {
     pub path: String,
     pub topic: String,

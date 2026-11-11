@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-12
 - **当前阶段**：M8 — 原生 frecency / bookmark 选择器（M0–M7 已完成）
-- **当前任务**：`M8-2` redb 三表：`events` / `snapshot` / `meta`，定义 schema 与 tick 语义
+- **当前任务**：`M8-3` `record` 子命令：短事务追加事件 + 有限重试 + `events.pending` 降级
 - **阶段状态**：M0–M7 已完成；M8 进行中（M8-1 已完成）
 
 ## 已完成
@@ -67,6 +67,7 @@
 - `M7-8`（2026-11-12）：第二阶段压缩变体——`TarKind` 五形态（Plain/Gz/Bz/Zst/Xz）；纯 Rust 解码依赖 `lzma-rs`/`bzip2-rs`/`ruzstd`；`.xz` 开档整体解压入内存（无纯 Rust 可 seek 解码器，受解压后体积约束，已记录取舍），`.bz2`/`.zst` 流式读穿透；`is_archive_file` 扩展对应扩展名；bz2/zst 夹具提交于 `tests/fixtures/`（CLI/python 生成）。**修复归档只读边界**：`physical_base()` 守卫——归档视图内 rename/move/copy/mkdir/touch/:tag-delete 一律返回"归档视图只读"（此前会误操作宿主目录）。82 单测 + 3 冒烟全绿。
 - **M7 阶段验收自检（2026-11-12，ACCEPTANCE §9）**：.zip/.tar/.tar.gz 上 `l/Enter` 进入并列出成员 ✓；归档内 j/k/h/l 导航正确、h 归档根返回宿主目录 ✓；面包屑 `host:/inner` ✓；`/` 搜索归档内可用 ✓；归档内删除/重命名/移动入口明确禁用（physical_base 守卫 + dd/tag 归档 no-op）✓；损坏/空归档不 panic 有提示 ✓；内存受最大单成员约束（xz 受解压后体积，已记录）✓；`.7z/.rar` 提示解压 ✓；归档浏览不进入撤销栈（导航不改 FS；文件操作被守卫拒绝）✓。**M7 阶段关闭。**
 - `M8-1`（2026-11-12）：frecency 数据结构与分级固化（`src/frecency.rs`）——`EntryRecord{path,topic,kind,ts}`（events 追加）、`SnapshotEntry{path,topic,keyword,score,tick}`（snapshot，keyword 非空=书签）、`ScoredEntry`（查询结果）、`Grade` 0–7 档固化：7 书签关键字命中 / 6 书签 / 5 文件名精确（smart-case）/ 4 文件名前缀 / 3 文件名包含 / 2 中间段前缀 / 1 全路径子串 / 0 无匹配；排序契约 = 档位降序→aging 分数降序→路径字典序；空查询书签置顶。**record 唯一写入入口 / pick 纯只读红线**已在模块文档声明。86 单测 + 3 冒烟全绿。
+- `M8-2`（2026-11-12）：`src/store.rs`——redb 4.5 三表（events tick→JSON / snapshot `topic\x1fpath`→JSON / meta 全局 tick 与 last_compaction）；`Store::open` 显式建三表（redb 4 不再自动建表）；`append_event` 事务内 `global_tick += 1` 并以新 tick 为 key 追加（单调递增语义）；`events_since`/`snapshot_upsert`/`snapshot_all`/`last_compaction` 读写；重开持久化验证。`EntryRecord`/`SnapshotEntry` 补 serde 派生。91 单测 + 3 冒烟全绿。
 - crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
