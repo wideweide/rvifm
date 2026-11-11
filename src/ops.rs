@@ -110,6 +110,39 @@ pub fn rename_to(tab_id: usize, path: &Path, new_name: &str) -> std::io::Result<
     })
 }
 
+/// 移动（M2-4，`:move <目标目录>`）：把 `path` 移入 `target_dir`（保留原名）。
+pub fn move_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result<UndoableOp> {
+    if !target_dir.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("目标目录不存在: {}", target_dir.display()),
+        ));
+    }
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "无效路径"))?;
+    let to = target_dir.join(name);
+    if to.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("目标已存在: {}", to.display()),
+        ));
+    }
+    // 防自嵌套：把目录移动到其自身内部会让跨盘回退的 copy 无限递归。
+    if to.starts_with(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "不能把目录移动到其自身内部",
+        ));
+    }
+    move_path(path, &to)?;
+    Ok(UndoableOp::Move {
+        tab_id,
+        from: path.to_path_buf(),
+        to,
+    })
+}
+
 /// 撤销执行（`u`）：按操作类型逆操作。
 pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
     match op {
@@ -135,8 +168,20 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
             }
             fs::rename(to, from)
         }
-        // Move/Create 的 undo 在 M2-4/M2-5 接入。
-        UndoableOp::Move { .. } | UndoableOp::Create { .. } => Ok(()),
+        UndoableOp::Move { from, to, .. } => {
+            if from.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("撤销目标已存在: {}", from.display()),
+                ));
+            }
+            if let Some(parent) = from.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            move_path(to, from)
+        }
+        // Create 的 undo 在 M2-5 接入。
+        UndoableOp::Create { .. } => Ok(()),
     }
 }
 
@@ -225,6 +270,41 @@ mod tests {
         assert!(rename_to(0, &file, "").is_err());
         // 原文件未被改动。
         assert_eq!(fs::read_to_string(&file).unwrap(), "A");
+    }
+
+    #[test]
+    fn move_to_and_undo_restores() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let file = tmp.path().join("m.txt");
+        fs::write(&file, "M").unwrap();
+
+        let op = move_to(1, &file, &sub).unwrap();
+        assert!(matches!(op, UndoableOp::Move { tab_id: 1, .. }));
+        assert!(!file.exists());
+        assert_eq!(fs::read_to_string(sub.join("m.txt")).unwrap(), "M");
+
+        undo_op(&op).unwrap();
+        assert!(!sub.join("m.txt").exists());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "M");
+    }
+
+    #[test]
+    fn move_rejects_missing_dir_and_collision() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("m.txt");
+        fs::write(&file, "M").unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("m.txt"), "X").unwrap();
+
+        // 目标目录不存在。
+        assert!(move_to(0, &file, &tmp.path().join("nope")).is_err());
+        // 目标同名冲突。
+        assert!(move_to(0, &file, &sub).is_err());
+        // 原文件未被改动。
+        assert_eq!(fs::read_to_string(&file).unwrap(), "M");
     }
 
     #[test]

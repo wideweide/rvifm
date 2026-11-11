@@ -139,6 +139,26 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             }
             Ok(false)
         }
+        Some("move") => {
+            // M2-4：移动选中条目到目标目录（保留原名；`yy`/`P` 键位在 M10 接入）。
+            let dir_arg = parts
+                .next()
+                .ok_or_else(|| "move: 缺少目标目录".to_owned())?;
+            let target = PathBuf::from(dir_arg);
+            let tab = state.active_tab();
+            let path = tab
+                .entries
+                .get(tab.cursor)
+                .map(|item| tab.location.base_dir().join(&item.name))
+                .ok_or_else(|| "move: 无选中条目".to_owned())?;
+            let op =
+                ops::move_to(state.active, &path, &target).map_err(|e| format!("move: {e}"))?;
+            state.undo_stack.push(op);
+            if let Some(tab) = state.tabs.get_mut(state.active) {
+                let _ = tab.refresh();
+            }
+            Ok(false)
+        }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
 }
@@ -1142,6 +1162,46 @@ mod tests {
         );
         let err = exec_command(&mut state, "rename old.txt").unwrap_err();
         assert!(err.starts_with("rename: 目标已存在"), "err: {err}");
+    }
+
+    #[test]
+    fn exec_move_and_undo() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(tmp.path().join("m.txt"), "M").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        // 排序后 sub/(0) 在前，m.txt 在 1：把光标放到 m.txt。
+        state.active_tab_mut().cursor = 1;
+        let target = sub.display().to_string();
+        assert_eq!(
+            exec_command(&mut state, &format!("move {target}")),
+            Ok(false)
+        );
+        assert!(!tmp.path().join("m.txt").exists());
+        assert!(sub.join("m.txt").exists());
+        assert_eq!(state.undo_stack.len(), 1);
+
+        // `u` 撤销 → 移回原目录。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.is_none());
+        assert!(tmp.path().join("m.txt").exists());
+        assert!(!sub.join("m.txt").exists());
+
+        // 错误路径：缺参数、目录不存在。
+        assert_eq!(
+            exec_command(&mut state, "move"),
+            Err("move: 缺少目标目录".to_owned())
+        );
+        let err = exec_command(&mut state, "move Z:/nope").unwrap_err();
+        assert!(err.starts_with("move: 目标目录不存在"), "err: {err}");
+
+        // 防自嵌套：刷新后只剩 sub/（cursor 钳制到 0），把目录移入自身内部被拒绝。
+        state.active_tab_mut().refresh().unwrap();
+        let err = exec_command(&mut state, &format!("move {target}")).unwrap_err();
+        assert!(err.contains("不能把目录移动到其自身内部"), "err: {err}");
     }
 
     #[test]
