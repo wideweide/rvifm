@@ -183,6 +183,27 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             }
             Ok(ExecOutcome::Done { msg: None })
         }
+        Some("copy") => {
+            // M2-4b（SPEC §5 M2 MUST）：复制选中条目到目标目录（保留原名）；
+            // undo = 删除生成的副本；`p`（PutCopy）键位在 M10 接入。
+            let dir_arg = parts
+                .next()
+                .ok_or_else(|| "copy: 缺少目标目录".to_owned())?;
+            let target = PathBuf::from(dir_arg);
+            let tab = state.active_tab();
+            let path = tab
+                .entries
+                .get(tab.cursor)
+                .map(|item| tab.location.base_dir().join(&item.name))
+                .ok_or_else(|| "copy: 无选中条目".to_owned())?;
+            let op =
+                ops::copy_to(state.active, &path, &target).map_err(|e| format!("copy: {e}"))?;
+            state.undo_stack.push(op);
+            if let Some(tab) = state.tabs.get_mut(state.active) {
+                let _ = tab.refresh();
+            }
+            Ok(ExecOutcome::Done { msg: None })
+        }
         Some(cmd @ ("mkdir" | "touch")) => {
             // M2-5：在当前目录新建目录/空文件。
             let name = parts.next().ok_or_else(|| format!("{cmd}: 缺少名字"))?;
@@ -382,7 +403,8 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
         Ok(()) => {
             // 撤销成功给出反馈（M2-6）。
             *msg = Some(format!("已撤销: {}", op.describe()));
-            // 刷新受影响 tab（tab 索引在 tabclose 后可能偏移，跨 tab 撤销在 M2-7 完善）。
+            // 刷新受影响 tab（M2-7：跨 tab 撤销刷新原 tab；tab 已关闭则跳过，
+            // 磁盘恢复不受影响；设计取向为"当前 tab 不变"，ACCEPTANCE §4）。
             if let Some(tab) = state.tabs.get_mut(op.tab_id())
                 && let Err(e) = tab.refresh()
             {
@@ -1347,6 +1369,67 @@ mod tests {
     }
 
     #[test]
+    fn cross_tab_undo_restores_origin_and_keeps_current() {
+        // M2-7：tab 1 删除 → 切到 tab 2 → `u` → tab 1 文件恢复、当前 tab 不变。
+        let dir_a = TempDir::new().unwrap(); // tab 1（index 0）
+        let dir_b = TempDir::new().unwrap(); // tab 2（index 1）
+        let file = dir_a.path().join("x.txt");
+        fs::write(&file, "X").unwrap();
+
+        let mut state = AppState::new(Tab::from_physical(dir_a.path()).unwrap());
+        state.push_tab(Tab::from_physical(dir_b.path()).unwrap());
+        state.active = 0;
+
+        // 在 tab 1 删除 x.txt（entries = [x.txt]，cursor 0）。
+        let mut msg = None;
+        execute_delete(&mut state, &mut msg, file.clone());
+        assert!(!file.exists());
+        assert_eq!(state.undo_stack.len(), 1);
+
+        // 切到 tab 2。
+        state.next_tab();
+        assert_eq!(state.active, 1);
+
+        // `u`：撤销发生在 tab 1 的删除。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.as_deref().unwrap().starts_with("已撤销: 删除"));
+        assert!(file.exists(), "tab 1 的文件应恢复");
+        assert_eq!(state.active, 1, "当前 tab 不变");
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(dir_b.path().to_path_buf())
+        );
+        // tab 1 的列表恢复包含 x.txt。
+        assert!(state.tabs[0].entries.iter().any(|i| i.name == "x.txt"));
+    }
+
+    fn exec_copy_and_undo_removes_copy() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(tmp.path().join("c.txt"), "C").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        // 排序后 sub/(0) 在前，c.txt 在 1。
+        state.active_tab_mut().cursor = 1;
+        let target = sub.display().to_string();
+        assert_eq!(
+            exec_command(&mut state, &format!("copy {target}")),
+            Ok(false)
+        );
+        // 源保留，副本出现，入栈。
+        assert!(tmp.path().join("c.txt").exists());
+        assert!(sub.join("c.txt").exists());
+        assert_eq!(state.undo_stack.len(), 1);
+
+        // `u` = 删除生成的副本（Create 语义），源不受影响。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.as_deref().unwrap().starts_with("已撤销: 新建"));
+        assert!(!sub.join("c.txt").exists());
+        assert!(tmp.path().join("c.txt").exists());
+    }
+
     fn render_highlights_cursor_row() {
         let (_tmp, mut state) = make_state(3);
         state.active_tab_mut().cursor = 1;
