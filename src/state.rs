@@ -1,20 +1,81 @@
-//! `AppState`：tabs 列表 + active 索引 + 全局撤销栈（SPEC §4.2）。
+//! `AppState`：tabs 列表 + active 索引 + 全局撤销栈（SPEC §4.2 / §4.3）。
+
+use std::path::PathBuf;
 
 use crate::tab::Tab;
 
-/// 全局撤销栈（不是 per-tab）。写入与逆序撤销在 M2-1/M2-6 接入。
-#[derive(Debug, Default)]
+/// 可逆操作记录（M2-1）。每条都携带所属 tab 与路径（ACCEPTANCE §4），
+/// 撤销栈全局共享，跨 tab 撤销据此定位。
+/// 各操作的构造与 `u` 执行逻辑随 M2-2～M2-5 接入，此前仅结构落地。
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
+pub enum UndoableOp {
+    /// 删除：`path` 为被删路径（可恢复删除的 undo 在 M2-2 接入）。
+    Delete { tab_id: usize, path: PathBuf },
+    /// 重命名：`from` → `to`（undo 反向）。
+    Rename {
+        tab_id: usize,
+        from: PathBuf,
+        to: PathBuf,
+    },
+    /// 移动：`from` → `to`（undo 反向）。
+    Move {
+        tab_id: usize,
+        from: PathBuf,
+        to: PathBuf,
+    },
+    /// 新建目录/文件：undo 即移除 `path`（M2-5 接入）。
+    Create { tab_id: usize, path: PathBuf },
+}
+
+#[allow(dead_code)] // 消费方：M2-2 起的撤销执行路径
+impl UndoableOp {
+    /// 所属 tab（跨 tab 撤销定位用）。
+    pub fn tab_id(&self) -> usize {
+        match self {
+            UndoableOp::Delete { tab_id, .. }
+            | UndoableOp::Rename { tab_id, .. }
+            | UndoableOp::Move { tab_id, .. }
+            | UndoableOp::Create { tab_id, .. } => *tab_id,
+        }
+    }
+
+    /// 主路径（提示与定位用）。
+    pub fn primary_path(&self) -> &PathBuf {
+        match self {
+            UndoableOp::Delete { path, .. } | UndoableOp::Create { path, .. } => path,
+            UndoableOp::Rename { from, .. } | UndoableOp::Move { from, .. } => from,
+        }
+    }
+}
+
+/// 全局撤销栈（不是 per-tab，SPEC §4.3）。LIFO：`u` 逆序弹出最近操作。
+#[derive(Debug, Default)]
+#[allow(dead_code)] // ops 由 M2-2 起写入、`u`（M2-2）读取
 pub struct UndoStack {
     ops: Vec<UndoableOp>,
 }
 
-/// 撤销操作记录。M1 阶段仅预留 `tab_id`（ACCEPTANCE §3）；
-/// M2-1 扩展为携带路径与操作类型的完整 `UndoableOp`。
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct UndoableOp {
-    pub tab_id: usize,
+#[allow(dead_code)] // 消费方：M2-2 起的 `u` 键处理
+impl UndoStack {
+    /// 记录一次已完成的操作。
+    pub fn push(&mut self, op: UndoableOp) {
+        self.ops.push(op);
+    }
+
+    /// 弹出最近一次操作（`u` 消费；空栈返回 None）。
+    pub fn pop(&mut self) -> Option<UndoableOp> {
+        self.ops.pop()
+    }
+
+    /// 栈内操作数（测试与提示用）。
+    pub fn len(&self) -> usize {
+        self.ops.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
+    }
 }
 
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈。
@@ -22,7 +83,7 @@ pub struct UndoableOp {
 pub struct AppState {
     pub tabs: Vec<Tab>,
     pub active: usize,
-    /// 读写接线在 M2（撤销闭环）接入。
+    /// 写入（操作完成后记录）与读取（`u` 撤销）在 M2-2 起接入。
     #[allow(dead_code)]
     pub undo_stack: UndoStack,
 }
@@ -199,10 +260,34 @@ mod tests {
     }
 
     #[test]
-    fn undo_stack_reserved_with_tab_id() {
-        let mut s = AppState::new(tab("C:/a"));
-        assert_eq!(s.undo_stack.ops.len(), 0);
-        s.undo_stack.ops.push(UndoableOp { tab_id: 0 });
-        assert_eq!(s.undo_stack.ops[0].tab_id, 0);
+    fn undo_stack_lifo_with_tab_and_path() {
+        use std::path::PathBuf;
+
+        let mut s = AppState::new(tab_at("C:/a"));
+        assert!(s.undo_stack.is_empty());
+
+        // 两次操作：tab 0 删除、tab 1 移动。
+        s.undo_stack.push(UndoableOp::Delete {
+            tab_id: 0,
+            path: PathBuf::from("C:/a/x.txt"),
+        });
+        s.undo_stack.push(UndoableOp::Move {
+            tab_id: 1,
+            from: PathBuf::from("C:/b/y.txt"),
+            to: PathBuf::from("C:/b/z/y.txt"),
+        });
+        assert_eq!(s.undo_stack.len(), 2);
+
+        // LIFO：先弹 tab 1 的移动，再弹 tab 0 的删除（`u` 逆序撤销）。
+        let op = s.undo_stack.pop().expect("stack should not be empty");
+        assert_eq!(op.tab_id(), 1);
+        assert_eq!(op.primary_path(), &PathBuf::from("C:/b/y.txt"));
+        assert!(matches!(op, UndoableOp::Move { .. }));
+
+        let op = s.undo_stack.pop().expect("stack should not be empty");
+        assert_eq!(op.tab_id(), 0);
+        assert!(matches!(op, UndoableOp::Delete { .. }));
+        assert!(s.undo_stack.is_empty());
+        assert_eq!(s.undo_stack.pop(), None);
     }
 }

@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M2 — 文件操作与 `u` 撤销（M0/M1 已完成）
-- **当前任务**：`M2-1` 定义撤销栈与 `UndoableOp` 枚举（含 tab 标识与路径）
+- **当前任务**：`M2-2` 删除（可恢复路径）+ `u` 撤销
 - **阶段状态**：M0 已完成（已发布）；M1 已完成；M2 进行中
 
 ## 已完成
@@ -39,6 +39,7 @@
 - `M1-6`（2026-11-11）：tab 状态独立性契约测试——切换 tab 后 `Location`/`cursor`/`scroll`/`search` 全部独立保持。说明：视口滚动由 `ListState` 从各 tab 的 cursor 派生（天然独立）；`Tab.scroll` 显式偏移存储留待 M10；归档 tab 回归验证按 ACCEPTANCE 留待 M7。28 单测 + 3 冒烟全绿。
 - `M1-7`（2026-11-11）：基础搜索——`/` 进入搜索输入（Enter 提交 / Esc 取消），`Tab.find_match` 大小写不敏感子串环绕匹配，提交后移动光标并写入 `Tab.search`；`n`/`N` 沿方向跳转（环绕）；无搜索词/无匹配以状态栏提示（M6-1 统一）；Normal 模式状态栏显示 `/{query}` 指示。32 单测 + 3 冒烟全绿。
 - **M1 阶段验收自检（2026-11-11，ACCEPTANCE §3）**：`j/k` 边界钳制 ✓；`l/Enter/h` 导航 + 根目录明确 no-op ✓；`gg/G/Ctrl-u/d` ✓；状态栏路径/选中项/大小/权限 ✓；`/` 与 `n/N` ✓；`:tabnew/:tabclose/gt/gT/N gt/:tabmove` ✓；两 tab 不同目录切换后状态独立（契约测试）✓；`Tab/AppState` 落地且撤销栈预留 tab 标识 ✓；归档 tab 回归按 ACCEPTANCE 自身定义留待 M7 ✓；交互真机冒烟待用户 `cargo run`。**M1 阶段关闭。**
+- `M2-1`（2026-11-11）：`UndoableOp` 枚举落地（Delete/Rename/Move/Create，全部携带 `tab_id` 与路径）+ `tab_id()`/`primary_path()` 访问器；`UndoStack` LIFO（push/pop/len/is_empty）。各操作构造与 `u` 执行随 M2-2～M2-5 接入（定向 allow 标注消费任务）。32 单测 + 3 冒烟全绿。
 
 ## 进行中
 
@@ -46,8 +47,8 @@
 
 ## 下一步
 
-1. `M2-1`：定义撤销栈与 `UndoableOp` 枚举（含 tab 标识与路径）。
-2. `M2-2`～`M2-7`：删除/重命名/移动/新建 + 逆序撤销 + 跨 tab 撤销（顺序见 [TASKS.md](TASKS.md)）。
+1. `M2-2`：删除（可恢复路径）+ `u` 撤销。
+2. `M2-3`～`M2-7`：重命名/移动/新建 + 连续逆序撤销 + 跨 tab 撤销（顺序见 [TASKS.md](TASKS.md)）。
 3. M2 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §4），确认 `u` 可逆闭环。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
