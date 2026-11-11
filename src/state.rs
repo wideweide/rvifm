@@ -206,6 +206,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            filter: None,
             tags: HashSet::new(),
         }
     }
@@ -219,6 +220,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            filter: None,
             tags: HashSet::new(),
         }
     }
