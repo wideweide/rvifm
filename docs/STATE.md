@@ -64,6 +64,8 @@
 - `M6-1`（2026-11-12）：错误处理收口——`enter_selected`/`return_parent` 改返回 `io::Result`，导航失败（目录被删/权限）在状态栏提示"进入失败/返回失败: …"（不再静默吞错）；确认提示已覆盖 `dd` 与 `:tag delete`，其余操作为显式输入命令。66 单测 + 3 冒烟全绿。
 - `M6-2`（2026-11-12）：`:help` 帮助覆盖层为正式帮助页——覆盖导航（j/k/l/h/gg/G/Ctrl-u/d）、搜索（/ n/N =）、选择与标记（v/t/:tag）、文件操作（dd/u/:rename/:move/:copy/:mkdir/:touch/:cd/:q）、多标签（:tabnew/:tabclose/:tabmove/gt/gT/N gt）；任意键返回。66 单测 + 3 冒烟全绿。
 - `M6-4`（2026-11-12）：大目录性能检查——10,500 项真实目录：加载 + 单帧渲染（TestBackend）断言各 < 2s（宽松 CI 安全上限）；退出路径逐键响应、不经过批量渲染，无阻塞。67 单测 + 3 冒烟全绿。
+- `M6-3`（2026-11-12）：README 更新（状态行、特性清单、里程碑表 M0–M5 已完成/M6 进行中、pick/record 标注为 M8 后续）+ `Cargo.toml` 版本 → `0.1.0`。
+- `M6-5`（2026-11-12，进行中）：ci.yml 增加 tag 触发（v*）的 `release` job——双平台 `--release --locked` 构建 + `--version` 冒烟 + tar.gz 归档上传（needs: test）；本地 Win2016 冒烟在发布门禁检查中执行。
 
 ## 进行中
 

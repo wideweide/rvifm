@@ -29,3 +29,34 @@ jobs:
         run: cargo build --locked
       - name: test
         run: cargo test --locked
+
+  # M6-5 发布门禁：tag 推送（v*）时双平台 --release 构建并产出归档。
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build --release
+        run: cargo build --release --locked
+      - name: smoke --version
+        run: cargo run --release --locked -- --version
+      - name: archive
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ -f target/release/rvifm.exe ]; then
+            tar czf dist/rvifm-${GITHUB_REF_NAME}-windows-x64.tar.gz -C target/release rvifm.exe
+          else
+            tar czf dist/rvifm-${GITHUB_REF_NAME}-linux-x64.tar.gz -C target/release rvifm
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rvifm-${{ matrix.os }}
+          path: dist/
