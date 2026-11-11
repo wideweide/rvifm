@@ -264,7 +264,7 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
 /// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
 /// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`gt`/`gT`/`N gt`、
 /// `/`、`n`/`N`、`dd`（删除确认）、`u`（撤销）、`v`（可视选择）、Esc（退出选择）、
-/// `q`/`Ctrl-C`、`:`。
+/// `t`（tag 标记）、`q`/`Ctrl-C`、`:`。
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
@@ -350,6 +350,11 @@ fn handle_key(
         KeyCode::Char('v') => {
             input.count = None;
             state.active_tab_mut().toggle_visual();
+        }
+        KeyCode::Char('t') => {
+            // M3-2：切换光标条目的 tag（文件标记，≠ mark）。
+            input.count = None;
+            state.active_tab_mut().toggle_tag();
         }
         KeyCode::Char('j') => {
             input.count = None;
@@ -516,10 +521,18 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             } else {
                 item.name.clone()
             };
-            // 可视选择范围内的行反显（M3-1）；光标行由 highlight_style 叠加。
+            // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
+            // 光标行由 highlight_style 叠加。
             let mut li = ListItem::new(Line::from(label));
+            let mut mods = Modifier::empty();
             if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
-                li = li.style(Style::new().add_modifier(Modifier::REVERSED));
+                mods |= Modifier::REVERSED;
+            }
+            if tab.tags.contains(&item.name) {
+                mods |= Modifier::BOLD;
+            }
+            if mods != Modifier::empty() {
+                li = li.style(Style::new().add_modifier(mods));
             }
             li
         })
@@ -562,6 +575,11 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 // M3-1：可视选择指示（含行数，闭区间）。
                 spans.push(Span::from(format!("  VISUAL ({} selected)", hi - lo + 1)));
             }
+            let tagged = tab.tagged_count();
+            if tagged > 0 {
+                // M3-2：tag 计数指示。
+                spans.push(Span::from(format!("  {tagged} tagged")));
+            }
             if let Some(m) = msg {
                 spans.push(Span::styled(
                     format!("  [{m}]"),
@@ -578,6 +596,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 mod tests {
     use super::*;
     use crate::tab::Location;
+    use std::collections::HashSet;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -622,6 +641,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            tags: HashSet::new(),
         }
     }
 
@@ -1556,6 +1576,80 @@ mod tests {
             .map(|x| buffer[(x, 7)].symbol())
             .collect::<String>();
         assert!(status.contains("VISUAL (2 selected)"), "status: {status}");
+    }
+
+    #[test]
+    fn tag_toggle_flow() {
+        // M3-2：t 标记多个文件，再次 t 取消；空目录 no-op；每 tab 独立。
+        let (_tmp, mut state) = make_state(3);
+        let mut input = InputState::default();
+
+        // 标记 cursor 0（f00），j 后标记 f01。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().tagged_count(), 1);
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().tagged_count(), 2);
+        assert!(state.active_tab().tags.contains("f00"));
+        assert!(state.active_tab().tags.contains("f01"));
+
+        // 再次 t 取消 f01。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().tagged_count(), 1);
+
+        // 每 tab 独立。
+        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+        assert_eq!(state.active_tab().tagged_count(), 0);
+        assert_eq!(state.tabs[0].tagged_count(), 1);
+
+        // 空目录 no-op。
+        let empty_tmp = TempDir::new().unwrap();
+        let mut empty = Tab::from_physical(empty_tmp.path()).unwrap();
+        empty.toggle_tag();
+        assert_eq!(empty.tagged_count(), 0);
+    }
+
+    #[test]
+    fn render_shows_tag_bold_and_count() {
+        let (_tmp, mut state) = make_state(3);
+        state.active_tab_mut().tags.insert("f01".to_owned());
+
+        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // 标记行加粗，未标记行不加粗。
+        assert!(buffer[(0, 1)].modifier.contains(Modifier::BOLD));
+        assert!(!buffer[(0, 0)].modifier.contains(Modifier::BOLD));
+
+        // 状态栏计数。
+        let status = (0..120u16)
+            .map(|x| buffer[(x, 7)].symbol())
+            .collect::<String>();
+        assert!(status.contains("1 tagged"), "status: {status}");
     }
 
     #[test]

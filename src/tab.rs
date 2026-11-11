@@ -3,6 +3,7 @@
 //! 归档浏览行为在 M7 接入；`Location::Archive` 的数据形状现在固定，
 //! 避免后期改动所有 tab 相关代码。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// 浏览位置：物理目录或归档内虚拟路径（只读）。
@@ -59,8 +60,8 @@ pub struct SearchState {
 }
 
 /// 每标签独立状态：位置、条目、光标、滚动、搜索、历史（SPEC §4.2）。
-/// `visual` 为可视选择锚点（M3-1）；`scroll` 为显式偏移预留（视口滚动当前
-/// 由 `ListState` 从 cursor 派生，显式存储待 M10）；其余字段均已接线。
+/// `visual` 为可视选择锚点（M3-1）；`tags` 为文件标记（M3-2）；`scroll` 为
+/// 显式偏移预留（视口滚动当前由 `ListState` 从 cursor 派生，显式存储待 M10）。
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Tab {
@@ -72,6 +73,9 @@ pub struct Tab {
     pub history: Vec<Location>,
     /// 可视选择锚点（`v` 进入时的 cursor；None = 非可视模式，M3-1）。
     pub visual: Option<usize>,
+    /// `t` 标记的文件名集合（tag：文件级标记，供 M3 批量操作。
+    /// **tag ≠ mark**——mark 是路径跳转标记，本项目不实现，见 SPEC OUT_OF_SCOPE）。
+    pub tags: HashSet<String>,
 }
 
 impl Tab {
@@ -85,6 +89,7 @@ impl Tab {
             search: None,
             history: Vec::new(),
             visual: None,
+            tags: HashSet::new(),
         })
     }
 
@@ -177,6 +182,28 @@ impl Tab {
     pub fn visual_range(&self) -> Option<(usize, usize)> {
         self.visual
             .map(|a| (a.min(self.cursor), a.max(self.cursor)))
+    }
+
+    /// 切换光标所在条目的 tag 标记（M3-2，`t`）。空目录为 no-op。
+    /// tag 按文件名记录；目录重读后仍按名匹配（改名/删除的条目在批量操作时跳过）。
+    pub fn toggle_tag(&mut self) {
+        if let Some(item) = self.entries.get(self.cursor) {
+            let name = item.name.clone();
+            if !self.tags.remove(&name) {
+                self.tags.insert(name);
+            }
+        }
+    }
+
+    /// 已标记数量（M3-2 状态栏与 M3-3 批量操作用）。
+    pub fn tagged_count(&self) -> usize {
+        self.tags.len()
+    }
+
+    /// 清空全部标记（M3-4：批量操作完成后调用；此前仅测试使用）。
+    #[allow(dead_code)]
+    pub fn clear_tags(&mut self) {
+        self.tags.clear();
     }
 
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
@@ -429,6 +456,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             visual: None,
+            tags: HashSet::new(),
         };
         root_tab.return_parent();
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));
