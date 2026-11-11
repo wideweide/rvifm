@@ -75,7 +75,7 @@
 ## M7 — 归档浏览（只读 VFS）
 
 - [ ] M7-1 定义 `Location` 与 `ArchiveFs` trait
-- [ ] M7-2 实现 `ZipFs`（基于 `zip` crate）：list/read/metadata
+- [x] M7-2 实现 `ZipFs`（基于 `zip` crate）：list/read/metadata
 - [ ] M7-3 实现 `TarFs`（基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`
 - [ ] M7-4 导航层接入：归档文件上 `l`/`Enter` 进入虚拟目录，`h` 返回物理父目录
 - [ ] M7-5 状态栏/面包屑显示 `host:/inner/path`
