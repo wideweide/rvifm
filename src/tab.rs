@@ -142,6 +142,17 @@ impl Tab {
         }
     }
 
+    /// 重读当前物理目录条目并钳制光标（删除/撤销后刷新，M2-2）。
+    /// 归档位置为 no-op（M7 接入）。
+    pub fn refresh(&mut self) -> std::io::Result<()> {
+        let Location::Physical(dir) = &self.location else {
+            return Ok(());
+        };
+        self.entries = load_entries(dir)?;
+        self.cursor = self.cursor.min(self.entries.len().saturating_sub(1));
+        Ok(())
+    }
+
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
     /// 读取失败时不导航、不产生副作用（错误提示在 M6-1 接入）。
     /// 归档内导航在 M7 接入，当前仅物理目录。
