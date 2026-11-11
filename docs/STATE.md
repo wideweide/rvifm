@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-12
-- **当前阶段**：M7 — 归档浏览（只读 VFS）（M0–M6 已完成，v0.1.0 已发布）
-- **当前任务**：`M7-8` 第二阶段：`.tar.xz` / `.tar.bz2` / `.tar.zst`
-- **阶段状态**：M0–M6 已完成（v0.1.0 已发布至 crates.io）；M7 进行中（M7-1～M7-7、M7-9 已完成，M7-8 待做）
+- **当前阶段**：M8 — 原生 frecency / bookmark 选择器（M0–M7 已完成）
+- **当前任务**：`M8-1` 定义 `EntryRecord` / `ScoredEntry` / `Grade` 数据结构与 0–7 分级档位
+- **阶段状态**：M0–M7 已完成；M8 进行中
 
 ## 已完成
 
@@ -64,6 +64,8 @@
 - `M7-4`（2026-11-12）：归档导航接入——`l/Enter` 对归档文件（.zip/.tar/.tar.gz/.tgz）进入 `Location::Archive` 虚拟根目录，`h` 逐层上返并在归档根处回到宿主目录；损坏归档进入返回 Err（M6-1 提示）。**CI clippy 门禁升级为 `--all-targets`**（测试代码此前不在 lint 范围，暴露并修复两处被顶掉的 `#[test]`）。74 单测 + 3 冒烟全绿。
 - `M7-5/M7-6/M7-9`（2026-11-12）：面包屑 `host:/inner/path` 渲染测试；归档内 `/` 搜索复用 M4 链路验证；`.7z`/`.rar` 进入返回 Unsupported 错误（"该归档格式不支持虚拟浏览，请解压后浏览"）。79 单测 + 3 冒烟全绿。
 - `M7-7`（2026-11-12）：错误处理覆盖——损坏（InvalidData）、空归档（可开、列表空）、超大索引（索引按条目数而非归档字节数增长）；加密 zip 走同一 InvalidData 路径（样本构造依赖 zip 可选 feature，行为由 open 级错误统一覆盖）。79 单测 + 3 冒烟全绿。
+- `M7-8`（2026-11-12）：第二阶段压缩变体——`TarKind` 五形态（Plain/Gz/Bz/Zst/Xz）；纯 Rust 解码依赖 `lzma-rs`/`bzip2-rs`/`ruzstd`；`.xz` 开档整体解压入内存（无纯 Rust 可 seek 解码器，受解压后体积约束，已记录取舍），`.bz2`/`.zst` 流式读穿透；`is_archive_file` 扩展对应扩展名；bz2/zst 夹具提交于 `tests/fixtures/`（CLI/python 生成）。**修复归档只读边界**：`physical_base()` 守卫——归档视图内 rename/move/copy/mkdir/touch/:tag-delete 一律返回"归档视图只读"（此前会误操作宿主目录）。82 单测 + 3 冒烟全绿。
+- **M7 阶段验收自检（2026-11-12，ACCEPTANCE §9）**：.zip/.tar/.tar.gz 上 `l/Enter` 进入并列出成员 ✓；归档内 j/k/h/l 导航正确、h 归档根返回宿主目录 ✓；面包屑 `host:/inner` ✓；`/` 搜索归档内可用 ✓；归档内删除/重命名/移动入口明确禁用（physical_base 守卫 + dd/tag 归档 no-op）✓；损坏/空归档不 panic 有提示 ✓；内存受最大单成员约束（xz 受解压后体积，已记录）✓；`.7z/.rar` 提示解压 ✓；归档浏览不进入撤销栈（导航不改 FS；文件操作被守卫拒绝）✓。**M7 阶段关闭。**
 - crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
@@ -81,11 +83,11 @@
 
 ## 下一步
 
-1. crates.io `0.1.0` 人工发布（用户）。
-2. `M7-1`：定义 `Location` 与 `ArchiveFs` trait。
-3. `M7-2`～`M7-9`：ZipFs/TarFs、导航接入、错误处理、压缩变体（顺序见 [TASKS.md](TASKS.md)）。
-4. M7 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §9）。
-5. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
+1. `M8-1`：定义 `EntryRecord` / `ScoredEntry` / `Grade` 数据结构与 0–7 分级档位。
+2. `M8-2`～`M8-9`：redb 三表、record/pick 子命令、评分重放、compaction、shell hook（顺序见 [TASKS.md](TASKS.md)）。
+3. M8 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §10）。
+4. M9–M11 按计划推进（图标主题、声明式键位、预览与打开）。
+5. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建。
 
 ## 阻塞与风险
 
