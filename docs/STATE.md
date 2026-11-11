@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-11
-- **当前阶段**：M0 — 骨架 + SPEC + 双平台 CI
-- **当前任务**：`M0-8` 发布 `0.1.0-alpha.1`（人工执行，crates.io 凭据不进 CI）
-- **阶段状态**：进行中
+- **当前阶段**：M1 — 核心浏览、多标签与 vim 按键（M0 已完成并发布 `0.1.0-alpha.1`）
+- **当前任务**：`M1-0` 定义 `Tab` / `AppState` 结构：tabs 列表 + active 索引 + 独立状态字段
+- **阶段状态**：M0 已完成；M1 进行中
 
 ## 已完成
 
@@ -29,16 +29,18 @@
 - `M0-6`（2026-11-11）：`--version` / `-V` / `--help` / `-h` 旗标（TUI 初始化前处理，无 TTY 可跑）；未知参数 stderr 提示并以 exit 2 退出；`tests/cli.rs` 3 项冒烟（版本输出、帮助输出、未知参数非零退出）。
 - `M0-7`（2026-11-11）：`LICENSE-MIT` / `LICENSE-APACHE` 全文建档，`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段原本即一致，未改动。`cargo package --list` 验证通过（含两个 LICENSE 文件）。遗留：manifest 无 `repository`/`homepage` 的 warning 留待 M0-8 发布前补。
 - **M0 验收自检（2026-11-11，除 M0-8 外全部通过）**：build 成功且 rvifm 可启动 ✓；TUI 显示目录列表与状态栏（TestBackend 单测）✓；`q`/`Ctrl-C` 退出无 panic（单测；真机交互冒烟待用户）✓；`--version`/`--help` 输出且 exit 0 ✓；SPEC 分级与 PLAN 一致（M0-2）✓；双平台 CI 绿 ✓。剩余：M0-8 人工发布。
+- **M0-8 完成（2026-11-11）**：`cargo publish` 成功，[rvifm 0.1.0-alpha.1](https://crates.io/crates/rvifm) 上线（API 确认 max_version）；`cargo install rvifm --version 0.1.0-alpha.1` 成功，安装版 `--version` 输出 `0.1.0-alpha.1` 且 exit 0。**M0 阶段全部任务完成，阶段关闭。**
 
 ## 进行中
 
-- `M0-8` 人工发布：机器可执行部分已就绪——版本 `0.1.0-alpha.1`、`repository` 字段、README 状态行刷新、`cargo package`（19 文件 / 64.4KiB）与 `cargo package --list` 通过、crates.io 名称复查 404 未被占用（2026-11-11）。**待人工**：① `cargo publish`（需 crates.io 凭据，不在 CI/Agent 内执行）；② `cargo install rvifm --version 0.1.0-alpha.1` 验证。
+- 无。
 
 ## 下一步
 
-1. `M0-8`：M0 全部任务完成且双平台 CI 全绿后，人工发布 `0.1.0-alpha.1` 并用 `cargo install` 验证。
-2. 跑通 M0 验收，进入 M1。
-3. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变 M0 优先级）。
+1. `M1-0`：定义 `Tab` / `AppState` 结构（tabs + active + 独立状态字段；撤销栈预留 tab 标识）。
+2. `M1-1`～`M1-7`：目录列表渲染与 `j/k`、进退目录、翻页、状态栏元数据、多标签、搜索（顺序见 [TASKS.md](TASKS.md)）。
+3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
+4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 
 ## 阻塞与风险
 
