@@ -83,6 +83,16 @@ impl Tab {
         self.cursor = next.clamp(0, max) as usize;
     }
 
+    /// 跳到首项（M1-3，`gg`）。
+    pub fn cursor_top(&mut self) {
+        self.cursor = 0;
+    }
+
+    /// 跳到末项（M1-3，`G`）。空目录停在 0。
+    pub fn cursor_bottom(&mut self) {
+        self.cursor = self.entries.len().saturating_sub(1);
+    }
+
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
     /// 读取失败时不导航、不产生副作用（错误提示在 M6-1 接入）。
     /// 归档内导航在 M7 接入，当前仅物理目录。

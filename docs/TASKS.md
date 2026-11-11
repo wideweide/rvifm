@@ -26,7 +26,7 @@
 - [x] M1-0 定义 `Tab` / `AppState` 结构：tabs 列表 + active 索引 + 独立状态字段
 - [x] M1-1 目录列表渲染与光标移动 `j/k`
 - [x] M1-2 进入/返回目录 `l/h`、刷新
-- [ ] M1-3 `gg/G`、`Ctrl-u/Ctrl-d`
+- [x] M1-3 `gg/G`、`Ctrl-u/Ctrl-d`
 - [ ] M1-4 状态栏显示路径、选中项、文件大小/权限
 - [ ] M1-5 多标签：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`
 - [ ] M1-6 每个 tab 独立的 `Location`、光标、滚动、搜索状态
