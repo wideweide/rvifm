@@ -125,6 +125,15 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
     exec_command_impl(state, line).map(|o| matches!(o, ExecOutcome::Quit))
 }
 
+/// 取当前 tab 的物理操作基准目录；归档视图只读（M7 边界），返回错误提示。
+/// （归档内条目不可改——SPEC §4.5"归档内不出现删除/重命名/移动入口"。）
+fn physical_base(state: &AppState) -> Result<PathBuf, String> {
+    match &state.active_tab().location {
+        Location::Physical(p) => Ok(p.clone()),
+        Location::Archive { .. } => Err("归档视图只读（解压后可修改）".to_owned()),
+    }
+}
+
 /// 执行最小 `:` 命令（M1-5/M2-6）。
 fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     let mut parts = line.split_whitespace();
@@ -179,11 +188,12 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let new_name = parts
                 .next()
                 .ok_or_else(|| "rename: 缺少新名字".to_owned())?;
+            let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
                 .entries
                 .get(tab.cursor)
-                .map(|item| tab.location.base_dir().join(&item.name))
+                .map(|item| base.join(&item.name))
                 .ok_or_else(|| "rename: 无选中条目".to_owned())?;
             let op = ops::rename_to(state.active, &path, new_name)
                 .map_err(|e| format!("rename: {e}"))?;
@@ -200,11 +210,12 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .next()
                 .ok_or_else(|| "move: 缺少目标目录".to_owned())?;
             let target = PathBuf::from(dir_arg);
+            let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
                 .entries
                 .get(tab.cursor)
-                .map(|item| tab.location.base_dir().join(&item.name))
+                .map(|item| base.join(&item.name))
                 .ok_or_else(|| "move: 无选中条目".to_owned())?;
             let op =
                 ops::move_to(state.active, &path, &target).map_err(|e| format!("move: {e}"))?;
@@ -222,11 +233,12 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .next()
                 .ok_or_else(|| "copy: 缺少目标目录".to_owned())?;
             let target = PathBuf::from(dir_arg);
+            let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
                 .entries
                 .get(tab.cursor)
-                .map(|item| tab.location.base_dir().join(&item.name))
+                .map(|item| base.join(&item.name))
                 .ok_or_else(|| "copy: 无选中条目".to_owned())?;
             let op =
                 ops::copy_to(state.active, &path, &target).map_err(|e| format!("copy: {e}"))?;
@@ -258,7 +270,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                         .next()
                         .ok_or_else(|| format!("tag {action}: 缺少目标目录"))?;
                     let target = PathBuf::from(dir_arg);
-                    let base = state.active_tab().location.base_dir().to_path_buf();
+                    let base = physical_base(state)?;
                     let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
                     let mut done = 0;
                     let mut skipped = 0;
@@ -309,7 +321,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
         Some(cmd @ ("mkdir" | "touch")) => {
             // M2-5：在当前目录新建目录/空文件。
             let name = parts.next().ok_or_else(|| format!("{cmd}: 缺少名字"))?;
-            let base = state.active_tab().location.base_dir().to_path_buf();
+            let base = physical_base(state)?;
             let result = if cmd == "mkdir" {
                 ops::create_dir(state.active, &base, name)
             } else {
@@ -525,9 +537,12 @@ fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf)
 }
 
 /// 执行确认后的标记批量删除（M3-3）：逐文件入暂存并各生成撤销记录；
-/// 已消失的标记条目跳过。标记集不清空（M3-4 接入）。
+/// 已消失的标记条目跳过。归档视图只读（M7 边界）。
 fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>) {
-    let base = state.active_tab().location.base_dir().to_path_buf();
+    let Ok(base) = physical_base(state) else {
+        *msg = Some("归档视图只读（解压后可修改）".to_owned());
+        return;
+    };
     let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
     let mut done = 0;
     let mut first_err = None;
@@ -2200,6 +2215,36 @@ mod tests {
             KeyModifiers::NONE,
         );
         assert_eq!(state.active_tab().cursor, 1); // 无第二匹配则停在同一处
+    }
+
+    #[test]
+    fn archive_view_is_readonly_for_commands() {
+        // M7 验收：归档视图内文件操作命令被拒绝（不触碰宿主目录）。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().location = Location::Archive {
+            host: zip_path,
+            inner: PathBuf::new(),
+        };
+
+        for cmd in [
+            "rename x",
+            "move Z:/tmp",
+            "copy Z:/tmp",
+            "mkdir d",
+            "touch t",
+        ] {
+            let err = exec_command_impl(&mut state, cmd).unwrap_err();
+            assert!(err.contains("归档视图只读"), "cmd={cmd} err={err}");
+        }
+
+        // 标记批量删除：静默拒绝进状态栏。
+        state.active_tab_mut().tags.insert("main.rs".to_owned());
+        let mut msg = None;
+        execute_tag_delete(&mut state, &mut msg);
+        assert_eq!(msg.as_deref(), Some("归档视图只读（解压后可修改）"));
     }
 
     #[test]
