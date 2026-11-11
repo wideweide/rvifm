@@ -51,6 +51,20 @@ impl UndoableOp {
             UndoableOp::Rename { from, .. } | UndoableOp::Move { from, .. } => from,
         }
     }
+
+    /// 人类可读描述（`u` 成功后的状态栏提示，M2-6）。
+    pub fn describe(&self) -> String {
+        match self {
+            UndoableOp::Delete { path, .. } => format!("删除 {}", path.display()),
+            UndoableOp::Rename { from, to, .. } => {
+                format!("重命名 {} -> {}", from.display(), to.display())
+            }
+            UndoableOp::Move { from, to, .. } => {
+                format!("移动 {} -> {}", from.display(), to.display())
+            }
+            UndoableOp::Create { path, .. } => format!("新建 {}", path.display()),
+        }
+    }
 }
 
 /// 全局撤销栈（不是 per-tab，SPEC §4.3）。LIFO：`u` 逆序弹出最近操作。
