@@ -8,6 +8,7 @@
 mod app;
 mod archive;
 mod config;
+mod frecency;
 mod ops;
 mod state;
 mod tab;
