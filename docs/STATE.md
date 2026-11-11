@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-11
 - **当前阶段**：M1 — 核心浏览、多标签与 vim 按键（M0 已完成并发布 `0.1.0-alpha.1`）
-- **当前任务**：`M1-4` 状态栏显示路径、选中项、文件大小/权限
+- **当前任务**：`M1-5` 多标签：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`
 - **阶段状态**：M0 已完成；M1 进行中
 
 ## 已完成
@@ -34,6 +34,7 @@
 - `M1-1`（2026-11-11）：`Tab::move_cursor(delta)` 钳制两端、空目录 no-op；`j/k` 接入 `handle_key`；渲染改用 `ListState` + `highlight_style(REVERSED)` 高亮选中行（TestBackend 断言 modifier）。13 单测 + 3 冒烟全绿。
 - `M1-2`（2026-11-11）：`l`/`Enter` 进入选中目录、`h` 返回父目录；导航即重读条目（刷新）；读取失败不导航不产生副作用（提示在 M6-1）；文件系统根 `h` 为 no-op（Windows 盘根 parent() 为 None）；进入/返回均写入 `Tab.history`。16 单测 + 3 冒烟全绿。
 - `M1-3`（2026-11-11）：`gg`（`g` 前缀 Pending 序列，机制与 M1-5 `gt/gT` 共用）、`G`、`Ctrl-u/d` 半页翻页（步进 = (视口高-1)/2，随终端尺寸计算）。语义修正：待决序列优先于退出与普通分发，Release 先于序列过滤（避免 Release 误消费序列）。19 单测 + 3 冒烟全绿。
+- `M1-4`（2026-11-11）：`FileItem` 增加 `size`/`perm`（unix 3 位八进制 / Windows `ro`/`rw`，加载时物化避免渲染层 cfg）；状态栏 = `路径 | 选中项 [大小] 权限 | N items`（目录省略大小）；`format_size` B/KiB/MiB/GiB。22 单测 + 3 冒烟全绿。
 
 ## 进行中
 
@@ -41,8 +42,8 @@
 
 ## 下一步
 
-1. `M1-4`：状态栏显示路径、选中项、文件大小/权限。
-2. `M1-5`～`M1-7`：多标签、tab 状态独立验证、搜索（顺序见 [TASKS.md](TASKS.md)）。
+1. `M1-5`：多标签 `:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`。
+2. `M1-6`～`M1-7`：tab 状态独立验证、搜索（顺序见 [TASKS.md](TASKS.md)）。
 3. M1 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §3）。
 4. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建（不改变当前优先级）。
 
