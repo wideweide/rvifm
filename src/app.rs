@@ -68,6 +68,8 @@ enum InputMode {
     Search { input: String },
     /// 删除确认模式：`y` 执行，其余取消（M2-2）。
     Confirm { path: PathBuf },
+    /// 标记批量删除确认模式（`:tag delete`，M3-3）。
+    ConfirmTagDelete,
 }
 
 /// 命令行单键处理结果。
@@ -105,6 +107,8 @@ enum ExecOutcome {
     Quit,
     /// 命令完成，可携带状态栏提示。
     Done { msg: Option<String> },
+    /// 请求确认批量删除标记文件（`:tag delete`，M3-3）。
+    ConfirmTagDelete,
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -203,6 +207,72 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 let _ = tab.refresh();
             }
             Ok(ExecOutcome::Done { msg: None })
+        }
+        Some("tag") => {
+            // M3-3：对标记集合执行批量复制/移动/删除。
+            // 逐文件入撤销栈（LIFO 逆序还原）；已消失的标记条目跳过。
+            let action = parts
+                .next()
+                .ok_or_else(|| "tag: 缺少动作（delete / copy|move <目录>）".to_owned())?;
+            match action {
+                "delete" => {
+                    if state.active_tab().tagged_count() == 0 {
+                        Ok(ExecOutcome::Done {
+                            msg: Some("tag: 无标记文件".to_owned()),
+                        })
+                    } else {
+                        Ok(ExecOutcome::ConfirmTagDelete)
+                    }
+                }
+                "copy" | "move" => {
+                    let dir_arg = parts
+                        .next()
+                        .ok_or_else(|| format!("tag {action}: 缺少目标目录"))?;
+                    let target = PathBuf::from(dir_arg);
+                    let base = state.active_tab().location.base_dir().to_path_buf();
+                    let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
+                    let mut done = 0;
+                    let mut skipped = 0;
+                    let mut first_err = None;
+                    for name in &names {
+                        let path = base.join(name);
+                        if !path.exists() {
+                            skipped += 1;
+                            continue;
+                        }
+                        let result = if action == "copy" {
+                            ops::copy_to(state.active, &path, &target)
+                        } else {
+                            ops::move_to(state.active, &path, &target)
+                        };
+                        match result {
+                            Ok(op) => {
+                                state.undo_stack.push(op);
+                                done += 1;
+                            }
+                            Err(e) => {
+                                if first_err.is_none() {
+                                    first_err = Some(format!("{action} {name}: {e}"));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(tab) = state.tabs.get_mut(state.active) {
+                        let _ = tab.refresh();
+                    }
+                    let mut msg = format!("tag {action}: {done} 完成");
+                    if skipped > 0 {
+                        msg.push_str(&format!(", {skipped} 跳过"));
+                    }
+                    if let Some(e) = first_err {
+                        msg.push_str(&format!("; 错误: {e}"));
+                    }
+                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                }
+                other => Err(format!(
+                    "tag: 未知动作 {other}（delete / copy|move <目录>）"
+                )),
+            }
         }
         Some(cmd @ ("mkdir" | "touch")) => {
             // M2-5：在当前目录新建目录/空文件。
@@ -410,6 +480,40 @@ fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf)
     }
 }
 
+/// 执行确认后的标记批量删除（M3-3）：逐文件入暂存并各生成撤销记录；
+/// 已消失的标记条目跳过。标记集不清空（M3-4 接入）。
+fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>) {
+    let base = state.active_tab().location.base_dir().to_path_buf();
+    let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
+    let mut done = 0;
+    let mut first_err = None;
+    for name in &names {
+        let path = base.join(name);
+        if !path.exists() {
+            continue; // 标记后条目已消失：跳过
+        }
+        match ops::delete_to_trash(state.active, &path) {
+            Ok(op) => {
+                state.undo_stack.push(op);
+                done += 1;
+            }
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(format!("删除 {name}: {e}"));
+                }
+            }
+        }
+    }
+    if let Some(tab) = state.tabs.get_mut(state.active) {
+        let _ = tab.refresh();
+    }
+    let mut m = format!("tag delete: {done} 完成");
+    if let Some(e) = first_err {
+        m.push_str(&format!("; 错误: {e}"));
+    }
+    *msg = Some(m);
+}
+
 /// `u` 撤销（M2-2）：弹出最近操作并执行逆操作；失败回退入栈保留可重试。
 fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
     let Some(op) = state.undo_stack.pop() else {
@@ -455,6 +559,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         match exec_command_impl(&mut state, line.trim()) {
                             Ok(ExecOutcome::Quit) => return Ok(()),
                             Ok(ExecOutcome::Done { msg: m }) => msg = m,
+                            Ok(ExecOutcome::ConfirmTagDelete) => {
+                                mode = InputMode::ConfirmTagDelete;
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -476,6 +583,18 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 let path = std::mem::take(path);
                                 mode = InputMode::Normal;
                                 execute_delete(&mut state, &mut msg, path);
+                            }
+                            _ => mode = InputMode::Normal,
+                        }
+                    }
+                }
+                InputMode::ConfirmTagDelete => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            // y / Enter 确认批量删除；n / Esc / 其他 = 取消（无副作用）。
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                mode = InputMode::Normal;
+                                execute_tag_delete(&mut state, &mut msg);
                             }
                             _ => mode = InputMode::Normal,
                         }
@@ -548,6 +667,10 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input } => Line::from(format!("/{input}")),
         InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
+        InputMode::ConfirmTagDelete => {
+            let n = tab.tagged_count();
+            Line::from(format!("删除 {n} 个标记文件? [y/N]"))
+        }
         InputMode::Normal => {
             let selected = match tab.entries.get(tab.cursor) {
                 Some(item) => {
@@ -1650,6 +1773,82 @@ mod tests {
             .map(|x| buffer[(x, 7)].symbol())
             .collect::<String>();
         assert!(status.contains("1 tagged"), "status: {status}");
+    }
+
+    #[test]
+    fn tag_batch_operations() {
+        // M3-3：:tag copy / move / delete 对标记集合生效，未标记不受影响。
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        fs::write(tmp.path().join("b.txt"), "B").unwrap();
+        fs::write(tmp.path().join("c.txt"), "C").unwrap(); // 不标记
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+
+        // 标记 a.txt、b.txt（排序后 a(0) b(1) c(2)）。
+        state.active_tab_mut().tags.insert("a.txt".to_owned());
+        state.active_tab_mut().tags.insert("b.txt".to_owned());
+
+        // 批量复制到 sub/。
+        let target = sub.display().to_string();
+        match exec_command_impl(&mut state, &format!("tag copy {target}")) {
+            Ok(ExecOutcome::Done { msg }) => {
+                let m = msg.unwrap();
+                assert!(m.contains("2 完成"), "msg: {m}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        assert!(sub.join("a.txt").exists() && sub.join("b.txt").exists());
+        assert!(!sub.join("c.txt").exists(), "未标记文件不受影响");
+        assert!(tmp.path().join("a.txt").exists(), "copy 源保留");
+
+        // 两次复制各一条撤销记录，逆序撤销还原副本。
+        assert_eq!(state.undo_stack.len(), 2);
+        let mut msg = None;
+        undo_last(&mut state, &mut msg);
+        undo_last(&mut state, &mut msg);
+        assert!(!sub.join("a.txt").exists() && !sub.join("b.txt").exists());
+
+        // 批量移动。
+        assert!(matches!(
+            exec_command_impl(&mut state, &format!("tag move {target}")),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        assert!(!tmp.path().join("a.txt").exists() && sub.join("a.txt").exists());
+
+        // 批量删除：tag move 后旧标记按名解析失效（跳过），
+        // 在当前目录新建 d.txt / e.txt 并标记，验证批量删除 + 逐条 u。
+        fs::write(tmp.path().join("d.txt"), "D").unwrap();
+        fs::write(tmp.path().join("e.txt"), "E").unwrap();
+        state.active_tab_mut().refresh().unwrap();
+        state.active_tab_mut().clear_tags();
+        state.active_tab_mut().tags.insert("d.txt".to_owned());
+        state.active_tab_mut().tags.insert("e.txt".to_owned());
+        assert_eq!(
+            exec_command_impl(&mut state, "tag delete"),
+            Ok(ExecOutcome::ConfirmTagDelete)
+        );
+        let mut msg0 = None;
+        execute_tag_delete(&mut state, &mut msg0);
+        assert!(msg0.as_deref().unwrap().contains("2 完成"));
+        assert!(!tmp.path().join("d.txt").exists());
+        assert!(!tmp.path().join("e.txt").exists());
+        assert!(tmp.path().join("c.txt").exists(), "未标记不受影响");
+
+        // 逐条 u 恢复被删的两个文件（LIFO）。
+        let mut msg = None;
+        undo_last(&mut state, &mut msg);
+        undo_last(&mut state, &mut msg);
+        assert!(tmp.path().join("d.txt").exists() && tmp.path().join("e.txt").exists());
+
+        // 空标记提示 + 未知动作。
+        state.active_tab_mut().clear_tags();
+        match exec_command_impl(&mut state, "tag delete") {
+            Ok(ExecOutcome::Done { msg }) => assert_eq!(msg.as_deref(), Some("tag: 无标记文件")),
+            other => panic!("expected Done, got {other:?}"),
+        }
+        assert!(exec_command_impl(&mut state, "tag snort").is_err());
     }
 
     #[test]
