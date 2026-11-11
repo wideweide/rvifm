@@ -13,9 +13,9 @@ use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use std::path::PathBuf;
 
-use crate::ops;
 use crate::state::AppState;
 use crate::tab::{Location, SearchState, Tab};
+use crate::{config, ops};
 
 /// 判断按键是否请求退出：`q` 或 `Ctrl-C`。
 fn is_quit_key(key: KeyEvent) -> bool {
@@ -553,9 +553,14 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?)?);
+    // M5-1：启动加载用户配置；缺失用默认值，语法错误在状态栏提示（不退出）。
+    let mut msg: Option<String> = None;
+    match config::load() {
+        Ok(cfg) => state.config = cfg,
+        Err(e) => msg = Some(e),
+    }
     let mut input = InputState::default();
     let mut mode = InputMode::default();
-    let mut msg: Option<String> = None;
     loop {
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。

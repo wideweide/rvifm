@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::config::Config;
 use crate::tab::Tab;
 
 /// 可逆操作记录（M2-1）。每条都携带所属 tab 与路径（ACCEPTANCE §4），
@@ -101,7 +102,7 @@ impl UndoStack {
     }
 }
 
-/// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈。
+/// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。
 #[derive(Debug)]
 pub struct AppState {
     pub tabs: Vec<Tab>,
@@ -109,6 +110,9 @@ pub struct AppState {
     /// 写入（操作完成后记录）与读取（`u` 撤销）在 M2-2 起接入。
     #[allow(dead_code)]
     pub undo_stack: UndoStack,
+    /// 用户配置（M5-1 加载；选项生效在 M5-2 接入）。
+    #[allow(dead_code)]
+    pub config: Config,
 }
 
 impl AppState {
@@ -118,6 +122,7 @@ impl AppState {
             tabs: vec![initial],
             active: 0,
             undo_stack: UndoStack::default(),
+            config: Config::default(),
         }
     }
 
