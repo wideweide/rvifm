@@ -11,6 +11,7 @@ mod config;
 mod frecency;
 mod ops;
 mod state;
+mod store;
 mod tab;
 
 fn main() -> std::io::Result<()> {
