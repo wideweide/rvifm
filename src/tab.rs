@@ -52,16 +52,15 @@ pub struct FileItem {
     pub perm: String,
 }
 
-/// 搜索状态。`query` 由 M1-7 的 `/` 与 `n/N` 读取。
+/// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SearchState {
     pub query: String,
 }
 
 /// 每标签独立状态：位置、条目、光标、滚动、搜索、历史（SPEC §4.2）。
-/// `scroll` 由 M1-3 翻页读写，`search` 由 M1-7 读写，`history` 由 M1-2 写入；
-/// `cursor`/`location`/`entries` 已接线。
+/// `scroll` 为显式偏移预留（视口滚动当前由 `ListState` 从 cursor 派生，
+/// 显式存储待 M10）；其余字段均已接线。
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Tab {
@@ -104,6 +103,43 @@ impl Tab {
     /// 跳到末项（M1-3，`G`）。空目录停在 0。
     pub fn cursor_bottom(&mut self) {
         self.cursor = self.entries.len().saturating_sub(1);
+    }
+
+    /// 环绕查找匹配条目（M1-7）：大小写不敏感子串；`start` 为起始扫描索引。
+    pub fn find_match(&self, query: &str, start: usize, forward: bool) -> Option<usize> {
+        if self.entries.is_empty() || query.is_empty() {
+            return None;
+        }
+        let q = query.to_lowercase();
+        let len = self.entries.len();
+        for i in 0..len {
+            let idx = if forward {
+                (start + i) % len
+            } else {
+                (start + len - i % len) % len
+            };
+            if self.entries[idx].name.to_lowercase().contains(&q) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    /// 从当前位置沿 `forward` 方向移动到下一个匹配（M1-7，`n`/`N`）。
+    /// 未找到时 cursor 不变并返回 `false`。
+    pub fn search_move(&mut self, query: &str, forward: bool) -> bool {
+        let start = if forward {
+            self.cursor + 1
+        } else {
+            self.cursor + self.entries.len().saturating_sub(1)
+        };
+        match self.find_match(query, start, forward) {
+            Some(idx) => {
+                self.cursor = idx;
+                true
+            }
+            None => false,
+        }
     }
 
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；

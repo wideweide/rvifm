@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use crate::state::AppState;
-use crate::tab::Tab;
+use crate::tab::{SearchState, Tab};
 
 /// 判断按键是否请求退出：`q` 或 `Ctrl-C`。
 fn is_quit_key(key: KeyEvent) -> bool {
@@ -46,15 +46,19 @@ enum Outcome {
     Quit,
     /// 请求进入命令行模式（`:`）。
     EnterCommand,
+    /// 请求进入搜索输入模式（`/`，M1-7）。
+    EnterSearch,
 }
 
-/// 输入模式（M5-4 统一模式系统前先持有最小两个）。
+/// 输入模式（M5-4 统一模式系统前先持有最小集合）。
 #[derive(Debug, Default, PartialEq, Eq)]
 enum InputMode {
     #[default]
     Normal,
     /// 命令行模式：正在输入 `:` 后的内容。
     Command { input: String },
+    /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。
+    Search { input: String },
 }
 
 /// 命令行单键处理结果。
@@ -111,14 +115,50 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
     }
 }
 
+/// `n`/`N`：沿当前方向移动到下一个匹配；未设置搜索词时提示（M1-7）。
+fn run_search(state: &mut AppState, msg: &mut Option<String>, forward: bool) {
+    let Some(query) = state.active_tab().search.as_ref().map(|s| s.query.clone()) else {
+        *msg = Some("未设置搜索词（先用 / 搜索）".to_owned());
+        return;
+    };
+    if state.active_tab_mut().search_move(&query, forward) {
+        *msg = None;
+    } else {
+        *msg = Some("无匹配".to_owned());
+    }
+}
+
+/// 提交搜索词（M1-7）：设置搜索状态并移动到首个匹配（从光标下一位环绕）。
+fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
+    let query = line.trim().to_owned();
+    if query.is_empty() {
+        *msg = None;
+        return;
+    }
+    let tab = state.active_tab_mut();
+    let start = tab.cursor + 1;
+    match tab.find_match(&query, start, true) {
+        Some(idx) => {
+            tab.cursor = idx;
+            tab.search = Some(SearchState { query });
+            *msg = None;
+        }
+        None => {
+            tab.search = Some(SearchState { query });
+            *msg = Some("无匹配".to_owned());
+        }
+    }
+}
+
 /// 分发 Normal 模式按键。
 ///
 /// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
 /// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`gt`/`gT`/`N gt`、
-/// `q`/`Ctrl-C`、`:`。
+/// `/`、`n`/`N`、`q`/`Ctrl-C`、`:`。
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
+    msg: &mut Option<String>,
     key: KeyEvent,
     viewport_h: u16,
 ) -> Outcome {
@@ -182,6 +222,18 @@ fn handle_key(
             input.count = None;
             state.active_tab_mut().return_parent();
         }
+        KeyCode::Char('/') => {
+            input.count = None;
+            return Outcome::EnterSearch;
+        }
+        KeyCode::Char('n') => {
+            input.count = None;
+            run_search(state, msg, true);
+        }
+        KeyCode::Char('N') => {
+            input.count = None;
+            run_search(state, msg, false);
+        }
         KeyCode::Char(':') => {
             input.count = None;
             return Outcome::EnterCommand;
@@ -216,15 +268,31 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 },
-                InputMode::Normal => match handle_key(&mut state, &mut input, key, viewport_h) {
-                    Outcome::Continue => {}
-                    Outcome::Quit => return Ok(()),
-                    Outcome::EnterCommand => {
-                        mode = InputMode::Command {
-                            input: String::new(),
-                        };
+                InputMode::Search { input } => match command_input(input, key) {
+                    CmdInput::Continue => {}
+                    CmdInput::Cancel => mode = InputMode::Normal,
+                    CmdInput::Submit => {
+                        let line = std::mem::take(input);
+                        mode = InputMode::Normal;
+                        submit_search(&mut state, &line, &mut msg);
                     }
                 },
+                InputMode::Normal => {
+                    match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
+                        Outcome::Continue => {}
+                        Outcome::Quit => return Ok(()),
+                        Outcome::EnterCommand => {
+                            mode = InputMode::Command {
+                                input: String::new(),
+                            };
+                        }
+                        Outcome::EnterSearch => {
+                            mode = InputMode::Search {
+                                input: String::new(),
+                            };
+                        }
+                    }
+                }
             }
         }
     }
@@ -256,6 +324,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
+        InputMode::Search { input } => Line::from(format!("/{input}")),
         InputMode::Normal => {
             let selected = match tab.entries.get(tab.cursor) {
                 Some(item) => {
@@ -276,6 +345,9 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 Span::from(selected),
                 Span::from(format!(" | {} items", tab.entries.len())),
             ];
+            if let Some(s) = &tab.search {
+                spans.push(Span::from(format!("  /{}", s.query)));
+            }
             if let Some(m) = msg {
                 spans.push(Span::styled(
                     format!("  [{m}]"),
@@ -296,14 +368,26 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    /// 测试辅助：viewport 高度 10（半页步进 4）。
+    /// 测试辅助：viewport 高度 10（半页步进 4）；丢弃提示消息。
     fn press(
         state: &mut AppState,
         input: &mut InputState,
         code: KeyCode,
         mods: KeyModifiers,
     ) -> Outcome {
-        handle_key(state, input, KeyEvent::new(code, mods), 10)
+        let mut msg = None;
+        press_msg(state, input, &mut msg, code, mods)
+    }
+
+    /// 测试辅助：保留提示消息（搜索相关测试用）。
+    fn press_msg(
+        state: &mut AppState,
+        input: &mut InputState,
+        msg: &mut Option<String>,
+        code: KeyCode,
+        mods: KeyModifiers,
+    ) -> Outcome {
+        handle_key(state, input, msg, KeyEvent::new(code, mods), 10)
     }
 
     fn make_state(n: usize) -> (TempDir, AppState) {
@@ -730,6 +814,111 @@ mod tests {
         assert_eq!(state.active, 0);
         // 关闭最后一个 tab → 退出。
         assert_eq!(exec_command(&mut state, "tabclose"), Ok(true));
+    }
+
+    #[test]
+    fn search_submit_moves_to_first_match() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "beta", "Beta2", "gamma"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        submit_search(&mut state, "beta", &mut msg);
+        assert!(msg.is_none());
+        assert_eq!(state.active_tab().cursor, 1); // 从 0 向后命中 beta
+        assert_eq!(state.active_tab().search.as_ref().unwrap().query, "beta");
+    }
+
+    #[test]
+    fn search_n_and_n_wrap_case_insensitive() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "beta", "Beta2", "gamma"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        submit_search(&mut state, "beta", &mut msg); // cursor → 1
+
+        // n → 下一个匹配 Beta2（大小写不敏感）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 2);
+        // n 环绕 → 回到 beta。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 1);
+        // N → 反向：回到 Beta2。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('N'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 2);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn search_without_query_prompts_and_no_match_reports() {
+        let (_tmp, mut state) = make_state(2);
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // 未设置搜索词。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(msg.as_deref(), Some("未设置搜索词（先用 / 搜索）"));
+
+        // 设置后搜索不存在的词：无匹配提示，cursor 不变。
+        submit_search(&mut state, "zzz", &mut msg);
+        assert_eq!(msg.as_deref(), Some("无匹配"));
+        assert_eq!(state.active_tab().cursor, 0);
+        // 再次 n：无匹配提示保持。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(msg.as_deref(), Some("无匹配"));
+    }
+
+    #[test]
+    fn slash_enters_search_mode() {
+        let (_tmp, mut state) = make_state(1);
+        let mut input = InputState::default();
+        let mut msg = None;
+        assert_eq!(
+            press_msg(
+                &mut state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('/'),
+                KeyModifiers::NONE
+            ),
+            Outcome::EnterSearch
+        );
     }
 
     #[test]
