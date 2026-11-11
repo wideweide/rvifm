@@ -1672,6 +1672,7 @@ mod tests {
         assert!(state.tabs[0].entries.iter().any(|i| i.name == "x.txt"));
     }
 
+    #[test]
     fn exec_copy_and_undo_removes_copy() {
         let tmp = TempDir::new().unwrap();
         let sub = tmp.path().join("sub");
