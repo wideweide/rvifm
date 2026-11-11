@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 /// 用户配置。TOML 字段缺省时逐项回退默认值（`#[serde(default)]`）。
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Config {
     /// 显示以 `.` 开头的隐藏文件（默认不显示）。

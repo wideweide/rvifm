@@ -6,6 +6,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::config::Config;
+
 /// 浏览位置：物理目录或归档内虚拟路径（只读）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Location {
@@ -81,11 +83,11 @@ pub struct Tab {
 }
 
 impl Tab {
-    /// 从物理目录构建标签：加载并排序条目（目录在前、名称不区分大小写）。
-    pub fn from_physical(dir: &Path) -> std::io::Result<Self> {
+    /// 从物理目录构建标签：按配置加载并排序条目（M5-2 起 options 生效）。
+    pub fn from_physical(dir: &Path, config: Config) -> std::io::Result<Self> {
         Ok(Self {
             location: Location::Physical(dir.to_path_buf()),
-            entries: load_entries(dir)?,
+            entries: load_entries(dir, &config)?,
             cursor: 0,
             scroll: 0,
             search: None,
@@ -154,11 +156,11 @@ impl Tab {
 
     /// 重读当前物理目录条目并钳制光标（删除/撤销后刷新，M2-2）。
     /// 归档位置为 no-op（M7 接入）。
-    pub fn refresh(&mut self) -> std::io::Result<()> {
+    pub fn refresh(&mut self, config: Config) -> std::io::Result<()> {
         let Location::Physical(dir) = &self.location else {
             return Ok(());
         };
-        let mut entries = load_entries(dir)?;
+        let mut entries = load_entries(dir, &config)?;
         if let Some(pat) = &self.filter {
             entries.retain(|item| glob_match(pat, &item.name));
         }
@@ -171,10 +173,10 @@ impl Tab {
     }
 
     /// 应用/清除 glob 过滤（M4-2，`=`）。空 pattern 清除过滤；应用后光标与选区归零。
-    pub fn apply_filter(&mut self, pattern: &str) {
+    pub fn apply_filter(&mut self, pattern: &str, config: Config) {
         let pat = pattern.trim().to_owned();
         self.filter = if pat.is_empty() { None } else { Some(pat) };
-        if self.refresh().is_ok() {
+        if self.refresh(config).is_ok() {
             self.cursor = 0;
             self.visual = None;
         }
@@ -225,7 +227,7 @@ impl Tab {
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
     /// 读取失败时不导航、不产生副作用（错误提示在 M6-1 接入）。
     /// 归档内导航在 M7 接入，当前仅物理目录。
-    pub fn enter_selected(&mut self) {
+    pub fn enter_selected(&mut self, config: Config) {
         let Some(item) = self.entries.get(self.cursor) else {
             return;
         };
@@ -236,7 +238,7 @@ impl Tab {
             return;
         };
         let target = base.join(&item.name);
-        let Ok(entries) = load_entries(&target) else {
+        let Ok(entries) = load_entries(&target, &config) else {
             return;
         };
         self.history.push(self.location.clone());
@@ -247,7 +249,7 @@ impl Tab {
     }
 
     /// 返回父目录（M1-2，`h`）。已在文件系统根时为 no-op（ACCEPTANCE §3）。
-    pub fn return_parent(&mut self) {
+    pub fn return_parent(&mut self, config: Config) {
         let Location::Physical(base) = &self.location else {
             return;
         };
@@ -257,7 +259,7 @@ impl Tab {
         if parent == base {
             return;
         }
-        let Ok(entries) = load_entries(parent) else {
+        let Ok(entries) = load_entries(parent, &config) else {
             return;
         };
         self.history.push(self.location.clone());
@@ -268,7 +270,6 @@ impl Tab {
     }
 }
 
-/// 读取并排序目录条目：目录在前，名称不区分大小写。
 /// 智能大小写匹配（M4-1）：查询含大写字母时区分大小写，否则不区分（vim/vifm smartcase）。
 fn query_matches(name: &str, query: &str) -> bool {
     if query.chars().any(char::is_uppercase) {
@@ -295,12 +296,17 @@ pub(crate) fn glob_match(pattern: &str, name: &str) -> bool {
     m(&p, &s)
 }
 
-fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
+/// 读取并排序目录条目：按配置决定隐藏文件与排序（M5-2）。
+fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
     let mut items = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let is_dir = entry.file_type()?.is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();
+        // show_hidden = false 时跳过 `.` 开头的隐藏条目。
+        if !config.show_hidden && name.starts_with('.') {
+            continue;
+        }
         let meta = entry.metadata()?;
         let size = meta.len();
         let perm = perm_string(&meta);
@@ -312,9 +318,17 @@ fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
         });
     }
     items.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        let dir_cmp = if config.sort_dirs_first {
+            b.is_dir.cmp(&a.is_dir)
+        } else {
+            std::cmp::Ordering::Equal
+        };
+        let name_cmp = if config.ignore_case_sort {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        } else {
+            a.name.cmp(&b.name)
+        };
+        dir_cmp.then(name_cmp)
     });
     Ok(items)
 }
@@ -378,7 +392,7 @@ mod tests {
         fs::create_dir(tmp.path().join("zdir")).unwrap();
         fs::write(tmp.path().join("apple.txt"), "").unwrap();
 
-        let tab = Tab::from_physical(tmp.path()).unwrap();
+        let tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
         assert_eq!(tab.cursor, 0);
         assert!(tab.search.is_none());
         assert!(tab.history.is_empty());
@@ -393,7 +407,7 @@ mod tests {
         for name in ["a", "b", "c"] {
             fs::write(tmp.path().join(name), "").unwrap();
         }
-        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
         assert_eq!(tab.cursor, 0);
         tab.move_cursor(1);
         assert_eq!(tab.cursor, 1);
@@ -408,7 +422,7 @@ mod tests {
     #[test]
     fn move_cursor_is_noop_on_empty_dir() {
         let tmp = TempDir::new().unwrap();
-        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
         tab.move_cursor(1);
         tab.move_cursor(-1);
         assert_eq!(tab.cursor, 0);
@@ -440,7 +454,7 @@ mod tests {
     fn entries_carry_size_and_perm() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("hello.txt"), "hello").unwrap(); // 5 字节
-        let tab = Tab::from_physical(tmp.path()).unwrap();
+        let tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
         let f = &tab.entries[0];
         assert_eq!(f.name, "hello.txt");
         assert_eq!(f.size, 5);
@@ -457,10 +471,10 @@ mod tests {
         fs::create_dir(tmp.path().join("sub")).unwrap();
         fs::write(tmp.path().join("sub").join("inner.txt"), "").unwrap();
         fs::write(tmp.path().join("file.txt"), "").unwrap();
-        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
 
         // 排序后 "sub/" 在第 0 位（目录优先）。
-        tab.enter_selected();
+        tab.enter_selected(Config::default());
         assert_eq!(tab.location, Location::Physical(tmp.path().join("sub")));
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["inner.txt"]);
@@ -476,18 +490,18 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("file.txt"), "").unwrap();
         fs::create_dir(tmp.path().join("gone")).unwrap();
-        let mut tab = Tab::from_physical(tmp.path()).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
 
         // 光标落在文件上：no-op。
         tab.cursor = 1; // "file.txt"（"gone" 为目录在前）
-        tab.enter_selected();
+        tab.enter_selected(Config::default());
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert!(tab.history.is_empty());
 
         // 目录在加载后被删除：读取失败，不导航。
         fs::remove_dir(tmp.path().join("gone")).unwrap();
         tab.cursor = 0;
-        tab.enter_selected();
+        tab.enter_selected(Config::default());
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert!(tab.history.is_empty());
     }
@@ -496,9 +510,9 @@ mod tests {
     fn return_parent_goes_up_and_noop_at_root() {
         let tmp = TempDir::new().unwrap();
         fs::create_dir(tmp.path().join("sub")).unwrap();
-        let mut tab = Tab::from_physical(&tmp.path().join("sub")).unwrap();
+        let mut tab = Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap();
 
-        tab.return_parent();
+        tab.return_parent(Config::default());
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert_eq!(tab.history.len(), 1);
 
@@ -514,7 +528,7 @@ mod tests {
             filter: None,
             tags: HashSet::new(),
         };
-        root_tab.return_parent();
+        root_tab.return_parent(Config::default());
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));
         assert!(root_tab.history.is_empty());
     }

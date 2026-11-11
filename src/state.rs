@@ -185,7 +185,7 @@ impl AppState {
     /// 目录读取失败时返回 `false`，不产生副作用。
     pub fn new_tab_here(&mut self) -> bool {
         let dir = self.active_tab().location.base_dir().to_path_buf();
-        match Tab::from_physical(&dir) {
+        match Tab::from_physical(&dir, self.config) {
             Ok(tab) => {
                 self.push_tab(tab);
                 true
