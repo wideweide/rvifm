@@ -59,8 +59,8 @@ pub struct SearchState {
 }
 
 /// 每标签独立状态：位置、条目、光标、滚动、搜索、历史（SPEC §4.2）。
-/// `scroll` 为显式偏移预留（视口滚动当前由 `ListState` 从 cursor 派生，
-/// 显式存储待 M10）；其余字段均已接线。
+/// `visual` 为可视选择锚点（M3-1）；`scroll` 为显式偏移预留（视口滚动当前
+/// 由 `ListState` 从 cursor 派生，显式存储待 M10）；其余字段均已接线。
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Tab {
@@ -70,6 +70,8 @@ pub struct Tab {
     pub scroll: usize,
     pub search: Option<SearchState>,
     pub history: Vec<Location>,
+    /// 可视选择锚点（`v` 进入时的 cursor；None = 非可视模式，M3-1）。
+    pub visual: Option<usize>,
 }
 
 impl Tab {
@@ -82,6 +84,7 @@ impl Tab {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            visual: None,
         })
     }
 
@@ -150,7 +153,30 @@ impl Tab {
         };
         self.entries = load_entries(dir)?;
         self.cursor = self.cursor.min(self.entries.len().saturating_sub(1));
+        self.visual = self
+            .visual
+            .map(|a| a.min(self.entries.len().saturating_sub(1)));
         Ok(())
+    }
+
+    /// 进入/退出可视选择（M3-1，`v`）。空目录为 no-op。
+    pub fn toggle_visual(&mut self) {
+        self.visual = match self.visual {
+            Some(_) => None,
+            None if !self.entries.is_empty() => Some(self.cursor),
+            None => None,
+        };
+    }
+
+    /// 退出可视选择（M3-1，Esc）。
+    pub fn exit_visual(&mut self) {
+        self.visual = None;
+    }
+
+    /// 可视选择范围（含锚点与光标的闭区间）；非可视模式返回 None。
+    pub fn visual_range(&self) -> Option<(usize, usize)> {
+        self.visual
+            .map(|a| (a.min(self.cursor), a.max(self.cursor)))
     }
 
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
@@ -402,6 +428,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            visual: None,
         };
         root_tab.return_parent();
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));

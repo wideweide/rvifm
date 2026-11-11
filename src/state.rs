@@ -204,6 +204,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            visual: None,
         }
     }
 
@@ -215,6 +216,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            visual: None,
         }
     }
 
