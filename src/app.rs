@@ -263,7 +263,8 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
 ///
 /// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
 /// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`gt`/`gT`/`N gt`、
-/// `/`、`n`/`N`、`dd`（删除确认）、`u`（撤销）、`q`/`Ctrl-C`、`:`。
+/// `/`、`n`/`N`、`dd`（删除确认）、`u`（撤销）、`v`（可视选择）、Esc（退出选择）、
+/// `q`/`Ctrl-C`、`:`。
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
@@ -324,6 +325,13 @@ fn handle_key(
         return Outcome::Quit;
     }
 
+    // Esc：退出可视选择（M3-1）；非可视模式忽略。
+    if key.code == KeyCode::Esc {
+        input.count = None;
+        state.active_tab_mut().exit_visual();
+        return Outcome::Continue;
+    }
+
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let half = (viewport_h.saturating_sub(1) / 2).max(1) as isize;
     match key.code {
@@ -338,6 +346,10 @@ fn handle_key(
         KeyCode::Char('u') => {
             input.count = None;
             undo_last(state, msg);
+        }
+        KeyCode::Char('v') => {
+            input.count = None;
+            state.active_tab_mut().toggle_visual();
         }
         KeyCode::Char('j') => {
             input.count = None;
@@ -493,16 +505,23 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     let [list_area, status_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
+    let visual_range = tab.visual_range();
     let list_items: Vec<ListItem> = tab
         .entries
         .iter()
-        .map(|item| {
+        .enumerate()
+        .map(|(idx, item)| {
             let label = if item.is_dir {
                 format!("{}/", item.name)
             } else {
                 item.name.clone()
             };
-            ListItem::new(Line::from(label))
+            // 可视选择范围内的行反显（M3-1）；光标行由 highlight_style 叠加。
+            let mut li = ListItem::new(Line::from(label));
+            if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
+                li = li.style(Style::new().add_modifier(Modifier::REVERSED));
+            }
+            li
         })
         .collect();
     let mut list_state = ListState::default().with_selected(Some(tab.cursor));
@@ -538,6 +557,10 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             ];
             if let Some(s) = &tab.search {
                 spans.push(Span::from(format!("  /{}", s.query)));
+            }
+            if let Some((lo, hi)) = visual_range {
+                // M3-1：可视选择指示（含行数，闭区间）。
+                spans.push(Span::from(format!("  VISUAL ({} selected)", hi - lo + 1)));
             }
             if let Some(m) = msg {
                 spans.push(Span::styled(
@@ -598,6 +621,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            visual: None,
         }
     }
 
@@ -1430,6 +1454,111 @@ mod tests {
         assert!(tmp.path().join("c.txt").exists());
     }
 
+    #[test]
+    fn visual_selection_flow() {
+        // M3-1：v 进入 → j 扩大选区 → Esc 退出，状态正确。
+        let (_tmp, mut state) = make_state(4);
+        let mut input = InputState::default();
+
+        // 空目录 no-op。
+        let empty_tmp = TempDir::new().unwrap();
+        let mut empty = Tab::from_physical(empty_tmp.path()).unwrap();
+        empty.toggle_visual();
+        assert!(empty.visual.is_none());
+
+        // v：进入，锚点 = 进入时光标位置。
+        assert_eq!(
+            press(
+                &mut state,
+                &mut input,
+                KeyCode::Char('v'),
+                KeyModifiers::NONE
+            ),
+            Outcome::Continue
+        );
+        assert_eq!(state.active_tab().visual, Some(0));
+        assert_eq!(state.active_tab().visual_range(), Some((0, 0)));
+
+        // j j：选区扩大。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().visual_range(), Some((0, 2)));
+
+        // k：反向收缩。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().visual_range(), Some((0, 1)));
+
+        // Esc 退出。
+        assert_eq!(
+            press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE),
+            Outcome::Continue
+        );
+        assert!(state.active_tab().visual.is_none());
+
+        // 再次 v：锚点 = 当前光标（1）；反向移动仍有序。
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('v'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().visual, Some(1));
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().visual_range(), Some((0, 1)));
+
+        // 每 tab 独立（第二个 tab 无选区；tab0 锚点保持 1）。
+        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+        assert!(state.active_tab().visual.is_none());
+        assert_eq!(state.tabs[0].visual, Some(1));
+    }
+
+    #[test]
+    fn render_highlights_visual_range() {
+        let (_tmp, mut state) = make_state(5);
+        state.active_tab_mut().cursor = 2;
+        state.active_tab_mut().visual = Some(1); // 选区 1..=2
+
+        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // 选区内反显（行 1、2），选区外不反显（行 0、3）。
+        assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
+
+        // 状态栏 VISUAL 指示。
+        let status = (0..120u16)
+            .map(|x| buffer[(x, 7)].symbol())
+            .collect::<String>();
+        assert!(status.contains("VISUAL (2 selected)"), "status: {status}");
+    }
+
+    #[test]
     fn render_highlights_cursor_row() {
         let (_tmp, mut state) = make_state(3);
         state.active_tab_mut().cursor = 1;
