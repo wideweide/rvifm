@@ -225,48 +225,47 @@ impl Tab {
     }
 
     /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
-    /// 读取失败时不导航、不产生副作用（错误提示在 M6-1 接入）。
+    /// 读取失败时返回 Err 且不产生副作用（提示在 M6-1 接入）。
     /// 归档内导航在 M7 接入，当前仅物理目录。
-    pub fn enter_selected(&mut self, config: Config) {
+    pub fn enter_selected(&mut self, config: Config) -> std::io::Result<()> {
         let Some(item) = self.entries.get(self.cursor) else {
-            return;
+            return Ok(());
         };
         if !item.is_dir {
-            return;
+            return Ok(());
         }
         let Location::Physical(base) = &self.location else {
-            return;
+            return Ok(());
         };
         let target = base.join(&item.name);
-        let Ok(entries) = load_entries(&target, &config) else {
-            return;
-        };
+        let entries = load_entries(&target, &config)?;
         self.history.push(self.location.clone());
         self.location = Location::Physical(target);
         self.entries = entries;
         self.cursor = 0;
         self.scroll = 0;
+        Ok(())
     }
 
     /// 返回父目录（M1-2，`h`）。已在文件系统根时为 no-op（ACCEPTANCE §3）。
-    pub fn return_parent(&mut self, config: Config) {
+    /// 读取失败时返回 Err 且不产生副作用（提示在 M6-1 接入）。
+    pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
         let Location::Physical(base) = &self.location else {
-            return;
+            return Ok(());
         };
         let Some(parent) = base.parent() else {
-            return;
+            return Ok(());
         };
         if parent == base {
-            return;
+            return Ok(());
         }
-        let Ok(entries) = load_entries(parent, &config) else {
-            return;
-        };
+        let entries = load_entries(parent, &config)?;
         self.history.push(self.location.clone());
         self.location = Location::Physical(parent.to_path_buf());
         self.entries = entries;
         self.cursor = 0;
         self.scroll = 0;
+        Ok(())
     }
 }
 
@@ -474,7 +473,7 @@ mod tests {
         let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
 
         // 排序后 "sub/" 在第 0 位（目录优先）。
-        tab.enter_selected(Config::default());
+        tab.enter_selected(Config::default()).unwrap();
         assert_eq!(tab.location, Location::Physical(tmp.path().join("sub")));
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["inner.txt"]);
@@ -494,14 +493,14 @@ mod tests {
 
         // 光标落在文件上：no-op。
         tab.cursor = 1; // "file.txt"（"gone" 为目录在前）
-        tab.enter_selected(Config::default());
+        tab.enter_selected(Config::default()).unwrap();
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert!(tab.history.is_empty());
 
-        // 目录在加载后被删除：读取失败，不导航。
+        // 目录在加载后被删除：读取失败返回 Err，不导航（M6-1 错误提示接入）。
         fs::remove_dir(tmp.path().join("gone")).unwrap();
         tab.cursor = 0;
-        tab.enter_selected(Config::default());
+        assert!(tab.enter_selected(Config::default()).is_err());
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert!(tab.history.is_empty());
     }
@@ -512,7 +511,7 @@ mod tests {
         fs::create_dir(tmp.path().join("sub")).unwrap();
         let mut tab = Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap();
 
-        tab.return_parent(Config::default());
+        tab.return_parent(Config::default()).unwrap();
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         assert_eq!(tab.history.len(), 1);
 

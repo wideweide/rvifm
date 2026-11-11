@@ -470,12 +470,16 @@ fn handle_key(
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
             let cfg = state.config;
-            state.active_tab_mut().enter_selected(cfg);
+            if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+                *msg = Some(format!("进入失败: {e}"));
+            }
         }
         KeyCode::Char('h') => {
             input.count = None;
             let cfg = state.config;
-            state.active_tab_mut().return_parent(cfg);
+            if let Err(e) = state.active_tab_mut().return_parent(cfg) {
+                *msg = Some(format!("返回失败: {e}"));
+            }
         }
         KeyCode::Char('/') => {
             input.count = None;
