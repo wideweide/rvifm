@@ -81,7 +81,36 @@ pub fn delete_to_trash(tab_id: usize, path: &Path) -> std::io::Result<UndoableOp
     })
 }
 
-/// 撤销执行（`u`）：按操作类型逆操作。仅 Delete 在 M2-2 接入。
+/// 重命名（M2-3，`:rename <新名字>`）：仅改文件名，不允许路径分隔符。
+pub fn rename_to(tab_id: usize, path: &Path, new_name: &str) -> std::io::Result<UndoableOp> {
+    if new_name.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "新名字为空",
+        ));
+    }
+    if new_name.contains('/') || new_name.contains('\\') {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "重命名不能包含路径分隔符",
+        ));
+    }
+    let to = path.with_file_name(new_name);
+    if to.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("目标已存在: {}", to.display()),
+        ));
+    }
+    fs::rename(path, &to)?;
+    Ok(UndoableOp::Rename {
+        tab_id,
+        from: path.to_path_buf(),
+        to,
+    })
+}
+
+/// 撤销执行（`u`）：按操作类型逆操作。
 pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
     match op {
         UndoableOp::Delete { path, staged, .. } => {
@@ -97,8 +126,17 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
             }
             move_path(staged, path)
         }
-        // Rename/Move/Create 的 undo 在 M2-3～M2-5 接入。
-        UndoableOp::Rename { .. } | UndoableOp::Move { .. } | UndoableOp::Create { .. } => Ok(()),
+        UndoableOp::Rename { from, to, .. } => {
+            if from.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("撤销目标已存在: {}", from.display()),
+                ));
+            }
+            fs::rename(to, from)
+        }
+        // Move/Create 的 undo 在 M2-4/M2-5 接入。
+        UndoableOp::Move { .. } | UndoableOp::Create { .. } => Ok(()),
     }
 }
 
@@ -152,6 +190,41 @@ mod tests {
             fs::read_to_string(dir.join("nested").join("a.txt")).unwrap(),
             "A"
         );
+    }
+
+    #[test]
+    fn rename_to_and_undo_restores_name() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("old.txt");
+        fs::write(&file, "R").unwrap();
+
+        let op = rename_to(2, &file, "new.txt").unwrap();
+        assert!(matches!(op, UndoableOp::Rename { tab_id: 2, .. }));
+        assert!(!file.exists());
+        let to = tmp.path().join("new.txt");
+        assert_eq!(fs::read_to_string(&to).unwrap(), "R");
+
+        undo_op(&op).unwrap();
+        assert!(!to.exists());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "R");
+    }
+
+    #[test]
+    fn rename_rejects_invalid_targets() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("a.txt");
+        fs::write(&file, "A").unwrap();
+        fs::write(tmp.path().join("b.txt"), "B").unwrap();
+
+        // 目标已存在。
+        assert!(rename_to(0, &file, "b.txt").is_err());
+        // 路径分隔符。
+        assert!(rename_to(0, &file, "sub/c.txt").is_err());
+        assert!(rename_to(0, &file, "sub\\c.txt").is_err());
+        // 空名字。
+        assert!(rename_to(0, &file, "").is_err());
+        // 原文件未被改动。
+        assert_eq!(fs::read_to_string(&file).unwrap(), "A");
     }
 
     #[test]
