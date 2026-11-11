@@ -109,11 +109,24 @@ fn render(frame: &mut Frame, state: &AppState) {
         &mut list_state,
     );
 
+    // 状态栏：路径 | 选中项 大小 权限 | 条目数（M1-4）。目录省略大小。
+    let selected = match tab.entries.get(tab.cursor) {
+        Some(item) => {
+            let size = if item.is_dir {
+                String::new()
+            } else {
+                format!(" {}", crate::tab::format_size(item.size))
+            };
+            format!(" | {}{} {}", item.name, size, item.perm)
+        }
+        None => String::new(),
+    };
     let status = Line::from(vec![
         Span::styled(
             tab.location.display_path(),
             Style::new().add_modifier(Modifier::BOLD),
         ),
+        Span::from(selected),
         Span::from(format!(" | {} items", tab.entries.len())),
     ]);
     frame.render_widget(Paragraph::new(status), status_area);
@@ -319,6 +332,25 @@ mod tests {
         assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn status_bar_shows_selected_item_metadata() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.txt"), "hello").unwrap(); // 5 字节
+        let state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let status = (0..80u16)
+            .map(|x| buffer[(x, 9)].symbol())
+            .collect::<String>();
+
+        assert!(status.contains("hello.txt 5 B"), "status: {status}");
+        let perm = &state.active_tab().entries[0].perm;
+        assert!(status.contains(perm.as_str()), "status: {status}");
     }
 
     #[test]

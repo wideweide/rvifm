@@ -32,11 +32,15 @@ impl Location {
     }
 }
 
-/// 单个目录项。M1-4 扩展大小/权限等元数据。
+/// 单个目录项。M1-4 起携带大小与权限摘要。
 #[derive(Debug, Clone)]
 pub struct FileItem {
     pub name: String,
     pub is_dir: bool,
+    /// 文件字节数（目录同样记录底层值，状态栏对目录省略显示）。
+    pub size: u64,
+    /// 平台相关权限摘要：unix 为 3 位八进制（如 `644`），Windows 为 `ro`/`rw`。
+    pub perm: String,
 }
 
 /// 搜索状态。`query` 由 M1-7 的 `/` 与 `n/N` 读取。
@@ -146,7 +150,15 @@ fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
         let entry = entry?;
         let is_dir = entry.file_type()?.is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();
-        items.push(FileItem { name, is_dir });
+        let meta = entry.metadata()?;
+        let size = meta.len();
+        let perm = perm_string(&meta);
+        items.push(FileItem {
+            name,
+            is_dir,
+            size,
+            perm,
+        });
     }
     items.sort_by(|a, b| {
         b.is_dir
@@ -154,6 +166,38 @@ fn load_entries(dir: &Path) -> std::io::Result<Vec<FileItem>> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(items)
+}
+
+/// 权限摘要：unix 用 3 位八进制；Windows 仅区分只读。
+#[cfg(unix)]
+fn perm_string(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    format!("{:03o}", meta.permissions().mode() & 0o777)
+}
+
+/// 权限摘要：Windows 仅区分只读。
+#[cfg(windows)]
+fn perm_string(meta: &std::fs::Metadata) -> String {
+    if meta.permissions().readonly() {
+        "ro".to_owned()
+    } else {
+        "rw".to_owned()
+    }
+}
+
+/// 字节数格式化：`B` / `KiB` / `MiB` / `GiB`（1 位小数）。
+pub(crate) fn format_size(size: u64) -> String {
+    const KIB: f64 = 1024.0;
+    let s = size as f64;
+    if size < 1024 {
+        format!("{size} B")
+    } else if size < 1024_u64.pow(2) {
+        format!("{:.1} KiB", s / KIB)
+    } else if size < 1024_u64.pow(3) {
+        format!("{:.1} MiB", s / KIB / KIB)
+    } else {
+        format!("{:.1} GiB", s / KIB / KIB / KIB)
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +261,30 @@ mod tests {
         tab.move_cursor(1);
         tab.move_cursor(-1);
         assert_eq!(tab.cursor, 0);
+    }
+
+    #[test]
+    fn format_size_units() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(2048), "2.0 KiB");
+        assert_eq!(format_size(1024 * 1024), "1.0 MiB");
+        assert_eq!(format_size(3 * 1024 * 1024 * 1024), "3.0 GiB");
+    }
+
+    #[test]
+    fn entries_carry_size_and_perm() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.txt"), "hello").unwrap(); // 5 字节
+        let tab = Tab::from_physical(tmp.path()).unwrap();
+        let f = &tab.entries[0];
+        assert_eq!(f.name, "hello.txt");
+        assert_eq!(f.size, 5);
+        if cfg!(windows) {
+            assert_eq!(f.perm, "rw");
+        } else {
+            assert_eq!(f.perm, "644");
+        }
     }
 
     #[test]
