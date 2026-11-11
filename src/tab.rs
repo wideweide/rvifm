@@ -245,7 +245,13 @@ impl Tab {
                     self.scroll = 0;
                     return Ok(());
                 }
-                // 归档文件：进入虚拟根目录（M7-4）。不支持格式在 M7-9 提示。
+                // 归档文件：进入虚拟根目录（M7-4）；不支持的格式给出解压提示（M7-9）。
+                if crate::archive::is_unsupported_archive(&name) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "该归档格式不支持虚拟浏览，请解压后浏览",
+                    ));
+                }
                 if crate::archive::is_archive_file(&name) {
                     let items = load_archive_entries(&target, "")?;
                     self.history.push(self.location.clone());

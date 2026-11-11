@@ -374,6 +374,13 @@ pub fn is_archive_file(name: &str) -> bool {
     n.ends_with(".zip") || n.ends_with(".tar") || n.ends_with(".tar.gz") || n.ends_with(".tgz")
 }
 
+/// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）：`.7z` / `.rar`。
+/// 命中时调用方给出"请解压后浏览"提示。
+pub fn is_unsupported_archive(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.ends_with(".7z") || n.ends_with(".rar")
+}
+
 /// 按扩展名分派到对应实现（M7-2 ZipFs / M7-3 TarFs）。
 pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
     let name = host
@@ -544,9 +551,22 @@ mod tests {
         // M7-2/M7-7 前置：损坏 zip 返回 InvalidData 而非 panic。
         let tmp = TempDir::new().unwrap();
         let zip_path = tmp.path().join("bad.zip");
-        std::fs::write(&zip_path, b"PKgarbage").unwrap();
+        std::fs::write(&zip_path, b"PKgarbage").unwrap();
         let err = ZipFs::open(&zip_path).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn zip_fs_empty_archive_lists_nothing() {
+        // M7-7：空归档可打开、列表为空，不 panic。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("empty.zip");
+        let f = std::fs::File::create(&zip_path).unwrap();
+        let w = zip::ZipWriter::new(f);
+        w.finish().unwrap();
+        let fs = ZipFs::open(&zip_path).unwrap();
+        assert!(fs.list("").unwrap().is_empty());
+        assert!(fs.metadata("anything").is_err());
     }
 
     fn make_test_tar(path: &Path, gz: bool) {
