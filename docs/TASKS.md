@@ -70,7 +70,7 @@
 - [x] M6-2 帮助页
 - [x] M6-3 README 更新与 `v0.1.0` tag
 - [x] M6-4 大目录（>10k 项）性能检查，滚动不阻塞退出
-- [ ] M6-5 发布门禁：CI 双平台全绿 + `--release` 产物 + Windows/Linux 冒烟
+- [x] M6-5 发布门禁：CI 双平台全绿 + `--release` 产物 + Windows/Linux 冒烟
 
 ## M7 — 归档浏览（只读 VFS）
 
