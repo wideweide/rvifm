@@ -19,7 +19,7 @@
 | M2 | 文件操作 + `u` 撤销 | 增删改移 + 撤销闭环 + 跨 tab 撤销 | M1 | 已完成 | — |
 | M3 | 选择、标记、批量操作 | `v` / `t` / 批量复制移动删除 | M2 | 已完成 | — |
 | M4 | 搜索、过滤、跳转 | `/`、`n/N`、glob 过滤 | M1 | 已完成 | — |
-| M5 | 配置与最小命令模式 | TOML 配置、`:q/:cd/:mkdir/:touch/:help` | M1–M4 | 待开始 | — |
+| M5 | 配置与最小命令模式 | TOML 配置、`:q/:cd/:mkdir/:touch/:help` | M1–M4 | 已完成 | — |
 | M6 | 打磨与发布 | 帮助、README、性能检查、`v0.1.0` | M0–M5 | 待开始 | **v0.1.0** |
 | M7 | 归档浏览（只读 VFS） | `Location` / `ArchiveFs` / Zip/Tar 虚拟目录 | M1、M4 | 待开始 | 后续版本 |
 | M8 | 原生 frecency 选择器 | `pick` / `record`、redb 三表、compaction | M1、M7 | 待开始 | 后续版本 |
