@@ -224,49 +224,139 @@ impl Tab {
         self.tags.clear();
     }
 
-    /// 进入光标选中的目录（M1-2，`l`/`Enter`）。目录重读即刷新；
-    /// 读取失败时返回 Err 且不产生副作用（提示在 M6-1 接入）。
-    /// 归档内导航在 M7 接入，当前仅物理目录。
+    /// 进入光标选中的条目（M1-2 目录；M7-4 归档虚拟目录）。
+    /// `l`/`Enter`。目录重读即刷新；读取失败时返回 Err 且不产生副作用
+    /// （错误经 M6-1 提示进状态栏）。普通文件 no-op（打开走 M11 opener）。
     pub fn enter_selected(&mut self, config: Config) -> std::io::Result<()> {
         let Some(item) = self.entries.get(self.cursor) else {
             return Ok(());
         };
-        if !item.is_dir {
-            return Ok(());
+        let name = item.name.clone();
+        let is_dir = item.is_dir;
+        match self.location.clone() {
+            Location::Physical(base) => {
+                let target = base.join(&name);
+                if is_dir {
+                    let entries = load_entries(&target, &config)?;
+                    self.history.push(self.location.clone());
+                    self.location = Location::Physical(target);
+                    self.entries = entries;
+                    self.cursor = 0;
+                    self.scroll = 0;
+                    return Ok(());
+                }
+                // 归档文件：进入虚拟根目录（M7-4）。不支持格式在 M7-9 提示。
+                if crate::archive::is_archive_file(&name) {
+                    let items = load_archive_entries(&target, "")?;
+                    self.history.push(self.location.clone());
+                    self.location = Location::Archive {
+                        host: target,
+                        inner: PathBuf::new(),
+                    };
+                    self.entries = items;
+                    self.cursor = 0;
+                    self.scroll = 0;
+                }
+                Ok(())
+            }
+            Location::Archive { host, inner } => {
+                if !is_dir {
+                    return Ok(()); // 归档内文件：只读，打开在 M11 接入
+                }
+                let inner_str = inner.to_string_lossy().into_owned();
+                let new_inner = if inner_str.is_empty() {
+                    name
+                } else {
+                    format!("{inner_str}/{name}")
+                };
+                let items = load_archive_entries(&host, &new_inner)?;
+                self.history.push(self.location.clone());
+                self.location = Location::Archive {
+                    host,
+                    inner: PathBuf::from(crate::archive::normalize_inner(&new_inner)),
+                };
+                self.entries = items;
+                self.cursor = 0;
+                self.scroll = 0;
+                Ok(())
+            }
         }
-        let Location::Physical(base) = &self.location else {
-            return Ok(());
-        };
-        let target = base.join(&item.name);
-        let entries = load_entries(&target, &config)?;
-        self.history.push(self.location.clone());
-        self.location = Location::Physical(target);
-        self.entries = entries;
-        self.cursor = 0;
-        self.scroll = 0;
-        Ok(())
     }
 
-    /// 返回父目录（M1-2，`h`）。已在文件系统根时为 no-op（ACCEPTANCE §3）。
-    /// 读取失败时返回 Err 且不产生副作用（提示在 M6-1 接入）。
+    /// 返回父目录（M1-2，`h`）。
+    /// 物理目录：已在文件系统根时为 no-op（ACCEPTANCE §3）。
+    /// 归档内（M7-4）：上一层虚拟目录；归档根处返回宿主目录。
+    /// 读取失败时返回 Err 且不产生副作用（提示经 M6-1 进状态栏）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
-        let Location::Physical(base) = &self.location else {
-            return Ok(());
-        };
-        let Some(parent) = base.parent() else {
-            return Ok(());
-        };
-        if parent == base {
-            return Ok(());
+        match self.location.clone() {
+            Location::Archive { host, inner } => {
+                let inner_str = inner.to_string_lossy().into_owned();
+                if inner_str.is_empty() {
+                    // 归档根：`h` 返回归档文件所在的物理目录（host 的父目录）。
+                    let host_dir = host.parent().unwrap_or(host.as_path()).to_path_buf();
+                    let entries = load_entries(&host_dir, &config)?;
+                    self.history.push(self.location.clone());
+                    self.location = Location::Physical(host_dir);
+                    self.entries = entries;
+                    self.cursor = 0;
+                    self.scroll = 0;
+                    return Ok(());
+                }
+                // 归档内：上一层虚拟目录（parent 为空串 = 归档根，仍留在归档内）。
+                let parent = crate::archive::normalize_inner(
+                    inner_str.rsplit_once('/').map(|(p, _)| p).unwrap_or(""),
+                );
+                let entries = load_archive_entries(&host, &parent)?;
+                self.history.push(self.location.clone());
+                self.location = Location::Archive {
+                    host,
+                    inner: PathBuf::from(parent),
+                };
+                self.entries = entries;
+                self.cursor = 0;
+                self.scroll = 0;
+                Ok(())
+            }
+            Location::Physical(base) => {
+                let Some(parent) = base.parent() else {
+                    return Ok(());
+                };
+                if parent == base {
+                    return Ok(());
+                }
+                let entries = load_entries(parent, &config)?;
+                self.history.push(self.location.clone());
+                self.location = Location::Physical(parent.to_path_buf());
+                self.entries = entries;
+                self.cursor = 0;
+                self.scroll = 0;
+                Ok(())
+            }
         }
-        let entries = load_entries(parent, &config)?;
-        self.history.push(self.location.clone());
-        self.location = Location::Physical(parent.to_path_buf());
-        self.entries = entries;
-        self.cursor = 0;
-        self.scroll = 0;
-        Ok(())
     }
+}
+
+/// 列出归档虚拟目录条目（M7-4）：`ArchiveEntry` → `FileItem`
+/// （名字取叶子段；perm 在归档视图留空）。打开失败（损坏/加密）原样上抛。
+fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileItem>> {
+    let fs = crate::archive::open_dispatch(host)?;
+    let entries = fs.list(&crate::archive::normalize_inner(inner))?;
+    Ok(entries
+        .into_iter()
+        .map(|e| {
+            let name = e
+                .path
+                .rsplit_once('/')
+                .map(|(_, l)| l.to_owned())
+                .unwrap_or(e.path.clone());
+            FileItem {
+                name,
+                is_dir: e.is_dir,
+                size: e.size,
+                perm: String::new(),
+            }
+        })
+        .collect())
 }
 
 /// 智能大小写匹配（M4-1）：查询含大写字母时区分大小写，否则不区分（vim/vifm smartcase）。
@@ -368,7 +458,76 @@ pub(crate) fn format_size(size: u64) -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn archive_navigation_roundtrip() {
+        // M7-4：l 进 zip 虚拟目录 → 进子目录 → h 逐层返回 → 根处 h 回宿主目录。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+
+        // 排序：host.txt(0) / t.zip(1)。
+        tab.cursor = 1;
+        tab.enter_selected(Config::default()).unwrap();
+        eprintln!(
+            "DBG loc={:?} names={:?}",
+            tab.location,
+            tab.entries
+                .iter()
+                .map(|i| (&i.name, i.is_dir))
+                .collect::<Vec<_>>()
+        );
+        match &tab.location {
+            Location::Archive { host, inner } => {
+                assert_eq!(host, &zip_path);
+                assert!(inner.as_os_str().is_empty(), "根 inner 为空");
+            }
+            other => panic!("expected Archive, got {other:?}"),
+        }
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["deep", "readme.md", "src"]);
+
+        // 进入 src/ 虚拟子目录。
+        tab.cursor = 2;
+        tab.enter_selected(Config::default()).unwrap();
+        match &tab.location {
+            Location::Archive { inner, .. } => {
+                assert_eq!(inner, &PathBuf::from("src"))
+            }
+            other => panic!("expected Archive, got {other:?}"),
+        }
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["main.rs"]);
+
+        // h → 回归档根；h → 回宿主目录。
+        tab.return_parent(Config::default()).unwrap();
+        assert_eq!(
+            tab.location,
+            Location::Archive {
+                host: zip_path.clone(),
+                inner: PathBuf::new()
+            }
+        );
+        tab.return_parent(Config::default()).unwrap();
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert!(tab.entries.iter().any(|i| i.name == "host.txt"));
+    }
+
+    #[test]
+    fn corrupt_archive_enter_returns_error() {
+        // M7-4：损坏归档进入返回 Err（M6-1 提示进状态栏），位置不变。
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("bad.zip");
+        fs::write(&p, b"PK junk bytes").unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.cursor = 0; // bad.zip
+        assert!(tab.enter_selected(Config::default()).is_err());
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+    }
 
     #[test]
     fn physical_display_is_path() {
@@ -527,7 +686,7 @@ mod tests {
             filter: None,
             tags: HashSet::new(),
         };
-        root_tab.return_parent(Config::default());
+        let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));
         assert!(root_tab.history.is_empty());
     }

@@ -105,8 +105,8 @@ impl ZipFs {
 
     /// 列出 `dir` 下直接子项：目录条目（聚合，不递归）与文件条目。
     /// 大小取自开档时缓存的索引，不触碰 `ZipArchive`（避免可变借用）。
-    fn list_children(&self, dir: &str) -> BTreeMap<String, (bool, u64, String)> {
-        let mut out: BTreeMap<String, (bool, u64, String)> = BTreeMap::new();
+    fn list_children(&self, dir: &str) -> Children {
+        let mut out = Children::new();
         for name in &self.dirs {
             // 根级目录无 `/`，父目录为空串。
             let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
@@ -200,6 +200,8 @@ pub struct TarFs {
     index: BTreeMap<String, (u64, u64, bool)>,
     dirs: BTreeSet<String>,
 }
+
+type Children = std::collections::BTreeMap<String, (bool, u64, String)>;
 
 /// tar 解码器：裸 tar（可 seek）或 gzip 解压流（不可 seek）。
 enum Decoder {
@@ -309,7 +311,7 @@ impl TarFs {
 impl ArchiveFs for TarFs {
     fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
         let dir = normalize_inner(dir);
-        let mut out: BTreeMap<String, (bool, u64, String)> = BTreeMap::new();
+        let mut out = Children::new();
         for name in &self.dirs {
             let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
             if parent == dir {
@@ -365,6 +367,49 @@ impl ArchiveFs for TarFs {
     }
 }
 
+/// 判断文件名是否为支持虚拟浏览的归档（M7-4）。
+/// `.7z`/`.rar` 不在内——按 M7-9 提示解压（调用方负责）。
+pub fn is_archive_file(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.ends_with(".zip") || n.ends_with(".tar") || n.ends_with(".tar.gz") || n.ends_with(".tgz")
+}
+
+/// 按扩展名分派到对应实现（M7-2 ZipFs / M7-3 TarFs）。
+pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
+    let name = host
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let n = name.to_lowercase();
+    if n.ends_with(".zip") {
+        Ok(Box::new(ZipFs::open(host)?))
+    } else if n.ends_with(".tar") || n.ends_with(".tar.gz") || n.ends_with(".tgz") {
+        Ok(Box::new(TarFs::open(host)?))
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("不支持的归档格式: {name}"),
+        ))
+    }
+}
+
+/// 测试工具（crate 内共享）：构造含显式目录、嵌套文件与隐式父目录的 zip。
+#[cfg(test)]
+pub(crate) fn make_test_zip(path: &Path) {
+    use std::io::Write as _;
+    let file = std::fs::File::create(path).unwrap();
+    let mut w = zip::ZipWriter::new(file);
+    let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
+    w.add_directory("src", opts).unwrap();
+    w.start_file("src/main.rs", opts).unwrap();
+    w.write_all(b"fn main() {}").unwrap();
+    w.start_file("readme.md", opts).unwrap();
+    w.write_all(b"hi").unwrap();
+    w.start_file("deep/nested/blob.bin", opts).unwrap();
+    w.write_all(b"ABC").unwrap(); // 隐式父目录 deep/ 与 deep/nested/
+    w.finish().unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,8 +419,9 @@ mod tests {
     use tempfile::TempDir;
 
     /// 测试用内存实现：验证 trait 形状与导航所需语义（M7-2 换 zip 实现）。
+    type MockEntries = Mutex<BTreeMap<String, (bool, u64, Vec<u8>)>>;
     struct MockFs {
-        entries: Mutex<BTreeMap<String, (bool, u64, Vec<u8>)>>,
+        entries: MockEntries,
         host: PathBuf,
     }
 
@@ -467,21 +513,6 @@ mod tests {
     }
 
     use std::path::PathBuf;
-
-    fn make_test_zip(path: &Path) {
-        // M7-2：构造含显式目录、嵌套文件与隐式父目录的测试 zip。
-        let file = std::fs::File::create(path).unwrap();
-        let mut w = zip::ZipWriter::new(file);
-        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
-        w.add_directory("src", opts).unwrap();
-        w.start_file("src/main.rs", opts).unwrap();
-        w.write_all(b"fn main() {}").unwrap();
-        w.start_file("readme.md", opts).unwrap();
-        w.write_all(b"hi").unwrap();
-        w.start_file("deep/nested/blob.bin", opts).unwrap();
-        w.write_all(b"ABC").unwrap(); // 隐式父目录 deep/ 与 deep/nested/
-        w.finish().unwrap();
-    }
 
     #[test]
     fn zip_fs_list_read_metadata_roundtrip() {
