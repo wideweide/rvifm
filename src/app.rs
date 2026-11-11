@@ -819,7 +819,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::tab::Location;
+    use crate::tab::{FileItem, Location};
     use std::collections::HashSet;
     use std::fs;
     use std::path::PathBuf;
@@ -2116,6 +2116,90 @@ mod tests {
         // 宽松上限（CI 速度波动安全）：加载与单帧渲染均 < 2s。
         assert!(load.as_secs() < 2, "load too slow: {load:?}");
         assert!(draw.as_secs() < 2, "draw too slow: {draw:?}");
+    }
+
+    #[test]
+    fn archive_status_bar_shows_host_inner_breadcrumb() {
+        // M7-5：状态栏/面包屑显示 `host:/inner/path`。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 直接构造归档内 src 层的位置。
+        state.active_tab_mut().location = Location::Archive {
+            host: zip_path.clone(),
+            inner: PathBuf::from("src"),
+        };
+        state.active_tab_mut().entries = vec![FileItem {
+            name: "main.rs".into(),
+            is_dir: false,
+            size: 12,
+            perm: String::new(),
+        }];
+
+        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let status = (0..120u16)
+            .map(|x| buffer[(x, 7)].symbol())
+            .collect::<String>();
+        let leaf = zip_path.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            status.contains(&format!("{leaf}:/src")),
+            "breadcrumb missing: {status}"
+        );
+    }
+
+    #[test]
+    fn archive_search_reuses_m4_chain() {
+        // M7-6：归档内 `/` 搜索复用 M4 链路（find_match/search_move 作用于当前条目）。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().location = Location::Archive {
+            host: zip_path,
+            inner: PathBuf::new(),
+        };
+        state.active_tab_mut().entries = vec![
+            FileItem {
+                name: "deep".into(),
+                is_dir: true,
+                size: 0,
+                perm: String::new(),
+            },
+            FileItem {
+                name: "readme.md".into(),
+                is_dir: false,
+                size: 2,
+                perm: String::new(),
+            },
+            FileItem {
+                name: "src".into(),
+                is_dir: true,
+                size: 0,
+                perm: String::new(),
+            },
+        ];
+
+        // /main → 命中? 名单里只有 src/main.rs 在子目录，根列表不递归。
+        let mut msg = None;
+        submit_search(&mut state, "readme", &mut msg);
+        assert!(msg.is_none());
+        assert_eq!(state.active_tab().cursor, 1);
+        // n 环绕回 0（deep 是目录名，不匹配 readme）。
+        let mut input = InputState::default();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 1); // 无第二匹配则停在同一处
     }
 
     #[test]

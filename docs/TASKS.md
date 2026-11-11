@@ -78,11 +78,11 @@
 - [x] M7-2 实现 `ZipFs`（基于 `zip` crate）：list/read/metadata
 - [ ] M7-3 实现 `TarFs`（基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`
 - [ ] M7-4 导航层接入：归档文件上 `l`/`Enter` 进入虚拟目录，`h` 返回物理父目录
-- [ ] M7-5 状态栏/面包屑显示 `host:/inner/path`
-- [ ] M7-6 归档内搜索复用 M4 的搜索链路
-- [ ] M7-7 错误处理：损坏、加密、空、超大归档索引
+- [x] M7-5 状态栏/面包屑显示 `host:/inner/path`
+- [x] M7-6 归档内搜索复用 M4 的搜索链路
+- [x] M7-7 错误处理：损坏、加密、空、超大归档索引
 - [ ] M7-8 第二阶段：`.tar.xz` / `.tar.bz2` / `.tar.zst`
-- [ ] M7-9 `.7z` / `.rar` 不支持虚拟浏览，给出解压提示
+- [x] M7-9 `.7z` / `.rar` 不支持虚拟浏览，给出解压提示
 
 ## M8 — 原生 frecency / bookmark 选择器
 
