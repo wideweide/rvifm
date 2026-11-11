@@ -159,6 +159,22 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             }
             Ok(false)
         }
+        Some(cmd @ ("mkdir" | "touch")) => {
+            // M2-5：在当前目录新建目录/空文件。
+            let name = parts.next().ok_or_else(|| format!("{cmd}: 缺少名字"))?;
+            let base = state.active_tab().location.base_dir().to_path_buf();
+            let result = if cmd == "mkdir" {
+                ops::create_dir(state.active, &base, name)
+            } else {
+                ops::create_file(state.active, &base, name)
+            };
+            let op = result.map_err(|e| format!("{cmd}: {e}"))?;
+            state.undo_stack.push(op);
+            if let Some(tab) = state.tabs.get_mut(state.active) {
+                let _ = tab.refresh();
+            }
+            Ok(false)
+        }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
 }
@@ -1202,6 +1218,37 @@ mod tests {
         state.active_tab_mut().refresh().unwrap();
         let err = exec_command(&mut state, &format!("move {target}")).unwrap_err();
         assert!(err.contains("不能把目录移动到其自身内部"), "err: {err}");
+    }
+
+    #[test]
+    fn exec_mkdir_touch_and_undo() {
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        // mkdir → 目录出现并入栈；u 移除。
+        assert_eq!(exec_command(&mut state, "mkdir newdir"), Ok(false));
+        assert!(tmp.path().join("newdir").is_dir());
+        undo_last(&mut state, &mut msg);
+        assert!(msg.is_none());
+        assert!(!tmp.path().join("newdir").exists());
+
+        // touch → 文件出现并入栈；u 移除。
+        assert_eq!(exec_command(&mut state, "touch t.txt"), Ok(false));
+        assert!(tmp.path().join("t.txt").is_file());
+        undo_last(&mut state, &mut msg);
+        assert!(msg.is_none());
+        assert!(!tmp.path().join("t.txt").exists());
+
+        // 错误路径：缺名字、非法名字、已存在。
+        assert_eq!(
+            exec_command(&mut state, "mkdir"),
+            Err("mkdir: 缺少名字".to_owned())
+        );
+        assert!(exec_command(&mut state, "mkdir a/b").is_err());
+        assert_eq!(exec_command(&mut state, "touch t.txt"), Ok(false));
+        let err = exec_command(&mut state, "touch t.txt").unwrap_err();
+        assert!(err.starts_with("touch: 目标已存在"), "err: {err}");
     }
 
     #[test]

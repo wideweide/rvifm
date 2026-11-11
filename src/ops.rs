@@ -143,7 +143,40 @@ pub fn move_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result
     })
 }
 
+/// 新建名字校验（M2-5）：仅当前目录下的合法新名字。
+fn validate_new_name(base: &Path, name: &str) -> std::io::Result<PathBuf> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "名字为空或包含路径分隔符",
+        ));
+    }
+    let path = base.join(name);
+    if path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("目标已存在: {}", path.display()),
+        ));
+    }
+    Ok(path)
+}
+
+/// 新建目录（M2-5，`:mkdir <名字>`）。
+pub fn create_dir(tab_id: usize, base: &Path, name: &str) -> std::io::Result<UndoableOp> {
+    let path = validate_new_name(base, name)?;
+    fs::create_dir(&path)?;
+    Ok(UndoableOp::Create { tab_id, path })
+}
+
+/// 新建空文件（M2-5，`:touch <名字>`）。
+pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<UndoableOp> {
+    let path = validate_new_name(base, name)?;
+    fs::File::create(&path)?;
+    Ok(UndoableOp::Create { tab_id, path })
+}
+
 /// 撤销执行（`u`）：按操作类型逆操作。
+/// 逆操作源已不存在时按成功处理（幂等，避免过期操作卡住撤销栈）。
 pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
     match op {
         UndoableOp::Delete { path, staged, .. } => {
@@ -153,6 +186,9 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
                     std::io::ErrorKind::AlreadyExists,
                     format!("撤销目标已存在: {}", path.display()),
                 ));
+            }
+            if !staged.exists() {
+                return Ok(()); // 暂存已消失：等同已撤销
             }
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
@@ -166,6 +202,9 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
                     format!("撤销目标已存在: {}", from.display()),
                 ));
             }
+            if !to.exists() {
+                return Ok(()); // 目标已消失：等同已撤销
+            }
             fs::rename(to, from)
         }
         UndoableOp::Move { from, to, .. } => {
@@ -175,13 +214,25 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
                     format!("撤销目标已存在: {}", from.display()),
                 ));
             }
+            if !to.exists() {
+                return Ok(()); // 目标已消失：等同已撤销
+            }
             if let Some(parent) = from.parent() {
                 fs::create_dir_all(parent)?;
             }
             move_path(to, from)
         }
-        // Create 的 undo 在 M2-5 接入。
-        UndoableOp::Create { .. } => Ok(()),
+        UndoableOp::Create { path, .. } => {
+            if !path.exists() {
+                return Ok(()); // 已不存在：等同已撤销
+            }
+            // 非空目录保护性报错，避免连带删除用户后续放入的内容。
+            if path.is_dir() {
+                fs::remove_dir(path)
+            } else {
+                fs::remove_file(path)
+            }
+        }
     }
 }
 
@@ -305,6 +356,41 @@ mod tests {
         assert!(move_to(0, &file, &sub).is_err());
         // 原文件未被改动。
         assert_eq!(fs::read_to_string(&file).unwrap(), "M");
+    }
+
+    #[test]
+    fn create_dir_and_touch_with_undo() {
+        let tmp = TempDir::new().unwrap();
+
+        let dir_op = create_dir(0, tmp.path(), "newdir").unwrap();
+        assert!(tmp.path().join("newdir").is_dir());
+        undo_op(&dir_op).unwrap();
+        assert!(!tmp.path().join("newdir").exists());
+        // 幂等：再次撤销同一操作返回成功。
+        undo_op(&dir_op).unwrap();
+
+        let file_op = create_file(0, tmp.path(), "t.txt").unwrap();
+        assert_eq!(fs::read(tmp.path().join("t.txt")).unwrap(), b"");
+        undo_op(&file_op).unwrap();
+        assert!(!tmp.path().join("t.txt").exists());
+    }
+
+    #[test]
+    fn create_rejects_invalid_names_and_protects_nonempty_dir() {
+        let tmp = TempDir::new().unwrap();
+        // 非法名字。
+        assert!(create_dir(0, tmp.path(), "a/b").is_err());
+        assert!(create_file(0, tmp.path(), "").is_err());
+        assert!(create_file(0, tmp.path(), "x\\y").is_err());
+        // 目标已存在。
+        fs::write(tmp.path().join("t.txt"), "X").unwrap();
+        assert!(create_file(0, tmp.path(), "t.txt").is_err());
+
+        // 非空目录的 undo 被拒绝（保护内容），目录保留。
+        let dir_op = create_dir(0, tmp.path(), "d").unwrap();
+        fs::write(tmp.path().join("d").join("keep.txt"), "K").unwrap();
+        assert!(undo_op(&dir_op).is_err());
+        assert!(tmp.path().join("d").is_dir());
     }
 
     #[test]
