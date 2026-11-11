@@ -259,6 +259,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     }
                     if let Some(tab) = state.tabs.get_mut(state.active) {
                         let _ = tab.refresh();
+                        // M3-4：批量操作完成后清空标记状态。
+                        tab.clear_tags();
                     }
                     let mut msg = format!("tag {action}: {done} 完成");
                     if skipped > 0 {
@@ -506,6 +508,8 @@ fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>) {
     }
     if let Some(tab) = state.tabs.get_mut(state.active) {
         let _ = tab.refresh();
+        // M3-4：批量删除完成后清空标记状态。
+        tab.clear_tags();
     }
     let mut m = format!("tag delete: {done} 完成");
     if let Some(e) = first_err {
@@ -1802,6 +1806,12 @@ mod tests {
         assert!(sub.join("a.txt").exists() && sub.join("b.txt").exists());
         assert!(!sub.join("c.txt").exists(), "未标记文件不受影响");
         assert!(tmp.path().join("a.txt").exists(), "copy 源保留");
+        // M3-4：批量操作完成后标记自动清空。
+        assert_eq!(state.active_tab().tagged_count(), 0);
+
+        // 重新标记后再批量移动。
+        state.active_tab_mut().tags.insert("a.txt".to_owned());
+        state.active_tab_mut().tags.insert("b.txt".to_owned());
 
         // 两次复制各一条撤销记录，逆序撤销还原副本。
         assert_eq!(state.undo_stack.len(), 2);
@@ -1835,6 +1845,8 @@ mod tests {
         assert!(!tmp.path().join("d.txt").exists());
         assert!(!tmp.path().join("e.txt").exists());
         assert!(tmp.path().join("c.txt").exists(), "未标记不受影响");
+        // M3-4：批量删除完成后标记自动清空。
+        assert_eq!(state.active_tab().tagged_count(), 0);
 
         // 逐条 u 恢复被删的两个文件（LIFO）。
         let mut msg = None;
