@@ -98,19 +98,43 @@ fn command_input(input: &mut String, key: KeyEvent) -> CmdInput {
     }
 }
 
-/// 执行最小 `:` 命令（M1-5）。返回 `Ok(true)` 表示应用退出（关闭最后一个 tab）。
+/// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
+#[derive(Debug, PartialEq, Eq)]
+enum ExecOutcome {
+    /// 关闭最后一个 tab，应用退出。
+    Quit,
+    /// 命令完成，可携带状态栏提示。
+    Done { msg: Option<String> },
+}
+
+/// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
+#[cfg(test)]
 fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
+    exec_command_impl(state, line).map(|o| matches!(o, ExecOutcome::Quit))
+}
+
+/// 执行最小 `:` 命令（M1-5/M2-6）。
+fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     let mut parts = line.split_whitespace();
     match parts.next() {
-        None => Ok(false),
+        None => Ok(ExecOutcome::Done { msg: None }),
         Some("tabnew") => {
             if state.new_tab_here() {
-                Ok(false)
+                Ok(ExecOutcome::Done { msg: None })
             } else {
                 Err("tabnew: 目录读取失败".to_owned())
             }
         }
-        Some("tabclose") => Ok(state.close_tab()),
+        Some("tabclose") => {
+            // 关闭标签不可撤销：明确提示（M2-6）。
+            if state.close_tab() {
+                Ok(ExecOutcome::Quit)
+            } else {
+                Ok(ExecOutcome::Done {
+                    msg: Some("标签已关闭（不可撤销）".to_owned()),
+                })
+            }
+        }
         Some("tabmove") => {
             let n = parts
                 .next()
@@ -118,7 +142,7 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
                 .transpose()
                 .map_err(|_| "tabmove: 位置必须是数字".to_owned())?;
             state.move_tab(n);
-            Ok(false)
+            Ok(ExecOutcome::Done { msg: None })
         }
         Some("rename") => {
             // M2-3：重命名选中条目（新名字不含空白；含空格的名字在 M5-4 统一解析）。
@@ -137,7 +161,7 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             if let Some(tab) = state.tabs.get_mut(state.active) {
                 let _ = tab.refresh();
             }
-            Ok(false)
+            Ok(ExecOutcome::Done { msg: None })
         }
         Some("move") => {
             // M2-4：移动选中条目到目标目录（保留原名；`yy`/`P` 键位在 M10 接入）。
@@ -157,7 +181,7 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             if let Some(tab) = state.tabs.get_mut(state.active) {
                 let _ = tab.refresh();
             }
-            Ok(false)
+            Ok(ExecOutcome::Done { msg: None })
         }
         Some(cmd @ ("mkdir" | "touch")) => {
             // M2-5：在当前目录新建目录/空文件。
@@ -173,7 +197,7 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
             if let Some(tab) = state.tabs.get_mut(state.active) {
                 let _ = tab.refresh();
             }
-            Ok(false)
+            Ok(ExecOutcome::Done { msg: None })
         }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
@@ -356,7 +380,8 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
     };
     match ops::undo_op(&op) {
         Ok(()) => {
-            *msg = None;
+            // 撤销成功给出反馈（M2-6）。
+            *msg = Some(format!("已撤销: {}", op.describe()));
             // 刷新受影响 tab（tab 索引在 tabclose 后可能偏移，跨 tab 撤销在 M2-7 完善）。
             if let Some(tab) = state.tabs.get_mut(op.tab_id())
                 && let Err(e) = tab.refresh()
@@ -388,9 +413,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     CmdInput::Submit => {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
-                        match exec_command(&mut state, line.trim()) {
-                            Ok(true) => return Ok(()),
-                            Ok(false) => msg = None,
+                        match exec_command_impl(&mut state, line.trim()) {
+                            Ok(ExecOutcome::Quit) => return Ok(()),
+                            Ok(ExecOutcome::Done { msg: m }) => msg = m,
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -1134,7 +1159,10 @@ mod tests {
         assert_eq!(state.undo_stack.len(), 1);
 
         undo_last(&mut state, &mut msg);
-        assert!(msg.is_none());
+        assert!(
+            msg.as_deref().unwrap().starts_with("已撤销: "),
+            "msg: {msg:?}"
+        );
         assert!(file.exists());
         assert_eq!(fs::read_to_string(&file).unwrap(), "G");
         assert!(state.undo_stack.is_empty());
@@ -1167,7 +1195,10 @@ mod tests {
 
         // `u` 撤销 → 回到 old.txt。
         undo_last(&mut state, &mut msg);
-        assert!(msg.is_none());
+        assert!(
+            msg.as_deref().unwrap().starts_with("已撤销: "),
+            "msg: {msg:?}"
+        );
         assert!(tmp.path().join("old.txt").exists());
         assert!(!tmp.path().join("new.txt").exists());
 
@@ -1202,7 +1233,10 @@ mod tests {
 
         // `u` 撤销 → 移回原目录。
         undo_last(&mut state, &mut msg);
-        assert!(msg.is_none());
+        assert!(
+            msg.as_deref().unwrap().starts_with("已撤销: "),
+            "msg: {msg:?}"
+        );
         assert!(tmp.path().join("m.txt").exists());
         assert!(!sub.join("m.txt").exists());
 
@@ -1230,14 +1264,20 @@ mod tests {
         assert_eq!(exec_command(&mut state, "mkdir newdir"), Ok(false));
         assert!(tmp.path().join("newdir").is_dir());
         undo_last(&mut state, &mut msg);
-        assert!(msg.is_none());
+        assert!(
+            msg.as_deref().unwrap().starts_with("已撤销: "),
+            "msg: {msg:?}"
+        );
         assert!(!tmp.path().join("newdir").exists());
 
         // touch → 文件出现并入栈；u 移除。
         assert_eq!(exec_command(&mut state, "touch t.txt"), Ok(false));
         assert!(tmp.path().join("t.txt").is_file());
         undo_last(&mut state, &mut msg);
-        assert!(msg.is_none());
+        assert!(
+            msg.as_deref().unwrap().starts_with("已撤销: "),
+            "msg: {msg:?}"
+        );
         assert!(!tmp.path().join("t.txt").exists());
 
         // 错误路径：缺名字、非法名字、已存在。
@@ -1249,6 +1289,61 @@ mod tests {
         assert_eq!(exec_command(&mut state, "touch t.txt"), Ok(false));
         let err = exec_command(&mut state, "touch t.txt").unwrap_err();
         assert!(err.starts_with("touch: 目标已存在"), "err: {err}");
+    }
+
+    #[test]
+    fn consecutive_ops_undo_in_reverse() {
+        // M2-6：mkdir → touch → rename 连续三步，三次 `u` 逆序还原。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path()).unwrap());
+        let mut msg = None;
+
+        assert_eq!(exec_command(&mut state, "mkdir d"), Ok(false));
+        assert_eq!(exec_command(&mut state, "touch t.txt"), Ok(false));
+        // 排序后 d/ 在 0、t.txt 在 1：把光标放到 t.txt 再重命名。
+        state.active_tab_mut().cursor = 1;
+        assert_eq!(exec_command(&mut state, "rename d2.txt"), Ok(false)); // 重命名 t.txt
+
+        assert!(tmp.path().join("d").is_dir());
+        assert!(tmp.path().join("d2.txt").is_file());
+        assert_eq!(state.undo_stack.len(), 3);
+
+        // 第 1 次 u：撤销重命名 → d2.txt 回到 t.txt。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.as_deref().unwrap().starts_with("已撤销: 重命名"));
+        assert!(tmp.path().join("t.txt").is_file());
+        assert!(!tmp.path().join("d2.txt").exists());
+
+        // 第 2 次 u：撤销 touch → t.txt 移除。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.as_deref().unwrap().starts_with("已撤销: 新建"));
+        assert!(!tmp.path().join("t.txt").exists());
+
+        // 第 3 次 u：撤销 mkdir → d 移除；栈空。
+        undo_last(&mut state, &mut msg);
+        assert!(msg.as_deref().unwrap().starts_with("已撤销: 新建"));
+        assert!(!tmp.path().join("d").exists());
+        assert!(state.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn tabclose_reports_irreversible() {
+        let (_tmp, mut state) = make_state(1);
+        state.push_tab(Tab::from_physical(&std::env::temp_dir()).unwrap());
+
+        // 非最后一个 tab：关闭成功并提示不可撤销。
+        match exec_command_impl(&mut state, "tabclose") {
+            Ok(ExecOutcome::Done { msg }) => {
+                assert_eq!(msg.as_deref(), Some("标签已关闭（不可撤销）"))
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+
+        // 最后一个 tab：退出请求。
+        assert_eq!(
+            exec_command_impl(&mut state, "tabclose"),
+            Ok(ExecOutcome::Quit)
+        );
     }
 
     #[test]
