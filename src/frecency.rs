@@ -12,6 +12,9 @@
 #![allow(dead_code)]
 
 use crate::store::Store;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::text::Line;
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use std::path::Path;
 
 /// 事件类型（NOTES §4.5 events `{path, topic, kind, ts}`）。
@@ -426,13 +429,13 @@ fn replay_merge(
     map.into_values().collect()
 }
 
-/// `rvifm pick [query]`（M8-6）：stdin 读候选（每行一个路径），
-/// frecency 排序输出全部命中候选（fzf filter 语义）。选中交互式
-/// picker 在 TTY 场景启用（M8-6 提交）；非 TTY 场景即本函数。
+/// `rvifm pick [query]`（M8-6）：stdin 读候选（每行一个路径）。
+/// stdout 为 TTY → 交互式选择器（ratatui 自绘，Esc/Ctrl-C 取消退出码 1）；
+/// stdout 非 TTY → fzf filter 语义（输出全部命中候选）。
 /// **纯只读：不写事件、不推进 tick。**
 pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
-    let query = args.first().cloned().unwrap_or_default();
-    use std::io::{Read as _, Write as _};
+    let initial_query = args.first().cloned().unwrap_or_default();
+    use std::io::{IsTerminal, Read as _, Write as _};
     let mut candidates = String::new();
     std::io::stdin().read_to_string(&mut candidates)?;
 
@@ -459,24 +462,140 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
             continue;
         }
         let topic = "dir".to_owned();
-        // 查询匹配：叶子或全路径（ci 子串）。
-        let leaf = path.rsplit_once('/').map(|(_, l)| l).unwrap_or(&path);
-        let hit = query.is_empty() || ci_contains(leaf, &query) || ci_contains(&path, &query);
-        if hit {
-            out.push((path.clone(), topic.clone(), score_of(&path, &topic)));
+        out.push((path.clone(), topic.clone(), score_of(&path, &topic)));
+    }
+
+    // stdout 为 TTY → 交互式选择器；否则 fzf filter 语义。
+    if !std::io::stdout().is_terminal() {
+        let mut hit: Vec<&(String, String, f64)> = out
+            .iter()
+            .filter(|(path, _, _)| {
+                initial_query.is_empty()
+                    || ci_contains(leaf_of(path), &initial_query)
+                    || ci_contains(path, &initial_query)
+            })
+            .collect();
+        hit.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+        if hit.is_empty() {
+            std::process::exit(1);
         }
+        let stdout = std::io::stdout();
+        let mut w = std::io::BufWriter::new(stdout.lock());
+        for (path, _, _) in hit {
+            writeln!(w, "{path}")?;
+        }
+        return Ok(());
     }
-    // 分数降序 → 路径字典序。
-    out.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
-    if out.is_empty() {
-        std::process::exit(1); // 无匹配：退出码 1（fzf filter 语义）
+
+    pick_interactive(&out, &initial_query)
+}
+
+/// 交互式选择器结果。
+enum PickOutcome {
+    Selected(String),
+    Cancelled,
+    /// 过滤后无候选：退出码 1。
+    NoMatch,
+}
+
+/// ratatui 自绘选择器（M8-6；NOTES §4.5 允许 skim 不达标时降级为自绘）。
+/// 输入查询实时过滤（叶子/全路径 ci 子串），↑/↓/j/k 移动，Enter 选中。
+fn pick_interactive(
+    candidates: &[(String, String, f64)],
+    initial_query: &str,
+) -> std::io::Result<()> {
+    let mut query = initial_query.to_owned();
+    let mut cursor: usize = 0;
+    let mut scroll: usize = 0;
+
+    let matches = |q: &str, candidates: &[(String, String, f64)]| -> Vec<(String, String, f64)> {
+        let mut hit: Vec<(String, String, f64)> = candidates
+            .iter()
+            .filter(|(path, _, _)| {
+                q.is_empty() || ci_contains(leaf_of(path), q) || ci_contains(path, q)
+            })
+            .cloned()
+            .collect();
+        hit.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+        hit
+    };
+
+    let mut terminal = ratatui::init();
+    let outcome = loop {
+        let hits = matches(&query, candidates);
+        if cursor >= hits.len() {
+            cursor = hits.len().saturating_sub(1);
+        }
+        let draw_result = terminal.draw(|frame| {
+            let [query_area, list_area] = ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Min(0),
+            ])
+            .areas(frame.area());
+            frame.render_widget(Paragraph::new(format!("/{query}")), query_area);
+            let items: Vec<ListItem> = hits
+                .iter()
+                .map(|(path, _, _)| ListItem::new(Line::from(path.clone())))
+                .collect();
+            let mut ls = ListState::default()
+                .with_selected(Some(cursor))
+                .with_offset(scroll);
+            frame.render_stateful_widget(
+                List::new(items).highlight_style(
+                    ratatui::style::Style::new().add_modifier(ratatui::style::Modifier::REVERSED),
+                ),
+                list_area,
+                &mut ls,
+            );
+            scroll = ls.offset();
+        });
+        if let Err(e) = draw_result {
+            eprintln!("rvifm pick: 渲染失败: {e}");
+            break PickOutcome::Cancelled;
+        }
+
+        match event::read() {
+            Ok(Event::Key(key))
+                if key.kind == KeyEventKind::Press
+                    && (key.code == KeyCode::Esc
+                        || (key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL))) =>
+            {
+                break PickOutcome::Cancelled;
+            }
+            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => match key.code {
+                KeyCode::Enter => {
+                    if hits.is_empty() {
+                        break PickOutcome::NoMatch;
+                    }
+                    break PickOutcome::Selected(hits[cursor].0.clone());
+                }
+                KeyCode::Backspace => {
+                    query.pop();
+                }
+                KeyCode::Down | KeyCode::Char('j') if !hits.is_empty() => {
+                    cursor = (cursor + 1).min(hits.len() - 1);
+                }
+                KeyCode::Up | KeyCode::Char('k') if !hits.is_empty() => {
+                    cursor = cursor.saturating_sub(1);
+                }
+                KeyCode::Char(c) => {
+                    query.push(c);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    };
+    ratatui::restore();
+    match outcome {
+        PickOutcome::Selected(path) => {
+            println!("{path}");
+            Ok(())
+        }
+        PickOutcome::NoMatch => std::process::exit(1),
+        PickOutcome::Cancelled => std::process::exit(1),
     }
-    let stdout = std::io::stdout();
-    let mut w = std::io::BufWriter::new(stdout.lock());
-    for (path, _topic, _score) in &out {
-        writeln!(w, "{path}")?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
