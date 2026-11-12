@@ -1876,6 +1876,39 @@ mod tests {
     }
 
     #[test]
+    fn no_color_env_renders_without_panic() {
+        // M9-5：NO_COLOR 下渲染降级验证——TUI 与预览均不 panic、内容完整。
+        // 注：crossterm/ratatui 在 TestBackend 下对 NO_COLOR 的实际颜色抑制
+        // 由库内部处理；此处验证的是"降级路径整体可跑通"。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("f.txt"), "content").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().tags.insert("f.txt".to_owned());
+
+        // 模拟 NO_COLOR 生效环境（rustc 1.99 set_var unsafe）。
+        // SAFETY: 测试进程独占，串行执行，无并发读取。
+        unsafe {
+            std::env::set_var("NO_COLOR", "1");
+        }
+
+        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let draw = terminal.draw(|frame| render(frame, &state, &InputMode::Normal, None));
+        assert!(draw.is_ok(), "NO_COLOR 下 TUI 渲染不应失败");
+
+        // 预览渲染同样不 panic。
+        let p = tmp.path().join("f.txt");
+        let preview = crate::preview::render_preview(&p, 10);
+        let texts = preview.line_texts();
+        assert!(texts.iter().any(|t| t.contains("content")));
+
+        // 清理环境变量，避免影响其它测试。
+        unsafe {
+            std::env::remove_var("NO_COLOR");
+        }
+    }
+
+    #[test]
     fn render_shows_tag_bold_and_count() {
         let (_tmp, mut state) = make_state(3);
         state.active_tab_mut().tags.insert("f01".to_owned());
