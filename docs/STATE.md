@@ -4,9 +4,9 @@
 
 - **更新时间**：2026-11-12
 - **当前阶段**：M9 — 图标与主题（M0–M8 已完成）
-- **当前任务**：`M9-1` 集成 `devicons`，文件列表渲染带图标和颜色
+- **当前任务**：`M9-2` 集成 `opaline`，加载内置主题并替换硬编码 `Style`
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
-- **阶段状态**：M0–M8 已完成；M9 进行中
+- **阶段状态**：M0–M8 已完成；M9 进行中（M9-1 已完成）
 
 ## 已完成
 
@@ -76,6 +76,7 @@
 - `M8-7`（2026-11-12）：shell hook 示例（`docs/hooks/README.md`）——bash/fish 的 `rvifm_cd` 包装函数：`command cd` 成功后才调用 `record`（后台执行不阻塞提示符），失败路径不调用；附验证要点。
 - `M8-8`（2026-11-12）：`src/preview.rs` 共享 `PreviewRenderer`——目录（成员列表、目录优先排序、截断提示）/ 文本（二进制 NUL 探测、大文件 >512KB 截断提示、空文件提示）/ 图像占位（真实渲染在 M11-1/M11-2 接入）；`preview_lines()` 为 pick 共用入口；`line_texts()`/`line_count()` 测试友好。79 单测 + 3 冒烟全绿。
 - **M8-9 + M8 阶段验收自检（2026-11-12，ACCEPTANCE §10）**：vifm 场景 aging 排名稳定性由 `replay_aging_promotes_recent` 测试固化（5×A → 495 次其他 → 1×B，B 排在 A 前）✓；契约——`record` 静默、`pick` 纯只读不写事件（pick 路径无 append 调用）✓；`events` 条数不变 / `global_tick` 不变（纯读路径）✓；shell hook 仅 `cd` 成功后调用（hook 文档 + 失败路径不调用）✓；两个终端并发 `record` 各 100 次不丢（redb 写事务串行化 + `append_event` 单事务语义）✓；`events.pending` 降级合并（注入式测试）✓；compaction 后排名一致（`replay_merge` 与 `replay` 同规则）✓；损坏 redb 不 panic（`Store::open` InvalidData 包装）✓；bash/fish hook 不阻塞提示符（后台 + 输出丢弃）✓；无后台守护进程 ✓；**书签（keyword）管理命令未实现**——数据结构已支持，pick 交互式书签增删列为后续增强（不阻塞 §10 主链路验收）。**M8 阶段关闭。**
+- `M9-1`（2026-11-12）：devicons 集成（`src/icons.rs`）——`icon_for(path, IconTheme)` 封装 `devicons::icon_for_file`（Dark/Light），`FileItem` 增加 `icon` 字段（物理与归档条目均填充，归档按叶子名推断）；TUI 文件列表行首渲染 glyph+名称。M9-3 Light 消费与 M9-4 预览共用接入待后续。103 单测 + 3 冒烟全绿。
 - crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
