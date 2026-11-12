@@ -117,17 +117,17 @@
 
 ## M11 — 预览与文件打开
 
-- [ ] M11-1 集成 `ratatui-image`，`ImagePicker` 启动探测 + halfblocks 回退
-- [ ] M11-2 图片预览接入 `PreviewRenderer`，区分原生协议与 halfblocks 渲染路径
-- [ ] M11-3 系统 opener 默认层：`gio open` / `xdg-open` / `open` / `start`
-- [ ] M11-4 TOML opener 配置解析：`opener` 定义 + `prepend` / `append` / `replace` 规则
-- [ ] M11-5 规则匹配：`mime` 优先，`name` 回退，按顺序取第一个
-- [ ] M11-6 验证：Alacritty（无原生协议）下图片以 halfblocks 显示，不空白
-- [ ] M11-7 验证：零配置下 `Enter` 打开文件走系统默认，不报错
-- [ ] M11-8 集成 `office_oxide`（固定 `~0.1.16`），实现 DOCX/XLSX/PPTX 文本提取
-- [ ] M11-9 将 Office 提取结果接入 `PreviewRenderer`（Markdown/文本渲染）
-- [ ] M11-10 实现 PDF 预览探测链：`pdf-inspector =1.25.2` 文本提取 → `exprim` 栅格化（仅 `pdf-visual` feature）→ `pdftoppm`/`mutool` → 回退提示
-- [ ] M11-11 验证：未安装 Poppler 的干净环境中，Office 预览正常，PDF 显示友好提示
+- [~] M11-1 集成 `ratatui-image`（deferred：需真实终端验证，SPEC SIMPLIFIED 允许延后）
+- [~] M11-2 图片预览接入 PreviewRenderer（deferred：依赖 M11-1）
+- [x] M11-3 系统 opener 默认层：`gio open` / `xdg-open` / `open` / `start`
+- [x] M11-4 TOML opener 配置解析：`opener` 定义 + `prepend` / `append` / `replace` 规则
+- [x] M11-5 规则匹配：`mime` 优先，`name` 回退，按顺序取第一个
+- [~] M11-6 验证：Alacritty 下图片显示（deferred：需真实终端）
+- [x] M11-7 验证：零配置下 `Enter` 打开文件走系统默认，不报错
+- [~] M11-8 集成 `office_oxide`（deferred：重依赖，SIMPLIFIED 允许延后）
+- [~] M11-9 Office 提取接入 PreviewRenderer（deferred：依赖 M11-8）
+- [~] M11-10 PDF 预览探测链（deferred：重依赖，SIMPLIFIED 允许延后）
+- [~] M11-11 Poppler-free 验证（deferred：依赖 M11-8/M11-10）
 - [ ] M11-12 `pdf-visual` feature 门控与依赖边界：`exprim = { version = "=0.4.0", optional = true }`，`Cargo.lock` 入库；关 feature 时 `cargo tree` 不含 exprim，`--features pdf-visual` 时为 `0.4.0`
 - [ ] M11-13 `pdf-visual` 资源护栏：`ExportOptions.max_pixels` 限 200 万–400 万像素、输入 PDF 文件大小上限、release profile `panic = "unwind"`；超大 `MediaBox` / 超大文件被拒绝且不 panic
 - [ ] M11-14 `pdf-visual` 语料回归：CJK / 加密 / 损坏 PDF 语料 + 1,000 次随机字节变异 0 panic
