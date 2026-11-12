@@ -735,9 +735,11 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             };
             // M9-1：行首渲染 devicons 类型图标。
             let label = format!("{} {label}", item.icon.glyph);
+            // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
+            let base_style = crate::theme::style("file_icon");
             // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
             // 光标行由 highlight_style 叠加。
-            let mut li = ListItem::new(Line::from(label));
+            let mut li = ListItem::new(Line::from(label)).style(base_style);
             let mut mods = Modifier::empty();
             if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
                 mods |= Modifier::REVERSED;
