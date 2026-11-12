@@ -107,7 +107,7 @@
 
 ## M10 — 声明式键位系统
 
-- [ ] M10-1 定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）
+- [x] M10-1 定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）
 - [ ] M10-2 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
 - [ ] M10-3 集成键位解析层，支持多键序列与超时
 - [ ] M10-4 实现 Normal / Visual / View / Command-line 模式切换
