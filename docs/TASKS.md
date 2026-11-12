@@ -135,11 +135,11 @@
 
 ## M12 — 权限不足时的内联提权（2026-11-12 增补）
 
-- [ ] M12-1 检测写操作 EACCES，触发提权分支
-- [ ] M12-2 实现 `rvifm --askpass` 辅助模式，TUI 内密码输入框
-- [ ] M12-3 通过 `SUDO_ASKPASS` + `sudo -A` 重试当前操作
-- [ ] M12-4 取消密码提示时干净中止，TUI 状态不变
-- [ ] M12-5 验证：vifm 场景 yyp 到 /root/ 类路径，rvifm 内完成
+- [~] M12-1 检测写操作 EACCES（deferred：需 Linux 测试环境，设计已入库 NOTES/SPEC）
+- [~] M12-2 askpass 辅助模式（deferred：需 Linux 测试环境）
+- [~] M12-3 sudo -A 重试（deferred：需 Linux 测试环境）
+- [~] M12-4 取消干净中止（deferred：需 Linux 测试环境）
+- [~] M12-5 vifm 场景验证（deferred：需 Linux root 测试环境）
 
 ## 不在任务清单中的事项
 
