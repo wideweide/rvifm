@@ -1,4 +1,5 @@
-# STATE — 当前进度
+# STATE —
+- `M9-2`（2026-11-13）：opaline 0.4.2 主题引擎（`src/theme.rs`）——`set_builtin(name)` 按名加载内置主题（未知名返回 NotFound）、`style(name)` 将命名样式解析为 ratatui Style、`active_variant()` 供 M9-3 明暗对齐；未激活时零配置可用（零样式）。TUI 接线与硬编码 Style 替换随 M9-3。106 单测 + 3 冒烟全绿。 当前进度
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
