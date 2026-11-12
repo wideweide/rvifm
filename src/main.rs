@@ -15,6 +15,7 @@ mod preview;
 mod state;
 mod store;
 mod tab;
+mod theme;
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args().skip(1);
