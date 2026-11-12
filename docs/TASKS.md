@@ -101,7 +101,7 @@
 - [x] M9-1 集成 `devicons`，文件列表渲染带图标和颜色
 - [x] M9-2 集成 `opaline`，加载内置主题并替换硬编码 `Style`（引擎层）
 - [x] M9-3 图标 `Theme::Dark` / `Theme::Light` 与主题明暗对齐
-- [ ] M9-4 `PreviewRenderer` 复用同一图标/主题
+- [x] M9-4 `PreviewRenderer` 复用同一图标/主题
 - [ ] M9-5 无 Nerd Font / `NO_COLOR` 环境下的降级验证
 - [ ] M9-6 用户 TOML 主题发现与加载（`~/.config/rvifm/themes/`）
 
