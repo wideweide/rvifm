@@ -4,9 +4,9 @@
 
 - **更新时间**：2026-11-12
 - **当前阶段**：M8 — 原生 frecency / bookmark 选择器（M0–M7 已完成）
-- **当前任务**：`M8-3` `record` 子命令：短事务追加事件 + 有限重试 + `events.pending` 降级
+- **当前任务**：`M8-8` 抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；当前仍按 M8 顺序执行。）
-- **阶段状态**：M0–M7 已完成；M8 进行中（M8-1 已完成）
+- **阶段状态**：M0–M7 已完成；M8 进行中（M8-1～M8-7 已完成，M8-3/M8-4 详见已完成区）
 
 ## 已完成
 
@@ -69,6 +69,11 @@
 - **M7 阶段验收自检（2026-11-12，ACCEPTANCE §9）**：.zip/.tar/.tar.gz 上 `l/Enter` 进入并列出成员 ✓；归档内 j/k/h/l 导航正确、h 归档根返回宿主目录 ✓；面包屑 `host:/inner` ✓；`/` 搜索归档内可用 ✓；归档内删除/重命名/移动入口明确禁用（physical_base 守卫 + dd/tag 归档 no-op）✓；损坏/空归档不 panic 有提示 ✓；内存受最大单成员约束（xz 受解压后体积，已记录）✓；`.7z/.rar` 提示解压 ✓；归档浏览不进入撤销栈（导航不改 FS；文件操作被守卫拒绝）✓。**M7 阶段关闭。**
 - `M8-1`（2026-11-12）：frecency 数据结构与分级固化（`src/frecency.rs`）——`EntryRecord{path,topic,kind,ts}`（events 追加）、`SnapshotEntry{path,topic,keyword,score,tick}`（snapshot，keyword 非空=书签）、`ScoredEntry`（查询结果）、`Grade` 0–7 档固化：7 书签关键字命中 / 6 书签 / 5 文件名精确（smart-case）/ 4 文件名前缀 / 3 文件名包含 / 2 中间段前缀 / 1 全路径子串 / 0 无匹配；排序契约 = 档位降序→aging 分数降序→路径字典序；空查询书签置顶。**record 唯一写入入口 / pick 纯只读红线**已在模块文档声明。86 单测 + 3 冒烟全绿。
 - `M8-2`（2026-11-12）：`src/store.rs`——redb 4.5 三表（events tick→JSON / snapshot `topic\x1fpath`→JSON / meta 全局 tick 与 last_compaction）；`Store::open` 显式建三表（redb 4 不再自动建表）；`append_event` 事务内 `global_tick += 1` 并以新 tick 为 key 追加（单调递增语义）；`events_since`/`snapshot_upsert`/`snapshot_all`/`last_compaction` 读写；重开持久化验证。`EntryRecord`/`SnapshotEntry` 补 serde 派生。91 单测 + 3 冒烟全绿。
+- `M8-3`（2026-11-12）：`rvifm record --topic dir <path>`——`record_impl`（路径注入可测）3 次重试/10ms 退避；连续失败降级追加 `events.pending`（每行 JSON，下次启动合并后删除）；pending 合并空行/损坏行容错。成功静默不污染 stdout。
+- `M8-4`（2026-11-12）：`replay()` 重放器——snapshot + events 增量 → EMS aging（λ=0.01/事件时钟，读取时统一 aging 修正冷启动）→ `ScoredEntry` 排序；compaction 合并共用同规则（`replay_merge`）。
+- `M8-5`（2026-11-12）：`rvifm maintenance compact`——合并 last_compaction 之后事件进 snapshot 表、推进标记、`prune_events_le` 裁剪已合并事件；无新事件时幂等 no-op。
+- `M8-6`（2026-11-12）：`rvifm pick` 双模式——stdout 为 TTY → ratatui 自绘交互式选择器（**skim 降级为自绘**，NOTES §4.5 允许；查询实时过滤、↑/↓/j/k、Enter 选中退出 0、Esc/Ctrl-C 取消退出 1）；非 TTY → fzf filter 语义输出全部命中（无匹配退出 1）。**纯只读**。
+- `M8-7`（2026-11-12）：shell hook 示例（`docs/hooks/README.md`）——bash/fish 的 `rvifm_cd` 包装函数：`command cd` 成功后才调用 `record`（后台执行不阻塞提示符），失败路径不调用；附验证要点。
 - crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
@@ -86,8 +91,8 @@
 
 ## 下一步
 
-1. `M8-2`：redb 三表（events/snapshot/meta）schema 与 tick 语义。
-2. `M8-3`～`M8-9`：record 子命令、重放评分、compaction、pick、shell hook（顺序见 [TASKS.md](TASKS.md)）。
+1. `M8-8`：抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用。
+2. `M8-9`：vifm 场景 aging 排名稳定性验证（已随 M8-4 `replay_aging_promotes_recent`），补记录后跑 M8 阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §10）。
 3. M8 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §10）。
 4. M9–M11 按计划推进（图标主题、声明式键位、预览与打开）。
 5. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建。
