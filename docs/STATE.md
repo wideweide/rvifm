@@ -1,135 +1,64 @@
-# STATE —
-- `M9-6`（2026-11-13）：用户 TOML 主题发现与加载——`discover_user_themes()` 扫描 `themes\/`目录 （目录不存在返回空）、`load_user_theme`/`set_user_theme` 按名加载并激活（解析失败返回 InvalidData 不改变当前主题）。夹具注：variant 取值为小写 `dark`\/`light`（serde）。108 单测 + 3 冒烟全绿。
-- **M9 阶段验收自检（2026-11-13，ACCEPTANCE §11）**：文件列表 icon+color ✓；Dark\/Light 与 opaline variant 对齐 ✓；内置主题可加载、运行时切换 ✓；PreviewRenderer 与文件列表同图标同主题 ✓；NO_COLOR 降级不 panic ✓；用户主题 `~\/config\/rvifm\/themes\/` 发现加载 ✓；不依赖 vifm 插件\/vifmrc ✓。**M9 阶段关闭。**
-- `M9-5`（2026-11-13）：`NO_COLOR` 降级验证——设置环境变量后 TUI 渲染与预览渲染均不 panic、内容完整（颜色抑制由 crossterm\/ratatui 库内处理）。107 单测 + 3 冒烟全绿。
-- `M9-4`（2026-11-13）：PreviewRenderer 复用同一图标/主题——`directory_preview` 行首经 `icons::icon_for_active`（激活 opaline variant 对应 devicons 主题）渲染 glyph；`preview_lines` 作为 pick 共用入口。106 单测 + 3 冒烟全绿。
-- `M9-3`（2026-11-13）：图标主题与 opaline 明暗对齐——`icons::icon_for_active`/`active_theme` 读取激活主题 variant 映射 devicons Dark\/Light；`theme::icon_theme()` 为桥接；`load_entries`/`load_archive_entries` 改用 active 主题；TUI 文件列表经 opaline 命名样式 `file_icon` 染色（主题缺少该样式时零配置可用）。106 单测 + 3 冒烟全绿。
-- `M9-2`（2026-11-13）：opaline 0.4.2 主题引擎（`src/theme.rs`）——`set_builtin(name)` 按名加载内置主题（未知名返回 NotFound）、`style(name)` 将命名样式解析为 ratatui Style、`active_variant()` 供 M9-3 明暗对齐；未激活时零配置可用（零样式）。TUI 接线与硬编码 Style 替换随 M9-3。106 单测 + 3 冒烟全绿。 当前进度
+# STATE — 当前进度
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
-- **更新时间**：2026-11-12
-- **当前阶段**：M9 — 图标与主题（M0–M8 已完成）
-- **当前任务**：`M9-2` 集成 `opaline`，加载内置主题并替换硬编码 `Style`
+- **更新时间**：2026-11-13
+- **当前阶段**：M10 — 声明式键位系统（M0–M9 已完成）
+- **当前任务**：`M10-1` 定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）
+- **阶段状态**：M0–M9 已完成；M10 进行中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
-- **阶段状态**：M0–M8 已完成；M9 进行中（M9-1 已完成）
 
 ## 已完成
 
-- harness 文档初始化：
-  - `README.md`
-  - `AGENTS.md`
-  - `docs/SPEC.md`
-  - `docs/PLAN.md`
-  - `docs/TASKS.md`
-  - `docs/ACCEPTANCE.md`
-  - `docs/STATE.md`
-  - `docs/NOTES.md`
-- `M0-2`：SPEC.md 的 MUST / SIMPLIFIED / OUT_OF_SCOPE 分级初稿已固化（由 harness 初始化提供）。
-- PDF 预览路线定稿（2026-11-10）：文本提取用 `pdf-inspector =1.25.2`；`exprim =0.4.0` 设为可选 `pdf-visual` 视觉后端（非默认依赖）。实测数据与决策记录见 `docs/NOTES.md` §4.8，任务见 M11-10～M11-15。
-- exprim 定稿（2026-11-11）：保持文本优先，`exprim = { version = "=0.4.0", optional = true }` 仅随非默认 `pdf-visual` feature 编译；默认构建依赖树不含 exprim；探测顺序为文本提取 → exprim 栅格化（仅 feature）→ `pdftoppm`/`mutool` → 提示/opener；护栏为像素上限 200 万–400 万、输入 PDF 大小上限、`panic = "unwind"`。见 `docs/SPEC.md` §6.1、`docs/NOTES.md` §4.8。
-- Office / 许可证 / crates.io 名称定稿（2026-11-11）：`office_oxide ~0.1.16`；`MIT OR Apache-2.0`；`rvifm` 已确认可用（备选 `rvifm-tui` / `rvifm-cli`，二进制名保持 `rvifm`）。见 `docs/SPEC.md` §6.1、`docs/NOTES.md` §4.8。
-- `M0-1`（2026-11-11）：Cargo 项目骨架落地——`Cargo.toml`（edition 2024，license 字段留待 M0-7）、`src/main.rs` 占位（事件循环在 M0-3 接入）、`.github/workflows/` 目录占位（CI 配置在 M0-5）；`Cargo.lock` 入库。fmt / clippy / build / test 全绿，二进制裸跑与带参运行均 exit 0 无 panic。
-- `M0-3`（2026-11-11）：接入 `ratatui 0.30` 事件循环骨架（`src/app.rs`）：`ratatui::init/restore` 管理终端生命周期，循环 = 绘制 → 阻塞读事件 → 分发；骨架阶段 `Ctrl-C` 退出（`q` 留给 M0-4）；渲染经 `TestBackend` 单测验证，无 TTY 冒烟确认进入备用屏渲染无 panic。
-- `M0-4`（2026-11-11）：最小可运行 TUI——启动时加载当前目录条目（目录在前、名称不区分大小写排序，目录带 `/` 后缀），底部 1 行状态栏显示 cwd 与条目数；`q` / `Ctrl-C` 退出；仅忽略 `Press` 事件（Windows 会多发 `Release`）。共 4 项单测（键位、排序、渲染），门禁全绿。
-- `M0-5`（2026-11-11）：`.github/workflows/ci.yml`——`ubuntu-latest` + `windows-latest` 矩阵，步骤 checkout → dtolnay/stable（含 rustfmt/clippy）→ rust-cache → `fmt --check` / `clippy -D warnings` / `build --locked` / `test --locked`。**CI 已验证全绿**（run [42875515797](https://github.com/wideweide/rvifm/actions/runs/42875515797)，M0-7 提交触发，两 job 全部步骤 success）。
-- `M0-6`（2026-11-11）：`--version` / `-V` / `--help` / `-h` 旗标（TUI 初始化前处理，无 TTY 可跑）；未知参数 stderr 提示并以 exit 2 退出；`tests/cli.rs` 3 项冒烟（版本输出、帮助输出、未知参数非零退出）。
-- `M0-7`（2026-11-11）：`LICENSE-MIT` / `LICENSE-APACHE` 全文建档，`Cargo.toml` 设 `license = "MIT OR Apache-2.0"`；README 许可证段原本即一致，未改动。`cargo package --list` 验证通过（含两个 LICENSE 文件）。遗留：manifest 无 `repository`/`homepage` 的 warning 留待 M0-8 发布前补。
-- **M0 验收自检（2026-11-11，除 M0-8 外全部通过）**：build 成功且 rvifm 可启动 ✓；TUI 显示目录列表与状态栏（TestBackend 单测）✓；`q`/`Ctrl-C` 退出无 panic（单测；真机交互冒烟待用户）✓；`--version`/`--help` 输出且 exit 0 ✓；SPEC 分级与 PLAN 一致（M0-2）✓；双平台 CI 绿 ✓。剩余：M0-8 人工发布。
-- **M0-8 完成（2026-11-11）**：`cargo publish` 成功，[rvifm 0.1.0-alpha.1](https://crates.io/crates/rvifm) 上线（API 确认 max_version）；`cargo install rvifm --version 0.1.0-alpha.1` 成功，安装版 `--version` 输出 `0.1.0-alpha.1` 且 exit 0。**M0 阶段全部任务完成，阶段关闭。**
-- `M1-0`（2026-11-11）：`src/tab.rs` 落地 `Location`（Physical/Archive，显示 `host:/inner/path`）、`FileItem`、`SearchState`、`Tab`（location/entries/cursor/scroll/search/history）；`src/state.rs` 落地 `AppState`（tabs + active + 全局 undo_stack）与预留 `tab_id` 的 `UndoableOp` 占位。渲染改由 `AppState.active_tab()` 驱动，行为与 M0 一致；未接线字段用带任务指向的 `#[allow(dead_code)]` 标注。9 单测 + 3 冒烟全绿。
-- `M1-1`（2026-11-11）：`Tab::move_cursor(delta)` 钳制两端、空目录 no-op；`j/k` 接入 `handle_key`；渲染改用 `ListState` + `highlight_style(REVERSED)` 高亮选中行（TestBackend 断言 modifier）。13 单测 + 3 冒烟全绿。
-- `M1-2`（2026-11-11）：`l`/`Enter` 进入选中目录、`h` 返回父目录；导航即重读条目（刷新）；读取失败不导航不产生副作用（提示在 M6-1）；文件系统根 `h` 为 no-op（Windows 盘根 parent() 为 None）；进入/返回均写入 `Tab.history`。16 单测 + 3 冒烟全绿。
-- `M1-3`（2026-11-11）：`gg`（`g` 前缀 Pending 序列，机制与 M1-5 `gt/gT` 共用）、`G`、`Ctrl-u/d` 半页翻页（步进 = (视口高-1)/2，随终端尺寸计算）。语义修正：待决序列优先于退出与普通分发，Release 先于序列过滤（避免 Release 误消费序列）。19 单测 + 3 冒烟全绿。
-- `M1-4`（2026-11-11）：`FileItem` 增加 `size`/`perm`（unix 3 位八进制 / Windows `ro`/`rw`，加载时物化避免渲染层 cfg）；状态栏 = `路径 | 选中项 [大小] 权限 | N items`（目录省略大小）；`format_size` B/KiB/MiB/GiB。22 单测 + 3 冒烟全绿。
-- `M1-5`（2026-11-11）：多标签落地——`gt`/`gT` 循环切换、`N gt` 数字计数跳转（计数被其他动作键丢弃）；最小命令行 `:`（Enter 提交 / Esc 取消 / Backspace 退格），`tabnew`（当前目录）、`tabclose`（最后一个 tab 关闭即退出）、`tabmove [N]`（无参移到末尾）；命令错误临时显示在状态栏 `[msg]`（M6-1 统一提示）。`InputMode::Normal/Command` 先行，M5-4 统一。27 单测 + 3 冒烟全绿。
-- `M1-6`（2026-11-11）：tab 状态独立性契约测试——切换 tab 后 `Location`/`cursor`/`scroll`/`search` 全部独立保持。说明：视口滚动由 `ListState` 从各 tab 的 cursor 派生（天然独立）；`Tab.scroll` 显式偏移存储留待 M10；归档 tab 回归验证按 ACCEPTANCE 留待 M7。28 单测 + 3 冒烟全绿。
-- `M1-7`（2026-11-11）：基础搜索——`/` 进入搜索输入（Enter 提交 / Esc 取消），`Tab.find_match` 大小写不敏感子串环绕匹配，提交后移动光标并写入 `Tab.search`；`n`/`N` 沿方向跳转（环绕）；无搜索词/无匹配以状态栏提示（M6-1 统一）；Normal 模式状态栏显示 `/{query}` 指示。32 单测 + 3 冒烟全绿。
-- **M1 阶段验收自检（2026-11-11，ACCEPTANCE §3）**：`j/k` 边界钳制 ✓；`l/Enter/h` 导航 + 根目录明确 no-op ✓；`gg/G/Ctrl-u/d` ✓；状态栏路径/选中项/大小/权限 ✓；`/` 与 `n/N` ✓；`:tabnew/:tabclose/gt/gT/N gt/:tabmove` ✓；两 tab 不同目录切换后状态独立（契约测试）✓；`Tab/AppState` 落地且撤销栈预留 tab 标识 ✓；归档 tab 回归按 ACCEPTANCE 自身定义留待 M7 ✓；交互真机冒烟待用户 `cargo run`。**M1 阶段关闭。**
-- `M2-1`（2026-11-11）：`UndoableOp` 枚举落地（Delete/Rename/Move/Create，全部携带 `tab_id` 与路径）+ `tab_id()`/`primary_path()` 访问器；`UndoStack` LIFO（push/pop/len/is_empty）。各操作构造与 `u` 执行随 M2-2～M2-5 接入（定向 allow 标注消费任务）。32 单测 + 3 冒烟全绿。
-- `M2-2`（2026-11-11）：删除可逆闭环——`dd` 触发确认模式（`y`/Enter 执行，其余取消无副作用）；`ops::delete_to_trash` 移入应用内暂存（跨盘回退 copy+delete，选型见 NOTES §4.2）；`u` 弹栈执行逆操作（父目录缺失重建、目标已存在报错防覆盖、失败回栈可重试）；删除/撤销后刷新所在 tab 并钳制光标；空栈提示"无可撤销操作"。`UndoableOp::Delete` 携带 `staged` 暂存路径。37 单测 + 3 冒烟全绿。
-- `M2-3`（2026-11-11）：`:rename <新名字>` 重命名选中条目——仅改文件名（拒绝路径分隔符/空名/目标已存在），成功即入撤销栈并刷新；`u` 反向 rename 恢复原名。含空格的名字在 M5-4 统一解析。40 单测 + 3 冒烟全绿。
-- `M2-4`（2026-11-11）：`:move <目标目录>` 移动选中条目（保留原名；`yy`/`P` 键位在 M10）；`u` 反向移回。**修复真实缺陷**：目录移入自身内部会让跨盘 copy 回退无限递归（栈溢出）——`move_to` 增加 `to.starts_with(path)` 自嵌套守卫。43 单测 + 3 冒烟全绿。
-- `M2-5`（2026-11-11）：`:mkdir <名字>` / `:touch <名字>` 在当前目录新建（拒绝空名/路径分隔符/已存在）；`u` 移除新建路径（非空目录保护性报错，避免连带删内容）；undo 对"逆操作源已不存在"幂等处理（避免过期操作卡栈）。46 单测 + 3 冒烟全绿。
-- `M2-6`（2026-11-11）：连续操作逆序撤销 E2E 测试（mkdir→touch→rename 三步、三次 `u` 逆序还原）；`u` 成功后状态栏反馈"已撤销: <描述>"（`UndoableOp::describe`）；`:tabclose` 关闭非最后 tab 提示"不可撤销"。`exec_command` 重构为 `ExecOutcome{Quit, Done{msg}}`（测试兼容包装保留旧契约）。47 单测 + 3 冒烟全绿（更正：前一行原记 48 有误）。
-- `M2-7`（2026-11-11）：跨 tab 撤销契约测试——tab 1 删除 → 切到 tab 2 → `u` → tab 1 文件恢复、当前 tab 不变、tab 1 列表刷新包含恢复项。设计取向"当前 tab 不变"（ACCEPTANCE §4 允许项）；原 tab 已关闭时跳过列表刷新，磁盘恢复不受影响。
-- `M2-4b`（2026-11-11，SPEC §5 M2 MUST 补任务）：`:copy <目标目录>` 复制选中条目（保留原名，源不动）；undo = 删除生成的副本（`Create` 语义，`recursive` 标记目录树整体移除、mkdir 保持非空目录保护）；拒绝同名冲突/目标目录不存在/自嵌套。`p`（PutCopy）键位在 M10 接入。51 单测 + 3 冒烟全绿。
-- **M2 阶段验收自检（2026-11-11，ACCEPTANCE §4）**：复制/移动/删除/重命名/新建均可用 ✓；`dd` 确认 + 取消无副作用，显式输入命令自带确认 ✓；操作失败有状态栏提示、无 panic ✓；删除/重命名/移动/新建均可 `u` 恢复 ✓；连续操作逆序撤销 E2E ✓；不可逆操作明确提示（tabclose/空栈/失败回栈）✓；删除走应用内暂存 ✓；跨 tab 撤销正确定位、当前 tab 不变 ✓；`UndoableOp` 记录 tab 与路径 ✓；归档内修改不在 M2 范围（M7 只读边界）。**M2 阶段关闭。**
-- `M3-1`（2026-11-11）：`v` 可视选择——`Tab.visual` 锚点（每 tab 独立），`visual_range()` 闭区间随光标移动扩大/收缩；选区行反显渲染、状态栏 `VISUAL (n selected)`；`Esc` 退出；空目录 no-op；refresh 钳制锚点。54 单测 + 3 冒烟全绿。
-- `M3-2`（2026-11-11）：`t` tag 标记（tag ≠ mark 红线在代码与文档显式声明）——`Tab.tags` 按文件名记录（每 tab 独立，目录重读后按名匹配，改名/删除条目批量时跳过）；标记行加粗渲染、状态栏 `n tagged`；空目录 no-op。56 单测 + 3 冒烟全绿。
-- `M3-3`（2026-11-11）：`:tag delete / copy|move <目录>` 批量操作——逐文件执行并入撤销栈（LIFO 逐条还原）；`delete` 先进确认模式（`y`/Enter 执行、其余取消）；已消失标记条目跳过并计数；未标记文件不受影响；空标记/未知动作有明确提示。57 单测 + 3 冒烟全绿。
-- `M3-4`（2026-11-11）：批量操作（copy/move/delete）完成后自动清空标记状态（取消确认不清空）；tag_batch 测试覆盖三批操作各自清空断言。
-- **M3 阶段验收自检（2026-11-11，ACCEPTANCE §5）**：`v` 进入/扩大/收缩/退出状态正确 ✓；`t` 多文件标记、再次 t 取消 ✓；`:tag` 批量复制/移动/删除且未标记不受影响 ✓；批量后标记清空 ✓；tag ≠ mark 语义未混淆（代码注释 + TASKS/SPEC 无 marks 实现）✓。**M3 阶段关闭。**
-- `M4-1`（2026-11-11）：搜索匹配规则增强——smart-case（查询含大写字母 → 区分大小写；全小写 → 不区分；vim/vifm 惯例），`query_matches()` 统一匹配入口，子串语义保持。内容/路径搜索按需后续扩展。58 单测 + 3 冒烟全绿。
-- `M4-2`（2026-11-11）：glob 过滤——`=` 进入过滤输入（Enter 应用 / Esc 取消），手写 `*`/`?` 匹配器（不区分大小写）；`Tab.filter` 每 tab 独立，`refresh()` 加载后保留匹配条目（批量/标记操作天然只作用于可见条目）；空 pattern 清除；状态栏 `[filter: …]`；应用后光标与选区归零。61 单测 + 3 冒烟全绿。
-- **M4 阶段验收自检（2026-11-11，ACCEPTANCE §6）**：`/` 定位 + `n/N` 循环 ✓；glob 过滤生效、过滤后光标与状态栏正确 ✓；归档/文件夹内搜索复用同一链路（find_match 作用于 tab.entries，M7 接入后自动生效）✓；无 marks 相关命令或按键 ✓。**M4 阶段关闭。**
-- `M5-1`（2026-11-11）：TOML 配置读取——新增 `serde`/`toml` 依赖；`src/config.rs`：`Config{show_hidden, sort_dirs_first, ignore_case_sort}`（`#[serde(default)]` 逐键回退）、平台路径（Windows `%APPDATA%\rvifm\config.toml` / Unix `$XDG_CONFIG_HOME` 或 `~/.config`）、`load()`（缺失→默认值不退出；解析失败→"配置解析失败: …" 提示）；启动时加载并挂到 `AppState.config`，错误进状态栏。65 单测 + 3 冒烟全绿。
-- `M5-2`（2026-11-11）：基本选项生效——`load_entries(dir, &Config)` 按 `show_hidden` 跳过 `.` 开头条目、按 `sort_dirs_first`/`ignore_case_sort` 排序；配置经 `from_physical`/`refresh`/`apply_filter`/导航全部接线（`Config` 为 Copy）。65 单测 + 3 冒烟全绿。
-- `M6`（2026-11-12）：M6 全阶段完成（M6-1 导航错误提示、M6-2 帮助页、M6-3 README+版本 0.1.0+tag `v0.1.0`、M6-4 10.5k 项性能检查、M6-5 发布门禁：tag 触发 release job 双平台绿 + tar.gz 归档 + Win2016 本地冒烟）。tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 全部 success。**遗留：crates.io `0.1.0` 人工发布。**
-- `M7-1`（2026-11-12）：`src/archive.rs`——`ArchiveFs` trait（list/read/metadata/host，read 为 `&mut` 因 zip 随机访问 API）+ `ArchiveEntry` + `normalize_inner`（统一 `/`、去点段、防逃逸根）+ 内存 MockFs 测试验证 trait 形状。
-- `M7-2`（2026-11-12）：`ZipFs`（zip 9.5.1）——开档建索引（文件名→(索引, 解压大小) 缓存，list 不触碰 ZipArchive）+ 显式/隐式父目录集合；list/read/metadata/host 实现；损坏 zip 返回 InvalidData 不 panic。**修复**：隐式父目录收集不得把文件自身插入 dirs。71 单测 + 3 冒烟全绿。
-- `M7-4`（2026-11-12）：归档导航接入——`l/Enter` 对归档文件（.zip/.tar/.tar.gz/.tgz）进入 `Location::Archive` 虚拟根目录，`h` 逐层上返并在归档根处回到宿主目录；损坏归档进入返回 Err（M6-1 提示）。**CI clippy 门禁升级为 `--all-targets`**（测试代码此前不在 lint 范围，暴露并修复两处被顶掉的 `#[test]`）。74 单测 + 3 冒烟全绿。
-- `M7-5/M7-6/M7-9`（2026-11-12）：面包屑 `host:/inner/path` 渲染测试；归档内 `/` 搜索复用 M4 链路验证；`.7z`/`.rar` 进入返回 Unsupported 错误（"该归档格式不支持虚拟浏览，请解压后浏览"）。79 单测 + 3 冒烟全绿。
-- `M7-7`（2026-11-12）：错误处理覆盖——损坏（InvalidData）、空归档（可开、列表空）、超大索引（索引按条目数而非归档字节数增长）；加密 zip 走同一 InvalidData 路径（样本构造依赖 zip 可选 feature，行为由 open 级错误统一覆盖）。79 单测 + 3 冒烟全绿。
-- `M7-8`（2026-11-12）：第二阶段压缩变体——`TarKind` 五形态（Plain/Gz/Bz/Zst/Xz）；纯 Rust 解码依赖 `lzma-rs`/`bzip2-rs`/`ruzstd`；`.xz` 开档整体解压入内存（无纯 Rust 可 seek 解码器，受解压后体积约束，已记录取舍），`.bz2`/`.zst` 流式读穿透；`is_archive_file` 扩展对应扩展名；bz2/zst 夹具提交于 `tests/fixtures/`（CLI/python 生成）。**修复归档只读边界**：`physical_base()` 守卫——归档视图内 rename/move/copy/mkdir/touch/:tag-delete 一律返回"归档视图只读"（此前会误操作宿主目录）。82 单测 + 3 冒烟全绿。
-- **M7 阶段验收自检（2026-11-12，ACCEPTANCE §9）**：.zip/.tar/.tar.gz 上 `l/Enter` 进入并列出成员 ✓；归档内 j/k/h/l 导航正确、h 归档根返回宿主目录 ✓；面包屑 `host:/inner` ✓；`/` 搜索归档内可用 ✓；归档内删除/重命名/移动入口明确禁用（physical_base 守卫 + dd/tag 归档 no-op）✓；损坏/空归档不 panic 有提示 ✓；内存受最大单成员约束（xz 受解压后体积，已记录）✓；`.7z/.rar` 提示解压 ✓；归档浏览不进入撤销栈（导航不改 FS；文件操作被守卫拒绝）✓。**M7 阶段关闭。**
-- `M8-1`（2026-11-12）：frecency 数据结构与分级固化（`src/frecency.rs`）——`EntryRecord{path,topic,kind,ts}`（events 追加）、`SnapshotEntry{path,topic,keyword,score,tick}`（snapshot，keyword 非空=书签）、`ScoredEntry`（查询结果）、`Grade` 0–7 档固化：7 书签关键字命中 / 6 书签 / 5 文件名精确（smart-case）/ 4 文件名前缀 / 3 文件名包含 / 2 中间段前缀 / 1 全路径子串 / 0 无匹配；排序契约 = 档位降序→aging 分数降序→路径字典序；空查询书签置顶。**record 唯一写入入口 / pick 纯只读红线**已在模块文档声明。86 单测 + 3 冒烟全绿。
-- `M8-2`（2026-11-12）：`src/store.rs`——redb 4.5 三表（events tick→JSON / snapshot `topic\x1fpath`→JSON / meta 全局 tick 与 last_compaction）；`Store::open` 显式建三表（redb 4 不再自动建表）；`append_event` 事务内 `global_tick += 1` 并以新 tick 为 key 追加（单调递增语义）；`events_since`/`snapshot_upsert`/`snapshot_all`/`last_compaction` 读写；重开持久化验证。`EntryRecord`/`SnapshotEntry` 补 serde 派生。91 单测 + 3 冒烟全绿。
-- `M8-3`（2026-11-12）：`rvifm record --topic dir <path>`——`record_impl`（路径注入可测）3 次重试/10ms 退避；连续失败降级追加 `events.pending`（每行 JSON，下次启动合并后删除）；pending 合并空行/损坏行容错。成功静默不污染 stdout。
-- `M8-4`（2026-11-12）：`replay()` 重放器——snapshot + events 增量 → EMS aging（λ=0.01/事件时钟，读取时统一 aging 修正冷启动）→ `ScoredEntry` 排序；compaction 合并共用同规则（`replay_merge`）。
-- `M8-5`（2026-11-12）：`rvifm maintenance compact`——合并 last_compaction 之后事件进 snapshot 表、推进标记、`prune_events_le` 裁剪已合并事件；无新事件时幂等 no-op。
-- `M8-6`（2026-11-12）：`rvifm pick` 双模式——stdout 为 TTY → ratatui 自绘交互式选择器（**skim 降级为自绘**，NOTES §4.5 允许；查询实时过滤、↑/↓/j/k、Enter 选中退出 0、Esc/Ctrl-C 取消退出 1）；非 TTY → fzf filter 语义输出全部命中（无匹配退出 1）。**纯只读**。
-- `M8-7`（2026-11-12）：shell hook 示例（`docs/hooks/README.md`）——bash/fish 的 `rvifm_cd` 包装函数：`command cd` 成功后才调用 `record`（后台执行不阻塞提示符），失败路径不调用；附验证要点。
-- `M8-8`（2026-11-12）：`src/preview.rs` 共享 `PreviewRenderer`——目录（成员列表、目录优先排序、截断提示）/ 文本（二进制 NUL 探测、大文件 >512KB 截断提示、空文件提示）/ 图像占位（真实渲染在 M11-1/M11-2 接入）；`preview_lines()` 为 pick 共用入口；`line_texts()`/`line_count()` 测试友好。79 单测 + 3 冒烟全绿。
-- **M8-9 + M8 阶段验收自检（2026-11-12，ACCEPTANCE §10）**：vifm 场景 aging 排名稳定性由 `replay_aging_promotes_recent` 测试固化（5×A → 495 次其他 → 1×B，B 排在 A 前）✓；契约——`record` 静默、`pick` 纯只读不写事件（pick 路径无 append 调用）✓；`events` 条数不变 / `global_tick` 不变（纯读路径）✓；shell hook 仅 `cd` 成功后调用（hook 文档 + 失败路径不调用）✓；两个终端并发 `record` 各 100 次不丢（redb 写事务串行化 + `append_event` 单事务语义）✓；`events.pending` 降级合并（注入式测试）✓；compaction 后排名一致（`replay_merge` 与 `replay` 同规则）✓；损坏 redb 不 panic（`Store::open` InvalidData 包装）✓；bash/fish hook 不阻塞提示符（后台 + 输出丢弃）✓；无后台守护进程 ✓；**书签（keyword）管理命令未实现**——数据结构已支持，pick 交互式书签增删列为后续增强（不阻塞 §10 主链路验收）。**M8 阶段关闭。**
-- `M9-1`（2026-11-12）：devicons 集成（`src/icons.rs`）——`icon_for(path, IconTheme)` 封装 `devicons::icon_for_file`（Dark/Light），`FileItem` 增加 `icon` 字段（物理与归档条目均填充，归档按叶子名推断）；TUI 文件列表行首渲染 glyph+名称。M9-3 Light 消费与 M9-4 预览共用接入待后续。103 单测 + 3 冒烟全绿。
-- crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
-- `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
-- `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
-- **M5 阶段验收自检（2026-11-12，ACCEPTANCE §7）**：启动读取 TOML，缺失用默认值不退出 ✓；基本选项（隐藏文件/排序）生效 ✓；`:q/:cd/:mkdir/:touch/:help` 可用 ✓；多标签命令与 M5 解析共存 ✓；配置语法错误有可理解提示不 panic ✓。**M5 阶段关闭。**
-- `M6-1`（2026-11-12）：错误处理收口——`enter_selected`/`return_parent` 改返回 `io::Result`，导航失败（目录被删/权限）在状态栏提示"进入失败/返回失败: …"（不再静默吞错）；确认提示已覆盖 `dd` 与 `:tag delete`，其余操作为显式输入命令。66 单测 + 3 冒烟全绿。
-- `M6-2`（2026-11-12）：`:help` 帮助覆盖层为正式帮助页——覆盖导航（j/k/l/h/gg/G/Ctrl-u/d）、搜索（/ n/N =）、选择与标记（v/t/:tag）、文件操作（dd/u/:rename/:move/:copy/:mkdir/:touch/:cd/:q）、多标签（:tabnew/:tabclose/:tabmove/gt/gT/N gt）；任意键返回。66 单测 + 3 冒烟全绿。
-- `M6-4`（2026-11-12）：大目录性能检查——10,500 项真实目录：加载 + 单帧渲染（TestBackend）断言各 < 2s（宽松 CI 安全上限）；退出路径逐键响应、不经过批量渲染，无阻塞。67 单测 + 3 冒烟全绿。
-- `M6-3`（2026-11-12）：README 更新（状态行、特性清单、里程碑表 M0–M5 已完成/M6 进行中、pick/record 标注为 M8 后续）+ `Cargo.toml` 版本 → `0.1.0`。
-- `M6-5`（2026-11-12）：发布门禁通过——ci.yml 增加 tag（v*）触发的 `release` job（双平台 `--release --locked` + `--version` 冒烟 + tar.gz 归档上传），修复 push 触发器缺 `tags` 过滤的问题；tag run [43058049447](https://github.com/wideweide/rvifm/actions/runs/43058049447) 双平台 test + release 全部 success，归档 rvifm-ubuntu/windows-latest 产出；本地 Win2016 `--release` 冒烟通过（`rvifm 0.1.0`，exit 0）。crates.io `0.1.0` 已发布（[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版 `rvifm --version` 输出正确；用户授权使用本机已存凭据并延续至后续发布）。
-- **M6 阶段验收自检（2026-11-12，ACCEPTANCE §8）**：错误处理覆盖常见失败路径（状态栏提示）✓；帮助页覆盖核心按键与命令 ✓；README 声明"参考 vifm，非严格兼容"与运行时依赖 ✓；>10k 项可滚动、退出不阻塞 ✓；`v0.1.0` tag 已创建 ✓；发布门禁（CI 双平台全绿 + release 归档 + Win2016 手动冒烟 + Linux `--version`）✓。**M6 阶段关闭。**
+- harness 文档初始化（README/AGENTS/SPEC/PLAN/TASKS/ACCEPTANCE/STATE/NOTES）。
+- `M0-2`：SPEC MUST / SIMPLIFIED / OUT_OF_SCOPE 分级初稿（harness 初始化提供）。
+- PDF / Office / 许可证 / crates.io 名称定稿（2026-11-10/11，详见 NOTES §4.8）。
+- **M0 全部关闭**（M0-1 骨架、M0-3 ratatui 事件循环、M0-4 最小 TUI、M0-5 CI 双平台、M0-6 --version/--help 冒烟、M0-7 LICENSE 建档、M0-8 `0.1.0-alpha.1` 发布并 install 验证）。
+- **M1 全部关闭**（M1-0 Tab/AppState、M1-1 j/k、M1-2 l/h、M1-3 gg/G/Ctrl-u/d、M1-4 状态栏元数据、M1-5 多标签与命令行、M1-6 状态独立性、M1-7 基础搜索）。
+- **M2 全部关闭**（M2-1 UndoableOp、M2-2 dd 删除+u 撤销（应用内暂存）、M2-3 rename、M2-4 move、M2-4b copy（SPEC MUST 补）、M2-5 mkdir/touch、M2-6 逆序撤销+不可逆提示、M2-7 跨 tab 撤销）。
+- **M3 全部关闭**（M3-1 v 可视选择、M3-2 t 标记、M3-3 :tag 批量、M3-4 批量后清标记）。
+- **M4 全部关闭**（M4-1 smart-case 搜索、M4-2 `=` glob 过滤）。
+- **M5 全部关闭**（M5-1 TOML 配置、M5-2 基本选项生效、M5-3 :q/:cd/:help、M5-4 统一命令解析共存）。
+- **M6 全部关闭**（M6-1 导航错误提示、M6-2 帮助页、M6-3 README+版本 0.1.0、M6-4 10.5k 性能、M6-5 发布门禁：tag 触发 release job 双平台绿 + `v0.1.0` 发布 crates.io + install 验证）。
+- **M7 全部关闭**（M7-1 ArchiveFs、M7-2 ZipFs、M7-3 TarFs、M7-4 导航接入、M7-5 面包屑、M7-6 归档内搜索、M7-7 错误处理、M7-8 五压缩形态、M7-9 .7z/.rar 提示；physical_base 只读守卫）。
+- **M8 全部关闭**（M8-1 frecency 结构+Grade 0–7、M8-2 redb 三表、M8-3 record 子命令+pending 降级、M8-4 replay EMS aging、M8-5 maintenance compact、M8-6 pick 双模式、M8-7 shell hook 示例、M8-8 共享 PreviewRenderer、M8-9 aging 排名稳定性）。
+- **M9 全部关闭**（M9-1 devicons 图标、M9-2 opaline 主题引擎、M9-3 明暗对齐、M9-4 PreviewRenderer 复用、M9-5 NO_COLOR 降级验证、M9-6 用户 TOML 主题发现与加载）。
+- `M12`（2026-11-12）：提权特性蒸馏入库排队（SPEC §5 M12、TASKS M12-1～M12-5、ACCEPTANCE §15、NOTES 决策、AGENTS §5.7、PLAN 行）——**未实现**，排在 M11 之后。
 
 ## 进行中
 
-- crates.io `0.1.0` 人工发布（用户执行，需新 token；publish → `cargo install rvifm --version 0.1.0` 验证）。
+- 无。
 
 ## 下一步
 
-1. `M9-1`：集成 `devicons`，文件列表渲染带图标和颜色。
-2. `M9-2`～`M9-6`：opaline 主题、明暗对齐、PreviewRenderer 复用、降级验证、用户主题（顺序见 [TASKS.md](TASKS.md)）。
-3. M10：声明式键位系统（Action 枚举、多键序列、TOML 分层）。
-4. M11：预览与文件打开（ratatui-image、opener、Office/PDF）。
-5. M12：权限不足内联提权（已排队，见 TASKS.md M12-1～M12-5）。
-6. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建。
+1. `M10-1`：定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）。
+2. `M10-2`～`M10-7`：键位解析层、模式切换、TOML 分层、PutMove 语义（顺序见 [TASKS.md](TASKS.md)）。
+3. `M11-1`～`M11-15`：预览与文件打开（ratatui-image、opener、Office/PDF、pdf-visual 门控）。
+4. `M12-1`～`M12-5`：权限不足内联提权（已排队）。
+5. 每阶段完成跑对应 ACCEPTANCE 验收并更新 PLAN。
 
 ## 阻塞与风险
 
 - 无阻塞。
-- 环境风险：本地为 Windows Server 2016，ZCode（Electron）可能无法启动；使用 VS Code + `rust-analyzer` 或纯命令行。Linux 验证交给 CI。
-- 预算风险：见 [PLAN.md](PLAN.md) 的预算表；优先保证 M0–M2。
+- 环境风险：本地为 Windows Server 2016；Linux 验证交给 CI。
+- 预算风险：优先保证核心闭环；增强阶段按 SPEC SIMPLIFIED 从简。
 
 ## 预算
 
 - 规划区间：约 **7500 万–1.1 亿 token**（数量级参考，非硬上限）。
-- 已使用：少量（M0-1 骨架已完成；另消耗一次本地工具链安装会话）。
-- 控制原则：每轮只做一个任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收就缩小范围并 `deferred`。
+- 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`。
 
 ## 环境
 
 - 本地：Windows Server 2016，目标 `x86_64-pc-windows-msvc`。
-- CI：`ubuntu-latest` + `windows-latest`。
-- 本地内循环：`cargo fmt` → `clippy -D warnings` → `build` → `test` → `commit`。
-- 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → Release。
+- CI：`ubuntu-latest` + `windows-latest`（fmt --check / clippy --all-targets -D warnings / build --locked / test --locked；v* tag 触发 release 归档）。
+- 本地内循环：`cargo fmt` → `clippy --all-targets -D warnings` → `build` → `test` → `commit`。
+- 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → Release（crates.io 发布持久授权，沿用本机凭据）。
 
 ## 恢复方式
 
 1. 读本文件，确认当前阶段与任务。
 2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务。
-3. 读 [AGENTS.md](../AGENTS.md) 第 3 节执行循环。
+3. 读 [AGENTS.md](../AGENTS.md) 第 3 节执行循环（含自动续轮策略）。
 4. 只读该任务相关的 [SPEC.md](SPEC.md) 片段与 [ACCEPTANCE.md](ACCEPTANCE.md) 条目。
 5. 开始实现；完成后更新本文件与 TASKS，再提交。
