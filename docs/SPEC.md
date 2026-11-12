@@ -592,6 +592,22 @@ append_rules = [
 - 保证 PDF 零配置视觉预览（默认构建只承诺文本提取）。
 - 终端图形协议的底层实现（由 `ratatui-image` 和终端负责）。
 
+### M12 — 权限不足时的内联提权（2026-11-12 增补）
+
+**MUST**
+- 文件操作（复制/移动/删除/重命名）因权限失败时，TUI 内弹出 sudo 密码提示。
+- 使用 `sudo -A` + `rvifm --askpass` 辅助模式实现，不启动新的 rvifm 实例。
+- 密码提示可取消，取消后操作中止，TUI 状态与光标不变。
+- 提权仅作用于**当前单个操作**，不将整个 rvifm 进程提升为 root。
+
+**SIMPLIFIED**
+- 优先支持 Linux/macOS；Windows 的提权行为尽力而为（UAC 机制不同）。
+- 可复用 `sudo_prompt` crate 作为 askpass 的轻量封装。
+
+**OUT_OF_SCOPE**
+- 不实现"重启一个 root rvifm 实例"的模式（vifm 的 `:!sudo vifm %c` 路线）。
+- 不将整个文件管理器进程以 root 身份运行。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
