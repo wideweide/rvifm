@@ -1,4 +1,6 @@
 # STATE —
+- `M9-6`（2026-11-13）：用户 TOML 主题发现与加载——`discover_user_themes()` 扫描 `themes\/`目录 （目录不存在返回空）、`load_user_theme`/`set_user_theme` 按名加载并激活（解析失败返回 InvalidData 不改变当前主题）。夹具注：variant 取值为小写 `dark`\/`light`（serde）。108 单测 + 3 冒烟全绿。
+- **M9 阶段验收自检（2026-11-13，ACCEPTANCE §11）**：文件列表 icon+color ✓；Dark\/Light 与 opaline variant 对齐 ✓；内置主题可加载、运行时切换 ✓；PreviewRenderer 与文件列表同图标同主题 ✓；NO_COLOR 降级不 panic ✓；用户主题 `~\/config\/rvifm\/themes\/` 发现加载 ✓；不依赖 vifm 插件\/vifmrc ✓。**M9 阶段关闭。**
 - `M9-5`（2026-11-13）：`NO_COLOR` 降级验证——设置环境变量后 TUI 渲染与预览渲染均不 panic、内容完整（颜色抑制由 crossterm\/ratatui 库内处理）。107 单测 + 3 冒烟全绿。
 - `M9-4`（2026-11-13）：PreviewRenderer 复用同一图标/主题——`directory_preview` 行首经 `icons::icon_for_active`（激活 opaline variant 对应 devicons 主题）渲染 glyph；`preview_lines` 作为 pick 共用入口。106 单测 + 3 冒烟全绿。
 - `M9-3`（2026-11-13）：图标主题与 opaline 明暗对齐——`icons::icon_for_active`/`active_theme` 读取激活主题 variant 映射 devicons Dark\/Light；`theme::icon_theme()` 为桥接；`load_entries`/`load_archive_entries` 改用 active 主题；TUI 文件列表经 opaline 命名样式 `file_icon` 染色（主题缺少该样式时零配置可用）。106 单测 + 3 冒烟全绿。
