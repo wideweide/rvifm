@@ -3,12 +3,14 @@
 //! 基于 `devicons` crate：文件列表/预览行首渲染类型图标与颜色。
 //! 无 Nerd Font 时终端无法显示 glyph，但不会 panic（字符照传，
 //! 由终端决定显示为 tofu——不降级逻辑判断，M9-5 验证）。
+//!
+//! M9-3：`IconTheme` 与 opaline `ThemeVariant` 对齐——`theme_variant()`
+//! 返回当前激活主题的明暗，`IconTheme::Light/Dark` 直接映射 devicons 主题。
 
 use std::path::Path;
 
-/// 图标主题（M9-3 与 opaline 明暗对齐前的独立枚举；Light 消费方在 M9-2/M9-3）。
+/// 图标主题（M9-3 与 opaline ThemeVariant 对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)]
 pub enum IconTheme {
     #[default]
     Dark,
@@ -36,6 +38,17 @@ pub fn icon_for(path: &Path, theme: IconTheme) -> IconInfo {
         glyph: file_icon.icon,
         color: file_icon.color,
     }
+}
+
+/// 便捷入口（M9-3）：直接按当前激活主题取图标。
+/// 未激活主题时默认 Dark。
+pub fn icon_for_active(path: &Path) -> IconInfo {
+    icon_for(path, active_theme())
+}
+
+/// 当前图标主题 = 当前激活 opaline 主题的 variant（M9-3 对齐）。
+pub fn active_theme() -> IconTheme {
+    crate::theme::icon_theme()
 }
 
 /// 为列表行渲染 `"{glyph} {name}"` 前缀（M9-1；文件列表用 `icon.glyph` 直接

@@ -363,7 +363,7 @@ fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileIte
             } else {
                 format!("/{name}")
             };
-            let icon = crate::icons::icon_for(Path::new(&icon_path), crate::icons::IconTheme::Dark);
+            let icon = crate::icons::icon_for_active(Path::new(&icon_path));
             FileItem {
                 icon,
                 name,
@@ -415,7 +415,7 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
         let meta = entry.metadata()?;
         let size = meta.len();
         let perm = perm_string(&meta);
-        let icon = crate::icons::icon_for(&entry.path(), crate::icons::IconTheme::Dark);
+        let icon = crate::icons::icon_for_active(&entry.path());
         items.push(FileItem {
             icon,
             name,

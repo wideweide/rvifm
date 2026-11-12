@@ -54,6 +54,14 @@ pub fn active_variant() -> opaline::schema::ThemeVariant {
         .unwrap_or(opaline::schema::ThemeVariant::Dark)
 }
 
+/// 当前图标主题 = 激活主题 variant 对应的 devicons 主题（M9-3 对齐）。
+pub fn icon_theme() -> crate::icons::IconTheme {
+    match active_variant() {
+        opaline::schema::ThemeVariant::Light => crate::icons::IconTheme::Light,
+        _ => crate::icons::IconTheme::Dark,
+    }
+}
+
 /// 将 opaline 命名样式解析为 ratatui `Style`。
 /// 未激活主题或样式名不存在时返回默认样式（零配置可用）。
 pub fn style(style_name: &str) -> RtStyle {
