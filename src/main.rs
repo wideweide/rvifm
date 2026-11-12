@@ -10,6 +10,7 @@ mod archive;
 mod config;
 mod frecency;
 mod icons;
+mod keymap;
 mod ops;
 mod preview;
 mod state;
