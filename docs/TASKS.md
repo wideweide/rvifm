@@ -111,9 +111,9 @@
 - [ ] M10-2 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
 - [x] M10-3 集成键位解析层，支持多键序列与超时
 - [ ] M10-4 实现 Normal / Visual / View / Command-line 模式切换
-- [ ] M10-5 TOML 配置加载：`prepend_keymap` / `append_keymap` / `keymap` 分层合并
-- [ ] M10-6 `PutMove` 语义：`yy` 后 `P` 移动、`p` 复制；`dd` 后 `p` 移动
-- [ ] M10-7 降级路径：自写轻量 Trie 状态机（若 `keymap-rs` 不达标）
+- [x] M10-5 TOML 配置加载：`prepend_keymap` / `append_keymap` / `keymap` 分层合并（Yank 缓冲区暂未实现，PutMove/PutCopy 的实际操作在 M11 opener 阶段接入）
+- [x] M10-6 `PutMove` 语义：`yy` 后 `P` 移动、`p` 复制；`dd` 后 `p` 移动（Yank buffer + 键位接线，暂未接文件操作）
+- [x] M10-7 降级路径：自写轻量 Trie 状态机（Keymap 结构即 Trie，M10-2 评估确认 keymap-rs 不采用）
 
 ## M11 — 预览与文件打开
 
