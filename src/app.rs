@@ -13,6 +13,7 @@ use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
 use std::path::PathBuf;
 
+use crate::keymap::Action;
 use crate::state::AppState;
 use crate::tab::{Location, SearchState, Tab};
 use crate::{config, ops};
@@ -24,22 +25,23 @@ fn is_quit_key(key: KeyEvent) -> bool {
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)))
 }
 
-/// `g`/`d` 前缀多键序列的待决状态（超时可配置在 M10 键位系统接入）。
-#[derive(Debug, Default, PartialEq, Eq)]
-enum Pending {
-    #[default]
-    None,
-    /// 已按下 `g`，等待第二键。
-    G,
-    /// 已按下 `d`，等待第二键（`dd` 删除，M2-2）。
-    D,
+/// Normal 模式输入状态：待决序列 + 数字计数（`N gt` 用，M1-5）。
+/// `seq` 由 Keymap 驱动解析（M10-3 接线）。
+#[derive(Debug)]
+struct InputState {
+    seq: Vec<crate::keymap::Key>,
+    count: Option<usize>,
+    keymap: crate::keymap::Keymap,
 }
 
-/// Normal 模式输入状态：`g` 待决 + 数字计数（`N gt` 用，M1-5）。
-#[derive(Debug, Default)]
-struct InputState {
-    pending: Pending,
-    count: Option<usize>,
+impl Default for InputState {
+    fn default() -> Self {
+        Self {
+            seq: Vec::new(),
+            count: None,
+            keymap: crate::keymap::Keymap::default_map(),
+        }
+    }
 }
 
 /// Normal 模式按键的处理结果。
@@ -400,39 +402,33 @@ fn handle_key(
         return Outcome::Continue;
     }
 
-    // `g` 前缀序列：待决态优先于退出与普通分发；任意第二键结束序列
+    // M10-3：序列续接——待决非空时经 Keymap 解析；任意第二键结束序列
     // （未知第二键整体丢弃，包括 `q`/`Ctrl-C`）。
-    if input.pending == Pending::G {
-        input.pending = Pending::None;
+    if !input.seq.is_empty() {
+        input.seq.push(crate::keymap::Key::plain(key.code));
         let count = input.count.take();
-        match key.code {
-            KeyCode::Char('g') => state.active_tab_mut().cursor_top(),
-            KeyCode::Char('t') => match count {
+        input.count = None;
+        match input.keymap.lookup(&input.seq) {
+            Some(Action::ToTop) => state.active_tab_mut().cursor_top(),
+            Some(Action::NextTab) => match count {
                 Some(n) => state.goto_tab(n),
                 None => state.next_tab(),
             },
-            KeyCode::Char('T') => match count {
+            Some(Action::PrevTab) => match count {
                 Some(n) => state.goto_tab(n),
                 None => state.prev_tab(),
             },
-            _ => {}
-        }
-        return Outcome::Continue;
-    }
-
-    // `d` 前缀序列：`dd` 请求确认删除光标条目（M2-2）；
-    // 第二键非 `d` 时整体丢弃。
-    if input.pending == Pending::D {
-        input.pending = Pending::None;
-        input.count = None;
-        if key.code == KeyCode::Char('d') {
-            let tab = state.active_tab();
-            if let (Location::Physical(base), Some(item)) =
-                (&tab.location, tab.entries.get(tab.cursor))
-            {
-                return Outcome::ConfirmDelete(base.join(&item.name));
+            Some(Action::DeleteSelected) => {
+                let tab = state.active_tab();
+                if let (Location::Physical(base), Some(item)) =
+                    (&tab.location, tab.entries.get(tab.cursor))
+                {
+                    return Outcome::ConfirmDelete(base.join(&item.name));
+                }
             }
+            _ => {} // 未知序列整体丢弃
         }
+        input.seq.clear();
         return Outcome::Continue;
     }
 
@@ -450,26 +446,12 @@ fn handle_key(
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let half = (viewport_h.saturating_sub(1) / 2).max(1) as isize;
     match key.code {
-        KeyCode::Char('g') => input.pending = Pending::G,
         KeyCode::Char('G') => state.active_tab_mut().cursor_bottom(),
         KeyCode::Char('d') if ctrl => state.active_tab_mut().move_cursor(half),
         KeyCode::Char('u') if ctrl => state.active_tab_mut().move_cursor(-half),
-        KeyCode::Char('d') => {
-            input.count = None;
-            input.pending = Pending::D;
-        }
         KeyCode::Char('u') => {
             input.count = None;
             undo_last(state, msg);
-        }
-        KeyCode::Char('v') => {
-            input.count = None;
-            state.active_tab_mut().toggle_visual();
-        }
-        KeyCode::Char('t') => {
-            // M3-2：切换光标条目的 tag（文件标记，≠ mark）。
-            input.count = None;
-            state.active_tab_mut().toggle_tag();
         }
         KeyCode::Char('j') => {
             input.count = None;
@@ -512,6 +494,25 @@ fn handle_key(
         KeyCode::Char(':') => {
             input.count = None;
             return Outcome::EnterCommand;
+        }
+        // M10-3：`g`/`d`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
+        KeyCode::Char('g') | KeyCode::Char('d') => {
+            let k = crate::keymap::Key::plain(key.code);
+            if input.keymap.has_prefix(&[k]) {
+                input.seq.push(k);
+            }
+        }
+        KeyCode::Char('v') => {
+            input.count = None;
+            state.active_tab_mut().toggle_visual();
+        }
+        KeyCode::Char('t') => {
+            input.count = None;
+            state.active_tab_mut().toggle_tag();
+        }
+        KeyCode::Char('p') | KeyCode::Char('P') => {
+            // M10-1：PutCopy/PutMove 已入 Keymap；yy 缓冲区在 M10-7 接入。
+            input.count = None;
         }
         _ => input.count = None,
     }
@@ -838,6 +839,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::keymap::Key;
     use crate::tab::{FileItem, Location};
     use std::collections::HashSet;
     use std::fs;
@@ -971,7 +973,7 @@ mod tests {
             ),
             Outcome::Continue
         );
-        assert_eq!(input.pending, Pending::G); // 等待第二键
+        assert_eq!(input.seq, [Key::plain(KeyCode::Char('g'))]); // 等待第二键
         assert_eq!(
             press(
                 &mut state,
@@ -981,7 +983,7 @@ mod tests {
             ),
             Outcome::Continue
         );
-        assert_eq!(input.pending, Pending::None);
+        assert!(input.seq.is_empty()); // 序列已清空
         assert_eq!(state.active_tab().cursor, 0);
     }
 
@@ -1008,7 +1010,7 @@ mod tests {
             ),
             Outcome::Continue
         );
-        assert_eq!(input.pending, Pending::None);
+        assert!(input.seq.is_empty()); // 序列已清空
         assert_eq!(state.active_tab().cursor, 0);
         // 序列内的 `q` 被当作第二键丢弃，之后的 `q` 才退出。
         assert_eq!(
@@ -1420,7 +1422,7 @@ mod tests {
             ),
             Outcome::Continue
         );
-        assert_eq!(input.pending, Pending::D);
+        assert_eq!(input.seq, [Key::plain(KeyCode::Char('d'))]);
         let outcome = press(
             &mut state,
             &mut input,
@@ -1452,7 +1454,7 @@ mod tests {
             ),
             Outcome::Continue
         );
-        assert_eq!(input2.pending, Pending::None);
+        assert!(input2.seq.is_empty());
         assert!(state.undo_stack.is_empty());
     }
 
