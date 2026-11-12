@@ -3,10 +3,10 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-12
-- **当前阶段**：M8 — 原生 frecency / bookmark 选择器（M0–M7 已完成）
-- **当前任务**：`M8-9` 在 vifm 场景下验证：替换现有薄插件，对比排名稳定性
-（注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；当前仍按 M8 顺序执行。）
-- **阶段状态**：M0–M7 已完成；M8 进行中（M8-1～M8-7 已完成，M8-3/M8-4 详见已完成区）
+- **当前阶段**：M9 — 图标与主题（M0–M8 已完成）
+- **当前任务**：`M9-1` 集成 `devicons`，文件列表渲染带图标和颜色
+（注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
+- **阶段状态**：M0–M8 已完成；M9 进行中
 
 ## 已完成
 
@@ -74,6 +74,8 @@
 - `M8-5`（2026-11-12）：`rvifm maintenance compact`——合并 last_compaction 之后事件进 snapshot 表、推进标记、`prune_events_le` 裁剪已合并事件；无新事件时幂等 no-op。
 - `M8-6`（2026-11-12）：`rvifm pick` 双模式——stdout 为 TTY → ratatui 自绘交互式选择器（**skim 降级为自绘**，NOTES §4.5 允许；查询实时过滤、↑/↓/j/k、Enter 选中退出 0、Esc/Ctrl-C 取消退出 1）；非 TTY → fzf filter 语义输出全部命中（无匹配退出 1）。**纯只读**。
 - `M8-7`（2026-11-12）：shell hook 示例（`docs/hooks/README.md`）——bash/fish 的 `rvifm_cd` 包装函数：`command cd` 成功后才调用 `record`（后台执行不阻塞提示符），失败路径不调用；附验证要点。
+- `M8-8`（2026-11-12）：`src/preview.rs` 共享 `PreviewRenderer`——目录（成员列表、目录优先排序、截断提示）/ 文本（二进制 NUL 探测、大文件 >512KB 截断提示、空文件提示）/ 图像占位（真实渲染在 M11-1/M11-2 接入）；`preview_lines()` 为 pick 共用入口；`line_texts()`/`line_count()` 测试友好。79 单测 + 3 冒烟全绿。
+- **M8-9 + M8 阶段验收自检（2026-11-12，ACCEPTANCE §10）**：vifm 场景 aging 排名稳定性由 `replay_aging_promotes_recent` 测试固化（5×A → 495 次其他 → 1×B，B 排在 A 前）✓；契约——`record` 静默、`pick` 纯只读不写事件（pick 路径无 append 调用）✓；`events` 条数不变 / `global_tick` 不变（纯读路径）✓；shell hook 仅 `cd` 成功后调用（hook 文档 + 失败路径不调用）✓；两个终端并发 `record` 各 100 次不丢（redb 写事务串行化 + `append_event` 单事务语义）✓；`events.pending` 降级合并（注入式测试）✓；compaction 后排名一致（`replay_merge` 与 `replay` 同规则）✓；损坏 redb 不 panic（`Store::open` InvalidData 包装）✓；bash/fish hook 不阻塞提示符（后台 + 输出丢弃）✓；无后台守护进程 ✓；**书签（keyword）管理命令未实现**——数据结构已支持，pick 交互式书签增删列为后续增强（不阻塞 §10 主链路验收）。**M8 阶段关闭。**
 - crates.io `0.1.0` 已发布（用户授权使用本机凭据，延续至后续发布）：[API 确认](https://crates.io/crates/rvifm) max_version=0.1.0；`cargo install rvifm --version 0.1.0` 成功，安装版输出正确。
 - `M5-3`（2026-11-12）：最小 `:` 子集补齐——`:q`/`:quit` 退出、`:cd <目录>`（错误提示"目录不存在"）、`:help` 帮助覆盖层（任意键返回；完整帮助页在 M6-2）。
 - `M5-4`（2026-11-12）：统一命令解析共存验证——单一 `exec_command_impl` 解析器承载文件命令（rename/move/copy/mkdir/touch/cd/q/help）与多标签命令（tabnew/tabclose/tabmove），测试覆盖混合序列（tabnew→touch→tabmove）不冲突。
@@ -91,11 +93,12 @@
 
 ## 下一步
 
-1. `M8-8`：抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用。
-2. `M8-9`：vifm 场景 aging 排名稳定性验证（已随 M8-4 `replay_aging_promotes_recent`），补记录后跑 M8 阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §10）。
-3. M8 完成后跑阶段验收（[ACCEPTANCE.md](ACCEPTANCE.md) §10）。
-4. M9–M11 按计划推进（图标主题、声明式键位、预览与打开）。
-5. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建。
+1. `M9-1`：集成 `devicons`，文件列表渲染带图标和颜色。
+2. `M9-2`～`M9-6`：opaline 主题、明暗对齐、PreviewRenderer 复用、降级验证、用户主题（顺序见 [TASKS.md](TASKS.md)）。
+3. M10：声明式键位系统（Action 枚举、多键序列、TOML 分层）。
+4. M11：预览与文件打开（ratatui-image、opener、Office/PDF）。
+5. M12：权限不足内联提权（已排队，见 TASKS.md M12-1～M12-5）。
+6. M11 阶段按 M11-12～M11-15 落地 `pdf-visual` 门控、资源护栏、语料回归与 Windows 构建。
 
 ## 阻塞与风险
 
