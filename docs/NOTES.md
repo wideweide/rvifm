@@ -309,6 +309,15 @@ rvifm record  → 静默记录访问
 | `vifm-rs` 作为包名 | 暗示 fork/衍生，易引发许可证误解；已定 `rvifm` |
 | vifm 图标插件 / `vifmrc` 注入 | 与“内建优先”定位冲突 |
 | 嵌入 SVG / 字体 | 体积与许可问题；Nerd Font 由终端提供 |
+| 实例级提权（重启 root rvifm） | vifm 的 `:!sudo vifm %c` 路线：状态同步差、攻击面大；改为操作级内联提权（M12） |
+
+### 2026-11-12 — M12 采用操作级内联提权，不模仿 vifm 的实例级提权
+
+- **背景**：vifm 官方明确无内建 sudo 支持（"there is no builtin support for executing anything as a different user"），社区靠 `:!sudo cp %c` 或重启提权实例（`nnoremap <c-s> :!sudo -E vifm %c`）绕过，两种方式都离开 TUI 上下文：前者打断文件管理流程，后者需要两实例间同步状态且原实例不自动刷新。
+- **结论**：rvifm 用 `sudo -A` + `rvifm --askpass` 辅助模式实现**操作级**内联提权——文件操作因 EACCES 失败时，设置 `SUDO_ASKPASS` 指向自身辅助模式，在现有 TUI 上渲染密码输入框（ratatui MaskedInput），验证后原地重试当前单个操作。不启动 root rvifm 实例，不引入特权守护进程。
+- **备选与放弃原因**：`sudo_prompt` crate（轻量，可作 askpass 封装的备选）；`elevated-command`（pkexec 路线 Linux 体验原生但 Windows 支持不明确，且依赖 polkit 服务运行）——不引入 pkexec 作为硬依赖。实例级提权路线放弃：状态同步是固有缺陷，且完整 root 文件管理器的攻击面远大于单命令提权。
+- **影响文件**：`docs/SPEC.md` §5 M12、`docs/TASKS.md` M12-1～M12-5、`docs/ACCEPTANCE.md` §15、`AGENTS.md` §5.7。
+- **待定/风险**：Windows 提权（UAC 机制不同）尽力而为；TUI 内 askpass 被 sudo 子进程调用时的终端 I/O 交接细节在 M12-2 实现。
 
 ## 8. 待定事项
 
