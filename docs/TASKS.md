@@ -109,7 +109,7 @@
 
 - [x] M10-1 定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）
 - [ ] M10-2 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
-- [ ] M10-3 集成键位解析层，支持多键序列与超时
+- [x] M10-3 集成键位解析层，支持多键序列与超时
 - [ ] M10-4 实现 Normal / Visual / View / Command-line 模式切换
 - [ ] M10-5 TOML 配置加载：`prepend_keymap` / `append_keymap` / `keymap` 分层合并
 - [ ] M10-6 `PutMove` 语义：`yy` 后 `P` 移动、`p` 复制；`dd` 后 `p` 移动

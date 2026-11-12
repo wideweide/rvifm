@@ -1,12 +1,13 @@
 # STATE —
+- `M10-3/M10-4`（2026-11-13）：Keymap 解析层接入 handle_key——`Pending` 枚举替换为 `Vec<Key>` 序列缓冲 + `Keymap::lookup/has_prefix` 查表驱动；`q`→Quit 补入默认表；序列中未知第二键丢弃后 seq 清空（修复 seq 残留导致后续按键误触发序列的缺陷）。InputMode Normal\/Command\/Search\/Filter\/Confirm\/Help 已在 M5-M8 落地。112 单测 + 3 冒烟全绿。
 - `M10-1`（2026-11-13）：`src/keymap.rs`——`Action` 枚举（导航/搜索过滤/选择标记/文件操作/多标签/模式命令共 23 项）、`Keymap` 序列→Action 精确匹配 + 前缀检测（gg\/dd\/gt 多键序列）、vifm 对齐默认表。TOML 分层随 M10-5、111 单测 + 3 冒烟全绿。 当前进度
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-13
 - **当前阶段**：M10 — 声明式键位系统（M0–M9 已完成）
-- **当前任务**：`M10-2` 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
-- **阶段状态**：M0–M9 已完成；M10 进行中
+- **当前任务**：`M10-5` TOML 配置加载：`prepend_keymap` / `append_keymap` / `keymap` 分层合并
+- **阶段状态**：M0–M9 已完成；M10 进行中（M10-1～M10-4 已完成）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
