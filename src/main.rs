@@ -10,6 +10,7 @@ mod archive;
 mod config;
 mod frecency;
 mod ops;
+mod preview;
 mod state;
 mod store;
 mod tab;
