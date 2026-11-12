@@ -733,6 +733,8 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             } else {
                 item.name.clone()
             };
+            // M9-1：行首渲染 devicons 类型图标。
+            let label = format!("{} {label}", item.icon.glyph);
             // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
             // 光标行由 highlight_style 叠加。
             let mut li = ListItem::new(Line::from(label));
@@ -837,6 +839,7 @@ mod tests {
     use crate::tab::{FileItem, Location};
     use std::collections::HashSet;
     use std::fs;
+    use std::path::Path;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -2146,6 +2149,7 @@ mod tests {
             inner: PathBuf::from("src"),
         };
         state.active_tab_mut().entries = vec![FileItem {
+            icon: crate::icons::icon_for(Path::new("main.rs"), crate::icons::IconTheme::Dark),
             name: "main.rs".into(),
             is_dir: false,
             size: 12,
@@ -2181,18 +2185,21 @@ mod tests {
         };
         state.active_tab_mut().entries = vec![
             FileItem {
+                icon: crate::icons::icon_for(Path::new("deep/"), crate::icons::IconTheme::Dark),
                 name: "deep".into(),
                 is_dir: true,
                 size: 0,
                 perm: String::new(),
             },
             FileItem {
+                icon: crate::icons::icon_for(Path::new("readme.md"), crate::icons::IconTheme::Dark),
                 name: "readme.md".into(),
                 is_dir: false,
                 size: 2,
                 perm: String::new(),
             },
             FileItem {
+                icon: crate::icons::icon_for(Path::new("src/"), crate::icons::IconTheme::Dark),
                 name: "src".into(),
                 is_dir: true,
                 size: 0,

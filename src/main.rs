@@ -9,6 +9,7 @@ mod app;
 mod archive;
 mod config;
 mod frecency;
+mod icons;
 mod ops;
 mod preview;
 mod state;
