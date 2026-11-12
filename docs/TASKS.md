@@ -99,7 +99,7 @@
 ## M9 — 图标与主题
 
 - [x] M9-1 集成 `devicons`，文件列表渲染带图标和颜色
-- [ ] M9-2 集成 `opaline`，加载内置主题并替换硬编码 `Style`
+- [x] M9-2 集成 `opaline`，加载内置主题并替换硬编码 `Style`（引擎层）
 - [ ] M9-3 图标 `Theme::Dark` / `Theme::Light` 与主题明暗对齐
 - [ ] M9-4 `PreviewRenderer` 复用同一图标/主题
 - [ ] M9-5 无 Nerd Font / `NO_COLOR` 环境下的降级验证
