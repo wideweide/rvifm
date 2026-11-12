@@ -128,10 +128,10 @@
 - [~] M11-9 Office 提取接入 PreviewRenderer（deferred：依赖 M11-8）
 - [~] M11-10 PDF 预览探测链（deferred：重依赖，SIMPLIFIED 允许延后）
 - [~] M11-11 Poppler-free 验证（deferred：依赖 M11-8/M11-10）
-- [ ] M11-12 `pdf-visual` feature 门控与依赖边界：`exprim = { version = "=0.4.0", optional = true }`，`Cargo.lock` 入库；关 feature 时 `cargo tree` 不含 exprim，`--features pdf-visual` 时为 `0.4.0`
-- [ ] M11-13 `pdf-visual` 资源护栏：`ExportOptions.max_pixels` 限 200 万–400 万像素、输入 PDF 文件大小上限、release profile `panic = "unwind"`；超大 `MediaBox` / 超大文件被拒绝且不 panic
-- [ ] M11-14 `pdf-visual` 语料回归：CJK / 加密 / 损坏 PDF 语料 + 1,000 次随机字节变异 0 panic
-- [ ] M11-15 `pdf-visual` Windows 构建验证：`x86_64-pc-windows-msvc` 启用 feature 构建通过
+- [x] M11-12 `pdf-visual` feature 门控与依赖边界（验证：default tree 无 exprim，--features pdf-visual 含 0.4.0）
+- [~] M11-13 pdf-visual 资源护栏（deferred：需 exprim 编译验证）
+- [~] M11-14 pdf-visual 语料回归（deferred：需 exprim 编译验证）
+- [~] M11-15 pdf-visual Windows 构建验证（deferred：需 exprim 编译验证）
 
 ## M12 — 权限不足时的内联提权（2026-11-12 增补）
 
