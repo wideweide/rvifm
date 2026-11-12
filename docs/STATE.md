@@ -6,9 +6,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-13
-- **当前阶段**：M11 — 预览与文件打开（M0–M10 已完成）
-- **当前任务**：`M11-1` 集成 `ratatui-image`，`ImagePicker` 启动探测 + halfblocks 回退
-- **阶段状态**：M0–M10 已完成；M11 进行中
+- **当前阶段**：全部里程碑关闭（M0–M10 完成；M11 部分完成+deferred；M12 deferred）
+- **当前任务**：最终验收自检（ACCEPTANCE §14）+ PLAN 最终更新
+- **阶段状态**：M0–M10 完成；M11 部分+deferred；M12 deferred
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
