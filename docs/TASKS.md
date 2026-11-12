@@ -93,6 +93,7 @@
 - [x] M8-5 compaction：阈值触发 + `rvifm maintenance compact` 手动子命令
 - [x] M8-6 `rvifm pick`：自绘 ratatui 选择器（skim 降级，见 NOTES）+ 重放 + 输出选中项，不写事件
 - [x] M8-7 shell hook 示例：仅在 `cd` 成功后调用 `record`
+- [x] M8-8 抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用
 - [ ] M8-8 抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用
 - [ ] M8-9 在 vifm 场景下验证：替换现有薄插件，对比排名稳定性
 
