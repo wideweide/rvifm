@@ -264,7 +264,10 @@ impl Tab {
                     self.entries = items;
                     self.cursor = 0;
                     self.scroll = 0;
+                    return Ok(());
                 }
+                // M11-7：普通文件走系统 opener（零配置可用）。
+                crate::opener::system_open(&target)?;
                 Ok(())
             }
             Location::Archive { host, inner } => {
