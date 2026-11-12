@@ -327,6 +327,7 @@ rvifm record  → 静默记录访问
 - **M7 压缩 tar 变体排期**：`.tar.xz` / `.tar.bz2` / `.tar.zst` 可作为 M7 第二阶段。
 - **主题备选**：`opaline` 不满足时是否切 `tui-nuances`。
 - **键位库降级**：`keymap-rs` 不满足时用 `keybindings` crate 还是自写 Trie。
+- 【已决策 2026-11-13】keymap-rs 评估（M10-2）：聚合 crate 不存在；keymap-core/seq/config 均为 0.1.2（下载 500–700，单维护者，MSRV 1.85）。采纳降级路线：自写轻量 Trie 解析层（M10-1 的 Keymap 已具备前缀/精确匹配能力），TOML 分层在 M10-5 自实现。理由：低采用量 crate 的供应链风险高于自写 ~40 行解析器的维护成本。
 - **性能阈值**：大目录“不阻塞退出”的量化标准，M6-4 补充。
 - **短别名**：是否提供 `rv` 二进制别名。
 
