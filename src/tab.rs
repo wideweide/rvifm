@@ -47,6 +47,8 @@ impl Location {
 /// 单个目录项。M1-4 起携带大小与权限摘要。
 #[derive(Debug, Clone)]
 pub struct FileItem {
+    /// 类型图标（M9-1 devicons）。
+    pub icon: crate::icons::IconInfo,
     pub name: String,
     pub is_dir: bool,
     /// 文件字节数（目录同样记录底层值，状态栏对目录省略显示）。
@@ -355,7 +357,15 @@ fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileIte
                 .rsplit_once('/')
                 .map(|(_, l)| l.to_owned())
                 .unwrap_or(e.path.clone());
+            // 归档内路径为虚拟路径：icon 按叶子名/目录推断。
+            let icon_path = if e.is_dir {
+                format!("/{}/", name)
+            } else {
+                format!("/{name}")
+            };
+            let icon = crate::icons::icon_for(Path::new(&icon_path), crate::icons::IconTheme::Dark);
             FileItem {
+                icon,
                 name,
                 is_dir: e.is_dir,
                 size: e.size,
@@ -405,7 +415,9 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
         let meta = entry.metadata()?;
         let size = meta.len();
         let perm = perm_string(&meta);
+        let icon = crate::icons::icon_for(&entry.path(), crate::icons::IconTheme::Dark);
         items.push(FileItem {
+            icon,
             name,
             is_dir,
             size,
