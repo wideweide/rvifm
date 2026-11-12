@@ -22,11 +22,11 @@
 | M5 | 配置与最小命令模式 | TOML 配置、`:q/:cd/:mkdir/:touch/:help` | M1–M4 | 已完成 | — |
 | M6 | 打磨与发布 | 帮助、README、性能检查、`v0.1.0` | M0–M5 | 已完成 | **v0.1.0** |
 | M7 | 归档浏览（只读 VFS） | `Location` / `ArchiveFs` / Zip/Tar 虚拟目录 | M1、M4 | 已完成 | 后续版本 |
-| M8 | 原生 frecency 选择器 | `pick` / `record`、redb 三表、compaction | M1、M7 | 待开始 | 后续版本 |
-| M9 | 图标与主题 | `devicons` + `opaline` 内建 | M1、M7、M8 | 待开始 | 后续版本 |
-| M10 | 声明式键位系统 | `Action`、序列、模式、TOML 分层 | M1–M5 | 待开始 | 后续版本 |
-| M11 | 预览与文件打开 | `ratatui-image` 回退链、系统 opener、Office/PDF | M7–M10 | 待开始 | 后续版本 |
-| M12 | 权限不足内联提权（2026-11-12 增补） | `sudo -A` + `rvifm --askpass` | M2 | 待开始 | 后续版本 |
+| M8 | 原生 frecency 选择器 | `pick` / `record`、redb 三表、compaction | M1、M7 | 已完成 | 后续版本 |
+| M9 | 图标与主题 | `devicons` + `opaline` 内建 | M1、M7、M8 | 已完成 | 后续版本 |
+| M10 | 声明式键位系统 | `Action`、序列、模式、TOML 分层 | M1–M5 | 已完成 | 后续版本 |
+| M11 | 预览与文件打开 | `ratatui-image` 回退链、系统 opener、Office/PDF | M7–M10 | 部分完成 | 后续版本 |
+| M12 | 权限不足内联提权（2026-11-12 增补） | `sudo -A` + `rvifm --askpass` | M2 | deferred | 后续版本 |
 
 > 里程碑顺序以本表为准。早期讨论中曾提出把 M7 插到 M4/M5 之间、把 M8/M11 放到 M6 之前；最终收敛为“先交付 v0.1.0 核心，再叠加增强”，早期插入位置不再使用。M12 为 2026-11-12 增补的增强里程碑（操作级内联提权，见 NOTES.md）。
 
