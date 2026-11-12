@@ -22,5 +22,13 @@ tar = "0.4.46"
 toml = "1.2.1"
 zip = "9.5.1"
 
+[features]
+pdf-visual = ["dep:exprim"]
+
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# M11-12：exprim 仅在 pdf-visual feature 下编译（非默认依赖）。
+[dependencies.exprim]
+version = "=0.4.0"
+optional = true
