@@ -87,7 +87,10 @@ fn directory_preview(path: &Path, max_lines: usize) -> Preview {
                 } else {
                     name.clone()
                 };
-                lines.push(Line::from(format!("  {label}")));
+                // M9-4：归档/预览共用同一 devicons 图标 + 激活主题。
+                let full = path.join(name);
+                let icon = crate::icons::icon_for_active(&full);
+                lines.push(Line::from(format!("  {} {label}", icon.glyph)));
             }
             if names.len() > max_lines.saturating_sub(1) {
                 lines.push(Line::from(format!(

@@ -1,4 +1,5 @@
 # STATE —
+- `M9-4`（2026-11-13）：PreviewRenderer 复用同一图标/主题——`directory_preview` 行首经 `icons::icon_for_active`（激活 opaline variant 对应 devicons 主题）渲染 glyph；`preview_lines` 作为 pick 共用入口。106 单测 + 3 冒烟全绿。
 - `M9-3`（2026-11-13）：图标主题与 opaline 明暗对齐——`icons::icon_for_active`/`active_theme` 读取激活主题 variant 映射 devicons Dark\/Light；`theme::icon_theme()` 为桥接；`load_entries`/`load_archive_entries` 改用 active 主题；TUI 文件列表经 opaline 命名样式 `file_icon` 染色（主题缺少该样式时零配置可用）。106 单测 + 3 冒烟全绿。
 - `M9-2`（2026-11-13）：opaline 0.4.2 主题引擎（`src/theme.rs`）——`set_builtin(name)` 按名加载内置主题（未知名返回 NotFound）、`style(name)` 将命名样式解析为 ratatui Style、`active_variant()` 供 M9-3 明暗对齐；未激活时零配置可用（零样式）。TUI 接线与硬编码 Style 替换随 M9-3。106 单测 + 3 冒烟全绿。 当前进度
 
