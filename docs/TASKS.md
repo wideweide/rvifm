@@ -137,9 +137,9 @@
 
 - [x] M12-1 检测写操作 EACCES（`ops::is_permission_denied`：ErrorKind + raw errno EACCES/EPERM；真实 0o555 目录写入测试）
 - [x] M12-2 askpass 辅助模式（`rvifm --askpass <fifo>`：FIFO 读密码→stdout；wrapper 兼容所有 sudo 版本；CLI 集成测试闭环）
-- [~] M12-3 sudo -A 重试（deferred：需 Linux 测试环境）
-- [~] M12-4 取消干净中止（deferred：需 Linux 测试环境）
-- [~] M12-5 vifm 场景验证（deferred：需 Linux root 测试环境）
+- [x] M12-3 sudo -A 重试（PrivOp 命令构造 + wrapper 脚本 + TUI AskPass 模式接线；CI NOPASSWD sudo 真实提权测试通过）
+- [x] M12-4 取消干净中止（Esc 路径：密码丢弃、状态一致断言、无副作用）
+- [x] M12-5 vifm 场景验证（CI ubuntu：EACCES 检测→AskPass→sudo -A 全链路绿；Windows 降级提示退出 2）
 
 ## 不在任务清单中的事项
 
