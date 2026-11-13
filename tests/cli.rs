@@ -45,7 +45,6 @@ fn unknown_flag_exits_nonzero_without_panic() {
 // ── M12-2：askpass 辅助模式全链路（sudo -A 认证时被调用的形态） ───────────
 #[cfg(unix)]
 #[test]
-#[ignore = "unix CI diagnosis"]
 fn askpass_reads_fifo_password_and_prints_stdout() {
     use std::io::Write as _;
     use std::process::Stdio;
@@ -88,7 +87,6 @@ fn askpass_reads_fifo_password_and_prints_stdout() {
 
 #[cfg(unix)]
 #[test]
-#[ignore = "unix CI diagnosis"]
 fn askpass_with_empty_fifo_fails_gracefully() {
     // FIFO 写端从未打开 → 读端 EOF → askpass 退出非零（sudo 认证失败路径）。
     let fifo = std::env::temp_dir().join(format!("rvifm-test-eof-{}.fifo", std::process::id()));
@@ -113,7 +111,6 @@ fn askpass_with_empty_fifo_fails_gracefully() {
 
 #[cfg(unix)]
 #[test]
-#[ignore = "unix CI diagnosis"]
 fn askpass_without_arg_exits_two() {
     let out = Command::new(env!("CARGO_BIN_EXE_rvifm"))
         .arg("--askpass")
