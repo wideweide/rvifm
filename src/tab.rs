@@ -266,8 +266,7 @@ impl Tab {
                     self.scroll = 0;
                     return Ok(());
                 }
-                // M11-7：普通文件走系统 opener（零配置可用）。
-                crate::opener::system_open(&target)?;
+                // 普通文件：由调用方（handle_key M11-7）决定是否调用系统 opener。
                 Ok(())
             }
             Location::Archive { host, inner } => {
