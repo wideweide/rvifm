@@ -464,6 +464,22 @@ fn handle_key(
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
             let cfg = state.config;
+            // M11-7：目录/归档 → enter_selected 导航；普通文件 → 系统 opener。
+            let tab = state.active_tab();
+            let is_file = tab
+                .entries
+                .get(tab.cursor)
+                .map(|item| !item.is_dir)
+                .unwrap_or(false);
+            let is_physical = matches!(tab.location, crate::tab::Location::Physical(_));
+            if is_file && is_physical {
+                let path = tab.location.base_dir().join(&tab.entries[tab.cursor].name);
+                match crate::opener::system_open(&path) {
+                    Ok(()) => *msg = None,
+                    Err(e) => *msg = Some(format!("打开失败: {e}")),
+                }
+                return Outcome::Continue;
+            }
             if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
                 *msg = Some(format!("进入失败: {e}"));
             }
