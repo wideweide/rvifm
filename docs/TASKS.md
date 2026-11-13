@@ -117,7 +117,7 @@
 
 ## M11 — 预览与文件打开
 
-- [~] M11-1 集成 `ratatui-image`（deferred：需真实终端验证，SPEC SIMPLIFIED 允许延后）
+- [x] M11-1 集成 `ratatui-image`（协议探测→halfblocks 回退；真实终端显示验证随 M11-6）
 - [~] M11-2 图片预览接入 PreviewRenderer（deferred：依赖 M11-1）
 - [x] M11-3 系统 opener 默认层：`gio open` / `xdg-open` / `open` / `start`
 - [x] M11-4 TOML opener 配置解析：`opener` 定义 + `prepend` / `append` / `replace` 规则

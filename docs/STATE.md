@@ -1,4 +1,5 @@
 # STATE —
+- `M11-1`（2026-11-14）：`src/image.rs`——ratatui-image 11.1.0 引擎层（`Picker::from_query_stdio()` TTY 探测 → `Picker::halfblocks()` 无条件回退；无状态 `Image` widget + `Resize::Fit`，规避 StatefulImage 无后台线程阻塞 UI）；`image 0.25.10` 显式依赖（png/jpeg/gif/webp/bmp）；chafa 零引入（AGENTS §5.5）；TestBackend halfblocks 渲染测试。120 单测全绿。真实终端显示验证随 M11-6。
 - `CI`（2026-11-14）：**双平台全绿**（run 43462270991）。两个历史失败均为 CI 配置问题而非代码问题——ubuntu：`enter_selected` 调 system_open 无 gio/xdg-open（已移入 handle_key）；Windows：test 步骤 `RUST_BACKTRACE=1 ... | tee` 是 bash 语法，pwsh 默认 shell 无法执行（补 `shell: bash` 修复）。
 - `TASKS`（2026-11-14）：修正勾选遗漏——M7-1/3/4/8、M8-1/2、M9-6、M10-2/4 代码在库且 STATE 已宣布关闭，TASKS 勾选补齐。开始 deferred 清零冲刺（用户指示：能写的代码先写出来，Linux 验证借 CI）。
 - `M10-5/M10-6/M10-7`（2026-11-13）：TOML 分层、PutMove 语义、Trie 确认——Keymap 即 Trie（M10-2 评估已确认不用 keymap-rs）；yy\/P\/p 键位已入表（PutMove\/PutCopy 动作映射存在，Yank 缓冲区和实际文件操作接线在 M11 opener 阶段）；TOML 分层 prepend\/append\/replace 的实现依赖 config.rs 的 keymap 段落。标记为完成（SIMPLIFIED 级别：键位表已入口，实际 yank 缓冲区等待 M11 的 opener 集成）。
@@ -9,8 +10,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M11-1 集成 ratatui-image（协议探测→halfblocks 回退）
-- **阶段状态**：M0–M10 完成；M11 剩余 deferred 项实现中；M12 排队中
+- **当前任务**：M11-2 图片预览接入 PreviewRenderer
+- **阶段状态**：M0–M10 完成；M11-1 已完成，剩余 deferred 项实现中；M12 排队中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
