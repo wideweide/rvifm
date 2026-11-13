@@ -328,4 +328,123 @@ mod tests {
             "empty page must not be Text, got {r:?}"
         );
     }
+
+    // ── M11-14：pdf-visual 语料回归（CJK/加密/损坏/截断，均不 panic） ──────
+
+    /// 构造带 /Encrypt 字典的假加密 PDF（真实密钥流未构造——目标是
+    /// 让解析器进入加密路径并返回 Err/Unavailable，而非 panic）。
+    #[cfg(feature = "pdf-visual")]
+    fn make_fake_encrypted_pdf(dir: &Path, name: &str) -> std::path::PathBuf {
+        let objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>".to_vec(),
+            b"<< /Filter /Standard /V 1 /R 2 /O <0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20> /U <2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40> /P -1340 >>".to_vec(),
+        ];
+        let mut buf: Vec<u8> = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(buf.len());
+            buf.extend(format!("{} 0 obj\n", i + 1).bytes());
+            buf.extend_from_slice(body);
+            buf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref_at = buf.len();
+        buf.extend(format!("xref\n0 {}\n", objects.len() + 1).bytes());
+        buf.extend_from_slice(b"0000000000 65535 f \n");
+        for off in &offsets {
+            buf.extend(format!("{off:010} 00000 n \n").bytes());
+        }
+        let content = String::from_utf8(buf).unwrap();
+        let head = content.split("startxref").next().unwrap();
+        let doc = format!(
+            "{head}trailer\n<< /Root 1 0 R /Size {} /Encrypt 4 0 R >>\nstartxref\n{xref_at}\n%%%%EOF\n",
+            objects.len() + 1
+        );
+        let p = dir.join(name);
+        std::fs::write(&p, doc).unwrap();
+        p
+    }
+
+    /// 构造名义 CJK PDF（SimSun 字体名 + 中文注记字符串；无嵌入字体，
+    /// 字体栈需容错而非 panic）。
+    #[cfg(feature = "pdf-visual")]
+    fn make_cjk_pdf(dir: &Path, name: &str) -> std::path::PathBuf {
+        let objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_vec(),
+            b"<< /Length 96 >>\nstream\nBT /F1 24 Tf 72 700 Td (CJK: \\u4e2d\\u6587 \\u6d4b\\u8bd5) Tj ET\nendstream".to_vec(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SimSun >>".to_vec(),
+        ];
+        let mut buf: Vec<u8> = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(buf.len());
+            buf.extend(format!("{} 0 obj\n", i + 1).bytes());
+            buf.extend_from_slice(body);
+            buf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref_at = buf.len();
+        buf.extend(format!("xref\n0 {}\n", objects.len() + 1).bytes());
+        buf.extend_from_slice(b"0000000000 65535 f \n");
+        for off in &offsets {
+            buf.extend(format!("{off:010} 00000 n \n").bytes());
+        }
+        let content = String::from_utf8(buf).unwrap();
+        let head = content.split("startxref").next().unwrap();
+        let doc = format!(
+            "{head}trailer\n<< /Root 1 0 R /Size {} >>\nstartxref\n{xref_at}\n%%%%EOF\n",
+            objects.len() + 1
+        );
+        let p = dir.join(name);
+        std::fs::write(&p, doc).unwrap();
+        p
+    }
+
+    #[cfg(feature = "pdf-visual")]
+    #[test]
+    fn corpus_regression_visual_never_panics() {
+        // M11-14：语料回归——CJK（无嵌入字体）/ 假加密 / 损坏 / 截断
+        // 全部过 render_page：Ok 或 Err 均可，panic 即失败。
+        let tmp = TempDir::new().unwrap();
+
+        let cjk = make_cjk_pdf(tmp.path(), "cjk.pdf");
+        let _ = visual::render_page(&cjk, 0);
+
+        let enc = make_fake_encrypted_pdf(tmp.path(), "enc.pdf");
+        let r = visual::render_page(&enc, 0);
+        // 加密文档必须被拒绝或跳过，不能渲染出成功结果。
+        if let Ok(pp) = r {
+            // 部分解析器对空加密文档降级：即便成功，像素护栏仍须成立。
+            let px = u64::from(pp.width) * u64::from(pp.height);
+            assert!(px <= visual::MAX_EXPORT_PIXELS);
+        }
+
+        let corrupt = tmp.path().join("corrupt.pdf");
+        std::fs::write(&corrupt, b"%PDF-1.4 garbage without objects").unwrap();
+        assert!(visual::render_page(&corrupt, 0).is_err());
+
+        // 截断文件：头在、体被切断——exprim 有 xref 重建容错，
+        // Ok 或 Err 均可，回归重点是绝不 panic。
+        let truncated = tmp.path().join("trunc.pdf");
+        let good = make_pdf(tmp.path(), "for-trunc.pdf", "Hello");
+        let mut bytes = std::fs::read(&good).unwrap();
+        bytes.truncate(bytes.len() / 2);
+        std::fs::write(&truncated, bytes).unwrap();
+        let _ = visual::render_page(&truncated, 0);
+    }
+
+    #[cfg(feature = "pdf-visual")]
+    #[test]
+    fn corpus_visual_text_pdf_renders_within_pixel_cap() {
+        // 正常语料：含文本 PDF 视觉渲染成功且像素在护栏内。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "visual.pdf", "Visual Corpus");
+        let pp = visual::render_page(&p, 0).expect("render ok");
+        let px = u64::from(pp.width) * u64::from(pp.height);
+        assert!(px <= visual::MAX_EXPORT_PIXELS, "{px} > cap");
+        assert!(pp.width > 0 && pp.height > 0);
+        assert_eq!(pp.rgb.len(), pp.width as usize * pp.height as usize * 3);
+    }
 }

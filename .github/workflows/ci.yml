@@ -28,6 +28,9 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: build
         run: cargo build --locked
+      # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
+      - name: check pdf-visual feature
+        run: cargo check --locked --features pdf-visual
       - name: test
         shell: bash
         run: |
