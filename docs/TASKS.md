@@ -74,20 +74,20 @@
 
 ## M7 — 归档浏览（只读 VFS）
 
-- [ ] M7-1 定义 `Location` 与 `ArchiveFs` trait
+- [x] M7-1 定义 `Location` 与 `ArchiveFs` trait
 - [x] M7-2 实现 `ZipFs`（基于 `zip` crate）：list/read/metadata
-- [ ] M7-3 实现 `TarFs`（基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`
-- [ ] M7-4 导航层接入：归档文件上 `l`/`Enter` 进入虚拟目录，`h` 返回物理父目录
+- [x] M7-3 实现 `TarFs`（基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`
+- [x] M7-4 导航层接入：归档文件上 `l`/`Enter` 进入虚拟目录，`h` 返回物理父目录
 - [x] M7-5 状态栏/面包屑显示 `host:/inner/path`
 - [x] M7-6 归档内搜索复用 M4 的搜索链路
 - [x] M7-7 错误处理：损坏、加密、空、超大归档索引
-- [ ] M7-8 第二阶段：`.tar.xz` / `.tar.bz2` / `.tar.zst`
+- [x] M7-8 第二阶段：`.tar.xz` / `.tar.bz2` / `.tar.zst`
 - [x] M7-9 `.7z` / `.rar` 不支持虚拟浏览，给出解压提示
 
 ## M8 — 原生 frecency / bookmark 选择器
 
-- [ ] M8-1 定义 `EntryRecord` / `ScoredEntry` / `Grade` 数据结构与 0–7 分级档位
-- [ ] M8-2 redb 三表：`events` / `snapshot` / `meta`，定义 schema 与 tick 语义
+- [x] M8-1 定义 `EntryRecord` / `ScoredEntry` / `Grade` 数据结构与 0–7 分级档位
+- [x] M8-2 redb 三表：`events` / `snapshot` / `meta`，定义 schema 与 tick 语义
 - [x] M8-3 `record` 子命令：短事务追加事件 + 有限重试 + `events.pending` 降级
 - [x] M8-4 重放器：`snapshot + events` 增量 → 内存评分，`pick` / TUI 共用
 - [x] M8-5 compaction：阈值触发 + `rvifm maintenance compact` 手动子命令
@@ -103,14 +103,14 @@
 - [x] M9-3 图标 `Theme::Dark` / `Theme::Light` 与主题明暗对齐
 - [x] M9-4 `PreviewRenderer` 复用同一图标/主题
 - [x] M9-5 无 Nerd Font / `NO_COLOR` 环境下的降级验证
-- [ ] M9-6 用户 TOML 主题发现与加载（`~/.config/rvifm/themes/`）
+- [x] M9-6 用户 TOML 主题发现与加载（`~/.config/rvifm/themes/`）
 
 ## M10 — 声明式键位系统
 
 - [x] M10-1 定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）
-- [ ] M10-2 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
+- [x] M10-2 评估 `keymap-rs`（`keymap-core` + `keymap-seq` + `keymap-config`）可行性
 - [x] M10-3 集成键位解析层，支持多键序列与超时
-- [ ] M10-4 实现 Normal / Visual / View / Command-line 模式切换
+- [x] M10-4 实现 Normal / Visual / View / Command-line 模式切换
 - [x] M10-5 TOML 配置加载：`prepend_keymap` / `append_keymap` / `keymap` 分层合并（Yank 缓冲区暂未实现，PutMove/PutCopy 的实际操作在 M11 opener 阶段接入）
 - [x] M10-6 `PutMove` 语义：`yy` 后 `P` 移动、`p` 复制；`dd` 后 `p` 移动（Yank buffer + 键位接线，暂未接文件操作）
 - [x] M10-7 降级路径：自写轻量 Trie 状态机（Keymap 结构即 Trie，M10-2 评估确认 keymap-rs 不采用）
