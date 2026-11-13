@@ -1,4 +1,5 @@
 # STATE —
+- `M12-2`（2026-11-14）：`src/privilege.rs`——askpass 辅助模式：`rvifm --askpass <fifo>` 读 FIFO 一行密码→stdout；`create_fifo`（mkfifo 0600）/`write_password_to_fifo`/`cleanup_fifo`；**决策**：SUDO_ASKPASS 用 wrapper 脚本传参（带参数 SUDO_ASKPASS 需 sudo >= 1.9.4，wrapper 全版本兼容）；非 Unix 报错退出。CLI 集成测试 3 个（FIFO 闭环/缺 FIFO 退出 1/缺参退出 2，cfg unix 由 CI 运行）。**踩坑**：edition 2024 要求 `unsafe extern` 块。
 - `M12-1`（2026-11-14）：`ops::is_permission_denied`——`ErrorKind::PermissionDenied` + raw errno（EACCES=13/EPERM=1，cfg unix）；测试含真实 0o555 只读目录写入场景（root 环境写入成功自动跳过）。137 单测全绿。**M11 全部落地**（仅 M11-6 真实终端显示验证保留人工步骤）。
 - `M11-14/M11-15`（2026-11-14）：语料回归——CJK（SimSun 无嵌入字体）/假加密（/Encrypt Standard）/损坏/截断语料全部经 `render_page` 不 panic（截断场景 exprim 有 xref 重建容错，Ok/Err 均合法）；正常语料渲染像素 ≤ 400 万护栏。M11-15：本地 msvc `--release --features pdf-visual` 构建成功（panic=unwind 固化验证）+ CI 双平台加 `cargo check --features pdf-visual` 步骤。140（feature）/136（默认）单测全绿。
 - `M11-13`（2026-11-14）：pdf-visual 护栏——`pdf::visual` 模块（cfg feature）：输入 64MB 上限、导出像素 400 万硬上限（目标 300 万按页面比例 DPI 反推、超限二次收缩）、`[profile.release] panic = "unwind"` 显式固化（exprim per-page catch_unwind 依赖）；exprim 0.4.0 `RenderSession` 全链路（open→compile→render→RasterPlane::Rgb8）。验证：`--features pdf-visual` 编译+测试绿、默认依赖树 exprim=0。
@@ -18,8 +19,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M12-2 askpass 辅助模式（rvifm --askpass）
-- **阶段状态**：M0–M10 完成；M11 全部实现；M12-1 完成，实现中
+- **当前任务**：M12-3 sudo -A 重试 + TUI AskPass 模式接线
+- **阶段状态**：M0–M10 完成；M11 全部实现；M12-1/2 完成，实现中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
