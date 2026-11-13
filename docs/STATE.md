@@ -1,4 +1,8 @@
 # STATE —
+- `M12 全部关闭`（2026-11-14）：操作级内联提权落地——`ops::is_permission_denied`（ErrorKind+errno）→ TUI `AskPass` 模式（masked 渲染、Esc 干净中止）→ `privilege::escalate_execute`（FIFO 0600 传密码 + wrapper 脚本 SUDO_ASKPASS 全 sudo 版本兼容 + `sudo -A <op>` 不经 shell）→ CI NOPASSWD sudo 真实提权验证。
+- **M12-2 教训**（已固化 AGENTS §6 门禁）：cfg(unix) 测试代码 Windows 编译器不检查，必须 `cargo check --target x86_64-unknown-linux-gnu --all-targets`。
+- **M12-3 教训**：wrapper 断言 `contains("--askpass /tmp/x")` 与生成串 `--askpass "/tmp/x"`（引号）不匹配——cfg(unix) 断言在本地不可跑，验收断言必须与实现逐字对齐。
+
 - `M12-2`（2026-11-14）：`src/privilege.rs`——askpass 辅助模式：`rvifm --askpass <fifo>` 读 FIFO 一行密码→stdout；`create_fifo`（mkfifo 0600）/`write_password_to_fifo`/`cleanup_fifo`；**决策**：SUDO_ASKPASS 用 wrapper 脚本传参（带参数 SUDO_ASKPASS 需 sudo >= 1.9.4，wrapper 全版本兼容）；非 Unix 报错退出。CLI 集成测试 3 个（FIFO 闭环/缺 FIFO 退出 1/缺参退出 2，cfg unix 由 CI 运行）。**踩坑**：edition 2024 要求 `unsafe extern` 块。
 - `M12-1`（2026-11-14）：`ops::is_permission_denied`——`ErrorKind::PermissionDenied` + raw errno（EACCES=13/EPERM=1，cfg unix）；测试含真实 0o555 只读目录写入场景（root 环境写入成功自动跳过）。137 单测全绿。**M11 全部落地**（仅 M11-6 真实终端显示验证保留人工步骤）。
 - `M11-14/M11-15`（2026-11-14）：语料回归——CJK（SimSun 无嵌入字体）/假加密（/Encrypt Standard）/损坏/截断语料全部经 `render_page` 不 panic（截断场景 exprim 有 xref 重建容错，Ok/Err 均合法）；正常语料渲染像素 ≤ 400 万护栏。M11-15：本地 msvc `--release --features pdf-visual` 构建成功（panic=unwind 固化验证）+ CI 双平台加 `cargo check --features pdf-visual` 步骤。140（feature）/136（默认）单测全绿。
@@ -19,8 +23,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M12-3 sudo -A 重试 + TUI AskPass 模式接线
-- **阶段状态**：M0–M10 完成；M11 全部实现；M12-1/2 完成，实现中
+- **当前任务**：最终验收自检（ACCEPTANCE 全量）+ PLAN 收尾
+- **阶段状态**：M0–M12 全部任务关闭（M11-6 真实终端图片显示保留人工验证步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
