@@ -125,7 +125,7 @@
 - [~] M11-6 验证：Alacritty 下图片显示（deferred：需真实终端）
 - [x] M11-7 验证：零配置下 `Enter` 打开文件走系统默认，不报错
 - [x] M11-8 集成 `office_oxide`（~0.1.16 锁定，实际 0.1.17；DOCX/XLSX/PPTX/DOC/XLS/PPT 文本提取，零外部工具）
-- [~] M11-9 Office 提取接入 PreviewRenderer（deferred：依赖 M11-8）
+- [x] M11-9 Office 提取接入 PreviewRenderer（`PreviewKind::Office` 分流 + 提取失败友好提示，TUI/pick 同源）
 - [~] M11-10 PDF 预览探测链（deferred：重依赖，SIMPLIFIED 允许延后）
 - [~] M11-11 Poppler-free 验证（deferred：依赖 M11-8/M11-10）
 - [x] M11-12 `pdf-visual` feature 门控与依赖边界（验证：default tree 无 exprim，--features pdf-visual 含 0.4.0）
