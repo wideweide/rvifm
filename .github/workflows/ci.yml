@@ -35,14 +35,21 @@ jobs:
         shell: bash
         run: |
           RUST_BACKTRACE=1 cargo test --locked -- --test-threads=1 2>&1 | tee test-output.txt
-          code=${PIPESTATUS[0]}
-          if [ $code -ne 0 ]; then
-            # 失败段落原文输出为 annotation（匿名 API 可读，用于排查）。
-            tail -40 test-output.txt | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            exit $code
-          fi
+          exit ${PIPESTATUS[0]}
+      # 失败诊断：把失败摘要写进 check-run output.summary（匿名 API 可读）。
+      - name: publish failure digest
+        if: failure() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JOB_ID=$(gh run view ${{ github.run_id }} --json jobs --jq '.jobs[] | select(.conclusion=="failure") | .databaseId' | head -1)
+          grep -E "^test .* FAILED|panicked at|error\[|^error" test-output.txt | head -30 > digest.txt || true
+          [ -s digest.txt ] || tail -30 test-output.txt > digest.txt
+          gh api "repos/${{ github.repository }}/check-runs/$JOB_ID" \
+            -X PATCH -f name="test (${{ matrix.os }})" \
+            -F "output[title]=failure digest" \
+            -F "output[summary]=$(cat digest.txt)" || true
       - name: upload test output
         if: always()
         uses: actions/upload-artifact@v4
