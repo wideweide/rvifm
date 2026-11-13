@@ -2579,8 +2579,8 @@ mod tests {
     #[test]
     fn askpass_cancel_keeps_state_unchanged() {
         // M12-4：取消干净中止——cursor/entries/undo 栈与进入前一致。
-        let (tmp, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let (tmp, state) = make_state(3);
+        let _ = InputState::default();
         let mut msg: Option<String> = None;
         // 模拟 TUI 状态迁移：Cancel 后模式由调用方置 Normal（此处验证
         // askpass_key 的 Cancel 语义 + 无副作用）。
@@ -2595,7 +2595,7 @@ mod tests {
         let cursor_before = state.active_tab().cursor;
         let entries_before = state.active_tab().entries.len();
         let undo_before = state.undo_stack.len();
-        let _ = (input, &mut msg, &tmp);
+        let _ = (&mut msg, &tmp);
         assert_eq!(state.active_tab().cursor, cursor_before);
         assert_eq!(state.active_tab().entries.len(), entries_before);
         assert_eq!(state.undo_stack.len(), undo_before);
