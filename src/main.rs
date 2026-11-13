@@ -15,6 +15,7 @@ mod keymap;
 mod office;
 mod opener;
 mod ops;
+mod pdf;
 mod preview;
 mod state;
 mod store;

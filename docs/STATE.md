@@ -1,4 +1,5 @@
 # STATE —
+- `M11-10`（2026-11-14）：`src/pdf.rs` 探测链——pdf-inspector =1.25.2（禁用 ocr/render-pdfium/vision，`cargo tree -e features` 验证 NONE）文本提取第一级；`PdfPreview{Text,NeedsVisual,Unavailable}` 分类（Scanned/ImageBased/编码损坏 → NeedsVisual）；`find_external_renderer` PATH 探测 pdftoppm/mutool（不启动进程）；fixture 程序化生成最小 PDF（精确 xref 偏移）。134 单测全绿。
 - `M11-9`（2026-11-14）：Office 接入 PreviewRenderer——`PreviewKind::Office` 分流（preview_kind 分类 + render_preview 提取分支 + 失败友好提示）；TUI 预览窗格经现有 `_` 分支自动生效（无需改 app.rs）；TUI/pick 同源。129 单测全绿。
 - `M11-8`（2026-11-14）：`src/office.rs`——office_oxide 0.1.17（~0.1.16 锁定，ACCEPTANCE §13）文本提取层：`is_office_file`（docx/xlsx/pptx/doc/xls/ppt）+ `extract_preview_text`（行截断 + 64K 字符保护 + Err 不 panic）；测试 fixture 用 `office_oxide::create::create_from_markdown` 程序化生成（**踩坑**：markdown 软换行合并为单段落，fixture 需空行分隔）。127 单测全绿。
 - `M11-2`（2026-11-14）：图片预览接入 PreviewRenderer——TUI 双栏（左列表 60% / 右预览 40%，vifm 式）；`preview_kind()` 统一分流（Directory/Image/Text，TUI 与 pick 同源）；AppState 持有 ImageEngine；图片渲染失败降级共享提示行；归档内条目暂不预览（M7 VFS 文本读取未接入）。**踩坑**：`Picker::from_query_stdio()` 在非 TTY（测试/CI）会阻塞等待终端响应——detect() 前置 `IsTty` 守卫，非 TTY 直接 halfblocks 不做 stdio 查询。122 单测全绿。
@@ -13,8 +14,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M11-10 PDF 预览探测链（pdf-inspector 文本提取先行）
-- **阶段状态**：M0–M10 完成；M11-1/2/8/9 已完成，剩余 deferred 项实现中；M12 排队中
+- **当前任务**：M11-11 Poppler-free 验证（PDF 分支接入 PreviewRenderer）
+- **阶段状态**：M0–M10 完成；M11-1/2/8/9/10 已完成，剩余 deferred 项实现中；M12 排队中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
