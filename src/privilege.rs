@@ -110,6 +110,152 @@ pub fn cleanup_fifo(path: &std::path::Path) {
     let _ = std::fs::remove_file(path);
 }
 
+// ── M12-3：sudo -A 提权执行 ───────────────────────────────────────────────
+
+/// 可提权的单个写操作（TUI 内由操作失败上下文构造）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrivOp {
+    /// 删除（rm -rf，root 侧不走应用内暂存——撤销栈不记录提权删除）。
+    Delete { path: std::path::PathBuf },
+    /// 重命名。
+    Rename {
+        from: std::path::PathBuf,
+        to: std::path::PathBuf,
+    },
+    /// 移动。
+    Move {
+        from: std::path::PathBuf,
+        to: std::path::PathBuf,
+    },
+    /// 复制。
+    Copy {
+        from: std::path::PathBuf,
+        to: std::path::PathBuf,
+    },
+    /// 新建目录。
+    CreateDir { path: std::path::PathBuf },
+    /// 新建文件。
+    CreateFile { path: std::path::PathBuf },
+}
+
+impl PrivOp {
+    /// 对应的 root 侧命令（不经 shell；`--` 防止路径被当选项）。
+    #[cfg(unix)]
+    pub fn sudo_command(&self) -> (&'static str, Vec<std::path::PathBuf>) {
+        match self {
+            PrivOp::Delete { path } => ("rm", vec!["-rf".into(), "--".into(), path.into()]),
+            PrivOp::Rename { from, to } => ("mv", vec!["--".into(), from.into(), to.into()]),
+            PrivOp::Move { from, to } => ("mv", vec!["--".into(), from.into(), to.into()]),
+            PrivOp::Copy { from, to } => {
+                ("cp", vec!["-a".into(), "--".into(), from.into(), to.into()])
+            }
+            PrivOp::CreateDir { path } => ("mkdir", vec!["-p".into(), path.into()]),
+            PrivOp::CreateFile { path } => ("touch", vec![path.into()]),
+        }
+    }
+
+    /// 用户可见描述（确认与错误提示）。
+    pub fn describe(&self) -> String {
+        match self {
+            PrivOp::Delete { path } => format!("删除 {}", path.display()),
+            PrivOp::Rename { from, to } => format!("重命名 {} → {}", from.display(), to.display()),
+            PrivOp::Move { from, to } => format!("移动 {} → {}", from.display(), to.display()),
+            PrivOp::Copy { from, to } => format!("复制 {} → {}", from.display(), to.display()),
+            PrivOp::CreateDir { path } => format!("新建目录 {}", path.display()),
+            PrivOp::CreateFile { path } => format!("新建文件 {}", path.display()),
+        }
+    }
+}
+
+/// 生成 askpass wrapper 脚本（0700，`/tmp`）：
+/// `#!/bin/sh` + `exec "<exe>" --askpass "<fifo>"`——
+/// SUDO_ASKPASS 只能是不带参数的单一路径（带参数需 sudo >= 1.9.4），
+/// wrapper 全版本兼容。
+#[cfg(unix)]
+pub fn create_wrapper_script(
+    exe: &std::path::Path,
+    fifo: &std::path::Path,
+) -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::temp_dir().join(format!("{FIFO_PREFIX}{}.sh", std::process::id()));
+    let script = format!(
+        "#!/bin/sh\nexec \"{}\" --askpass \"{}\"\n",
+        exe.display(),
+        fifo.display()
+    );
+    std::fs::write(&path, script)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
+    Ok(path)
+}
+
+/// 用给定密码以 `sudo -A` 重试单个操作（M12-3）。
+///
+/// 时序：mkfifo → 写 wrapper → `sudo -A <op>`（SUDO_ASKPASS=wrapper）→
+/// sudo fork askpass 打开 FIFO 读端 → 本进程写端打开（阻塞配对）写密码 →
+/// sudo 认证并执行 → 等待退出 → 清理 FIFO 与 wrapper。
+/// sudo 退出非零（认证失败/执行失败）返回 Err；不残留 FIFO。
+///
+/// `SUDO_ASKPASS` 路径经 wrapper 后无空格问题；`sudo_command` 不经 shell。
+#[cfg(unix)]
+pub fn escalate_execute(op: &PrivOp, password: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let fifo = askpass_fifo_path();
+    create_fifo(&fifo).map_err(|e| format!("askpass FIFO 创建失败: {e}"))?;
+    let exe = std::env::current_exe().unwrap_or_else(|_| "rvifm".into());
+    let wrapper = match create_wrapper_script(&exe, &fifo) {
+        Ok(w) => w,
+        Err(e) => {
+            cleanup_fifo(&fifo);
+            return Err(format!("askpass wrapper 生成失败: {e}"));
+        }
+    };
+
+    let (prog, args) = op.sudo_command();
+    let mut cmd = Command::new("sudo");
+    cmd.arg("-A")
+        .arg(prog)
+        .args(args.iter().map(|a| a.as_os_str()))
+        .env("SUDO_ASKPASS", &wrapper)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            cleanup_fifo(&fifo);
+            let _ = std::fs::remove_file(&wrapper);
+            return Err(format!("sudo 启动失败: {e}"));
+        }
+    };
+
+    // 写密码（独立线程：open 写端阻塞直到 askpass 打开读端）。
+    // sudo 若未调用 askpass（免密 NOPASSWD / 直接拒绝），线程随进程退出。
+    let fifo_for_writer = fifo.clone();
+    let pw = password.to_owned();
+    std::thread::spawn(move || {
+        let _ = write_password_to_fifo(&fifo_for_writer, &pw);
+    });
+
+    let output = child.wait_with_output();
+    cleanup_fifo(&fifo);
+    let _ = std::fs::remove_file(&wrapper);
+
+    match output {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            Err(format!(
+                "sudo 执行失败（{}）: {}",
+                out.status,
+                stderr.trim()
+            ))
+        }
+        Err(e) => Err(format!("sudo 等待失败: {e}")),
+    }
+}
+
 #[cfg(unix)]
 #[cfg(test)]
 mod tests {
@@ -140,5 +286,80 @@ mod tests {
         assert_eq!(a, b, "同进程内路径稳定");
         assert!(a.starts_with(std::env::temp_dir()));
         assert!(a.to_string_lossy().contains(FIFO_PREFIX));
+    }
+
+    #[test]
+    fn privop_sudo_command_construction() {
+        // M12-3：root 侧命令构造（`--` 防路径被当选项；不经 shell）。
+        let (prog, args) = PrivOp::Delete {
+            path: "/tmp/x".into(),
+        }
+        .sudo_command();
+        assert_eq!(prog, "rm");
+        assert_eq!(args[0].to_string_lossy(), "-rf");
+        assert_eq!(args[2].to_string_lossy(), "/tmp/x");
+
+        let (prog, args) = PrivOp::Copy {
+            from: "/tmp/a b".into(),
+            to: "/tmp/c".into(),
+        }
+        .sudo_command();
+        assert_eq!(prog, "cp");
+        assert_eq!(args[0].to_string_lossy(), "-a");
+        // 路径含空格不经 shell，无需引号。
+        assert_eq!(args[2].to_string_lossy(), "/tmp/a b");
+
+        let (prog, args) = PrivOp::CreateDir {
+            path: "/tmp/d".into(),
+        }
+        .sudo_command();
+        assert_eq!(prog, "mkdir");
+        assert_eq!(args[0].to_string_lossy(), "-p");
+    }
+
+    #[test]
+    fn wrapper_script_contains_exe_and_fifo() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wrapper = create_wrapper_script(
+            Path::new("/usr/local/bin/rvifm"),
+            Path::new("/tmp/rvifm-askpass-42.fifo"),
+        )
+        .unwrap();
+        let content = std::fs::read_to_string(&wrapper).unwrap();
+        assert!(content.starts_with("#!/bin/sh\n"));
+        assert!(content.contains("/usr/local/bin/rvifm"));
+        assert!(content.contains("--askpass /tmp/rvifm-askpass-42.fifo"));
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&wrapper).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "wrapper 必须 0700");
+        std::fs::remove_file(&wrapper).unwrap();
+    }
+
+    /// CI ubuntu runner（runner 用户 NOPASSWD sudo）下真实提权 touch。
+    /// 无免密 sudo 的环境（本地）自动跳过。
+    #[test]
+    fn escalate_execute_touch_creates_file_when_sudo_available() {
+        // 前置探测：sudo 可用且免密（-n）→ 执行；否则跳过。
+        let probe = std::process::Command::new("sudo")
+            .arg("-n")
+            .arg("true")
+            .status();
+        match probe {
+            Ok(s) if s.success() => {}
+            _ => {
+                eprintln!("跳过：无免密 sudo 环境");
+                return;
+            }
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let target = tmp.path().join("escalated.txt");
+        escalate_execute(
+            &PrivOp::CreateFile {
+                path: target.clone(),
+            },
+            "unused-password",
+        )
+        .expect("sudo touch via escalate");
+        assert!(target.exists(), "提权创建的文件应存在");
     }
 }

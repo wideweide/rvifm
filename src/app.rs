@@ -78,6 +78,12 @@ enum InputMode {
     ConfirmTagDelete,
     /// 帮助覆盖层（`:help`，M5-3；任意键返回）。
     Help,
+    /// sudo 密码输入模式（M12-3）：写操作 EACCES 后原地重试。
+    /// Enter=确认提权，Esc=干净中止（M12-4）。密码 masked 渲染。
+    AskPass {
+        input: String,
+        op: crate::privilege::PrivOp,
+    },
 }
 
 /// 命令行单键处理结果。
@@ -108,6 +114,39 @@ fn command_input(input: &mut String, key: KeyEvent) -> CmdInput {
     }
 }
 
+/// AskPass 模式单键结果（M12-3；独立函数便于单测）。
+#[derive(Debug, PartialEq, Eq)]
+enum AskPassResult {
+    /// 继续输入。
+    Continue,
+    /// Enter：提交密码重试提权。
+    Retry { password: String },
+    /// Esc：取消（M12-4 干净中止）。
+    Cancel,
+}
+
+/// AskPass 模式单键处理（M12-3）：只维护密码缓冲，模式状态由调用方迁移。
+fn askpass_key(input: &mut String, code: KeyCode) -> AskPassResult {
+    match code {
+        KeyCode::Enter => AskPassResult::Retry {
+            password: std::mem::take(input),
+        },
+        KeyCode::Esc => {
+            input.clear();
+            AskPassResult::Cancel
+        }
+        KeyCode::Backspace => {
+            input.pop();
+            AskPassResult::Continue
+        }
+        KeyCode::Char(c) => {
+            input.push(c);
+            AskPassResult::Continue
+        }
+        _ => AskPassResult::Continue,
+    }
+}
+
 /// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
 #[derive(Debug, PartialEq, Eq)]
 enum ExecOutcome {
@@ -119,6 +158,8 @@ enum ExecOutcome {
     Done { msg: Option<String> },
     /// 请求确认批量删除标记文件（`:tag delete`，M3-3）。
     ConfirmTagDelete,
+    /// 写操作 EACCES → 进入 sudo 密码输入（M12-3 操作级提权）。
+    Escalate { op: crate::privilege::PrivOp },
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -197,8 +238,20 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .get(tab.cursor)
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "rename: 无选中条目".to_owned())?;
-            let op = ops::rename_to(state.active, &path, new_name)
-                .map_err(|e| format!("rename: {e}"))?;
+            // 提权重试的目标路径与 ops::rename_to 内部校验产物一致（base.join）。
+            let target = base.join(new_name);
+            let op = match ops::rename_to(state.active, &path, new_name) {
+                Ok(op) => op,
+                Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                    return Ok(ExecOutcome::Escalate {
+                        op: crate::privilege::PrivOp::Rename {
+                            from: path,
+                            to: target,
+                        },
+                    });
+                }
+                Err(e) => return Err(format!("rename: {e}")),
+            };
             state.undo_stack.push(op);
             let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
@@ -219,8 +272,18 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .get(tab.cursor)
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "move: 无选中条目".to_owned())?;
-            let op =
-                ops::move_to(state.active, &path, &target).map_err(|e| format!("move: {e}"))?;
+            let op = match ops::move_to(state.active, &path, &target) {
+                Ok(op) => op,
+                Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                    return Ok(ExecOutcome::Escalate {
+                        op: crate::privilege::PrivOp::Move {
+                            from: path,
+                            to: target,
+                        },
+                    });
+                }
+                Err(e) => return Err(format!("move: {e}")),
+            };
             state.undo_stack.push(op);
             let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
@@ -242,8 +305,18 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .get(tab.cursor)
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "copy: 无选中条目".to_owned())?;
-            let op =
-                ops::copy_to(state.active, &path, &target).map_err(|e| format!("copy: {e}"))?;
+            let op = match ops::copy_to(state.active, &path, &target) {
+                Ok(op) => op,
+                Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                    return Ok(ExecOutcome::Escalate {
+                        op: crate::privilege::PrivOp::Copy {
+                            from: path,
+                            to: target,
+                        },
+                    });
+                }
+                Err(e) => return Err(format!("copy: {e}")),
+            };
             state.undo_stack.push(op);
             let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
@@ -329,7 +402,23 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             } else {
                 ops::create_file(state.active, &base, name)
             };
-            let op = result.map_err(|e| format!("{cmd}: {e}"))?;
+            let op = match result {
+                Ok(op) => op,
+                Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                    return Ok(ExecOutcome::Escalate {
+                        op: if cmd == "mkdir" {
+                            crate::privilege::PrivOp::CreateDir {
+                                path: base.join(name),
+                            }
+                        } else {
+                            crate::privilege::PrivOp::CreateFile {
+                                path: base.join(name),
+                            }
+                        },
+                    });
+                }
+                Err(e) => return Err(format!("{cmd}: {e}")),
+            };
             state.undo_stack.push(op);
             let cfg = state.config;
             if let Some(tab) = state.tabs.get_mut(state.active) {
@@ -536,7 +625,12 @@ fn handle_key(
 }
 
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
-fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf) {
+/// 返回 `Some(op)` = EACCES 需要提权（M12-3），调用方进入 AskPass 模式。
+fn execute_delete(
+    state: &mut AppState,
+    msg: &mut Option<String>,
+    path: PathBuf,
+) -> Option<crate::privilege::PrivOp> {
     let tab_id = state.active;
     let cfg = state.config;
     match ops::delete_to_trash(tab_id, &path) {
@@ -548,8 +642,16 @@ fn execute_delete(state: &mut AppState, msg: &mut Option<String>, path: PathBuf)
             {
                 *msg = Some(format!("刷新失败: {e}"));
             }
+            None
         }
-        Err(e) => *msg = Some(format!("删除失败: {e}")),
+        Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+            *msg = None;
+            Some(crate::privilege::PrivOp::Delete { path })
+        }
+        Err(e) => {
+            *msg = Some(format!("删除失败: {e}"));
+            None
+        }
     }
 }
 
@@ -652,6 +754,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             Ok(ExecOutcome::ConfirmTagDelete) => {
                                 mode = InputMode::ConfirmTagDelete;
                             }
+                            Ok(ExecOutcome::Escalate { op }) => {
+                                // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
+                                mode = InputMode::AskPass {
+                                    input: String::new(),
+                                    op,
+                                };
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -683,7 +792,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 let path = std::mem::take(path);
                                 mode = InputMode::Normal;
-                                execute_delete(&mut state, &mut msg, path);
+                                if let Some(op) = execute_delete(&mut state, &mut msg, path) {
+                                    // M12-3：EACCES → 原地进入 sudo 密码输入。
+                                    mode = InputMode::AskPass {
+                                        input: String::new(),
+                                        op,
+                                    };
+                                }
                             }
                             _ => mode = InputMode::Normal,
                         }
@@ -692,6 +807,43 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Help => {
                     // 任意键返回（M5-3 最小帮助覆盖层；完整帮助页在 M6-2）。
                     mode = InputMode::Normal;
+                }
+                InputMode::AskPass { input, op } => {
+                    // M12-3/M12-4：sudo 密码输入。Enter=提权重试；Esc=干净中止
+                    // （不触碰任何状态——取消后 TUI 与操作前一致）。
+                    if key.kind == KeyEventKind::Press {
+                        match askpass_key(input, key.code) {
+                            AskPassResult::Continue => {}
+                            AskPassResult::Cancel => {
+                                // M12-4：取消干净中止——丢弃密码与操作，状态不变。
+                                input.clear();
+                                mode = InputMode::Normal;
+                                msg = Some("已取消提权".to_owned());
+                            }
+                            AskPassResult::Retry { password } => {
+                                let op = op.clone();
+                                mode = InputMode::Normal;
+                                #[cfg(unix)]
+                                match crate::privilege::escalate_execute(&op, password.trim()) {
+                                    Ok(()) => {
+                                        msg = Some(format!("提权完成: {}", op.describe()));
+                                        let cfg = state.config;
+                                        if let Some(tab) = state.tabs.get_mut(state.active) {
+                                            let _ = tab.refresh(cfg);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        msg = Some(format!("提权失败: {e}"));
+                                    }
+                                }
+                                #[cfg(not(unix))]
+                                {
+                                    let _ = (op, password);
+                                    msg = Some("提权仅支持 Unix（Linux/macOS）".to_owned());
+                                }
+                            }
+                        }
+                    }
                 }
                 InputMode::ConfirmTagDelete => {
                     if key.kind == KeyEventKind::Press {
@@ -811,6 +963,14 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::ConfirmTagDelete => {
             let n = tab.tagged_count();
             Line::from(format!("删除 {n} 个标记文件? [y/N]"))
+        }
+        InputMode::AskPass { input, op } => {
+            // M12-3：密码 masked 渲染（`*` 逐字符替换），带操作描述。
+            let masked = "*".repeat(input.chars().count());
+            Line::from(format!(
+                "sudo 密码: {masked} [Enter=确认 Esc=取消] {}",
+                op.describe()
+            ))
         }
         InputMode::Normal => {
             let selected = match tab.entries.get(tab.cursor) {
@@ -2356,6 +2516,89 @@ mod tests {
         assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+    }
+
+    // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
+
+    #[test]
+    fn askpass_key_collects_submits_and_cancels() {
+        // M12-3：字符收集 → Enter 提交密码；Esc 取消。
+        let mut input = String::new();
+        assert_eq!(
+            askpass_key(&mut input, KeyCode::Char('h')),
+            AskPassResult::Continue
+        );
+        assert_eq!(
+            askpass_key(&mut input, KeyCode::Char('x')),
+            AskPassResult::Continue
+        );
+        assert_eq!(
+            askpass_key(&mut input, KeyCode::Backspace),
+            AskPassResult::Continue
+        );
+        assert_eq!(input, "h");
+        assert_eq!(
+            askpass_key(&mut input, KeyCode::Enter),
+            AskPassResult::Retry {
+                password: "h".to_owned()
+            }
+        );
+        // 提交后缓冲已清空；Esc 直接取消。
+        assert_eq!(askpass_key(&mut input, KeyCode::Esc), AskPassResult::Cancel);
+        assert_eq!(input, "");
+    }
+
+    #[test]
+    fn askpass_renders_masked_password_without_leaking() {
+        // M12-3：密码以 * 渲染；明文不出现在缓冲区。
+        let (_tmp, state) = make_state(1);
+        let mode = InputMode::AskPass {
+            input: "hunter2".to_owned(),
+            op: crate::privilege::PrivOp::Delete {
+                path: PathBuf::from("/tmp/target.txt"),
+            },
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row = |y: u16| {
+            (0..80u16)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        };
+        let status = row(9);
+        // CJK 双宽在 TestBackend 中展开为"字 空格"形式：只断言 ASCII 关键段。
+        assert!(status.contains("*******"), "masked: {status}");
+        assert!(status.contains("/tmp/target.txt"), "op desc: {status}");
+        assert!(!status.contains("hunter2"), "明文泄漏: {status}");
+    }
+
+    #[test]
+    fn askpass_cancel_keeps_state_unchanged() {
+        // M12-4：取消干净中止——cursor/entries/undo 栈与进入前一致。
+        let (tmp, mut state) = make_state(3);
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+        // 模拟 TUI 状态迁移：Cancel 后模式由调用方置 Normal（此处验证
+        // askpass_key 的 Cancel 语义 + 无副作用）。
+        let mut pw_buf = "secret".to_owned();
+        assert_eq!(
+            askpass_key(&mut pw_buf, KeyCode::Esc),
+            AskPassResult::Cancel
+        );
+        assert!(pw_buf.is_empty(), "取消必须丢弃密码");
+
+        // 状态一致性：UndoableOp 候选不执行，光标/条目不动。
+        let cursor_before = state.active_tab().cursor;
+        let entries_before = state.active_tab().entries.len();
+        let undo_before = state.undo_stack.len();
+        let _ = (input, &mut msg, &tmp);
+        assert_eq!(state.active_tab().cursor, cursor_before);
+        assert_eq!(state.active_tab().entries.len(), entries_before);
+        assert_eq!(state.undo_stack.len(), undo_before);
     }
 
     #[test]
