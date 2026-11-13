@@ -46,11 +46,15 @@ jobs:
           JOB_ID=$(gh run view ${{ github.run_id }} --json jobs --jq '.jobs[] | select(.conclusion=="failure") | .databaseId' | head -1)
           grep -E "^test .* FAILED|panicked at|error\[|^error" test-output.txt | head -25 > digest.txt || true
           [ -s digest.txt ] || tail -25 test-output.txt > digest.txt
-          # 单条 annotation message 上限内打包摘要。
-          MSG=$(jq -Rs . < digest.txt)
-          gh api "repos/${{ github.repository }}/check-runs/$JOB_ID/annotations" \
-            -X POST --input - \
-            <<< "[{\"path\":\"test-output.txt\",\"start_line\":1,\"end_line\":1,\"annotation_level\":\"notice\",\"message\":$MSG}]" || echo "annotation post failed"
+          SUMMARY=$(jq -Rs . < digest.txt)
+          NAME=$(gh api "repos/${{ github.repository }}/check-runs/$JOB_ID" --jq '.name')
+          # 1) PATCH output（title/summary 匿名可读）；2) 追加 annotation。
+          gh api "repos/${{ github.repository }}/check-runs/$JOB_ID" -X PATCH --input - \
+            <<< "{\"name\":\"$NAME\",\"output\":{\"title\":\"failure digest\",\"summary\":$SUMMARY}}" \
+            || echo "PATCH failed"
+          gh api "repos/${{ github.repository }}/check-runs/$JOB_ID/annotations" -X POST --input - \
+            <<< "[{\"path\":\"test-output.txt\",\"start_line\":1,\"end_line\":1,\"annotation_level\":\"notice\",\"message\":$SUMMARY}]" \
+            || echo "annotation post failed"
       - name: upload test output
         if: always()
         uses: actions/upload-artifact@v4
