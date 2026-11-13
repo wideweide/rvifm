@@ -1,4 +1,5 @@
 # STATE —
+- `M11-2`（2026-11-14）：图片预览接入 PreviewRenderer——TUI 双栏（左列表 60% / 右预览 40%，vifm 式）；`preview_kind()` 统一分流（Directory/Image/Text，TUI 与 pick 同源）；AppState 持有 ImageEngine；图片渲染失败降级共享提示行；归档内条目暂不预览（M7 VFS 文本读取未接入）。**踩坑**：`Picker::from_query_stdio()` 在非 TTY（测试/CI）会阻塞等待终端响应——detect() 前置 `IsTty` 守卫，非 TTY 直接 halfblocks 不做 stdio 查询。122 单测全绿。
 - `M11-1`（2026-11-14）：`src/image.rs`——ratatui-image 11.1.0 引擎层（`Picker::from_query_stdio()` TTY 探测 → `Picker::halfblocks()` 无条件回退；无状态 `Image` widget + `Resize::Fit`，规避 StatefulImage 无后台线程阻塞 UI）；`image 0.25.10` 显式依赖（png/jpeg/gif/webp/bmp）；chafa 零引入（AGENTS §5.5）；TestBackend halfblocks 渲染测试。120 单测全绿。真实终端显示验证随 M11-6。
 - `CI`（2026-11-14）：**双平台全绿**（run 43462270991）。两个历史失败均为 CI 配置问题而非代码问题——ubuntu：`enter_selected` 调 system_open 无 gio/xdg-open（已移入 handle_key）；Windows：test 步骤 `RUST_BACKTRACE=1 ... | tee` 是 bash 语法，pwsh 默认 shell 无法执行（补 `shell: bash` 修复）。
 - `TASKS`（2026-11-14）：修正勾选遗漏——M7-1/3/4/8、M8-1/2、M9-6、M10-2/4 代码在库且 STATE 已宣布关闭，TASKS 勾选补齐。开始 deferred 清零冲刺（用户指示：能写的代码先写出来，Linux 验证借 CI）。
@@ -10,8 +11,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M11-2 图片预览接入 PreviewRenderer
-- **阶段状态**：M0–M10 完成；M11-1 已完成，剩余 deferred 项实现中；M12 排队中
+- **当前任务**：M11-8 集成 office_oxide
+- **阶段状态**：M0–M10 完成；M11-1/M11-2 已完成，剩余 deferred 项实现中；M12 排队中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
