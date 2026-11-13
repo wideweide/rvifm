@@ -15,6 +15,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 lzma-rs = "0.3.0"
 office_oxide = "~0.1.16"
 opaline = "0.4.2"
+pdf-inspector = "=1.25.2"
 ratatui = "0.30.2"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm", "image-defaults"] }
 redb = "4.5.0"
