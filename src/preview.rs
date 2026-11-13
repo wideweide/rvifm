@@ -52,6 +52,8 @@ pub enum PreviewKind {
     Image,
     /// Office 文档（DOCX/XLSX/PPTX 等，纯 Rust 文本提取）。
     Office,
+    /// PDF 文档（pdf-inspector 文本提取 → 视觉路径回退提示）。
+    Pdf,
     /// 其余按文本预览。
     Text,
 }
@@ -64,6 +66,8 @@ pub fn preview_kind(path: &Path) -> PreviewKind {
         PreviewKind::Image
     } else if crate::office::is_office_file(path) {
         PreviewKind::Office
+    } else if crate::pdf::is_pdf_file(path) {
+        PreviewKind::Pdf
     } else {
         PreviewKind::Text
     }
@@ -84,6 +88,25 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
             Ok(body) => text_preview(&body),
             Err(e) => text_preview(&format!(
                 "[Office 预览失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+                path.display()
+            )),
+        };
+    }
+    if crate::pdf::is_pdf_file(path) {
+        // M11-11：Poppler-free——干净环境（无 Poppler/MuPDF）只走
+        // pdf-inspector 文本提取；视觉路径回退为提示行（SPEC 边界：
+        // 不保证零配置视觉预览）。
+        return match crate::pdf::preview_pdf(path) {
+            crate::pdf::PdfPreview::Text(md) => {
+                let body: String = md.lines().take(max_lines).collect::<Vec<_>>().join("\n");
+                text_preview(&body)
+            }
+            crate::pdf::PdfPreview::NeedsVisual => text_preview(&format!(
+                "[PDF 文本层不足] {}\n\n视觉预览需要启用 pdf-visual feature\n或安装 pdftoppm/mutool（可选外部工具）。\n按 Enter 用系统默认程序打开。",
+                path.display()
+            )),
+            crate::pdf::PdfPreview::Unavailable(e) => text_preview(&format!(
+                "[PDF 预览失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
                 path.display()
             )),
         };
@@ -308,6 +331,36 @@ mod tests {
         let preview = render_preview(&p, 10);
         let texts = preview.line_texts();
         assert!(texts.iter().any(|t| t.contains("Office 预览失败")));
+    }
+
+    #[test]
+    fn pdf_preview_extracts_text_without_poppler() {
+        // M11-11：干净环境（无 Poppler/MuPDF/外部工具）下含文本层的
+        // PDF 走 pdf-inspector 文本提取预览。
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("doc.pdf");
+        let content = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 46 >>\nstream\nBT /F1 24 Tf 72 700 Td (Poppler free) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\ntrailer\n<< /Root 1 0 R /Size 6 >>\n%%EOF\n";
+        fs::write(&p, content).unwrap();
+        assert_eq!(preview_kind(&p), PreviewKind::Pdf);
+
+        let preview = render_preview(&p, 10);
+        let texts = preview.line_texts();
+        assert!(
+            texts.iter().any(|t| t.contains("Poppler")),
+            "pdf text extraction: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn pdf_preview_corrupt_file_gets_friendly_hint() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("bad.pdf");
+        fs::write(&p, b"junk bytes").unwrap();
+        let preview = render_preview(&p, 10);
+        let texts = preview.line_texts();
+        assert!(texts.iter().any(|t| t.contains("PDF 预览失败")));
+        // 不 panic 且提示系统 opener 回退。
+        assert!(texts.iter().any(|t| t.contains("系统默认程序")));
     }
 
     #[test]
