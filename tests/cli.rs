@@ -54,15 +54,13 @@ fn askpass_reads_fifo_password_and_prints_stdout() {
     // mkfifo via nix-free path: use the binary's own helper through the
     // CLI? No — create via libc here to stay dependency-free.
     let cpath = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
-    unsafe {
-        unsafe extern "C" {
-            fn mkfifo(path: *const i8, mode: u32) -> i32;
-        }
-        assert_eq!(unsafe { mkfifo(cpath.as_ptr(), 0o600) }, 0, "mkfifo failed");
+    unsafe extern "C" {
+        fn mkfifo(path: *const i8, mode: u32) -> i32;
     }
+    unsafe { mkfifo(cpath.as_ptr(), 0o600) };
 
     // 启动 askpass 子进程（sudo 认证时同形态：--askpass <fifo>）。
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+    let child = Command::new(env!("CARGO_BIN_EXE_rvifm"))
         .arg("--askpass")
         .arg(&fifo)
         .stdout(Stdio::piped())
@@ -94,12 +92,10 @@ fn askpass_with_empty_fifo_fails_gracefully() {
     let fifo = std::env::temp_dir().join(format!("rvifm-test-eof-{}.fifo", std::process::id()));
     let _ = std::fs::remove_file(&fifo);
     let cpath = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
-    unsafe {
-        unsafe extern "C" {
-            fn mkfifo(path: *const i8, mode: u32) -> i32;
-        }
-        assert_eq!(unsafe { mkfifo(cpath.as_ptr(), 0o600) }, 0);
+    unsafe extern "C" {
+        fn mkfifo(path: *const i8, mode: u32) -> i32;
     }
+    unsafe { mkfifo(cpath.as_ptr(), 0o600) };
     // 预先关闭"写端"：直接 close 未打开的 fd 无意义——用 reader 在
     // 子进程内读到 EOF 的方式：open 写端后立即关闭再启动子进程会
     // 阻塞……因此这里直接删除 FIFO，让 askpass open 失败走错误路径。

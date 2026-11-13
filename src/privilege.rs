@@ -260,16 +260,18 @@ pub fn escalate_execute(op: &PrivOp, password: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn fifo_roundtrip_password() {
         let path = askpass_fifo_path();
         create_fifo(&path).expect("mkfifo");
 
-        // 模拟 askpass 读端与主进程写端的协作。
+        // 模拟 askpass 读端与主进程写端的协作（写端持克隆，原 path 供清理）。
+        let writer_path = path.clone();
         let writer = std::thread::spawn(move || {
             // 等待读端打开（write_password_to_fifo 内部阻塞直到配对）。
-            write_password_to_fifo(&path, "secret-pw").expect("write fifo");
+            write_password_to_fifo(&writer_path, "secret-pw").expect("write fifo");
         });
         let pw = read_password_from_fifo(&path).expect("read fifo");
         writer.join().unwrap();
@@ -319,7 +321,6 @@ mod tests {
 
     #[test]
     fn wrapper_script_contains_exe_and_fifo() {
-        let tmp = tempfile::TempDir::new().unwrap();
         let wrapper = create_wrapper_script(
             Path::new("/usr/local/bin/rvifm"),
             Path::new("/tmp/rvifm-askpass-42.fifo"),
