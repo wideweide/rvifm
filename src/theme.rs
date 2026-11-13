@@ -77,8 +77,12 @@ pub fn user_themes_dir() -> std::path::PathBuf {
 /// 发现用户主题目录下的全部 `.toml` 主题文件（不含扩展名，排序返回）。
 /// 目录不存在时返回空 Vec（零配置可用）。
 pub fn discover_user_themes() -> Vec<String> {
-    let dir = user_themes_dir();
-    let Ok(iter) = std::fs::read_dir(&dir) else {
+    discover_user_themes_from(&user_themes_dir())
+}
+
+/// 从指定目录发现用户主题（M9-6 注入式测试入口）。
+pub fn discover_user_themes_from(dir: &Path) -> Vec<String> {
+    let Ok(iter) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut names: Vec<String> = iter
@@ -101,7 +105,12 @@ pub fn discover_user_themes() -> Vec<String> {
 
 /// 从用户主题目录按名加载 TOML 主题（M9-6）。未找到返回 NotFound。
 pub fn load_user_theme(name: &str) -> std::io::Result<Theme> {
-    let path = user_themes_dir().join(format!("{name}.toml"));
+    load_user_theme_from(&user_themes_dir(), name)
+}
+
+/// 从指定目录按名加载 TOML 主题（M9-6 注入式测试入口）。
+pub fn load_user_theme_from(dir: &Path, name: &str) -> std::io::Result<Theme> {
+    let path = dir.join(format!("{name}.toml"));
     if !path.exists() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -115,7 +124,12 @@ pub fn load_user_theme(name: &str) -> std::io::Result<Theme> {
 /// 激活用户主题（M9-6）：加载成功后与内置主题同样接管渲染。
 /// 解析失败返回 Err（不 panic、不改变当前主题）。
 pub fn set_user_theme(name: &str) -> std::io::Result<()> {
-    let theme = load_user_theme(name)?;
+    set_user_theme_from(&user_themes_dir(), name)
+}
+
+/// 从指定目录激活用户主题（M9-6 注入式测试入口）。
+pub fn set_user_theme_from(dir: &Path, name: &str) -> std::io::Result<()> {
+    let theme = load_user_theme_from(dir, name)?;
     let variant = theme.meta.variant;
     let _ = ACTIVE.set(ThemeState { theme, variant });
     Ok(())
@@ -174,9 +188,9 @@ mod tests {
 
     #[test]
     fn user_theme_discover_load_and_activate() {
-        // M9-6：用户 TOML 主题发现与加载（XDG_DATA/CONFIG 环境注入）。
+        // M9-6：用户 TOML 主题发现与加载（目录注入，无 env 污染）。
         let tmp = TempDir::new().unwrap();
-        let themes_dir = tmp.path().join("rvifm").join("themes");
+        let themes_dir = tmp.path().join("themes");
         std::fs::create_dir_all(&themes_dir).unwrap();
         std::fs::write(
             themes_dir.join("mytheme.toml"),
@@ -186,42 +200,24 @@ mod tests {
         )
         .unwrap();
 
-        // SAFETY: 测试进程独占，串行执行，无并发读取。
-        unsafe {
-            // Windows 上 config_path() 读 APPDATA，Unix 读 XDG_CONFIG_HOME。
-            if cfg!(windows) {
-                std::env::set_var("APPDATA", tmp.path());
-            } else {
-                std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-            }
-        }
-
-        let names = discover_user_themes();
+        let names = discover_user_themes_from(&themes_dir);
         assert_eq!(names, ["mytheme"]);
 
-        let theme = load_user_theme("mytheme").unwrap();
+        let theme = load_user_theme_from(&themes_dir, "mytheme").unwrap();
         assert_eq!(theme.meta.name, "My Theme");
         assert!(matches!(
             theme.meta.variant,
             opaline::schema::ThemeVariant::Dark
         ));
 
-        set_user_theme("mytheme").unwrap();
+        set_user_theme_from(&themes_dir, "mytheme").unwrap();
         assert!(matches!(
             active_variant(),
             opaline::schema::ThemeVariant::Dark
         ));
 
         // 未存在主题：NotFound，不 panic。
-        assert!(load_user_theme("nope").is_err());
-
-        unsafe {
-            if cfg!(windows) {
-                std::env::remove_var("APPDATA");
-            } else {
-                std::env::remove_var("XDG_CONFIG_HOME");
-            }
-        }
+        assert!(load_user_theme_from(&themes_dir, "nope").is_err());
     }
 
     #[test]
