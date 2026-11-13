@@ -50,6 +50,8 @@ pub enum PreviewKind {
     Directory,
     /// 图片文件（由 `ImageEngine` 渲染到预览区域）。
     Image,
+    /// Office 文档（DOCX/XLSX/PPTX 等，纯 Rust 文本提取）。
+    Office,
     /// 其余按文本预览。
     Text,
 }
@@ -60,6 +62,8 @@ pub fn preview_kind(path: &Path) -> PreviewKind {
         PreviewKind::Directory
     } else if crate::image::is_image_file(path) {
         PreviewKind::Image
+    } else if crate::office::is_office_file(path) {
+        PreviewKind::Office
     } else {
         PreviewKind::Text
     }
@@ -67,12 +71,22 @@ pub fn preview_kind(path: &Path) -> PreviewKind {
 
 /// 为 `path` 生成预览（M8-8）：
 /// - 目录 → 成员列表（前若干项，不递归）；
+/// - Office 文档 → `office_oxide` 文本提取（M11-9），失败降级提示；
 /// - 普通文件 → 文本内容（截断保护）；二进制/读取失败 → 友好提示；
 /// - 图像文件 → 友好提示行（真实渲染走 `ImageEngine`；此分支服务
 ///   解码失败降级与无图形能力的调用方）。
 pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
     if path.is_dir() {
         return directory_preview(path, max_lines);
+    }
+    if crate::office::is_office_file(path) {
+        return match crate::office::extract_preview_text(path, max_lines) {
+            Ok(body) => text_preview(&body),
+            Err(e) => text_preview(&format!(
+                "[Office 预览失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+                path.display()
+            )),
+        };
     }
     if crate::image::is_image_file(path) {
         return text_preview(&format!(
@@ -265,6 +279,35 @@ mod tests {
         let noext = tmp.path().join("Makefile");
         fs::write(&noext, "all:").unwrap();
         assert_eq!(preview_kind(&noext), PreviewKind::Text);
+    }
+
+    #[test]
+    fn office_preview_extracts_text_via_shared_renderer() {
+        // M11-9：Office 分支接入共享 PreviewRenderer（TUI 与 pick 同源）。
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("report.docx");
+        office_oxide::create::create_from_markdown(
+            "# 报告标题\n\n正文段落。",
+            office_oxide::format::DocumentFormat::Docx,
+            &p,
+        )
+        .unwrap();
+        assert_eq!(preview_kind(&p), PreviewKind::Office);
+
+        let preview = render_preview(&p, 10);
+        let texts = preview.line_texts();
+        assert!(texts.iter().any(|t| t.contains("报告标题")));
+    }
+
+    #[test]
+    fn office_preview_corrupt_file_gets_friendly_hint() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("bad.xlsx");
+        fs::write(&p, b"junk").unwrap();
+        assert_eq!(preview_kind(&p), PreviewKind::Office);
+        let preview = render_preview(&p, 10);
+        let texts = preview.line_texts();
+        assert!(texts.iter().any(|t| t.contains("Office 预览失败")));
     }
 
     #[test]
