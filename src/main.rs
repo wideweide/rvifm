@@ -17,6 +17,7 @@ mod opener;
 mod ops;
 mod pdf;
 mod preview;
+mod privilege;
 mod state;
 mod store;
 mod tab;
@@ -49,6 +50,10 @@ fn main() -> std::io::Result<()> {
                     std::process::exit(2);
                 }
             };
+        }
+        // M12-2：sudo -A 的 askpass 辅助模式（读 FIFO 密码 → stdout）。
+        Some("--askpass") => {
+            return privilege::cmd_askpass(args.collect());
         }
         Some(other) => {
             eprintln!("rvifm: 未知参数 `{other}`（使用 --help 查看用法）");
