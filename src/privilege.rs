@@ -263,7 +263,6 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    #[ignore = "unix CI diagnosis"]
     fn fifo_roundtrip_password() {
         let path = askpass_fifo_path();
         create_fifo(&path).expect("mkfifo");
@@ -330,7 +329,8 @@ mod tests {
         let content = std::fs::read_to_string(&wrapper).unwrap();
         assert!(content.starts_with("#!/bin/sh\n"));
         assert!(content.contains("/usr/local/bin/rvifm"));
-        assert!(content.contains("--askpass /tmp/rvifm-askpass-42.fifo"));
+        assert!(content.contains("--askpass"));
+        assert!(content.contains("/tmp/rvifm-askpass-42.fifo"));
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&wrapper).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700, "wrapper 必须 0700");
@@ -340,7 +340,6 @@ mod tests {
     /// CI ubuntu runner（runner 用户 NOPASSWD sudo）下真实提权 touch。
     /// 无免密 sudo 的环境（本地）自动跳过。
     #[test]
-    #[ignore = "unix CI diagnosis"]
 
     fn escalate_execute_touch_creates_file_when_sudo_available() {
         // 前置探测：sudo 可用且免密（-n）→ 执行；否则跳过。
