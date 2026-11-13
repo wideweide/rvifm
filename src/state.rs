@@ -113,6 +113,8 @@ pub struct AppState {
     /// 用户配置（M5-1 加载；选项生效在 M5-2 接入）。
     #[allow(dead_code)]
     pub config: Config,
+    /// 图片预览引擎（M11-2）：启动时探测一次协议，非 TTY 回退 halfblocks。
+    pub image_engine: crate::image::ImageEngine,
 }
 
 impl AppState {
@@ -123,6 +125,7 @@ impl AppState {
             active: 0,
             undo_stack: UndoStack::default(),
             config: Config::default(),
+            image_engine: crate::image::ImageEngine::detect(),
         }
     }
 

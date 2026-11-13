@@ -43,17 +43,40 @@ impl Preview {
     }
 }
 
+/// 预览内容类型（M11-2；SPEC §4.9 `PreviewContent` 的分流语义）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewKind {
+    /// 目录成员列表。
+    Directory,
+    /// 图片文件（由 `ImageEngine` 渲染到预览区域）。
+    Image,
+    /// 其余按文本预览。
+    Text,
+}
+
+/// 预览分流入口（M11-2）：TUI 与 `pick` 共用，保证同源渲染。
+pub fn preview_kind(path: &Path) -> PreviewKind {
+    if path.is_dir() {
+        PreviewKind::Directory
+    } else if crate::image::is_image_file(path) {
+        PreviewKind::Image
+    } else {
+        PreviewKind::Text
+    }
+}
+
 /// 为 `path` 生成预览（M8-8）：
 /// - 目录 → 成员列表（前若干项，不递归）；
 /// - 普通文件 → 文本内容（截断保护）；二进制/读取失败 → 友好提示；
-/// - 图像文件 → 占位提示（M11-1/M11-2 接入真实渲染）。
+/// - 图像文件 → 友好提示行（真实渲染走 `ImageEngine`；此分支服务
+///   解码失败降级与无图形能力的调用方）。
 pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
     if path.is_dir() {
         return directory_preview(path, max_lines);
     }
-    if is_probably_image(path) {
+    if crate::image::is_image_file(path) {
         return text_preview(&format!(
-            "[图像预览] {}\n\n图像渲染将在后续版本接入\n（ratatui-image 协议探测 + halfblocks 回退）。",
+            "[图像预览] {}\n\n图形渲染不可用（协议探测失败或解码错误）。\n按 Enter 用系统默认程序打开。",
             path.display()
         ));
     }
@@ -144,18 +167,6 @@ fn read_text_preview(path: &Path, max_lines: usize) -> String {
     kept.join("\n")
 }
 
-/// 粗略图像扩展名探测（真实协议渲染在 M11 接入）。
-fn is_probably_image(path: &Path) -> bool {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
-        .to_lowercase();
-    [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]
-        .iter()
-        .any(|ext| name.ends_with(ext))
-}
-
 /// 供 `pick` 使用的快捷入口：给路径渲染预览行（Span 形式，M8-8 共用证明）。
 pub fn preview_lines(path: &Path, max_lines: usize) -> Vec<Span<'static>> {
     let preview = render_preview(path, max_lines);
@@ -226,13 +237,34 @@ mod tests {
     }
 
     #[test]
-    fn image_files_get_placeholder_until_m11() {
+    fn image_files_get_friendly_hint_when_graphics_unavailable() {
+        // M11-2：图像文件预览行 = 解码失败/无图形能力时的降级提示。
         let tmp = TempDir::new().unwrap();
         let img = tmp.path().join("x.png");
         fs::write(&img, b"not-a-real-png").unwrap();
+        assert_eq!(preview_kind(&img), PreviewKind::Image);
         let preview = render_preview(&img, 10);
         let texts = preview.line_texts();
         assert!(texts.iter().any(|t| t.contains("图像预览")));
+    }
+
+    #[test]
+    fn preview_kind_classifies_dir_image_text() {
+        // M11-2：TUI 与 pick 共用的分流入口。
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(preview_kind(tmp.path()), PreviewKind::Directory);
+
+        let img = tmp.path().join("photo.JPEG");
+        fs::write(&img, b"\x89PNG").unwrap();
+        assert_eq!(preview_kind(&img), PreviewKind::Image);
+
+        let txt = tmp.path().join("a.txt");
+        fs::write(&txt, "hello").unwrap();
+        assert_eq!(preview_kind(&txt), PreviewKind::Text);
+
+        let noext = tmp.path().join("Makefile");
+        fs::write(&noext, "all:").unwrap();
+        assert_eq!(preview_kind(&noext), PreviewKind::Text);
     }
 
     #[test]

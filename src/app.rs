@@ -736,8 +736,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
 
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
-    let [list_area, status_area] =
+    let [main_area, status_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+    // M11-2：vifm 式双栏——左列表、右预览（SPEC SIMPLIFIED 允许单栏，
+    // 统一预览窗格自 M11-2 起落地）。
+    let [list_area, preview_area] =
+        Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .areas(main_area);
 
     let visual_range = tab.visual_range();
     let list_items: Vec<ListItem> = tab
@@ -776,6 +781,10 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         list_area,
         &mut list_state,
     );
+
+    // M11-2：预览窗格——光标项按 `preview_kind` 分流；图片走
+    // ImageEngine（解码失败降级为提示行），其余走共享 PreviewRenderer。
+    render_preview_pane(frame, state, preview_area);
 
     if matches!(mode, InputMode::Help) {
         // 帮助覆盖层（M5-3）。
@@ -849,6 +858,44 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         }
     };
     frame.render_widget(Paragraph::new(status), status_area);
+}
+
+/// 预览窗格（M11-2）：与 `pick` 共用同一分流与渲染入口。
+/// 归档视图条目暂不预览（M7 只读 VFS 的文本读取未接入预览）。
+fn render_preview_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let pane = ratatui::widgets::Block::bordered().title("预览");
+    let inner = pane.inner(area);
+    frame.render_widget(pane, area);
+    let path = match physical_base(state) {
+        Ok(base) => base.join(
+            state
+                .active_tab()
+                .entries
+                .get(state.active_tab().cursor)
+                .map(|i| i.name.as_str())
+                .unwrap_or_default(),
+        ),
+        Err(_) => {
+            frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
+            return;
+        }
+    };
+    match crate::preview::preview_kind(&path) {
+        crate::preview::PreviewKind::Image => {
+            // 图片渲染失败（损坏/超大）→ 降级为共享提示行。
+            if state.image_engine.render_file(frame, inner, &path).is_err() {
+                let p = crate::preview::render_preview(&path, inner.height as usize);
+                frame.render_widget(p.into_paragraph(), inner);
+            }
+        }
+        _ => {
+            let p = crate::preview::render_preview(&path, inner.height as usize);
+            frame.render_widget(p.into_paragraph(), inner);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2349,6 +2396,53 @@ mod tests {
             status.contains("2 items"),
             "status bar missing count: {status}"
         );
+    }
+
+    #[test]
+    fn preview_pane_renders_image_and_text_by_kind() {
+        // M11-2：光标在图片文件上 → 预览窗格 halfblocks 渲染非空白；
+        // 光标在文本文件上 → 预览窗格显示文本内容。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("notes.txt"), "hello preview").unwrap();
+        let img = image::DynamicImage::new_rgba8(16, 16).into_rgba8();
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        fs::write(tmp.path().join("pic.png"), png.into_inner()).unwrap();
+        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        // 条目按排序：notes.txt < pic.png。光标 0 = notes.txt → 文本预览。
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let row_text = |buf: &ratatui::buffer::Buffer, y: u16, x0: u16, x1: u16| {
+            (x0..x1).map(|x| buf[(x, y)].symbol()).collect::<String>()
+        };
+        let buf = terminal.backend().buffer().clone();
+        // 右侧 40% 窗格：x 48..80。
+        let pane_txt: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
+        assert!(
+            pane_txt.contains("hello preview"),
+            "text preview: {pane_txt}"
+        );
+
+        // 光标移到 pic.png → 图片预览（halfblocks 非空白）。
+        let mut st = state;
+        st.active_tab_mut().cursor = 1;
+        terminal
+            .draw(|frame| render(frame, &st, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let pane_img: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
+        let has_blocks = (1..9).any(|y| {
+            (48..80).any(|x| {
+                let c = &buf[(x, y)];
+                c.symbol() != " " || c.fg != ratatui::style::Color::Reset
+            })
+        });
+        assert!(has_blocks, "image preview pane empty: {pane_img}");
     }
 
     #[test]

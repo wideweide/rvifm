@@ -38,10 +38,24 @@ pub struct ImageEngine {
     picker: Picker,
 }
 
+impl std::fmt::Debug for ImageEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageEngine")
+            .field("protocol", &self.protocol_name())
+            .finish()
+    }
+}
+
 impl ImageEngine {
     /// 启动时探测最佳协议：TTY 下查询终端；查询失败或非 TTY
     /// 回退 halfblocks（无条件可用，保证零配置不出空白）。
+    /// 非 TTY（CI、管道、测试）**不做 stdio 查询**——查询会向
+    /// stdout 写转义序列并阻塞等待响应。
     pub fn detect() -> Self {
+        use ratatui::crossterm::tty::IsTty;
+        if !std::io::stdout().is_tty() {
+            return Self::halfblocks();
+        }
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
         Self { picker }
     }
