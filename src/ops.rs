@@ -204,6 +204,30 @@ fn validate_new_name(base: &Path, name: &str) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+// ── M12-1：写操作权限不足检测 ─────────────────────────────────────────────
+//
+// 提权触发条件：复制/移动/删除/重命名因 EACCES/EPERM 失败。
+// Windows（UAC 机制不同，SIMPLIFIED 尽力而为）：只识别
+// `ErrorKind::PermissionDenied`；提权执行路径整体 cfg(unix) 门控。
+// 消费方：M12-3（TUI 提权触发接线）。
+
+/// 判断写操作错误是否为权限不足（提权候选）。
+#[allow(dead_code)]
+pub fn is_permission_denied(err: &std::io::Error) -> bool {
+    if err.kind() == std::io::ErrorKind::PermissionDenied {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        // errno: EACCES = 13，EPERM = 1。
+        matches!(err.raw_os_error(), Some(13 | 1))
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 /// 新建目录（M2-5，`:mkdir <名字>`）。
 pub fn create_dir(tab_id: usize, base: &Path, name: &str) -> std::io::Result<UndoableOp> {
     let path = validate_new_name(base, name)?;
@@ -298,6 +322,51 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn is_permission_denied_matches_error_kinds_and_errno() {
+        // M12-1：提权候选判定。
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        assert!(is_permission_denied(&denied));
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        assert!(!is_permission_denied(&not_found));
+        let other = std::io::Error::other("boom");
+        assert!(!is_permission_denied(&other));
+        #[cfg(unix)]
+        {
+            // 原始 errno 路径：EACCES(13)/EPERM(1)。
+            let eacces = std::io::Error::from_raw_os_error(13);
+            assert!(is_permission_denied(&eacces));
+            let eperm = std::io::Error::from_raw_os_error(1);
+            assert!(is_permission_denied(&eperm));
+            let enoent = std::io::Error::from_raw_os_error(2);
+            assert!(!is_permission_denied(&enoent));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_denied_write_detected_as_eacces() {
+        // M12-1：真实 EACCES 场景——只读目录内创建文件。
+        // root 下写入会成功（root 无视 0o555）：此时跳过断言。
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let ro_dir = tmp.path().join("ro");
+        std::fs::create_dir(&ro_dir).unwrap();
+        let meta = std::fs::metadata(&ro_dir).unwrap();
+        let mut perms = meta.permissions();
+        perms.set_mode(0o555); // r-xr-xr-x
+        std::fs::set_permissions(&ro_dir, perms).unwrap();
+
+        match fs::write(ro_dir.join("new.txt"), "x") {
+            Ok(()) => { /* root 环境：无法触发 EACCES，跳过 */ }
+            Err(err) => assert!(is_permission_denied(&err), "expected EACCES, got {err}"),
+        }
+        // 恢复权限让 TempDir 清理成功。
+        let mut perms = std::fs::metadata(&ro_dir).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&ro_dir, perms).unwrap();
+    }
 
     #[test]
     fn delete_and_undo_roundtrip_file() {
