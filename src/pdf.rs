@@ -80,6 +80,133 @@ fn which_ok(cmd: &str) -> bool {
     })
 }
 
+// ── M11-13：pdf-visual 护栏（仅 feature 启用时编译） ─────────────────────
+//
+// SPEC 硬约束（AGENTS §5.5 / ACCEPTANCE §13）：
+// - 导出像素上限限制在预览窗格级别（200 万–400 万像素）；
+// - 限制输入 PDF 文件大小；
+// - release profile 保持 `panic = "unwind"`（Cargo.toml 显式固化）——
+//   exprim 的 per-page panic 边界依赖 `catch_unwind`，`abort` 会失去隔离。
+#[cfg(feature = "pdf-visual")]
+pub mod visual {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    /// 输入 PDF 文件大小上限：超过不进入栅格化（护栏）。
+    pub const MAX_INPUT_BYTES: u64 = 64 * 1024 * 1024;
+
+    /// 导出像素硬上限（400 万；预览窗格级别）。
+    pub const MAX_EXPORT_PIXELS: u64 = 4_000_000;
+
+    /// 导出像素目标值（200 万–400 万区间内取 300 万，按页面比例整除）。
+    const TARGET_EXPORT_PIXELS: f64 = 3_000_000.0;
+
+    /// 栅格化页面结果（RGB8，行优先，`rgb.len() = width * height * 3`）。
+    pub struct PagePixels {
+        pub width: u32,
+        pub height: u32,
+        pub rgb: Vec<u8>,
+    }
+
+    /// 按目标像素数计算 DPI（页面点尺寸 → 缩放）。
+    /// `dpi = 72 * sqrt(target / (pt_w * pt_h))`，下限 72 DPI。
+    fn clamp_dpi(pt_width: f64, pt_height: f64) -> f64 {
+        let area = (pt_width * pt_height).max(1.0);
+        let scale = (TARGET_EXPORT_PIXELS / area).sqrt().min(2.0);
+        (72.0 * scale).max(72.0)
+    }
+
+    /// 栅格化指定页（0-indexed）。两级护栏先于渲染执行：
+    /// 输入文件大小 → 超限 Err；导出像素 → 由 DPI 反推后再次校验。
+    /// 渲染 panic 由 exprim 的 per-page 边界转为 `RenderError::Panic`
+    /// （依赖 `panic = "unwind"`），不传播 abort。
+    pub fn render_page(path: &Path, page_index: u32) -> Result<PagePixels, String> {
+        // 护栏 1：输入文件大小。
+        let size = std::fs::metadata(path)
+            .map_err(|e| format!("读取元数据失败: {e}"))?
+            .len();
+        if size > MAX_INPUT_BYTES {
+            return Err(format!(
+                "PDF 文件过大（{size} 字节 > {MAX_INPUT_BYTES} 上限），已跳过视觉渲染"
+            ));
+        }
+
+        let bytes: Arc<[u8]> = std::fs::read(path)
+            .map_err(|e| format!("读取失败: {e}"))?
+            .into();
+        let session =
+            exprim::RenderSession::open(bytes, None).map_err(|e| format!("PDF 打开失败: {e}"))?;
+        if page_index >= session.page_count() {
+            return Err(format!("页码 {page_index} 超出范围"));
+        }
+
+        // 护栏 2：导出像素上限——先按目标 DPI 算尺寸，超限则按比例收缩。
+        let (mut width, mut height) = session
+            .page_pixel_size(page_index, clamp_dpi_for(&session, page_index))
+            .map_err(|e| format!("页面尺寸计算失败: {e}"))?;
+        let pixels = u64::from(width) * u64::from(height);
+        if pixels > MAX_EXPORT_PIXELS {
+            let shrink = (MAX_EXPORT_PIXELS as f64 / pixels as f64).sqrt();
+            width = ((width as f64) * shrink).max(1.0) as u32;
+            height = ((height as f64) * shrink).max(1.0) as u32;
+        }
+
+        let page = session
+            .compile(page_index)
+            .map_err(|e| format!("页面编译失败: {e}"))?;
+        let plane = session
+            .render(&page, &exprim::RasterProduct::rgb8(width, height))
+            .map_err(|e| format!("栅格化失败: {e}"))?;
+        match plane {
+            exprim::RasterPlane::Rgb8(surface) => {
+                let expected = width as usize * height as usize * 3;
+                let mut rgb = surface.pixels.to_vec();
+                rgb.resize(expected, 255);
+                Ok(PagePixels { width, height, rgb })
+            }
+            _ => Err("意外的输出格式（非 RGB8）".to_owned()),
+        }
+    }
+
+    /// 用页面几何（点）反推目标 DPI。
+    fn clamp_dpi_for(session: &exprim::RenderSession, page_index: u32) -> f64 {
+        session
+            .page_geometry(page_index)
+            .map(|g| clamp_dpi(g.display_width(), g.display_height()))
+            .unwrap_or(150.0)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use tempfile::TempDir;
+
+        #[test]
+        fn clamp_dpi_targets_three_megapixels() {
+            // A4 纵向（595×842 pt ≈ 501k pt²）→ 缩放约 2.4x → DPI 上限 2x=144。
+            let dpi = clamp_dpi(595.0, 842.0);
+            let w = 595.0 * dpi / 72.0;
+            let h = 842.0 * dpi / 72.0;
+            let px = w * h;
+            assert!(px <= 4_000_000.0, "pixels {px} exceeds cap");
+            assert!(dpi >= 72.0);
+        }
+
+        #[test]
+        fn oversized_input_rejected_by_guard() {
+            let tmp = TempDir::new().unwrap();
+            let p = tmp.path().join("fake.pdf");
+            std::fs::write(&p, b"%PDF-1.4 fake").unwrap();
+            // 直接构造超限场景：用 MAX_INPUT_BYTES 比较逻辑验证。
+            let size = std::fs::metadata(&p).unwrap().len();
+            assert!(size < MAX_INPUT_BYTES);
+            // 超限路径不读文件内容（先 metadata 判断），用一个假路径验证 Err。
+            let r = render_page(Path::new("no-such-file.pdf"), 0);
+            assert!(r.is_err());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

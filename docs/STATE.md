@@ -1,4 +1,5 @@
 # STATE —
+- `M11-13`（2026-11-14）：pdf-visual 护栏——`pdf::visual` 模块（cfg feature）：输入 64MB 上限、导出像素 400 万硬上限（目标 300 万按页面比例 DPI 反推、超限二次收缩）、`[profile.release] panic = "unwind"` 显式固化（exprim per-page catch_unwind 依赖）；exprim 0.4.0 `RenderSession` 全链路（open→compile→render→RasterPlane::Rgb8）。验证：`--features pdf-visual` 编译+测试绿、默认依赖树 exprim=0。
 - `M11-11`（2026-11-14）：Poppler-free 验证——`PreviewKind::Pdf` 接入共享 PreviewRenderer（TUI/pick 同源）；干净环境（无 Poppler/MuPDF）含文本 PDF → pdf-inspector 提取预览；NeedsVisual → 视觉路径提示行（pdf-visual feature 或可选外部工具 + opener 回退）；Unavailable → 友好提示。136 单测全绿。
 - `M11-10`（2026-11-14）：`src/pdf.rs` 探测链——pdf-inspector =1.25.2（禁用 ocr/render-pdfium/vision，`cargo tree -e features` 验证 NONE）文本提取第一级；`PdfPreview{Text,NeedsVisual,Unavailable}` 分类（Scanned/ImageBased/编码损坏 → NeedsVisual）；`find_external_renderer` PATH 探测 pdftoppm/mutool（不启动进程）；fixture 程序化生成最小 PDF（精确 xref 偏移）。134 单测全绿。
 - `M11-9`（2026-11-14）：Office 接入 PreviewRenderer——`PreviewKind::Office` 分流（preview_kind 分类 + render_preview 提取分支 + 失败友好提示）；TUI 预览窗格经现有 `_` 分支自动生效（无需改 app.rs）；TUI/pick 同源。129 单测全绿。
@@ -15,8 +16,8 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M11-13 pdf-visual 护栏（exprim =0.4.0 编译验证）
-- **阶段状态**：M0–M10 完成；M11 除真实终端验证项（M11-6）与 pdf-visual 门控项（M11-13/14/15）外全部完成；M12 排队中
+- **当前任务**：M11-14 pdf-visual 语料回归（CJK/加密/损坏）
+- **阶段状态**：M0–M10 完成；M11 除 M11-6（真实终端）与 M11-14/15 外全部完成；M12 排队中
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
