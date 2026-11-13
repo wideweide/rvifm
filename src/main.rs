@@ -12,6 +12,7 @@ mod frecency;
 mod icons;
 mod image;
 mod keymap;
+mod office;
 mod opener;
 mod ops;
 mod preview;
