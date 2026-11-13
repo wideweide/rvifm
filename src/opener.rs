@@ -18,12 +18,15 @@ pub fn system_open(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         // Linux：优先 gio open，回退 xdg-open。
-        for cmd in [["gio", "open"], ["xdg-open"]] {
-            if let Ok(s) = Command::new(cmd[0]).args(&cmd[1..]).arg(path).status()
-                && s.success()
-            {
-                return Ok(());
-            }
+        if let Ok(s) = Command::new("gio").args(["open"]).arg(path).status()
+            && s.success()
+        {
+            return Ok(());
+        }
+        if let Ok(s) = Command::new("xdg-open").arg(path).status()
+            && s.success()
+        {
+            return Ok(());
         }
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
