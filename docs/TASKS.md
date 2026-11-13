@@ -135,7 +135,7 @@
 
 ## M12 — 权限不足时的内联提权（2026-11-12 增补）
 
-- [~] M12-1 检测写操作 EACCES（deferred：需 Linux 测试环境，设计已入库 NOTES/SPEC）
+- [x] M12-1 检测写操作 EACCES（`ops::is_permission_denied`：ErrorKind + raw errno EACCES/EPERM；真实 0o555 目录写入测试）
 - [~] M12-2 askpass 辅助模式（deferred：需 Linux 测试环境）
 - [~] M12-3 sudo -A 重试（deferred：需 Linux 测试环境）
 - [~] M12-4 取消干净中止（deferred：需 Linux 测试环境）
