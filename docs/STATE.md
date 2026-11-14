@@ -1,4 +1,6 @@
 # STATE —
+- `M8-13`（2026-11-14）：发布 0.3.0（M8-12 跳转选择器新特性，minor bump）——crates.io（持久授权）+ tag `v0.3.0` → GitHub Release。
+
 - `M8-12`（2026-11-14）：TUI 跳转选择器——`o` 合一视角（`replay_unified`：全部条目按全局序号 aging，dir+file 混合排名）+ `:j`/`:J` 分型（仅目录/仅文件，独立时钟）；`InputMode::JumpSelect` 覆盖层（输入筛选 + j/k 移动 + Enter 选定 + Esc 取消）；选定 = 目录 cd（history 入栈）/ 文件切父目录定位光标（纯导航不调 opener）；选择器纯只读（不写任何表/时钟）。150 单测全绿（新增统一视角对照、筛选分级、cd/定位、渲染、:j/:J 共 7 测试）。
 
 - `M8-11`（2026-11-14）：发布 0.2.1（M8-10 独立时钟行为修正，patch bump）——crates.io（持久授权）+ tag `v0.2.1` → CI release job 自动创建 GitHub Release 并上传双平台归档。
