@@ -1,4 +1,6 @@
 # STATE —
+- `M13-11`（2026-11-15）：发布 0.4.0（M13 十项 vifm 对齐增强，minor bump）——crates.io（持久授权）+ tag `v0.4.0` → GitHub Release 自动归档。
+
 - `M13-10`（2026-11-15）：暂存区菜单——ops 增 `TrashEntry`/`record_staging`/`read_trash_index`/`restore_from_trash`（**index/ 每记录独立 .json**，JSONL 并发 append 会粘连）；`:trash` → `InputMode::TrashMenu` 覆盖层（Enter 恢复到原位、orig 冲突 Err、Esc 关）；测试串行锁（全局 trash 目录共享）。162 单测全绿。
 
 - `M13-9`（2026-11-15）：view mode——`w` 键/`:view` 切换 `Tab.view_mode`；预览窗格渲染 max_lines：摘要=窗格高度 / view=5000（完整内容）；j/k 列表移动视图跟随光标文件（render 每帧重建）；双栏布局保持非全屏。162 单测全绿（+1：截断/完整/跟随三态对照）。
@@ -53,7 +55,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M13-11 发布 0.4.0
+- **当前任务**：发布验证 + 收尾
 - **阶段状态**：M0–M12 关闭 + M8-10/11/12/13 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
