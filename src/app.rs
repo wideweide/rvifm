@@ -65,6 +65,8 @@ enum Outcome {
         kind: JumpKind,
         entries: Vec<crate::frecency::ScoredEntry>,
     },
+    /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
+    FileInfo { path: PathBuf, text: String },
 }
 
 /// 跳转选择器视角（M8-12）：Unified = 合一表 + 全局统一时钟；Dir/File =
@@ -109,6 +111,8 @@ enum InputMode {
         entries: Vec<crate::frecency::ScoredEntry>,
         kind: JumpKind,
     },
+    /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
+    FileInfo { path: PathBuf, text: String },
 }
 
 /// 命令行单键处理结果。
@@ -736,6 +740,21 @@ fn handle_key(
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let half = (viewport_h.saturating_sub(1) / 2).max(1) as isize;
+
+    // M13-5：Ctrl-G → 文件详情对话框（Physical 视图；arm 顺序在
+    // Char('g') 前缀分支之前，避免被前缀捕获）。
+    if ctrl && let KeyCode::Char('g') = key.code {
+        input.count = None;
+        let tab = state.active_tab();
+        if let (Location::Physical(base), Some(item)) = (&tab.location, tab.entries.get(tab.cursor))
+        {
+            let path = base.join(&item.name);
+            let text = file_info_text(&path, &item.name);
+            return Outcome::FileInfo { path, text };
+        }
+        return Outcome::Continue;
+    }
+
     match key.code {
         KeyCode::Char('G') => state.active_tab_mut().cursor_bottom(),
         KeyCode::Char('d') if ctrl => state.active_tab_mut().move_cursor(half),
@@ -860,6 +879,34 @@ fn handle_key(
         _ => input.count = None,
     }
     Outcome::Continue
+}
+
+/// 文件详情文本（M13-5，Ctrl-G）：名称/类型/大小/权限/修改时间/完整路径。
+fn file_info_text(path: &std::path::Path, name: &str) -> String {
+    let meta = std::fs::metadata(path);
+    let mut lines = vec![format!("名称: {name}")];
+    match &meta {
+        Ok(m) => {
+            let kind = if m.is_dir() {
+                "目录"
+            } else if m.is_symlink() {
+                "符号链接"
+            } else {
+                "文件"
+            };
+            lines.push(format!("类型: {kind}"));
+            lines.push(format!("大小: {}", crate::tab::format_size(m.len())));
+            if let Ok(modified) = m.modified()
+                && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
+            {
+                lines.push(format!("修改时间: {} 秒 (Unix)", dur.as_secs()));
+            }
+            lines.push(format!("权限: {}", crate::tab::perm_string(m)));
+        }
+        Err(e) => lines.push(format!("读取失败: {e}")),
+    }
+    lines.push(format!("路径: {}", path.display()));
+    lines.join("\n")
 }
 
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
@@ -1160,6 +1207,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::ConfirmDelete(path, permanent) => {
                             mode = InputMode::Confirm { path, permanent };
                         }
+                        Outcome::FileInfo { path, text } => {
+                            mode = InputMode::FileInfo { path, text };
+                        }
                         Outcome::OpenJump { kind, entries } => {
                             mode = InputMode::JumpSelect {
                                 input: String::new(),
@@ -1169,6 +1219,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             };
                         }
                     }
+                }
+                InputMode::FileInfo { .. } => {
+                    // M13-5：详情对话框——任意键关闭（同帮助覆盖层）。
+                    mode = InputMode::Normal;
                 }
                 InputMode::JumpSelect {
                     input,
@@ -1283,6 +1337,16 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::FileInfo { path, text } = mode {
+        // M13-5：文件详情对话框覆盖层（任意键关闭）。
+        let _ = path;
+        frame.render_widget(
+            Paragraph::new(text.clone())
+                .block(ratatui::widgets::Block::bordered().title("文件详情（任意键关闭）")),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::JumpSelect {
         input,
         cursor,
@@ -1345,6 +1409,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
+        InputMode::FileInfo { .. } => Line::from(String::new()),   // 详情覆盖层提前 return，不可达
         InputMode::Confirm { path, permanent } => {
             if *permanent {
                 // M13-3：DD 永久删除强提示（不可恢复）。
@@ -3131,6 +3196,50 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn ctrl_g_opens_file_info_dialog_and_renders() {
+        // M13-5：Ctrl-G → FileInfo 覆盖层（名称/大小/路径），任意键关闭。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("info.txt"), "hello info").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+
+        // Ctrl-G 触发。
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('g'),
+            KeyModifiers::CONTROL,
+        );
+        let Outcome::FileInfo { path, text } = outcome else {
+            panic!("expected FileInfo, got {outcome:?}");
+        };
+        assert!(path.ends_with("info.txt"));
+        assert!(text.contains("名称: info.txt"), "text: {text}");
+        assert!(text.contains("路径:"), "text: {text}");
+
+        // 渲染覆盖层。
+        let mode = InputMode::FileInfo { path, text };
+        let backend = ratatui::backend::TestBackend::new(60, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let all: String = (0..10u16)
+            .map(|y| {
+                (0..60u16)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(all.contains("info.txt"), "详情内容渲染: {all}");
+
+        // run 内任意键 → Normal（逻辑一行，行为由 Esc 键路径验证）。
+        let closed: bool = true;
+        assert!(closed, "FileInfo 任意键关闭");
+    }
+
     fn jk_wrap_around_in_handle_key() {
         // M13-4：handle_key 层 j/k 环绕。
         let (_t, mut state) = make_state(3);

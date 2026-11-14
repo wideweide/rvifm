@@ -536,14 +536,14 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
 
 /// 权限摘要：unix 用 3 位八进制；Windows 仅区分只读。
 #[cfg(unix)]
-fn perm_string(meta: &std::fs::Metadata) -> String {
+pub(crate) fn perm_string(meta: &std::fs::Metadata) -> String {
     use std::os::unix::fs::PermissionsExt;
     format!("{:03o}", meta.permissions().mode() & 0o777)
 }
 
 /// 权限摘要：Windows 仅区分只读。
 #[cfg(windows)]
-fn perm_string(meta: &std::fs::Metadata) -> String {
+pub(crate) fn perm_string(meta: &std::fs::Metadata) -> String {
     if meta.permissions().readonly() {
         "ro".to_owned()
     } else {
