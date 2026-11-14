@@ -3633,6 +3633,7 @@ mod tests {
         assert!(crate::ops::restore_from_trash(&conflict).is_err());
     }
 
+    #[test]
     fn view_mode_toggle_switches_preview_completeness() {
         // M13-9：w/:view 切换——摘要模式长文件截断，view 模式显示完整内容；
         // 光标移动（j）后预览跟随光标文件。
