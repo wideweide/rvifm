@@ -362,6 +362,14 @@ fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result
 fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     let mut parts = line.split_whitespace();
     let cmd_head = parts.next();
+    // FEAT-2：`..` 行仅导航——写操作与详情命令拒绝（cd/q/help/tree 例外）。
+    if state.active_tab().on_parent_row {
+        match cmd_head {
+            Some("cd" | "q" | "quit" | "help") => {}
+            Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
+            None => return Ok(ExecOutcome::Done { msg: None }),
+        }
+    }
     // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
     if state.active_tab().in_tree() {
         match cmd_head {
@@ -691,6 +699,7 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
         return;
     }
     let tab = state.active_tab_mut();
+    tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行。
     let on_match = tab
         .entries
         .get(tab.cursor)
@@ -719,6 +728,7 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
 fn live_search_jump(state: &mut AppState, origin: usize, input: &str, msg: &mut Option<String>) {
     let query = input.trim();
     let tab = state.active_tab_mut();
+    tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行。
     if query.is_empty() {
         tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
         *msg = None;
@@ -855,6 +865,11 @@ fn handle_key(
                 None => state.prev_tab(),
             },
             Some(Action::DeleteSelected) => {
+                if state.active_tab().on_parent_row {
+                    // FEAT-2：`..` 行仅导航。
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return Outcome::Continue;
+                }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
@@ -864,6 +879,11 @@ fn handle_key(
             }
             Some(Action::RenameBatch) => {
                 // M13-6：cw 批量重命名——收集标记（或光标单条）名单。
+                if state.active_tab().on_parent_row {
+                    // FEAT-2：`..` 行仅导航。
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return Outcome::Continue;
+                }
                 let tab = state.active_tab();
                 if let Location::Physical(base) = &tab.location {
                     let names: Vec<String> = if tab.tags.is_empty() {
@@ -892,6 +912,11 @@ fn handle_key(
             }
             Some(Action::DeletePermanent) => {
                 // M13-3：DD 永久删除——确认提示后跳过暂存（不可逆强提示）。
+                if state.active_tab().on_parent_row {
+                    // FEAT-2：`..` 行仅导航。
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return Outcome::Continue;
+                }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
@@ -902,6 +927,11 @@ fn handle_key(
             Some(Action::Yank) => {
                 // FIX-2：yy——可视选择 → 标记 → 光标起 N 条（count 前缀），
                 // 放入复制缓冲区（cut=false；dd 的 cut 缓冲接线待后续）。
+                if state.active_tab().on_parent_row {
+                    // FEAT-2：`..` 行仅导航。
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return Outcome::Continue;
+                }
                 let count = count.unwrap_or(1).max(1);
                 let names: Vec<String> = {
                     let tab = state.active_tab();
@@ -976,6 +1006,11 @@ fn handle_key(
     // Char('g') 前缀分支之前，避免被前缀捕获）。
     if ctrl && let KeyCode::Char('g') = key.code {
         input.count = None;
+        if state.active_tab().on_parent_row {
+            // FEAT-2：`..` 行仅导航。
+            *msg = Some("`..` 行仅导航".to_owned());
+            return Outcome::Continue;
+        }
         let tab = state.active_tab();
         if let (Location::Physical(base), Some(item)) = (&tab.location, tab.entries.get(tab.cursor))
         {
@@ -1140,6 +1175,14 @@ fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
 /// `l`/Enter 与鼠标再击共用的打开逻辑（FEAT-1）：目录/归档 → enter_selected
 /// 导航（FIX-3：归档文件优先于 opener）；普通文件 → 系统 opener（M11-7）。
 fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
+    // FEAT-2：焦点在 `..` 行 → 等价 `h`（返回上级；归档根回物理目录）。
+    if state.active_tab().on_parent_row {
+        let cfg = state.config;
+        if let Err(e) = state.active_tab_mut().return_parent(cfg) {
+            *msg = Some(format!("返回失败: {e}"));
+        }
+        return;
+    }
     let cfg = state.config;
     let tab = state.active_tab();
     let is_file = tab
@@ -1196,22 +1239,37 @@ fn handle_mouse(
     if !matches!(mode, InputMode::Normal) {
         return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
     }
-    // 列表几何：与 render 相同——标签栏 1 行 + 主区（左 60%）+ 状态栏 1 行。
+    // 列表几何：与 render 相同——标签栏 1 行 + 主区（左 60%）+ 状态栏 1 行；
+    // FEAT-2：`..` 行占用条目视口首行（有父行时条目从第 2 行开始）。
+    let has_parent = state.active_tab().has_parent_row() as usize;
     let list_h = area.height.saturating_sub(2) as usize;
+    let view_h = list_h.saturating_sub(has_parent);
     let list_w = area.width * 60 / 100;
-    let in_list =
-        mouse.row >= 1 && mouse.row < area.height.saturating_sub(1) && mouse.column < list_w;
+    let in_columns =
+        mouse.column < list_w && mouse.row >= 1 && mouse.row < area.height.saturating_sub(1);
+    let in_parent_row = has_parent > 0 && mouse.row == 1 && in_columns;
+    let in_entries = in_columns && mouse.row as usize > has_parent;
     match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) if in_list => {
+        MouseEventKind::Down(MouseButton::Left) if in_parent_row => {
+            if state.active_tab().on_parent_row {
+                // 已聚焦 `..` 行再次单击（含双击第二击）→ 返回上级。
+                open_selected(state, msg);
+            } else {
+                // 单击聚焦 `..` 行。
+                state.active_tab_mut().on_parent_row = true;
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) if in_entries => {
             let (idx, focused) = {
                 let tab = state.active_tab();
-                let offset = list_offset(tab.cursor, list_h);
-                let Some(raw) = (mouse.row as usize - 1).checked_add(offset) else {
+                let offset = list_offset(tab.cursor, view_h);
+                let Some(raw) = (mouse.row as usize - 1 - has_parent).checked_add(offset) else {
                     return;
                 };
                 let idx = raw.min(tab.entries.len().saturating_sub(1));
-                (idx, idx == tab.cursor)
+                (idx, idx == tab.cursor && !tab.on_parent_row)
             };
+            state.active_tab_mut().on_parent_row = false;
             if focused {
                 // 已聚焦行再次单击（含双击第二击）→ 打开。
                 open_selected(state, msg);
@@ -1220,10 +1278,10 @@ fn handle_mouse(
                 state.active_tab_mut().cursor = idx;
             }
         }
-        MouseEventKind::ScrollUp if in_list => {
+        MouseEventKind::ScrollUp if in_columns => {
             state.active_tab_mut().move_cursor(-1);
         }
-        MouseEventKind::ScrollDown if in_list => {
+        MouseEventKind::ScrollDown if in_columns => {
             state.active_tab_mut().move_cursor(1);
         }
         _ => {}
@@ -1991,6 +2049,24 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
             .areas(main_area);
 
+    // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
+    // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
+    let parent_available = tab.has_parent_row();
+    let parent_area = if parent_available {
+        let [p, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
+        let parent_style = if tab.on_parent_row {
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        } else {
+            // 视觉上与普通目录项区分（置灰）。
+            Style::new().add_modifier(Modifier::DIM)
+        };
+        frame.render_widget(Paragraph::new(Line::from("../")).style(parent_style), p);
+        rest
+    } else {
+        list_area
+    };
+
     let visual_range = tab.visual_range();
     // FIX-1：当前生效的搜索查询——搜索输入期用实时输入（不回退旧查询，
     // 清空即无高亮），其余用已提交的 tab.search。
@@ -2070,12 +2146,17 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             li
         })
         .collect();
-    let mut list_state = ListState::default()
-        .with_selected(Some(tab.cursor))
-        .with_offset(list_offset(tab.cursor, list_area.height as usize));
+    // FEAT-2：焦点在 `..` 行时列表无高亮选中项。
+    let mut list_state = ListState::default().with_offset(list_offset(
+        if tab.on_parent_row { 0 } else { tab.cursor },
+        parent_area.height as usize,
+    ));
+    if !tab.on_parent_row {
+        list_state = list_state.with_selected(Some(tab.cursor));
+    }
     frame.render_stateful_widget(
         List::new(list_items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
-        list_area,
+        parent_area,
         &mut list_state,
     );
 
@@ -2461,6 +2542,7 @@ mod tests {
             right: crate::tab::Pane::from_physical(Path::new("."), Config::default()).unwrap(),
             focus: Default::default(),
             view_mode: false,
+            on_parent_row: false,
         }
     }
 
@@ -3813,11 +3895,12 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 选区内反显（行 2、3），选区外不反显（行 1、4）——tab 栏占行 0。
-        assert!(buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        // 选区内反显（行 3、4），选区外不反显（行 2、5）——tab 栏占行 0、
+        // `..` 行占行 1（FEAT-2）。
         assert!(buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 5)].modifier.contains(Modifier::REVERSED));
 
         // 状态栏 VISUAL 指示。
         let status = (0..120u16)
@@ -3910,9 +3993,10 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 标记行加粗，未标记行不加粗——tab 栏占行 0，条目行 1→2。
-        assert!(buffer[(0, 2)].modifier.contains(Modifier::BOLD));
-        assert!(!buffer[(0, 1)].modifier.contains(Modifier::BOLD));
+        // 标记行加粗，未标记行不加粗——tab 栏占行 0，`..` 行占行 1（FEAT-2），
+        // 条目行 2 起。
+        assert!(buffer[(0, 3)].modifier.contains(Modifier::BOLD));
+        assert!(!buffer[(0, 2)].modifier.contains(Modifier::BOLD));
 
         // 状态栏计数。
         let status = (0..120u16)
@@ -4316,10 +4400,11 @@ mod tests {
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        // tab 栏占行 0，列表行 1 起；光标行 1（第二条目）→ y=2。
-        assert!(buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        // tab 栏占行 0、`..` 行占行 1（FEAT-2），条目行 2 起；光标行 1
+        // （第二条目）→ y=3。
+        assert!(buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
     }
 
     // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
@@ -4987,7 +5072,18 @@ mod tests {
             KeyCode::Char('k'),
             KeyModifiers::NONE,
         );
-        assert_eq!(state.active_tab().cursor, 2, "首行 k 环绕到尾行");
+        // FEAT-2：首行 k 上到 `..` 行（有父行时替代"首→尾"环绕）。
+        assert!(state.active_tab().on_parent_row, "首行 k 上到 .. 行");
+        assert_eq!(state.active_tab().cursor, 0);
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 0, "j 从 .. 行回首条目");
+        assert!(!state.active_tab().on_parent_row);
     }
 
     #[test]
@@ -5198,10 +5294,11 @@ mod tests {
                     .collect::<String>()
             })
             .collect();
-        assert!(row[0].contains("f00"), "关闭后列表恢复: {}", row[0]);
-        assert!(row[2].contains("f02"), "光标行内容: {}", row[2]);
+        assert!(row[0].contains("../"), "`..` 行在列表顶部: {}", row[0]);
+        assert!(row[1].contains("f00"), "关闭后列表恢复: {}", row[1]);
+        assert!(row[3].contains("f02"), "光标行内容: {}", row[3]);
         assert!(
-            buffer[(0, 3)].modifier.contains(Modifier::REVERSED),
+            buffer[(0, 4)].modifier.contains(Modifier::REVERSED),
             "光标行反显"
         );
         assert_eq!(state.active_tab().cursor, 2, "光标不变");
@@ -5224,11 +5321,11 @@ mod tests {
         let mut msg = None;
         let area = ratatui::layout::Rect::new(0, 0, 80, 24);
         let mode = InputMode::Normal;
-        // 排序：d1(0) d2(1)；row=2 → idx=1（d2）。
+        // 排序：d1(0) d2(1)；row=3 → idx=1（d2，`..` 行占 row 1）。
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 3,
-            row: 2,
+            row: 3,
             modifiers: KeyModifiers::NONE,
         };
 
@@ -5305,7 +5402,7 @@ mod tests {
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 3,
-            row: 4, // idx 3
+            row: 5, // idx 3（`..` 行占 row 1，条目行 2 起）
             modifiers: KeyModifiers::NONE,
         };
         handle_mouse(&mut state, &InputMode::Normal, &ev, &mut msg, area);
@@ -5333,6 +5430,174 @@ mod tests {
         };
         handle_mouse(&mut state, &mode, &ev, &mut msg, area);
         assert_eq!(state.active_tab().cursor, 0, "输入模式忽略鼠标");
+    }
+
+    #[test]
+    fn feat2_has_parent_row_rules() {
+        let tmp = TempDir::new().unwrap();
+        // 物理目录有父目录 → 显示。
+        let tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        assert!(tab.has_parent_row());
+        // 文件系统根 → 隐藏。
+        let root = Tab::from_physical(std::path::Path::new("/"), Config::default()).unwrap();
+        assert!(!root.has_parent_row());
+        // 归档视图恒显示（../h 返回宿主物理目录）。
+        let z = tmp.path().join("a.zip");
+        crate::archive::make_test_zip(&z);
+        let mut atab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        atab.location = Location::Archive {
+            host: z,
+            inner: PathBuf::new(),
+        };
+        atab.entries = Vec::new();
+        assert!(atab.has_parent_row());
+    }
+
+    #[test]
+    fn feat2_parent_row_navigates_like_h() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("inner.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(&sub, Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // k：首条目上到 `..` 行。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        );
+        assert!(state.active_tab().on_parent_row);
+        assert_eq!(state.active_tab().cursor, 0, ".. 行不占用 cursor 空间");
+
+        // l：返回上级（等价 h）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(state.active_tab().location, Location::Physical(_)),
+            "应返回物理父目录"
+        );
+        assert_eq!(
+            state.active_tab().location.display_path(),
+            tmp.path().to_string_lossy().into_owned()
+        );
+        assert!(!state.active_tab().on_parent_row);
+    }
+
+    #[test]
+    fn feat2_enter_dir_lands_on_parent_row_and_guards_writes() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // 进入目录 → 光标落在 `..` 行（vifm 语义）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(state.active_tab().on_parent_row, "进入目录后落在 .. 行");
+
+        // dd 守卫：不进入确认。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(outcome, Outcome::Continue);
+        assert_eq!(msg.as_deref(), Some("`..` 行仅导航"));
+
+        // 写命令守卫。
+        let r = exec_command_impl(&mut state, "rename x");
+        assert!(r.is_err(), "`..` 行写命令应被拒绝");
+    }
+
+    #[test]
+    fn feat2_mouse_click_parent_row_focus_then_open() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let mut state = AppState::new(Tab::from_physical(&sub, Config::default()).unwrap());
+        let mut msg = None;
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mode = InputMode::Normal;
+        let ev = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 2,
+            row: 1, // `..` 行
+            modifiers: KeyModifiers::NONE,
+        };
+
+        handle_mouse(&mut state, &mode, &ev, &mut msg, area);
+        assert!(state.active_tab().on_parent_row, "单击聚焦 .. 行");
+        handle_mouse(&mut state, &mode, &ev, &mut msg, area);
+        assert!(
+            matches!(state.active_tab().location, Location::Physical(_)),
+            "再击 .. 行返回上级"
+        );
+        assert_eq!(
+            state.active_tab().location.display_path(),
+            tmp.path().to_string_lossy().into_owned()
+        );
+    }
+
+    #[test]
+    fn feat2_archive_parent_row_returns_to_host_dir() {
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        state.active_tab_mut().cursor = 0;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Archive { .. }
+        ));
+        // 进入归档后落在 `..` 行；l/Enter → 回归档所在物理目录。
+        assert!(state.active_tab().on_parent_row);
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(matches!(state.active_tab().location, Location::Physical(_)));
+        assert!(
+            state.active_tab().entries.iter().any(|i| i.name == "t.zip"),
+            "应回到归档所在物理目录"
+        );
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
@@ -5437,9 +5702,10 @@ mod tests {
                 .collect::<String>()
         };
 
-        // 目录在前并带 `/` 后缀。
-        assert!(row(1).contains("sub/"));
-        assert!(row(2).contains("hello.txt"));
+        // 目录在前并带 `/` 后缀（`..` 行占行 1，条目行 2 起）。
+        assert!(row(1).contains("../"));
+        assert!(row(2).contains("sub/"));
+        assert!(row(3).contains("hello.txt"));
         // 状态栏显示当前位置与条目数。
         let dir_name = tmp
             .path()

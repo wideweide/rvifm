@@ -191,6 +191,10 @@ pub struct Tab {
     pub right: Pane,
     /// 焦点 pane（M14-1）：Tab 键切换；导航与文件操作作用于焦点 pane。
     pub focus: Focus,
+    /// FEAT-2：焦点在列表顶部 `..` 虚拟行（渲染层条目，不占用 cursor 空间、
+    /// 不进入 entries/搜索/过滤/标记集合）。`l`/Enter = return_parent；
+    /// 写操作被守卫拒绝。
+    pub on_parent_row: bool,
 }
 
 impl Tab {
@@ -212,7 +216,19 @@ impl Tab {
             // M14-1：右 pane 默认同目录（vifm 启动行为），独立导航。
             right: Pane::from_physical(dir, config)?,
             focus: Focus::Left,
+            on_parent_row: false,
         })
+    }
+
+    /// FEAT-2：列表顶部是否渲染 `..` 行——物理目录存在父目录时显示；
+    /// 归档视图恒显示（`..`/`h` 返回归档文件所在物理目录，M7-5）。
+    pub fn has_parent_row(&self) -> bool {
+        match &self.location {
+            Location::Physical(p) => p
+                .parent()
+                .is_some_and(|parent| !parent.as_os_str().is_empty()),
+            Location::Archive { .. } => true,
+        }
     }
 
     /// 焦点 pane 的基准目录（M14-1）：exec 写命令作用于焦点 pane。
@@ -228,6 +244,13 @@ impl Tab {
         if self.entries.is_empty() {
             return;
         }
+        // FEAT-2：Ctrl-u/d/滚轮离开 `..` 行；向上停留不动。
+        if self.on_parent_row {
+            if delta < 0 {
+                return;
+            }
+            self.on_parent_row = false;
+        }
         let max = self.entries.len() as isize - 1;
         let next = self.cursor as isize + delta;
         self.cursor = next.clamp(0, max) as usize;
@@ -240,6 +263,21 @@ impl Tab {
         if self.entries.is_empty() {
             return;
         }
+        // FEAT-2：k 在首条目时上到 `..` 行（有父行时替代"首→尾"环绕）；
+        // j 从 `..` 行回首条目。
+        if delta == -1 {
+            if self.on_parent_row {
+                return; // 已在 `..` 行，停留。
+            }
+            if self.cursor == 0 && self.has_parent_row() {
+                self.on_parent_row = true;
+                return;
+            }
+        }
+        if delta == 1 && self.on_parent_row {
+            self.on_parent_row = false;
+            return;
+        }
         let len = self.entries.len();
         match delta {
             1 => self.cursor = (self.cursor + 1) % len,
@@ -248,14 +286,16 @@ impl Tab {
         }
     }
 
-    /// 跳到首项（M1-3，`gg`）。
+    /// 跳到首项（M1-3，`gg`）。FEAT-2：gg 落在 `..` 行（vifm 语义）。
     pub fn cursor_top(&mut self) {
         self.cursor = 0;
+        self.on_parent_row = self.has_parent_row();
     }
 
     /// 跳到末项（M1-3，`G`）。空目录停在 0。
     pub fn cursor_bottom(&mut self) {
         self.cursor = self.entries.len().saturating_sub(1);
+        self.on_parent_row = false;
     }
 
     /// 环绕查找匹配条目（M1-7）：大小写不敏感子串；`start` 为起始扫描索引。
@@ -309,6 +349,7 @@ impl Tab {
         match self.find_first_char(c, start, forward) {
             Some(idx) => {
                 self.cursor = idx;
+                self.on_parent_row = false;
                 true
             }
             None => false,
@@ -326,6 +367,7 @@ impl Tab {
         match self.find_match(query, start, forward) {
             Some(idx) => {
                 self.cursor = idx;
+                self.on_parent_row = false;
                 true
             }
             None => false,
@@ -377,6 +419,10 @@ impl Tab {
 
     /// 进入/退出可视选择（M3-1，`v`）。空目录为 no-op。
     pub fn toggle_visual(&mut self) {
+        // FEAT-2：`..` 行不可作为可视选择起点。
+        if self.on_parent_row {
+            return;
+        }
         self.visual = match self.visual {
             Some(_) => None,
             None if !self.entries.is_empty() => Some(self.cursor),
@@ -398,6 +444,10 @@ impl Tab {
     /// 切换光标所在条目的 tag 标记（M3-2，`t`）。空目录为 no-op。
     /// tag 按文件名记录；目录重读后仍按名匹配（改名/删除的条目在批量操作时跳过）。
     pub fn toggle_tag(&mut self) {
+        // FEAT-2：`..` 行无 tag 语义。
+        if self.on_parent_row {
+            return;
+        }
         if let Some(item) = self.entries.get(self.cursor) {
             let name = item.name.clone();
             if !self.tags.remove(&name) {
@@ -574,6 +624,8 @@ impl Tab {
                     self.entries = entries;
                     self.cursor = 0;
                     self.scroll = 0;
+                    // FEAT-2：进入目录后光标落在 `..` 行（vifm 语义）。
+                    self.on_parent_row = self.has_parent_row();
                     return Ok(());
                 }
                 // 归档文件：进入虚拟根目录（M7-4）；不支持的格式给出解压提示（M7-9）。
@@ -593,6 +645,8 @@ impl Tab {
                     self.entries = items;
                     self.cursor = 0;
                     self.scroll = 0;
+                    // FEAT-2：进入归档后光标落在 `..` 行。
+                    self.on_parent_row = self.has_parent_row();
                     return Ok(());
                 }
                 // 普通文件：由调用方（handle_key M11-7）决定是否调用系统 opener。
@@ -617,6 +671,7 @@ impl Tab {
                 self.entries = items;
                 self.cursor = 0;
                 self.scroll = 0;
+                self.on_parent_row = self.has_parent_row();
                 Ok(())
             }
         }
@@ -639,6 +694,7 @@ impl Tab {
                     self.entries = entries;
                     self.cursor = 0;
                     self.scroll = 0;
+                    self.on_parent_row = false;
                     return Ok(());
                 }
                 // 归档内：上一层虚拟目录（parent 为空串 = 归档根，仍留在归档内）。
@@ -654,6 +710,7 @@ impl Tab {
                 self.entries = entries;
                 self.cursor = 0;
                 self.scroll = 0;
+                self.on_parent_row = false;
                 Ok(())
             }
             Location::Physical(base) => {
@@ -669,6 +726,7 @@ impl Tab {
                 self.entries = entries;
                 self.cursor = 0;
                 self.scroll = 0;
+                self.on_parent_row = false;
                 Ok(())
             }
         }
@@ -1128,6 +1186,7 @@ mod tests {
             view_mode: false,
             right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
+            on_parent_row: false,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(root));

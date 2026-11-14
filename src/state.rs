@@ -293,6 +293,7 @@ mod tests {
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),
             focus: crate::tab::Focus::Left,
+            on_parent_row: false,
         }
     }
 
@@ -313,6 +314,7 @@ mod tests {
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),
             focus: crate::tab::Focus::Left,
+            on_parent_row: false,
         }
     }
 
