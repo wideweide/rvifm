@@ -1,4 +1,5 @@
 # STATE —
+- `FIX-4`（2026-11-15）：o 选择器居中与遮罩——`centered_rect`（60%宽/50%高自适应，上限 80×20，小终端保底）+ 全屏 Clear+黑底遮罩（先 Clear 抹符号再铺底色——Block.style 只改 bg 不清符号）；popup 内布局不变；关闭恢复列表与光标（选择器 cursor 是模式局部状态）。80×24→48×12@(16,6)、160×48→80×20@(40,14)。185 单测全绿（+2，旧覆盖层坐标测试同步修正）。
 - `FIX-3`（2026-11-15）：归档浏览回归修复——根因：M11-7 的 system_open 分支插在 enter_selected 之前，物理视图下归档文件（is_file）被交给系统 opener 抢占，Tab::enter_selected 的 M7-4 归档路径（仅左 pane 实装）永远不可达。修复：`l`/Enter 臂对 is_archive_file/is_unsupported_archive 名称先路由 enter_selected（虚拟目录进入 + M7-9 解压提示），仅非归档文件走系统 opener。右 pane 维持 M14 SIMPLIFIED 精简集（无归档进入）。183 单测全绿（+4：进入/损坏/不支持/归档内 dd no-op）。
 - `FIX-2`（2026-11-15）：yy/p 复制链路——YankBuffer（paths+cut）入 AppState；keymap 补 `yy`→Yank 绑定（默认表此前缺失，Action::Yank 同补）+ 单键前缀臂补 `y`；`p`=PutCopy（复制）、`P`=PutMove（移动），目标=焦点 pane 目录（physical_base）；每项独立入撤销栈（u 可逆）；空缓冲/目标已存在/只读目标可读错误不 panic；yy 来源：可视选择→标记→光标起 count 条。dd→cut 缓冲（p 从暂存恢复到任意目录）deferred 记 NOTES。179 单测全绿。
 - `FIX-1`（2026-11-15）：搜索高亮与实时索引——`/` 改"高亮+跳转"语义（不隐藏非匹配项）：`match_range`（smart-case 子串区间）+ `search_status`（i/N 计数）；Search 模式加 `origin` 字段，输入实时跳第一匹配（incsearch）、无匹配回 origin+提示、Esc 恢复光标；列表匹配子串黄底黑字高亮（与光标反显区分）；状态栏 Search/Normal 双口径显示 `[i/N]`+无匹配提示；空提交清除搜索状态。175 单测全绿。

@@ -1863,6 +1863,20 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     } // loop
 } // fn run
 
+/// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
+/// 小终端保底 30×8（不足时取终端本身），在区域内水平垂直居中。
+fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    let w = (area.width * 60 / 100).clamp(30.min(area.width), 80.min(area.width));
+    let h = (area.height * 50 / 100).clamp(8.min(area.height), 20.min(area.height));
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
     // M14-2：标签栏（1 行）——每个 tab 的索引与目录名，当前 tab 高亮。
@@ -2071,13 +2085,21 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     } = mode
     {
         // M8-12：跳转选择器覆盖层（纯只读；分级与 pick 一致）。
+        // FIX-4：全屏遮罩清除列表残影 + 居中浮窗（自适应 + 上限）。
+        // 先 Clear 抹掉符号，再铺遮罩底色。
+        let area = frame.area();
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(
+            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
+            area,
+        );
         let title = match kind {
             JumpKind::Unified => "跳转（合一 · 全局时钟）",
             JumpKind::Dir => "跳转（仅目录 · dir 时钟）",
             JumpKind::File => "跳转（仅文件 · file 时钟）",
         };
         let visible = filter_jump(entries, input);
-        let area = frame.area();
+        let popup = centered_rect(area);
         let items: Vec<ListItem> = visible
             .iter()
             .enumerate()
@@ -2106,8 +2128,12 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             Constraint::Min(3),
             Constraint::Length(1),
         ])
-        .areas(ratatui::widgets::Block::bordered().title(title).inner(area));
-        frame.render_widget(ratatui::widgets::Block::bordered().title(title), area);
+        .areas(
+            ratatui::widgets::Block::bordered()
+                .title(title)
+                .inner(popup),
+        );
+        frame.render_widget(ratatui::widgets::Block::bordered().title(title), popup);
         frame.render_widget(Paragraph::new(Line::from(format!("/{}", input))), inner[0]);
         let list = ratatui::widgets::List::new(items)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
@@ -4983,8 +5009,11 @@ mod tests {
         let all: String = (0..12u16).map(row).collect();
         assert!(all.contains("/w/proj"), "条目渲染: {all}");
         assert!(all.contains("/f/a.txt"), "条目渲染: {all}");
-        // 光标行反显（第一条列表行 y=2：边框 1 + 输入行 1）。
-        let diag: String = [(1u16, 2u16), (1, 3), (2, 2)]
+        // FIX-4 居中浮窗：80×12 终端 → 48×8 popup 于 (16,2)；边框 y=2、
+        // 输入行 y=3、首条目行 y=4（x=17 为 popup 左边界内第一列）。
+        assert_eq!(buffer[(16, 2)].symbol(), "┌", "popup 左上角");
+        assert_eq!(buffer[(63, 2)].symbol(), "┐", "popup 右上角");
+        let diag: String = [(17u16, 4u16), (17, 5), (18, 4)]
             .iter()
             .map(|(x, y)| {
                 format!(
@@ -4995,7 +5024,7 @@ mod tests {
             })
             .collect();
         assert!(
-            buffer[(1, 2)].modifier.contains(Modifier::REVERSED),
+            buffer[(17, 4)].modifier.contains(Modifier::REVERSED),
             "首条目应高亮: {diag}"
         );
     }
@@ -5015,6 +5044,89 @@ mod tests {
             Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::File),
             other => panic!("expected OpenJump File, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn fix4_jump_selector_centered_and_masked_at_two_sizes() {
+        // FIX-4：80×24 与 160×48 两档——居中浮窗 + 全屏遮罩（列表无残影）。
+        let entries = vec![scored("/w/proj", "dir", 9.0)];
+        let (_tmp, state) = make_state(3);
+        let mode = InputMode::JumpSelect {
+            input: String::new(),
+            cursor: 0,
+            entries,
+            kind: JumpKind::Unified,
+        };
+
+        // 80×24：popup = 48×12 @ (16,6)。
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        assert_eq!(buffer[(16, 6)].symbol(), "┌", "popup 左上角应居中");
+        assert_eq!(buffer[(63, 6)].symbol(), "┐");
+        assert_eq!(buffer[(16, 17)].symbol(), "└");
+        // 遮罩：popup 外（列表首行 (0,1)）无目录列表内容。
+        assert!(
+            buffer[(0, 1)].symbol().trim().is_empty(),
+            "popup 外应被遮罩，got {:?}",
+            buffer[(0, 1)].symbol()
+        );
+        assert_eq!(buffer[(0, 1)].bg, Color::Black, "遮罩底色");
+
+        // 160×48：popup = 80×20 @ (40,14)（触上限仍居中）。
+        let backend2 = ratatui::backend::TestBackend::new(160, 48);
+        let mut terminal2 = ratatui::Terminal::new(backend2).unwrap();
+        terminal2
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer2 = terminal2.backend().buffer().clone();
+        assert_eq!(buffer2[(40, 14)].symbol(), "┌", "160×48 下 popup 左上角");
+        assert_eq!(buffer2[(119, 14)].symbol(), "┐");
+        assert!(buffer2[(0, 1)].symbol().trim().is_empty(), "大终端同样遮罩");
+    }
+
+    #[test]
+    fn fix4_close_selector_restores_list_and_cursor() {
+        // FIX-4：关闭后恢复原列表渲染，光标与滚动位置不变。
+        let entries = vec![scored("/w/proj", "dir", 9.0)];
+        let (_tmp, mut state) = make_state(3);
+        state.active_tab_mut().cursor = 2;
+        let mode = InputMode::JumpSelect {
+            input: String::new(),
+            cursor: 0,
+            entries,
+            kind: JumpKind::Unified,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        // 打开期间光标未被改动（选择器 cursor 是模式局部状态）。
+        assert_eq!(state.active_tab().cursor, 2);
+
+        // 关闭（Normal）后列表完整重绘：首行 f00、光标行（第 3 行）f02 反显。
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row: Vec<String> = (1..24u16)
+            .map(|y| {
+                (0..48u16)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(row[0].contains("f00"), "关闭后列表恢复: {}", row[0]);
+        assert!(row[2].contains("f02"), "光标行内容: {}", row[2]);
+        assert!(
+            buffer[(0, 3)].modifier.contains(Modifier::REVERSED),
+            "光标行反显"
+        );
+        assert_eq!(state.active_tab().cursor, 2, "光标不变");
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
