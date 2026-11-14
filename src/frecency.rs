@@ -27,7 +27,7 @@ pub enum EntryKind {
 }
 
 /// 访问事件记录（append-only；M8-2 起持久化到 redb `events` 表，
-/// key 为单调递增 tick）。
+/// key 为全局单调递增序号）。
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntryRecord {
     /// 路径（内部统一 `/`）。
@@ -37,10 +37,16 @@ pub struct EntryRecord {
     pub kind: EntryKind,
     /// Unix 时间戳（秒）。
     pub ts: u64,
+    /// 发生时该事件**类型时钟**的值（M8-10：dir/file 各自独立推进）。
+    /// 旧格式无此字段 → 0（重放侧以全局序号兜底）。
+    #[serde(default)]
+    pub clock: u64,
 }
 
 /// snapshot 条目（compaction 产物；redb `snapshot` 表，key = `path + topic`）。
-/// `keyword` 非空 = 书签；`score` 为最后一次重放后的 EMS 分数；`tick` 用于 aging。
+/// `keyword` 非空 = 书签；`score` 为最后一次重放后的 EMS 分数；
+/// `clock` = 最后一次应用到该条目的**类型时钟**值（M8-10）；`tick` 为
+/// 全局事件序号（兼容字段，仅在 `clock == 0` 的旧数据下参与 aging 兜底）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotEntry {
     pub path: String,
@@ -49,6 +55,8 @@ pub struct SnapshotEntry {
     pub keyword: String,
     pub score: f64,
     pub tick: u64,
+    #[serde(default)]
+    pub clock: u64,
 }
 
 /// 分级匹配 0–7 档（M8-1 固化）：
@@ -203,17 +211,20 @@ fn aged(score: f64, lambda: f64, delta_ticks: u64) -> f64 {
     score * (-lambda * delta_ticks as f64).exp()
 }
 
-/// 重放器（M8-4）：`snapshot`（compaction 产物）+ `events`（自
-/// last_compaction 起的增量）→ 内存评分（`now_tick` 为当前全局 tick，
-/// 读取时统一 aging——冷启动偏差修正）。
+/// 重放器（M8-4 / M8-10）：`snapshot`（compaction 产物）+ `events`（自
+/// last_compaction 起的增量）→ 内存评分（`now_dir`/`now_file` 为当前
+/// **类型时钟**值，读取时按条目 topic 对齐 aging——冷启动偏差修正）。
 ///
-/// 规则：每条事件使对应条目 `score = score * exp(-λ·Δtick) + 1` 并推进
-/// `tick`；事件流中首次出现的路径从 0 分起步（新条目）。
+/// 规则：每条事件使对应条目 `score = score * exp(-λ·Δclock) + 1` 并推进
+/// 其类型时钟；事件流中首次出现的路径从 0 分起步（新条目）。
+/// 兼容：事件 `clock == 0`（旧格式）以全局序号兜底，snapshot `clock == 0`
+/// 以 `tick` 兜底——旧数据 aging 行为与旧版一致。
 /// **record 是唯一写入入口；本函数纯只读**。
 pub fn replay(
     snapshot: &[SnapshotEntry],
     events: &[(u64, EntryRecord)],
-    now_tick: u64,
+    now_dir: u64,
+    now_file: u64,
 ) -> Vec<ScoredEntry> {
     let lambda = AGING_LAMBDA;
     let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
@@ -221,23 +232,28 @@ pub fn replay(
     for s in snapshot {
         map.insert((s.topic.clone(), s.path.clone()), s.clone());
     }
-    for (tick, ev) in events {
+    for (seq, ev) in events {
         let key = (ev.topic.clone(), ev.path.clone());
+        let clock = if ev.clock == 0 { *seq } else { ev.clock };
         let entry = map.entry(key).or_insert_with(|| SnapshotEntry {
             path: ev.path.clone(),
             topic: ev.topic.clone(),
             keyword: String::new(),
             score: 0.0,
-            tick: *tick,
+            tick: *seq,
+            clock,
         });
-        let delta = tick.saturating_sub(entry.tick);
+        let delta = clock.saturating_sub(entry.clock);
         entry.score = aged(entry.score, lambda, delta) + 1.0;
-        entry.tick = *tick;
+        entry.tick = *seq;
+        entry.clock = clock;
     }
     let mut out: Vec<ScoredEntry> = map
         .values()
         .map(|s| {
-            let delta = now_tick.saturating_sub(s.tick);
+            let now = if s.topic == "dir" { now_dir } else { now_file };
+            let clock = if s.clock == 0 { s.tick } else { s.clock };
+            let delta = now.saturating_sub(clock);
             ScoredEntry {
                 path: s.path.clone(),
                 topic: s.topic.clone(),
@@ -324,6 +340,7 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
         path: path.replace('\\', "/"),
         topic,
         kind: EntryKind::Navigate,
+        clock: 0, // M8-10：写入时由 store 注入类型时钟
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -412,7 +429,8 @@ fn replay_merge(
     for s in snapshot {
         map.insert((s.topic.clone(), s.path.clone()), s.clone());
     }
-    for (tick, ev) in events {
+    for (seq, ev) in events {
+        let clock = if ev.clock == 0 { *seq } else { ev.clock };
         let entry = map
             .entry((ev.topic.clone(), ev.path.clone()))
             .or_insert_with(|| SnapshotEntry {
@@ -420,11 +438,13 @@ fn replay_merge(
                 topic: ev.topic.clone(),
                 keyword: String::new(),
                 score: 0.0,
-                tick: *tick,
+                tick: *seq,
+                clock,
             });
-        let delta = tick.saturating_sub(entry.tick);
+        let delta = clock.saturating_sub(entry.clock);
         entry.score = aged(entry.score, lambda, delta) + 1.0;
-        entry.tick = *tick;
+        entry.tick = *seq;
+        entry.clock = clock;
     }
     map.into_values().collect()
 }
@@ -442,9 +462,11 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
     let store = open_store()?;
     let snapshot = store.snapshot_all()?;
     let since = store.last_compaction()?;
-    let now = store.global_tick()?;
+    // M8-10：读方分别取类型时钟（dir/file 各自独立 aging）。
+    let now_dir = store.type_tick("dir")?;
+    let now_file = store.type_tick("file")?;
     let events = store.events_since(since)?;
-    let ranked_entries = replay(&snapshot, &events, now);
+    let ranked_entries = replay(&snapshot, &events, now_dir, now_file);
 
     // 候选 → 分数索引（path|topic 匹配 snapshot）。
     let score_of = |path: &str, topic: &str| -> f64 {
@@ -610,6 +632,7 @@ mod tests {
             keyword: keyword.to_owned(),
             score,
             tick: 100,
+            clock: 100,
         }
     }
 
@@ -619,6 +642,7 @@ mod tests {
             topic: "dir".to_owned(),
             kind: EntryKind::Navigate,
             ts,
+            clock: 0, // 0 = 旧格式兜底（replay 以全局序号回退）
         }
     }
 
@@ -724,8 +748,8 @@ mod tests {
         tick += 1;
         events.push((tick, rec("/b", 2000)));
 
-        let now = tick; // 读取时 aging：now = 全局 tick
-        let ranked = replay(&[], &events, now);
+        let now = tick; // 读取时 aging：旧格式 clock=0 兜底全局序号，两类 now 相同
+        let ranked = replay(&[], &events, now, now);
         let a = ranked.iter().find(|e| e.path == "/a").unwrap();
         let b = ranked.iter().find(|e| e.path == "/b").unwrap();
         assert!(b.score > a.score, "B({}) 应排在 A({}) 前", b.score, a.score);
@@ -733,6 +757,88 @@ mod tests {
         let b_pos = ranked.iter().position(|e| e.path == "/b").unwrap();
         let a_pos = ranked.iter().position(|e| e.path == "/a").unwrap();
         assert!(b_pos < a_pos, "B({b_pos}) 应在 A({a_pos}) 前");
+    }
+
+    #[test]
+    fn replay_per_type_clocks_are_independent() {
+        // M8-10：file 条目的 aging 只受 file 时钟影响——dir 时钟推进
+        // （目录高频访问）不稀释文件条目的新鲜度。
+        let file_ev = |clock: u64| EntryRecord {
+            path: "/f/notes.txt".to_owned(),
+            topic: "file".to_owned(),
+            kind: EntryKind::Open,
+            ts: 1000,
+            clock,
+        };
+        let events = [(1u64, file_ev(1))]; // file 时钟 1 时打开一次
+        // 场景 1：dir/file 时钟都停在 2（近期）。
+        let r1 = replay(&[], &events, 2, 2);
+        // 场景 2：dir 时钟推进到 1000（目录重度使用），file 时钟仍 2。
+        let r2 = replay(&[], &events, 1000, 2);
+        let s1 = r1.iter().find(|e| e.path == "/f/notes.txt").unwrap();
+        let s2 = r2.iter().find(|e| e.path == "/f/notes.txt").unwrap();
+        assert!(
+            (s1.score - s2.score).abs() < 1e-9,
+            "dir 时钟推进不得影响 file 条目分数：{} vs {}",
+            s1.score,
+            s2.score
+        );
+        // 反向对照：file 时钟真实推进确实衰减（排除假阳性）。
+        let r3 = replay(&[], &events, 2, 1000);
+        let s3 = r3.iter().find(|e| e.path == "/f/notes.txt").unwrap();
+        assert!(s3.score < s1.score, "file 时钟推进应衰减 file 分数");
+    }
+
+    #[test]
+    fn store_type_clocks_advance_independently() {
+        // M8-10：dir/file 时钟各自推进；global_tick 只作为全局序号。
+        let tmp = TempDir::new().unwrap();
+        let store = Store::open(&tmp.path().join("f.redb")).unwrap();
+
+        let mut dir_ev = rec("/d1", 1);
+        dir_ev.topic = "dir".to_owned();
+        let mut file_ev = rec("/f1", 2);
+        file_ev.topic = "file".to_owned();
+        file_ev.kind = EntryKind::Open;
+
+        store.append_event(&dir_ev).unwrap();
+        store.append_event(&dir_ev).unwrap();
+        store.append_event(&file_ev).unwrap();
+
+        // 全局序号 3 条全记。
+        assert_eq!(store.global_tick().unwrap(), 3);
+        // 类型时钟独立：dir 推进 2 次、file 1 次。
+        assert_eq!(store.type_tick("dir").unwrap(), 2);
+        assert_eq!(store.type_tick("file").unwrap(), 3); // 旧库无 file 时钟：首笔 = 全局序号分叉(2)+1
+        // 事件 JSON 携带各自类型时钟。
+        let events = store.events_since(0).unwrap();
+        assert_eq!(events[0].1.clock, 1); // dir #1
+        assert_eq!(events[1].1.clock, 2); // dir #2
+        assert_eq!(events[2].1.clock, 3); // file #1（分叉点 2 + 1；此后与 dir 分叉）
+    }
+
+    #[test]
+    fn store_type_clocks_initialize_from_global_for_legacy_db() {
+        // M8-10 兼容：旧库（只有 global_tick）首次写入时，类型时钟自
+        // 全局值连续分叉——新旧 aging 行为衔接。
+        let tmp = TempDir::new().unwrap();
+        let store = Store::open(&tmp.path().join("f.redb")).unwrap();
+        // 模拟旧库已有 5 条事件（旧代码只推进 global）。
+        for i in 0..5 {
+            let mut ev = rec(&format!("/legacy{i}"), i);
+            ev.clock = 0;
+            store.append_event(&ev).unwrap();
+        }
+        assert_eq!(store.global_tick().unwrap(), 5);
+        // 旧事件（新代码写入的 clock=0 被覆盖为类型时钟……注意：新代码
+        // 无条件注入 clock）——这里验证的是：dir 时钟初始 = global(5)。
+        assert_eq!(store.type_tick("dir").unwrap(), 5);
+        // 下一笔 dir 事件 → 6。
+        let mut ev = rec("/d", 9);
+        ev.topic = "dir".to_owned();
+        store.append_event(&ev).unwrap();
+        assert_eq!(store.type_tick("dir").unwrap(), 6);
+        assert_eq!(store.type_tick("file").unwrap(), 6); // file 时钟仍缺失：读取兜底 = 当前 global(6)
     }
 
     #[test]
@@ -785,6 +891,7 @@ mod tests {
             path: "/w/proj".to_owned(),
             topic: "dir".to_owned(),
             kind: EntryKind::Navigate,
+            clock: 0,
             ts: 1_700_000_000,
         };
         assert_eq!(r.path, "/w/proj");

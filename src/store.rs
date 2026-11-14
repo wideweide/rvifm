@@ -24,6 +24,8 @@ const SNAPSHOT: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new(
 const META: redb::TableDefinition<&str, u64> = redb::TableDefinition::new("meta");
 
 const META_GLOBAL_TICK: &str = "global_tick";
+const META_DIR_TICK: &str = "dir_tick";
+const META_FILE_TICK: &str = "file_tick";
 const META_LAST_COMPACTION: &str = "last_compaction";
 /// snapshot key 分隔符（unit separator，路径中不出现）。
 const KEY_SEP: char = '\u{1f}';
@@ -74,32 +76,70 @@ impl Store {
             .unwrap_or(0))
     }
 
-    /// 追加事件：事务内 `global_tick += 1`，事件以新 tick 为 key 写入。
-    /// 返回新 tick（record 子命令上报用）。record 是唯一写入入口（M8-3 封装）。
+    /// 当前类型时钟（M8-10）：`dir` → `dir_tick`，其余 → `file_tick`。
+    /// 缺失（旧库）时返回 `global_tick` 当前值——新时钟自旧全局时钟连续
+    /// 分叉，旧数据的 aging 行为不变。
+    pub fn type_tick(&self, topic: &str) -> std::io::Result<u64> {
+        let key = if topic == "dir" {
+            META_DIR_TICK
+        } else {
+            META_FILE_TICK
+        };
+        let rx = self.db.begin_read().map_err(io_err("meta 读事务失败"))?;
+        let table = rx.open_table(META).map_err(io_err("meta 表打开失败"))?;
+        if let Some(v) = table.get(key).map_err(io_err("meta 读取失败"))? {
+            return Ok(v.value());
+        }
+        self.global_tick()
+    }
+
+    /// 追加事件（M8-10 独立时钟）：事务内——
+    /// 1. `global_tick += 1` 作为**全局事件序号**（events 表 key，唯一）；
+    /// 2. 按 `record.topic` 推进对应类型时钟（`dir_tick`/`file_tick`，
+    ///    缺失时以 `global_tick` 当前值初始化），写入事件 JSON 的 `clock`；
+    /// 3. 事件以全局序号为 key 写入。
+    ///
+    /// 返回全局序号（compaction 游标用）。record 是唯一写入入口（M8-3 封装）。
     pub fn append_event(&self, record: &EntryRecord) -> std::io::Result<u64> {
-        let json = serde_json::to_vec(record).map_err(io_err("事件序列化失败"))?;
         let tx = self.db.begin_write().map_err(io_err("events 写事务失败"))?;
-        let new_tick = {
+        let new_seq = {
             let mut meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
             let cur = meta
                 .get(META_GLOBAL_TICK)
                 .map_err(io_err("meta 读取失败"))?
                 .map(|v| v.value())
                 .unwrap_or(0);
-            let new_tick = cur + 1;
-            meta.insert(META_GLOBAL_TICK, new_tick)
+            let new_seq = cur + 1;
+            meta.insert(META_GLOBAL_TICK, new_seq)
                 .map_err(io_err("meta 写入失败"))?;
+
+            // 类型时钟推进（dir/file 各自独立；缺失则以全局序号起点初始化）。
+            let clock_key = if record.topic == "dir" {
+                META_DIR_TICK
+            } else {
+                META_FILE_TICK
+            };
+            let new_clock = match meta.get(clock_key).map_err(io_err("meta 读取失败"))? {
+                Some(v) => v.value() + 1,
+                None => cur + 1, // 旧库无该时钟：自当前全局值连续分叉
+            };
+            meta.insert(clock_key, new_clock)
+                .map_err(io_err("meta 写入失败"))?;
+
+            let mut rec = record.clone();
+            rec.clock = new_clock;
+            let json = serde_json::to_vec(&rec).map_err(io_err("事件序列化失败"))?;
             let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
             events
-                .insert(new_tick, json.as_slice())
+                .insert(new_seq, json.as_slice())
                 .map_err(io_err("events 写入失败"))?;
-            new_tick
+            new_seq
         };
         tx.commit().map_err(io_err("events 提交失败"))?;
-        Ok(new_tick)
+        Ok(new_seq)
     }
 
-    /// 读取 `tick > since` 的全部事件（按 tick 升序；重放评分用）。
+    /// 读取 `seq > since` 的全部事件（按全局序号升序；重放评分用）。
     pub fn events_since(&self, since: u64) -> std::io::Result<Vec<(u64, EntryRecord)>> {
         let rx = self.db.begin_read().map_err(io_err("events 读事务失败"))?;
         let table = rx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
@@ -216,6 +256,7 @@ mod tests {
             topic: "dir".to_owned(),
             kind: EntryKind::Navigate,
             ts,
+            clock: 0,
         }
     }
 
@@ -263,12 +304,14 @@ mod tests {
             keyword: "proj".to_owned(),
             score: 4.5,
             tick: 7,
+            clock: 7,
         };
         store.snapshot_upsert(&entry).unwrap();
         // 同 key 再写 = 更新（upsert）。
         let updated = SnapshotEntry {
             score: 9.0,
             tick: 12,
+            clock: 12,
             ..entry.clone()
         };
         store.snapshot_upsert(&updated).unwrap();
@@ -304,6 +347,7 @@ mod tests {
                     keyword: String::new(),
                     score: 1.0,
                     tick: 1,
+                    clock: 1,
                 })
                 .unwrap();
         }
