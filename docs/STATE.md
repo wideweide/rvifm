@@ -1,4 +1,6 @@
 # STATE —
+- `M15 批次全部关闭`（2026-11-15）：FIX-1～4 + FEAT-1～4 八项完成（各自提交见上）；M14-4 发布闭环验证——GitHub Release v0.5.0 双平台归档（linux 9.8MB/windows 8.8MB）+ crates.io 0.5.0。
+- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io + tag `v0.5.0` → GitHub Release。
 - `FEAT-4`（2026-11-15）：:help 全屏帮助视图——`src/help.txt` 内嵌（include_str!，完整键位/命令/鼠标/菜单参考）；`InputMode::Help` 替换为 `HelpView { scroll, search }` + `HelpSearch { input, scroll, search }`（搜索输入携带视图状态）：j/k 滚动（钳制）、/ 搜索、n/N 环绕跳转（help_find_match 大小写不敏感子串）、q/Esc 关闭返回（状态仅模式局部，列表光标/滚动不变）；渲染全屏 Block + 标题含搜索词。**踩坑**：TestBackend 渲染 CJK 全角为"字+空格"，断言取单字/ASCII token；反向搜索 start = scroll+len-1（排除当前行）。203 单测全绿（+3）。
 - `FEAT-3`（2026-11-15）：:file 命令与右键菜单——`ExecOutcome::ShowInfo` + `:file` 臂（与 Ctrl-G 同源 file_info_text；归档成员显示 host:/inner/name + 成员索引元数据，权限/mtime 不可用标 "-"）；`InputMode::ContextMenu { cursor }` 六项菜单（Open/File Info/Copy/Move/Rename/Delete）+ `run_context_menu_action`（Copy/Move 目标=另一 pane 目录，vifm 双栏约定，NOTES）；渲染 34×8 居中浮窗 + Clear 遮罩；键盘 j/k/Enter/Esc + 鼠标（右键条目=聚焦+开菜单，菜单内点击执行、外部关闭）；Rename 预填 rename 命令行、Delete 走 dd Confirm（u 可逆）；`hit_entry_index` 抽出共用。**踩坑**：system_open 阻塞（Command::status），测试 Open 只用目录。200 单测全绿（+5）。
 - `FEAT-2`（2026-11-15）：列表顶部 ".." 条目——设计决策：**独立 on_parent_row 焦点标志**（Tab 字段）而非 cursor 位移——".." 为渲染层虚拟行（列表上方独立 1 行，DIM 置灰/聚焦 REVERSED），cursor 语义不变、不进 entries/搜索/过滤/标记（SPEC SIMPLIFIED）。行为：has_parent_row（物理非根=true，归档恒 true）；k 首条目→"..".行（替代首→尾环绕，M13-4 测试更新）；j 从 ".." 回首条目；gg 落 ".."（vifm）；进入目录/归档后落在 ".." 行（vifm 语义）；l/Enter = return_parent（归档根回物理目录）；写操作守卫（yy/dd/DD/cw/Ctrl-G/t/v/exec 写命令拒绝）；鼠标单击聚焦 / 再击返回。195 单测全绿（+5，渲染行位移测试 +1 行修正）。
@@ -68,9 +70,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-15
-- **当前阶段**：M15 用户实测反馈批次（缺陷修复 FIX-1～4 → 新增 FEAT-1～4）
-- **当前任务**：FIX-1 搜索高亮与实时索引
-- **阶段状态**：M0–M14 完成（M14-4 发布流程收尾：crates.io 0.5.0 已发、tag 已重指向待 CI release job 产出 GitHub Release）
+- **当前阶段**：M15 批次完成（全部关闭）；等待下一批次指令
+- **当前任务**：无（批次收尾，CI 监控中）
+- **阶段状态**：M0–M15 全部关闭（v0.5.0 已发布：crates.io + GitHub Release 双归档）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
