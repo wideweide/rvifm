@@ -85,6 +85,9 @@ pub struct Tab {
     /// 首字母快速搜索状态（M13-1）：上次 (字符, 正向?)；分号同向重复、
     /// 逗号反向重复。
     pub char_search: Option<(char, bool)>,
+    /// 树视图模式（M13-7）：Some(depth) = 当前列表为当前目录的静态树
+    /// （只读浏览，`:tree` 再执行恢复平铺）。
+    pub tree: Option<u32>,
 }
 
 impl Tab {
@@ -101,6 +104,7 @@ impl Tab {
             filter: None,
             tags: HashSet::new(),
             char_search: None,
+            tree: None,
         })
     }
 
@@ -316,6 +320,102 @@ impl Tab {
             }
         }
         affected
+    }
+
+    /// 构建静态树条目（M13-7）：以 `root` 为根递归收集 `depth` 层内的
+    /// 条目，`name` 为相对路径（渲染按层缩进）；目录优先 + 字典序。
+    /// 条目总数超过 `MAX_TREE_ITEMS` 截断（防超大目录爆炸）。
+    /// SIMPLIFIED：静态快照（不做 FS 状态自动同步），树模式为只读浏览。
+    pub fn build_tree_entries(root: &Path, depth: u32) -> std::io::Result<Vec<FileItem>> {
+        const MAX_TREE_ITEMS: usize = 10_000;
+        let mut out = Vec::new();
+        let mut truncated = false;
+        fn walk(
+            dir: &Path,
+            prefix: &str,
+            level: u32,
+            depth: u32,
+            out: &mut Vec<FileItem>,
+            truncated: &mut bool,
+        ) {
+            if *truncated {
+                return;
+            }
+            let mut items: Vec<(String, std::fs::FileType)> = match std::fs::read_dir(dir) {
+                Ok(rd) => rd
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let ft = e.file_type().ok()?;
+                        Some((e.file_name().to_string_lossy().into_owned(), ft))
+                    })
+                    .collect(),
+                Err(_) => return,
+            };
+            items.sort_by(|a, b| {
+                let ad = a.1.is_dir();
+                let bd = b.1.is_dir();
+                bd.cmp(&ad)
+                    .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+            });
+            for (name, ft) in items {
+                if *truncated {
+                    return;
+                }
+                let rel = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                let full = dir.join(&name);
+                let is_dir = ft.is_dir();
+                if level < depth {
+                    out.push(FileItem {
+                        icon: crate::icons::icon_for_active(&full),
+                        name: rel.clone(),
+                        is_dir,
+                        size: if is_dir {
+                            0
+                        } else {
+                            std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0)
+                        },
+                        perm: String::new(),
+                    });
+                    if out.len() >= 10_000 {
+                        *truncated = true;
+                        return;
+                    }
+                    if is_dir {
+                        walk(&full, &rel, level + 1, depth, out, truncated);
+                    }
+                }
+            }
+        }
+        walk(root, "", 0, depth, &mut out, &mut truncated);
+        Ok(out)
+    }
+
+    /// 进入树视图（M13-7）：记录深度并把 entries 替换为静态树。
+    pub fn enter_tree(&mut self, depth: u32) -> std::io::Result<()> {
+        let base = self.location.base_dir().to_path_buf();
+        let entries = Self::build_tree_entries(&base, depth)?;
+        self.entries = entries;
+        self.tree = Some(depth);
+        self.cursor = 0;
+        self.scroll = 0;
+        Ok(())
+    }
+
+    /// 退出树视图（M13-7）：恢复平铺目录列表。
+    pub fn exit_tree(&mut self) -> std::io::Result<()> {
+        self.tree = None;
+        let cfg = Config::default();
+        let _ = self.refresh(cfg);
+        Ok(())
+    }
+
+    /// 树视图守卫（M13-7 只读边界）：树模式下拒绝写操作/导航操作。
+    pub fn in_tree(&self) -> bool {
+        self.tree.is_some()
     }
 
     /// 进入光标选中的条目（M1-2 目录；M7-4 归档虚拟目录）。
@@ -866,6 +966,7 @@ mod tests {
             filter: None,
             tags: HashSet::new(),
             char_search: None,
+            tree: None,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));

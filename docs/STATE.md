@@ -1,4 +1,6 @@
 # STATE —
+- `M13-7`（2026-11-15）：:tree 树视图——`Tab::build_tree_entries`（递归 walk，目录优先+字典序，depth 缺省 8、上限 1 万条截断）+ `enter_tree`/`exit_tree` toggle；渲染按相对路径深度缩进；树模式只读守卫（exec 白名单 tree/q/help + handle_key 写/导航键拒绝）。**踩坑**：SplitWhitespace 无 peek（改先取 cmd_head）；node 脚本 split 补字段会重复追加（去重修复）。160 单测全绿。
+
 - `M13-6`（2026-11-15）：cw 批量重命名——`c` 前缀入 seq + `c,w` → `Action::RenameBatch` → `Outcome::BatchRename` → run 内 `ratatui::restore()` 挂起 TUI → `$EDITOR`（EDITOR→VISUAL→notepad/vi）编辑名单 → `ratatui::init()` 恢复 → `apply_rename_lines`（行数不符整批中止；同名/非法名跳过）→ 逐项 `rename_to` 入撤销栈（u 可逆）。临时名单手写于 temp_dir（tempfile 是 dev-dep 不引入主代码）。159 单测全绿（+2：应用与 undo 恢复、行数中止）。
 
 - `M13-5`（2026-11-14）：Ctrl-G 文件详情对话框——ctrl+g arm（置于 g 前缀分支前防捕获）→ `file_info_text`（名称/类型/大小/修改时间/权限/路径，fs::metadata）→ `InputMode::FileInfo` 覆盖层，任意键关闭；`perm_string` 提升跨平台可见。158 单测全绿。
@@ -45,7 +47,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M13-7 :tree 树视图
+- **当前任务**：M13-8 后台作业 + :jobs
 - **阶段状态**：M0–M12 关闭 + M8-10/11/12/13 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

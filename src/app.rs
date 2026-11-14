@@ -330,7 +330,18 @@ fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result
 /// 执行最小 `:` 命令（M1-5/M2-6）。
 fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     let mut parts = line.split_whitespace();
-    match parts.next() {
+    let cmd_head = parts.next();
+    // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
+    if state.active_tab().in_tree() {
+        match cmd_head {
+            Some("tree") | Some("q" | "quit") | Some("help") => {}
+            Some(other) => {
+                return Err(format!("树视图为只读浏览（:tree 退出）: {other}"));
+            }
+            None => return Ok(ExecOutcome::Done { msg: None }),
+        }
+    }
+    match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
         Some("q" | "quit") => Ok(ExecOutcome::Quit),
         Some("cd") => {
@@ -587,6 +598,34 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let entries = load_jump_entries(kind)?;
             Ok(ExecOutcome::OpenJump { kind, entries })
         }
+        Some("tree") => {
+            // M13-7：:tree [depth=N] 树视图切换（只读浏览；再执行恢复平铺）。
+            if matches!(state.active_tab().location, Location::Archive { .. }) {
+                return Err("tree: 归档视图不支持树浏览".to_owned());
+            }
+            if state.active_tab().in_tree() {
+                state
+                    .active_tab_mut()
+                    .exit_tree()
+                    .map_err(|e| format!("退出树视图失败: {e}"))?;
+                Ok(ExecOutcome::Done {
+                    msg: Some("已退出树视图".to_owned()),
+                })
+            } else {
+                let depth = parts
+                    .next()
+                    .and_then(|a| a.strip_prefix("depth="))
+                    .and_then(|d| d.parse::<u32>().ok())
+                    .unwrap_or(8);
+                state
+                    .active_tab_mut()
+                    .enter_tree(depth)
+                    .map_err(|e| format!("树视图构建失败: {e}"))?;
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!("树视图（depth={depth}）——只读浏览，:tree 退出")),
+                })
+            }
+        }
         Some(cmd @ ("select" | "unselect")) => {
             // M13-2：按 pattern 批量选择/取消（对齐 vifm :select/:unselect）。
             // 无参 = 仅当前光标条目；unselect 无参 = 清空全部。
@@ -782,6 +821,26 @@ fn handle_key(
             let text = file_info_text(&path, &item.name);
             return Outcome::FileInfo { path, text };
         }
+        return Outcome::Continue;
+    }
+
+    // M13-7：树视图只读——写操作与导航入口拒绝（l/Enter/h/dd/DD/cw 前缀/u）。
+    // Ctrl-d/u 半页滚动放行（ctrl 排除）。
+    if state.active_tab().in_tree()
+        && !ctrl
+        && matches!(
+            key.code,
+            KeyCode::Char('l')
+                | KeyCode::Enter
+                | KeyCode::Char('h')
+                | KeyCode::Char('d')
+                | KeyCode::Char('D')
+                | KeyCode::Char('c')
+                | KeyCode::Char('u')
+        )
+    {
+        input.count = None;
+        *msg = Some("树视图为只读浏览（:tree 退出）".to_owned());
         return Outcome::Continue;
     }
 
@@ -1422,6 +1481,13 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             } else {
                 item.name.clone()
             };
+            // M13-7：树视图按相对路径深度缩进。
+            let label = if tab.tree.is_some() {
+                let depth = item.name.matches('/').count();
+                format!("  {}{}", "  ".repeat(depth), label)
+            } else {
+                label
+            };
             // M9-1：行首渲染 devicons 类型图标。
             let label = format!("{} {label}", item.icon.glyph);
             // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
@@ -1706,6 +1772,7 @@ mod tests {
             filter: None,
             tags: HashSet::new(),
             char_search: None,
+            tree: None,
         }
     }
 
@@ -3324,6 +3391,78 @@ mod tests {
         assert!(
             msg.as_deref().is_some_and(|m| m.contains("不可恢复")),
             "msg: {msg:?}"
+        );
+    }
+
+    #[test]
+    fn tree_view_build_toggle_and_readonly_guard() {
+        // M13-7：:tree 构建静态树（层级/目录优先）；再 :tree 恢复平铺；
+        // 树模式下写操作/导航被守卫拒绝。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        fs::create_dir_all(tmp.path().join("sub").join("nested")).unwrap();
+        fs::write(tmp.path().join("sub").join("b.txt"), "B").unwrap();
+        fs::write(tmp.path().join("sub").join("nested").join("c.txt"), "C").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // build_tree_entries：目录优先 + 相对路径 + 深度联动。
+        let entries = crate::tab::Tab::build_tree_entries(tmp.path(), 3).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"a.txt"));
+        assert!(names.contains(&"sub"));
+        assert!(names.contains(&"sub/b.txt"));
+        assert!(names.contains(&"sub/nested"));
+        assert!(names.contains(&"sub/nested/c.txt"));
+        // 目录在前：sub（或 nested 父链）应在文件 a.txt 前？目录优先排序下
+        // sub 排在 a.txt 之前。
+        assert!(
+            names.iter().position(|n| *n == "sub").unwrap()
+                < names.iter().position(|n| *n == "a.txt").unwrap(),
+            "目录应优先于文件: {names:?}"
+        );
+
+        // :tree 进入（默认 depth=8）。
+        exec_command_impl(&mut state, "tree").unwrap();
+        assert!(state.active_tab().in_tree());
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .any(|e| e.name == "sub/nested/c.txt"),
+            "树应包含嵌套文件"
+        );
+
+        // 树模式 :mkdir 拒绝（只读守卫）。
+        let r = exec_command_impl(&mut state, "mkdir x");
+        assert!(r.is_err(), "树模式写命令应拒绝");
+        assert!(r.unwrap_err().contains("只读"));
+
+        // 树模式 Enter 拒绝（handle_key 守卫）。
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        );
+        assert!(
+            msg.as_deref().is_some_and(|m| m.contains("只读")),
+            "Enter 应被守卫拒绝: {msg:?}"
+        );
+
+        // :tree 再执行 → 平铺恢复（entries 回到目录直下条目）。
+        exec_command_impl(&mut state, "tree").unwrap();
+        assert!(!state.active_tab().in_tree());
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .all(|e| !e.name.contains('/')),
+            "平铺模式条目无相对路径"
         );
     }
 
