@@ -128,6 +128,15 @@ pub struct JobUpdate {
     pub status: JobStatus,
 }
 
+/// yank 缓冲区（FIX-2，SPEC §4.8）：`yy` 放入 copy 缓冲、`dd` 放入 cut 缓冲
+/// （cut 接线待后续：dd 先经暂存删除，p 需从暂存恢复到任意目录）。
+/// `p`（PutCopy）/`P`（PutMove）消费缓冲区，复制还是移动由类型与键位决定。
+#[derive(Debug, Clone)]
+pub struct YankBuffer {
+    pub paths: Vec<PathBuf>,
+    pub cut: bool,
+}
+
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。
 #[derive(Debug)]
 pub struct AppState {
@@ -143,6 +152,8 @@ pub struct AppState {
     pub image_engine: crate::image::ImageEngine,
     /// 后台作业列表（M13-8）：`:jobs` 菜单展示。
     pub jobs: Vec<Job>,
+    /// yank 缓冲区（FIX-2）：`yy` 复制 / `P` 移动 / `p` 按缓冲类型粘贴。
+    pub yank: Option<YankBuffer>,
 }
 
 impl AppState {
@@ -155,6 +166,7 @@ impl AppState {
             config: Config::default(),
             image_engine: crate::image::ImageEngine::detect(),
             jobs: Vec::new(),
+            yank: None,
         }
     }
 

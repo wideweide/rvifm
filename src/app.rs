@@ -896,6 +896,44 @@ fn handle_key(
                     return Outcome::ConfirmDelete(base.join(&item.name), true);
                 }
             }
+            Some(Action::Yank) => {
+                // FIX-2：yy——可视选择 → 标记 → 光标起 N 条（count 前缀），
+                // 放入复制缓冲区（cut=false；dd 的 cut 缓冲接线待后续）。
+                let count = count.unwrap_or(1).max(1);
+                let names: Vec<String> = {
+                    let tab = state.active_tab();
+                    if matches!(tab.location, Location::Archive { .. }) {
+                        Vec::new()
+                    } else if let Some((lo, hi)) = tab.visual_range() {
+                        tab.entries[lo..=hi]
+                            .iter()
+                            .map(|i| i.name.clone())
+                            .collect()
+                    } else if !tab.tags.is_empty() {
+                        tab.entries
+                            .iter()
+                            .filter(|i| tab.tags.contains(&i.name))
+                            .map(|i| i.name.clone())
+                            .collect()
+                    } else {
+                        let start = tab.cursor.min(tab.entries.len());
+                        let end = (start + count).min(tab.entries.len());
+                        tab.entries[start..end]
+                            .iter()
+                            .map(|i| i.name.clone())
+                            .collect()
+                    }
+                };
+                if names.is_empty() {
+                    *msg = Some("yy: 无可复制的条目".to_owned());
+                } else {
+                    let base = state.active_tab().location.base_dir().to_path_buf();
+                    let paths: Vec<PathBuf> = names.iter().map(|n| base.join(n)).collect();
+                    let n = paths.len();
+                    state.yank = Some(crate::state::YankBuffer { paths, cut: false });
+                    *msg = Some(format!("Yanked {n} item(s)"));
+                }
+            }
             _ => {} // 未知序列整体丢弃
         }
         input.seq.clear();
@@ -1067,8 +1105,12 @@ fn handle_key(
                 Err(e) => *msg = Some(e),
             }
         }
-        // M10-3：`g`/`d`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
-        KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('D') | KeyCode::Char('c') => {
+        // M10-3：`g`/`d`/`y`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
+        KeyCode::Char('g')
+        | KeyCode::Char('d')
+        | KeyCode::Char('D')
+        | KeyCode::Char('c')
+        | KeyCode::Char('y') => {
             let k = crate::keymap::Key::plain(key.code);
             if input.keymap.has_prefix(&[k]) {
                 input.seq.push(k);
@@ -1093,8 +1135,9 @@ fn handle_key(
             });
         }
         KeyCode::Char('p') | KeyCode::Char('P') => {
-            // M10-1：PutCopy/PutMove 已入 Keymap；yy 缓冲区在 M10-7 接入。
+            // FIX-2：PutCopy/PutMove——消费 yank 缓冲区（复制/移动到当前目录）。
             input.count = None;
+            paste_yanked(state, key.code == KeyCode::Char('P'), msg);
         }
         _ => input.count = None,
     }
@@ -1107,6 +1150,52 @@ fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
     if let Some(tab) = state.tabs.get_mut(tab_id) {
         let _ = tab.refresh(cfg);
         let _ = tab.right.refresh(cfg);
+    }
+}
+
+/// FIX-2：`p`（PutCopy）/`P`（PutMove）——消费 yank 缓冲区到当前（焦点）
+/// 目录。复制还是移动由缓冲区类型与键位决定（SPEC §4.8）：yy 缓冲 + `p`
+/// = 复制、+ `P` = 移动；cut 缓冲恒为移动。每项独立入撤销栈（`u` 可逆）；
+/// 失败逐项报告，不 panic、不留半成品（单项目标已存在等错误即停）。
+fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Option<String>) {
+    let Some(buffer) = state.yank.clone() else {
+        *msg = Some("缓冲区为空（先 yy 复制）".to_owned());
+        return;
+    };
+    let base = match physical_base(state) {
+        Ok(base) => base,
+        Err(e) => {
+            *msg = Some(e);
+            return;
+        }
+    };
+    let do_move = buffer.cut || force_move;
+    let verb = if do_move { "Moved" } else { "Copied" };
+    let mut done = 0usize;
+    let mut first_err: Option<String> = None;
+    for path in &buffer.paths {
+        let result = if do_move {
+            ops::move_to(state.active, path, &base)
+        } else {
+            ops::copy_to(state.active, path, &base)
+        };
+        match result {
+            Ok(op) => {
+                state.undo_stack.push(op);
+                done += 1;
+            }
+            Err(e) => {
+                first_err = Some(e.to_string());
+                break;
+            }
+        }
+    }
+    refresh_tab_panes(state, state.active);
+    match (done, first_err) {
+        (_, Some(e)) if done < buffer.paths.len() => {
+            *msg = Some(format!("{verb} {done}/{} 项: {e}", buffer.paths.len()))
+        }
+        _ => *msg = Some(format!("{verb} {done} item(s) to {}", base.display())),
     }
 }
 
@@ -2869,6 +2958,197 @@ mod tests {
             }
         }
         assert_eq!(highlighted2, 0, "无查询时不应有高亮");
+    }
+
+    #[test]
+    fn fix2_yy_p_copies_and_undo_removes_copy() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let out = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // yy → 复制缓冲区。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(msg.as_deref(), Some("Yanked 1 item(s)"));
+        let yank = state.yank.as_ref().unwrap();
+        assert_eq!(yank.paths, vec![tmp.path().join("a.txt")]);
+        assert!(!yank.cut);
+
+        // 切到目标目录 B，p → 复制（不是移动）。
+        state.active_tab_mut().location = Location::Physical(out.path().to_path_buf());
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('p'),
+            KeyModifiers::NONE,
+        );
+        assert!(out.path().join("a.txt").exists(), "p 应复制文件");
+        assert!(
+            msg.as_deref().unwrap().starts_with("Copied 1 item(s) to "),
+            "msg: {msg:?}"
+        );
+        assert_eq!(state.undo_stack.len(), 1);
+        assert!(tmp.path().join("a.txt").exists(), "原文件保留");
+
+        // u → 副本被移除。
+        undo_last(&mut state, &mut msg);
+        assert!(!out.path().join("a.txt").exists(), "u 应移除副本");
+        assert!(tmp.path().join("a.txt").exists());
+    }
+
+    #[test]
+    fn fix2_capital_p_moves_yanked_file() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("m.txt"), "M").unwrap();
+        let out = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        state.active_tab_mut().location = Location::Physical(out.path().to_path_buf());
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('P'),
+            KeyModifiers::NONE,
+        );
+        assert!(out.path().join("m.txt").exists());
+        assert!(!tmp.path().join("m.txt").exists(), "P 应移动（原位消失）");
+        assert!(
+            msg.as_deref().unwrap().starts_with("Moved 1 item(s) to "),
+            "msg: {msg:?}"
+        );
+
+        // u → 移回原位。
+        undo_last(&mut state, &mut msg);
+        assert!(tmp.path().join("m.txt").exists());
+        assert!(!out.path().join("m.txt").exists());
+    }
+
+    #[test]
+    fn fix2_paste_reports_errors_without_panic() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // 空缓冲区：可读提示。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('p'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(msg.as_deref(), Some("缓冲区为空（先 yy 复制）"));
+
+        // 同目录粘贴：目标已存在，可读错误，不覆盖不 panic。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('p'),
+            KeyModifiers::NONE,
+        );
+        let m = msg.as_deref().unwrap();
+        assert!(m.contains("0/1"), "msg: {m:?}");
+        assert!(m.contains("已存在"), "msg: {m:?}");
+        assert!(tmp.path().join("a.txt").exists(), "原文件未受影响");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fix2_paste_readonly_target_reports_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let ro = TempDir::new().unwrap();
+        let ro_dir = ro.path().join("ro");
+        fs::create_dir(&ro_dir).unwrap();
+        let mut perms = fs::metadata(&ro_dir).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(&ro_dir, perms).unwrap();
+        // root 下写入会成功（root 无视 0o555）：跳过断言（同 M12-1 策略）。
+        let probe = ro_dir.join(".probe");
+        if fs::write(&probe, "x").is_ok() {
+            let _ = fs::remove_file(&probe);
+            return;
+        }
+
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        state.active_tab_mut().location = Location::Physical(ro_dir.clone());
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('p'),
+            KeyModifiers::NONE,
+        );
+        let m = msg.as_deref().unwrap();
+        assert!(m.contains("0/1"), "msg: {m:?}");
+        assert!(!ro_dir.join("a.txt").exists(), "不留半成品文件");
     }
 
     #[test]

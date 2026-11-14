@@ -2,8 +2,8 @@
 //!
 //! `Action` 枚举承载文件操作语义；`Keymap` 是 **键序列 → Action** 的唯一
 //! 映射源；`Resolver` 消费按键并产出 `Feed` 结果（解析层不侵入导航/文件
-//! 操作核心逻辑）。默认键位与 vifm 对齐（`yy`→Delete、`p`→PutCopy、
-//! `P`→PutMove、`gg`→ToTop、`gt`/`gT`→切标签）。
+//! 操作核心逻辑）。默认键位与 vifm 对齐（`yy`→Yank、`p`→PutCopy、
+//! `P`→PutMove、`dd`→DeleteSelected、`gg`→ToTop、`gt`/`gT`→切标签）。
 //!
 //! M10-2 决策（NOTES §8）：keymap-rs 家族采用量过低（500–700 下载），
 //! 采纳降级路线自写本解析层；TOML 分层在 M10-5 接入。
@@ -37,6 +37,8 @@ pub enum Action {
     ToggleTag,
     // 文件操作
     DeleteSelected,
+    /// yank（FIX-2：yy——选中条目放入复制缓冲区，p/P 消费）。
+    Yank,
     /// 永久删除（M13-3：DD——跳过应用内暂存，不可逆强提示）。
     DeletePermanent,
     /// 批量重命名（M13-6：cw——多选名单交 $EDITOR 编辑）。
@@ -98,6 +100,7 @@ impl Keymap {
             (vec![kc(Char('d'))], HalfPageDown),
             (vec![kc(Char('u'))], HalfPageUp),
             (vec![k(Char('d')), k(Char('d'))], DeleteSelected),
+            (vec![k(Char('y')), k(Char('y'))], Yank),
             (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
             (vec![k(Char('c')), k(Char('w'))], RenameBatch),
             (vec![k(Char('w'))], ToggleView),
@@ -207,6 +210,10 @@ mod tests {
         let k = km();
         assert_eq!(k.lookup(&[plain(Char('p'))]), Some(Action::PutCopy));
         assert_eq!(k.lookup(&[plain(Char('P'))]), Some(Action::PutMove));
+        assert_eq!(
+            k.lookup(&[plain(Char('y')), plain(Char('y'))]),
+            Some(Action::Yank)
+        );
         assert_eq!(
             k.lookup(&[plain(Char('d')), plain(Char('d'))]),
             Some(Action::DeleteSelected)
