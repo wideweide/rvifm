@@ -1,4 +1,6 @@
 # STATE —
+- `M8-11`（2026-11-14）：发布 0.2.1（M8-10 独立时钟行为修正，patch bump）——crates.io（持久授权）+ tag `v0.2.1` → CI release job 自动创建 GitHub Release 并上传双平台归档。
+
 - `M8-10`（2026-11-14）：目录/文件独立事件时钟——store 增 `dir_tick`/`file_tick`（缺失时自 global_tick 连续分叉初始化）；`append_event` 事务内推进全局序号 + 对应类型时钟并注入事件 JSON `clock`；`replay`/`replay_merge` aging 的 Δclock 一律同类型（clock=0 旧格式以全局序号兜底）；`pick` 读 `type_tick("dir")/("file")` 分别对齐。143 单测全绿（新增独立性 A/B、独立推进、旧库分叉 3 测试）。
 
 - `release 0.2.0`（2026-11-14，已完成验证）：版本 bump 0.1.0→0.2.0（M11 预览栈 + M12 提权 + 双栏预览）；CI release job 改为 tag 推送时自动创建 GitHub Release 并上传双平台归档（gh release create --verify-tag || true 消除两平台竞争，upload --clobber）；crates.io 同步发布 0.2.0（持久授权）。
