@@ -101,8 +101,18 @@ enum InputMode {
     Confirm { path: PathBuf, permanent: bool },
     /// 标记批量删除确认模式（`:tag delete`，M3-3）。
     ConfirmTagDelete,
-    /// 帮助覆盖层（`:help`，M5-3；任意键返回）。
-    Help,
+    /// 全屏帮助视图（FEAT-4，`:help`）：独立滚动状态（与目录列表无关），
+    /// j/k 滚动、/ 搜索（n/N 循环跳转）、q/Esc 关闭返回。
+    HelpView {
+        scroll: usize,
+        search: Option<String>,
+    },
+    /// 帮助搜索输入（FEAT-4）：携带视图滚动与既有搜索词，Enter 提交回视图。
+    HelpSearch {
+        input: String,
+        scroll: usize,
+        search: Option<String>,
+    },
     /// sudo 密码输入模式（M12-3）：写操作 EACCES 后原地重试。
     /// Enter=确认提权，Esc=干净中止（M12-4）。密码 masked 渲染。
     AskPass {
@@ -1397,6 +1407,34 @@ fn list_offset(cursor: usize, height: usize) -> usize {
     }
 }
 
+/// FEAT-4：帮助文本（内嵌单文件，`include_str!` 便于维护）。
+const HELP_TEXT: &str = include_str!("help.txt");
+
+/// FEAT-4：帮助文本按行展开（渲染与搜索共用）。
+fn help_lines() -> Vec<&'static str> {
+    HELP_TEXT.lines().collect()
+}
+
+/// FEAT-4：帮助页搜索——从 `start` 行起找包含 `query`（大小写不敏感）
+/// 的行，环绕列表首尾；找不到返回 None。
+fn help_find_match(lines: &[&str], query: &str, start: usize, forward: bool) -> Option<usize> {
+    if lines.is_empty() || query.is_empty() {
+        return None;
+    }
+    let len = lines.len();
+    for i in 0..len {
+        let idx = if forward {
+            (start + i) % len
+        } else {
+            (start + len - i % len) % len
+        };
+        if lines[idx].to_lowercase().contains(&query.to_lowercase()) {
+            return Some(idx);
+        }
+    }
+    None
+}
+
 /// FEAT-1/FEAT-3：条目行命中测试——鼠标行 → 条目索引；不在条目区
 /// （`..` 行/右 pane/标签栏/状态栏/越界）返回 None。
 fn hit_entry_index(
@@ -1888,7 +1926,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         mode = InputMode::Normal;
                         match exec_command_impl(&mut state, line.trim()) {
                             Ok(ExecOutcome::Quit) => return Ok(()),
-                            Ok(ExecOutcome::EnterHelp) => mode = InputMode::Help,
+                            Ok(ExecOutcome::EnterHelp) => {
+                                mode = InputMode::HelpView {
+                                    scroll: 0,
+                                    search: None,
+                                };
+                            }
                             Ok(ExecOutcome::Done { msg: m }) => msg = m,
                             Ok(ExecOutcome::ConfirmTagDelete) => {
                                 mode = InputMode::ConfirmTagDelete;
@@ -1986,9 +2029,78 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 }
-                InputMode::Help => {
-                    // 任意键返回（M5-3 最小帮助覆盖层；完整帮助页在 M6-2）。
-                    mode = InputMode::Normal;
+                InputMode::HelpView { scroll, search } => {
+                    // FEAT-4：全屏帮助——j/k 滚动、/ 搜索、n/N 跳转、q/Esc 返回。
+                    // 状态仅模式局部，关闭后目录列表光标/滚动不变。
+                    if key.kind == KeyEventKind::Press {
+                        let lines = help_lines();
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => mode = InputMode::Normal,
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                *scroll = (*scroll + 1).min(lines.len().saturating_sub(1));
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                *scroll = scroll.saturating_sub(1);
+                            }
+                            KeyCode::Char('/') => {
+                                mode = InputMode::HelpSearch {
+                                    input: String::new(),
+                                    scroll: *scroll,
+                                    search: search.take(),
+                                };
+                            }
+                            KeyCode::Char('n') => {
+                                if let Some(q) = search.clone()
+                                    && let Some(idx) =
+                                        help_find_match(&lines, &q, *scroll + 1, true)
+                                {
+                                    *scroll = idx;
+                                }
+                            }
+                            KeyCode::Char('N') => {
+                                if let Some(q) = search.clone()
+                                    && let Some(idx) = help_find_match(
+                                        &lines,
+                                        &q,
+                                        *scroll + lines.len().saturating_sub(1),
+                                        false,
+                                    )
+                                {
+                                    *scroll = idx;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                InputMode::HelpSearch {
+                    input,
+                    scroll,
+                    search,
+                } => {
+                    // FEAT-4：帮助页搜索输入——Enter 提交定位，Esc 取消回视图。
+                    match command_input(input, key) {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => {
+                            mode = InputMode::HelpView {
+                                scroll: *scroll,
+                                search: search.clone(),
+                            };
+                        }
+                        CmdInput::Submit => {
+                            let query = std::mem::take(input);
+                            let lines = help_lines();
+                            let next = if query.trim().is_empty() {
+                                None
+                            } else {
+                                help_find_match(&lines, query.trim(), *scroll, true).or(Some(0))
+                            };
+                            mode = InputMode::HelpView {
+                                scroll: next.unwrap_or(*scroll),
+                                search: next.map(|_| query.trim().to_owned()),
+                            };
+                        }
+                    }
                 }
                 InputMode::AskPass { input, op } => {
                     // M12-3/M12-4：sudo 密码输入。Enter=提权重试；Esc=干净中止
@@ -2437,19 +2549,23 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     // ImageEngine（解码失败降级为提示行），其余走共享 PreviewRenderer。
     render_right_pane(frame, state, preview_area);
 
-    if matches!(mode, InputMode::Help) {
-        // 帮助覆盖层（M5-3）。
-        let text = "rvifm 按键（任意键返回）\n\
-            \n  j/k 移动    l/Enter 进入    h 返回\n\
-            gg/G 首/末  Ctrl-u/d 半页\n\
-            / 搜索    n/N 下/上一匹配    = 过滤\n\
-            v 可视选择    t 标记    :tag delete|copy|move <目录>\n\
-            dd 删除    u 撤销\n\
-            :rename/:move/:copy/:mkdir/:touch/:cd/:q/:help\n\
-            :tabnew/:tabclose/:tabmove    gt/gT/N gt 切换标签";
+    if let InputMode::HelpView { scroll, search } = mode {
+        // FEAT-4：全屏帮助视图（内容来自内嵌 help.txt，滚动状态独立）。
+        let lines = help_lines();
+        let title = match search {
+            Some(q) => format!("帮助  /{q}（n/N 跳转）"),
+            None => "帮助（j/k 滚动  / 搜索  n/N 跳转  q 返回）".to_owned(),
+        };
+        let area = frame.area();
+        let visible: Vec<Line> = lines
+            .iter()
+            .skip(*scroll)
+            .take(area.height.saturating_sub(2) as usize)
+            .map(|l| Line::from((*l).to_owned()))
+            .collect();
         frame.render_widget(
-            Paragraph::new(text).block(ratatui::widgets::Block::bordered().title("帮助")),
-            frame.area(),
+            Paragraph::new(visible).block(ratatui::widgets::Block::bordered().title(title)),
+            area,
         );
         return;
     }
@@ -2624,7 +2740,9 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             }
         }
         InputMode::Filter { input } => Line::from(format!("={input}")),
-        InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
+        InputMode::HelpView { .. } | InputMode::HelpSearch { .. } => {
+            Line::from(String::new()) // 帮助视图提前 return，不可达
+        }
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
         InputMode::Jobs => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
@@ -6048,6 +6166,100 @@ mod tests {
             "Open 应进入目录，loc={}",
             state.active_tab().location.display_path()
         );
+    }
+
+    #[test]
+    fn feat4_help_find_match_wraps_and_case_insensitive() {
+        let lines = ["alpha", "导航 j/k", "Beta", "导航 h", "gamma"];
+        // 大小写不敏感子串。
+        assert_eq!(help_find_match(&lines, "beta", 0, true), Some(2));
+        assert_eq!(help_find_match(&lines, "导航", 0, true), Some(1));
+        // 从 start 起找（含环绕）。
+        assert_eq!(help_find_match(&lines, "导航", 2, true), Some(3));
+        assert_eq!(help_find_match(&lines, "导航", 4, true), Some(1), "环绕");
+        // 反向（run 循环传 start = scroll + len - 1，排除当前行）。
+        assert_eq!(
+            help_find_match(&lines, "导航", 3 + lines.len() - 1, false),
+            Some(1),
+            "N 回到上一个匹配"
+        );
+        // 无匹配 / 空查询。
+        assert_eq!(help_find_match(&lines, "zzz", 0, true), None);
+        assert_eq!(help_find_match(&lines, "", 0, true), None);
+    }
+
+    #[test]
+    fn feat4_help_view_renders_embedded_text_and_scroll() {
+        // 内嵌文本加载 + 全屏视图 + scroll 生效。
+        assert!(HELP_TEXT.contains("rvifm 帮助"), "include_str! 应加载内容");
+        assert!(HELP_TEXT.contains("搜索"), "应含搜索章节");
+        let (_tmp, state) = make_state(2);
+        let mode = InputMode::HelpView {
+            scroll: 0,
+            search: None,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row = |y: u16| {
+            (0..80u16)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        };
+        // 全屏：边框在 (0,0)，标题含提示（CJK 全角渲染为"字+空格"，取
+        // ASCII/单字 token 断言）。
+        assert_eq!(buffer[(0, 0)].symbol(), "┌");
+        assert!(row(0).contains('帮'), "title: {}", row(0));
+        assert!(row(0).contains("j/k"), "title: {}", row(0));
+        assert!(row(1).contains("rvifm"), "首行内容: {}", row(1));
+
+        // scroll=3：视口首行跳到第 4 行（渲染与列表滚动状态独立）。
+        let mode2 = InputMode::HelpView {
+            scroll: 3,
+            search: Some("导航".to_owned()),
+        };
+        let mut t2 = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+        t2.draw(|frame| render(frame, &state, &mode2, None))
+            .unwrap();
+        let b2 = t2.backend().buffer().clone();
+        let row2 = |y: u16| (0..80u16).map(|x| b2[(x, y)].symbol()).collect::<String>();
+        assert!(row2(0).contains("/导"), "标题含搜索词: {}", row2(0));
+        assert!(
+            row2(1).contains("=="),
+            "scroll 生效（第 4 行为章节头）: {}",
+            row2(1)
+        );
+        assert!(!row2(1).contains("rvifm"), "首行已被滚出");
+    }
+
+    #[test]
+    fn feat4_help_close_preserves_list_state() {
+        // 关闭后返回原列表，光标/滚动不变（帮助状态仅模式局部）。
+        let (_tmp, mut state) = make_state(3);
+        state.active_tab_mut().cursor = 2;
+        let mode = InputMode::HelpView {
+            scroll: 5,
+            search: None,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        // "关闭"= 丢弃模式状态回到 Normal；tab 状态从未被触碰。
+        assert_eq!(state.active_tab().cursor, 2);
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row1: String = (0..80u16)
+            .map(|x| buffer[(x, 2)].symbol())
+            .collect::<String>();
+        assert!(row1.contains("f00"), "列表恢复: {row1}");
+        assert_eq!(state.active_tab().cursor, 2, "光标不变");
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
