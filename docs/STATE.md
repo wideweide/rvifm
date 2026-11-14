@@ -1,4 +1,6 @@
 # STATE —
+- `release 0.2.0`（2026-11-14）：版本 bump 0.1.0→0.2.0（M11 预览栈 + M12 提权 + 双栏预览）；CI release job 改为 tag 推送时自动创建 GitHub Release 并上传双平台归档（gh release create --verify-tag || true 消除两平台竞争，upload --clobber）；crates.io 同步发布 0.2.0（持久授权）。
+
 - `M12 全部关闭`（2026-11-14）：操作级内联提权落地——`ops::is_permission_denied`（ErrorKind+errno）→ TUI `AskPass` 模式（masked 渲染、Esc 干净中止）→ `privilege::escalate_execute`（FIFO 0600 传密码 + wrapper 脚本 SUDO_ASKPASS 全 sudo 版本兼容 + `sudo -A <op>` 不经 shell）→ CI NOPASSWD sudo 真实提权验证。
 - **M12-2 教训**（已固化 AGENTS §6 门禁）：cfg(unix) 测试代码 Windows 编译器不检查，必须 `cargo check --target x86_64-unknown-linux-gnu --all-targets`。
 - **M12-3 教训**：wrapper 断言 `contains("--askpass /tmp/x")` 与生成串 `--askpass "/tmp/x"`（引号）不匹配——cfg(unix) 断言在本地不可跑，验收断言必须与实现逐字对齐。
