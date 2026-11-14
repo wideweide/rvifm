@@ -1547,7 +1547,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     Ok(()) => {
                                         msg = Some(format!("提权完成: {}", op.describe()));
                                         let _tid = state.active;
-                                        refresh_tab_panes(state, _tid);
+                                        refresh_tab_panes(&mut state, _tid);
                                     }
                                     Err(e) => {
                                         msg = Some(format!("提权失败: {e}"));
@@ -3860,7 +3860,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn tab_bar_visible_and_updates_on_tabnew() {
         // M14-2：标签栏渲染（1:dir 高亮），:tabnew 后 2:dir 出现且高亮移动。
         let tmp = TempDir::new().unwrap();
@@ -3901,6 +3900,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn jobs_lifecycle_and_jobs_menu_render() {
         // M13-8：作业登记/更新流转 + :jobs 覆盖层渲染（Running/Done/Failed）。
         let tmp = TempDir::new().unwrap();
