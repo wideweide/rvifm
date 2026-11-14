@@ -310,11 +310,7 @@ mod tests {
             buf.extend(format!("{off:010} 00000 n \n").bytes());
         }
         let content = String::from_utf8(buf).unwrap();
-        let filled = content.replace(
-            &format!("trailer\n<< /Root 1 0 R /Size {} >>", objects.len() + 1),
-            &format!("trailer\n<< /Root 1 0 R /Size {} >>", objects.len() + 1),
-        );
-        let head = filled.split("startxref").next().unwrap().to_string();
+        let head = content.split("startxref").next().unwrap().to_string();
         let doc = format!("{head}startxref\n{xref_at}\n%%%%EOF\n");
         let p = tmp.path().join("empty.pdf");
         let mut f = std::fs::File::create(&p).unwrap();

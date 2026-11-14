@@ -4346,7 +4346,7 @@ mod tests {
                 .map(|x| buffer[(x, y)].symbol())
                 .collect::<String>()
         };
-        let all: String = (0..12u16).map(|y| row(y)).collect();
+        let all: String = (0..12u16).map(row).collect();
         assert!(all.contains("/w/proj"), "条目渲染: {all}");
         assert!(all.contains("/f/a.txt"), "条目渲染: {all}");
         // 光标行反显（第一条列表行 y=2：边框 1 + 输入行 1）。

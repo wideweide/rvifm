@@ -1018,11 +1018,10 @@ mod tests {
         let f = &tab.entries[0];
         assert_eq!(f.name, "hello.txt");
         assert_eq!(f.size, 5);
-        if cfg!(windows) {
-            assert_eq!(f.perm, "rw");
-        } else {
-            assert_eq!(f.perm, "644");
-        }
+        // perm 只需与同一元数据的 perm_string 一致；Unix 八进制随 umask
+        // 变化（022→644、002→664），不能硬编码。
+        let meta = fs::metadata(tmp.path().join("hello.txt")).unwrap();
+        assert_eq!(f.perm, perm_string(&meta));
     }
 
     #[test]
@@ -1077,8 +1076,14 @@ mod tests {
         assert_eq!(tab.history.len(), 1);
 
         // 根目录：parent() 为 None（Windows 盘根同理），no-op。
+        // 根路径平台相关：Windows 盘根 "C:\"，Unix "/"。
+        let root = if cfg!(windows) {
+            PathBuf::from("C:\\")
+        } else {
+            PathBuf::from("/")
+        };
         let mut root_tab = Tab {
-            location: Location::Physical(PathBuf::from("C:\\")),
+            location: Location::Physical(root.clone()),
             entries: Vec::new(),
             cursor: 0,
             scroll: 0,
@@ -1090,11 +1095,11 @@ mod tests {
             char_search: None,
             tree: None,
             view_mode: false,
-            right: Pane::from_physical(Path::new("C:\\"), Config::default()).unwrap(),
+            right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
-        assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));
+        assert_eq!(root_tab.location, Location::Physical(root));
         assert!(root_tab.history.is_empty());
     }
 }

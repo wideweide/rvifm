@@ -73,7 +73,7 @@ fn askpass_reads_fifo_password_and_prints_stdout() {
         .write(true)
         .open(&fifo)
         .expect("open fifo write end");
-    write!(w, " hunter2\n").unwrap();
+    writeln!(w, " hunter2").unwrap();
     drop(w);
 
     let out = child.wait_with_output().expect("wait askpass");
