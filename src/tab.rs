@@ -82,6 +82,9 @@ pub struct Tab {
     /// `t` 标记的文件名集合（tag：文件级标记，供 M3 批量操作。
     /// **tag ≠ mark**——mark 是路径跳转标记，本项目不实现，见 SPEC OUT_OF_SCOPE）。
     pub tags: HashSet<String>,
+    /// 首字母快速搜索状态（M13-1）：上次 (字符, 正向?)；分号同向重复、
+    /// 逗号反向重复。
+    pub char_search: Option<(char, bool)>,
 }
 
 impl Tab {
@@ -97,6 +100,7 @@ impl Tab {
             visual: None,
             filter: None,
             tags: HashSet::new(),
+            char_search: None,
         })
     }
 
@@ -137,6 +141,44 @@ impl Tab {
             }
         }
         None
+    }
+
+    /// 首字母快速搜索（M13-1）：从 `start` 沿方向查找**文件名首字符**为
+    /// `c` 的条目（环绕列表首尾，官方 f/F 语义）。区分大小写。
+    pub fn find_first_char(&self, c: char, start: usize, forward: bool) -> Option<usize> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let len = self.entries.len();
+        for i in 0..len {
+            let idx = if forward {
+                (start + i) % len
+            } else {
+                (start + len - i % len) % len
+            };
+            if self.entries[idx].name.starts_with(c) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    /// 跳到下一个首字符匹配（M13-1）：更新 `char_search` 状态；
+    /// 无匹配时光标不动并返回 `false`。
+    pub fn jump_first_char(&mut self, c: char, forward: bool) -> bool {
+        self.char_search = Some((c, forward));
+        let start = if forward {
+            self.cursor + 1
+        } else {
+            self.cursor + self.entries.len().saturating_sub(1)
+        };
+        match self.find_first_char(c, start, forward) {
+            Some(idx) => {
+                self.cursor = idx;
+                true
+            }
+            None => false,
+        }
     }
 
     /// 从当前位置沿 `forward` 方向移动到下一个匹配（M1-7，`n`/`N`）。
@@ -482,6 +524,51 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn find_first_char_wraps_and_respects_direction() {
+        // M13-1：f/F 首字母搜索——环绕列表首尾；区分方向。
+        let mut tab = Tab::from_physical(std::path::Path::new("."), Config::default()).unwrap();
+        tab.entries = vec![
+            FileItem {
+                name: "alpha".to_owned(),
+                ..make_item("alpha", true)
+            },
+            FileItem {
+                name: "beta".to_owned(),
+                ..make_item("beta", false)
+            },
+            FileItem {
+                name: "Beta2".to_owned(),
+                ..make_item("Beta2", false)
+            },
+        ];
+
+        // f 'b' 正向：从 0 出发 → 1（beta）。
+        assert_eq!(tab.find_first_char('b', 0, true), Some(1));
+        // 区分大小写：'B' 正向 → 2（Beta2），跳过 beta。
+        assert_eq!(tab.find_first_char('B', 0, true), Some(2));
+        // 环绕：从 2 正向找 'a' → 0（alpha）。
+        assert_eq!(tab.find_first_char('a', 2, true), Some(0));
+        // F 反向：从 1 出发找 'a' → 0。
+        assert_eq!(tab.find_first_char('a', 1, false), Some(0));
+        // 无匹配。
+        assert_eq!(tab.find_first_char('z', 0, true), None);
+        // jump_first_char 更新状态并移动光标。
+        assert!(tab.jump_first_char('b', true));
+        assert_eq!(tab.cursor, 1);
+        assert_eq!(tab.char_search, Some(('b', true)));
+    }
+
+    fn make_item(name: &str, is_dir: bool) -> FileItem {
+        FileItem {
+            icon: crate::icons::icon_for(std::path::Path::new(name), crate::icons::IconTheme::Dark),
+            name: name.to_owned(),
+            is_dir,
+            size: 0,
+            perm: String::new(),
+        }
+    }
+
+    #[test]
     fn archive_navigation_roundtrip() {
         // M7-4：l 进 zip 虚拟目录 → 进子目录 → h 逐层返回 → 根处 h 回宿主目录。
         let tmp = TempDir::new().unwrap();
@@ -705,6 +792,7 @@ mod tests {
             visual: None,
             filter: None,
             tags: HashSet::new(),
+            char_search: None,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));

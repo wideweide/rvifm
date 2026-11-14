@@ -216,6 +216,7 @@ mod tests {
             visual: None,
             filter: None,
             tags: HashSet::new(),
+            char_search: None,
         }
     }
 
@@ -230,6 +231,7 @@ mod tests {
             visual: None,
             filter: None,
             tags: HashSet::new(),
+            char_search: None,
         }
     }
 

@@ -647,6 +647,20 @@ fn handle_key(
     // M10-3：序列续接——待决非空时经 Keymap 解析；任意第二键结束序列
     // （未知第二键整体丢弃，包括 `q`/`Ctrl-C`）。
     if !input.seq.is_empty() {
+        // M13-1：f/F 序列的第二键 = 搜索字符（通配序列，Keymap 无法表达）。
+        if input.seq.len() == 1
+            && matches!(input.seq[0].code, KeyCode::Char('f') | KeyCode::Char('F'))
+        {
+            let forward = input.seq[0].code == KeyCode::Char('f');
+            input.seq.clear();
+            input.count = None;
+            if let KeyCode::Char(c) = key.code
+                && !state.active_tab_mut().jump_first_char(c, forward)
+            {
+                *msg = Some(format!("无首字符 {c} 的条目"));
+            }
+            return Outcome::Continue;
+        }
         input.seq.push(crate::keymap::Key::plain(key.code));
         let count = input.count.take();
         input.count = None;
@@ -736,6 +750,28 @@ fn handle_key(
         KeyCode::Char('/') => {
             input.count = None;
             return Outcome::EnterSearch;
+        }
+        KeyCode::Char('f') | KeyCode::Char('F') => {
+            // M13-1：f/F 进入首字母搜索序列（第二键为搜索字符）。
+            input.count = None;
+            input.seq.push(crate::keymap::Key::plain(key.code));
+        }
+        KeyCode::Char(';') | KeyCode::Char(',') => {
+            // M13-1：重复上次首字母搜索（; 同向 / , 反向）。
+            input.count = None;
+            let tab = state.active_tab();
+            if let Some((c, fwd)) = tab.char_search {
+                let forward = if key.code == KeyCode::Char(';') {
+                    fwd
+                } else {
+                    !fwd
+                };
+                if !state.active_tab_mut().jump_first_char(c, forward) {
+                    *msg = Some(format!("无首字符 {c} 的条目"));
+                }
+            } else {
+                *msg = Some("无上次首字母搜索".to_owned());
+            }
         }
         KeyCode::Char('=') => {
             input.count = None;
@@ -1392,6 +1428,7 @@ mod tests {
             visual: None,
             filter: None,
             tags: HashSet::new(),
+            char_search: None,
         }
     }
 
@@ -2923,6 +2960,75 @@ mod tests {
             Some("hello.txt"),
             "光标应定位在文件"
         );
+    }
+
+    #[test]
+    fn char_search_f_and_semicolon_repeat_and_comma_reverse() {
+        // M13-1：f<char> 正向搜索 → ; 同向重复 → , 反向重复。
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha.txt", "beta.txt", "bee.txt", "cat.txt"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+
+        // f + b：alpha(0) → beta(1)（第一个 b 开头的条目）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('f'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('b'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 1);
+        assert_eq!(state.active_tab().char_search, Some(('b', true)));
+
+        // ; 重复：beta(1) → bee(2)。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char(';'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 2);
+
+        // , 反向：bee(2) → beta(1)。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char(','),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 1);
+
+        // F + c 反向：从 beta(1) 出发环绕查找——start = 1+4-1 = 4，
+        // 反向取模 (4+4-i%4)%4：i=0 → 0(alpha)，i=1 → 3(cat) 命中 → 环绕到尾部。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('F'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 3);
+        assert_eq!(state.active_tab().char_search, Some(('c', false)));
     }
 
     #[test]
