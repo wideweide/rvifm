@@ -441,7 +441,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("rename: {e}")),
             };
             state.undo_stack.push(op);
-            refresh_tab_panes(state, state.active);
+            let _tid = state.active;
+            refresh_tab_panes(state, _tid);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("move") => {
@@ -470,7 +471,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("move: {e}")),
             };
             state.undo_stack.push(op);
-            refresh_tab_panes(state, state.active);
+            let _tid = state.active;
+            refresh_tab_panes(state, _tid);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("copy") => {
@@ -500,7 +502,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("copy: {e}")),
             };
             state.undo_stack.push(op);
-            refresh_tab_panes(state, state.active);
+            let _tid = state.active;
+            refresh_tab_panes(state, _tid);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("tag") => {
@@ -572,7 +575,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("{cmd}: {e}")),
             };
             state.undo_stack.push(op);
-            refresh_tab_panes(state, state.active);
+            let _tid = state.active;
+            refresh_tab_panes(state, _tid);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some(cmd @ ("j" | "J")) => {
@@ -1542,7 +1546,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 match crate::privilege::escalate_execute(&op, password.trim()) {
                                     Ok(()) => {
                                         msg = Some(format!("提权完成: {}", op.describe()));
-                                        refresh_tab_panes(state, state.active);
+                                        let _tid = state.active;
+                                        refresh_tab_panes(state, _tid);
                                     }
                                     Err(e) => {
                                         msg = Some(format!("提权失败: {e}"));

@@ -128,13 +128,13 @@ impl Pane {
 
     /// 返回父目录（M14-1，h）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
-        if let Location::Physical(base) = &self.location {
-            if let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty()) {
-                self.location = Location::Physical(parent.to_path_buf());
-                self.cursor = 0;
-                self.scroll = 0;
-                return self.refresh(config);
-            }
+        if let Location::Physical(base) = &self.location
+            && let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty())
+        {
+            self.location = Location::Physical(parent.to_path_buf());
+            self.cursor = 0;
+            self.scroll = 0;
+            return self.refresh(config);
         }
         Ok(())
     }
