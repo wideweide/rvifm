@@ -45,7 +45,7 @@ impl Default for InputState {
 }
 
 /// Normal 模式按键的处理结果。
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 enum Outcome {
     /// 无状态变化。
     Continue,
@@ -59,10 +59,25 @@ enum Outcome {
     EnterFilter,
     /// 请求确认删除（`dd`，M2-2）：携带待删完整路径。
     ConfirmDelete(PathBuf),
+    /// 打开跳转选择器（M8-12：`o` 合一视角；数据已在 handle_key 读好）。
+    OpenJump {
+        kind: JumpKind,
+        entries: Vec<crate::frecency::ScoredEntry>,
+    },
+}
+
+/// 跳转选择器视角（M8-12）：Unified = 合一表 + 全局统一时钟；Dir/File =
+/// 仅目录/仅文件 + 独立类型时钟。`o` 用 Unified，`:j`/`:J` 用 Dir/File。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JumpKind {
+    Unified,
+    Dir,
+    File,
 }
 
 /// 输入模式（M5-4 统一模式系统前先持有最小集合）。
-#[derive(Debug, Default, PartialEq, Eq)]
+/// M8-12 起 JumpSelect 携带 f64 分数的条目，不再派生 Eq。
+#[derive(Debug, Default, PartialEq)]
 enum InputMode {
     #[default]
     Normal,
@@ -83,6 +98,14 @@ enum InputMode {
     AskPass {
         input: String,
         op: crate::privilege::PrivOp,
+    },
+    /// 跳转选择器模式（M8-12）：`o` 合一 / `:j` / `:J` 分型。
+    /// 数据打开时一次性读入（纯只读），按键期内存筛选。
+    JumpSelect {
+        input: String,
+        cursor: usize,
+        entries: Vec<crate::frecency::ScoredEntry>,
+        kind: JumpKind,
     },
 }
 
@@ -148,7 +171,7 @@ fn askpass_key(input: &mut String, code: KeyCode) -> AskPassResult {
 }
 
 /// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 enum ExecOutcome {
     /// 关闭最后一个 tab，应用退出。
     Quit,
@@ -160,6 +183,11 @@ enum ExecOutcome {
     ConfirmTagDelete,
     /// 写操作 EACCES → 进入 sudo 密码输入（M12-3 操作级提权）。
     Escalate { op: crate::privilege::PrivOp },
+    /// 打开跳转选择器（M8-12：`:j` / `:J` 内部命令，数据已读好）。
+    OpenJump {
+        kind: JumpKind,
+        entries: Vec<crate::frecency::ScoredEntry>,
+    },
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -174,6 +202,120 @@ fn physical_base(state: &AppState) -> Result<PathBuf, String> {
     match &state.active_tab().location {
         Location::Physical(p) => Ok(p.clone()),
         Location::Archive { .. } => Err("归档视图只读（解压后可修改）".to_owned()),
+    }
+}
+
+// ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────────
+
+/// 选择器数据（纯只读）：按视角从 frecency 存储加载并排名。
+/// Unified = 合一表 + 全局统一时钟（全部条目混合排名）；
+/// Dir/File = 仅对应 topic + 独立类型时钟。交互与 `pick` 一致（分级 + aging）。
+fn load_jump_entries(kind: JumpKind) -> Result<Vec<crate::frecency::ScoredEntry>, String> {
+    let store = crate::frecency::open_store().map_err(|e| format!("frecency 存储打开失败: {e}"))?;
+    let snapshot = store
+        .snapshot_all()
+        .map_err(|e| format!("snapshot 读取失败: {e}"))?;
+    let since = store
+        .last_compaction()
+        .map_err(|e| format!("游标读取失败: {e}"))?;
+    let events = store
+        .events_since(since)
+        .map_err(|e| format!("事件读取失败: {e}"))?;
+    let all = match kind {
+        JumpKind::Unified => {
+            let now = store
+                .global_tick()
+                .map_err(|e| format!("时钟读取失败: {e}"))?;
+            crate::frecency::replay_unified(&snapshot, &events, now)
+        }
+        JumpKind::Dir | JumpKind::File => {
+            let now_dir = store
+                .type_tick("dir")
+                .map_err(|e| format!("时钟读取失败: {e}"))?;
+            let now_file = store
+                .type_tick("file")
+                .map_err(|e| format!("时钟读取失败: {e}"))?;
+            let topic = if kind == JumpKind::Dir { "dir" } else { "file" };
+            crate::frecency::replay(&snapshot, &events, now_dir, now_file)
+                .into_iter()
+                .filter(|e| e.topic == topic)
+                .collect()
+        }
+    };
+    Ok(all)
+}
+
+/// 选择器实时筛选（与 pick 的分级一致）：空查询全部显示，非空按分级
+/// （0–7 档）过滤并重新排名。
+fn filter_jump(
+    entries: &[crate::frecency::ScoredEntry],
+    query: &str,
+) -> Vec<crate::frecency::ScoredEntry> {
+    if query.is_empty() {
+        return entries.to_vec();
+    }
+    let mut out: Vec<crate::frecency::ScoredEntry> = entries
+        .iter()
+        .filter(|e| {
+            let snap = crate::frecency::SnapshotEntry {
+                path: e.path.clone(),
+                topic: e.topic.clone(),
+                keyword: e.keyword.clone(),
+                score: 0.0,
+                tick: 0,
+                clock: 0,
+            };
+            crate::frecency::grade_for(&snap, query) != crate::frecency::Grade::None
+        })
+        .cloned()
+        .collect();
+    crate::frecency::ranked(&mut out);
+    out
+}
+
+/// 选定执行（M8-12，纯导航语义）：目录 → cd；文件 → 切到父目录并定位光标。
+fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result<String, String> {
+    let cfg = state.config;
+    let target = PathBuf::from(&entry.path);
+    if entry.topic == "dir" {
+        if !target.is_dir() {
+            return Err(format!("目录已不存在: {}", entry.path));
+        }
+        let tab = state.active_tab_mut();
+        tab.history.push(tab.location.clone());
+        tab.location = Location::Physical(target);
+        tab.cursor = 0;
+        tab.scroll = 0;
+        let _ = tab.refresh(cfg);
+        Ok(format!("跳转目录 {}", entry.path))
+    } else {
+        let parent = target
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .ok_or_else(|| format!("无父目录: {}", entry.path))?
+            .to_path_buf();
+        if !parent.is_dir() {
+            return Err(format!("父目录已不存在: {}", parent.display()));
+        }
+        let leaf = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .ok_or_else(|| format!("无文件名: {}", entry.path))?;
+        let tab = state.active_tab_mut();
+        if tab.location.base_dir() != parent {
+            tab.history.push(tab.location.clone());
+            tab.location = Location::Physical(parent);
+            tab.cursor = 0;
+            tab.scroll = 0;
+            let _ = tab.refresh(cfg);
+        }
+        match tab.entries.iter().position(|e| e.name == leaf) {
+            Some(idx) => {
+                tab.cursor = idx;
+                Ok(format!("定位 {}", entry.path))
+            }
+            None => Err(format!("文件不可见（已删除或被过滤）: {}", entry.path)),
+        }
     }
 }
 
@@ -426,6 +568,17 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             }
             Ok(ExecOutcome::Done { msg: None })
         }
+        Some(cmd @ ("j" | "J")) => {
+            // M8-12：跳转选择器内部命令——:j 仅目录（dir 时钟）、:J 仅文件
+            // （file 时钟）。数据一次性读入，纯只读。
+            let kind = if cmd == "j" {
+                JumpKind::Dir
+            } else {
+                JumpKind::File
+            };
+            let entries = load_jump_entries(kind)?;
+            Ok(ExecOutcome::OpenJump { kind, entries })
+        }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
 }
@@ -600,6 +753,19 @@ fn handle_key(
             input.count = None;
             return Outcome::EnterCommand;
         }
+        KeyCode::Char('o') => {
+            // M8-12：合一跳转选择器（合一表 + 全局统一时钟视角，纯只读）。
+            input.count = None;
+            match load_jump_entries(JumpKind::Unified) {
+                Ok(entries) => {
+                    return Outcome::OpenJump {
+                        kind: JumpKind::Unified,
+                        entries,
+                    };
+                }
+                Err(e) => *msg = Some(e),
+            }
+        }
         // M10-3：`g`/`d`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
         KeyCode::Char('g') | KeyCode::Char('d') => {
             let k = crate::keymap::Key::plain(key.code);
@@ -761,6 +927,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     op,
                                 };
                             }
+                            Ok(ExecOutcome::OpenJump { kind, entries }) => {
+                                // M8-12：:j/:J → 分型跳转选择器。
+                                mode = InputMode::JumpSelect {
+                                    input: String::new(),
+                                    cursor: 0,
+                                    entries,
+                                    kind,
+                                };
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -879,6 +1054,54 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::ConfirmDelete(path) => {
                             mode = InputMode::Confirm { path };
                         }
+                        Outcome::OpenJump { kind, entries } => {
+                            mode = InputMode::JumpSelect {
+                                input: String::new(),
+                                cursor: 0,
+                                entries,
+                                kind,
+                            };
+                        }
+                    }
+                }
+                InputMode::JumpSelect {
+                    input,
+                    cursor,
+                    entries,
+                    kind: _,
+                } => {
+                    // M8-12：选择器按键——输入筛选、j/k 移动、Enter 选定、Esc 取消。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc => {
+                                mode = InputMode::Normal;
+                                msg = None;
+                            }
+                            KeyCode::Enter => {
+                                let query = std::mem::take(input);
+                                let visible = filter_jump(entries, &query);
+                                let picked = visible.get(*cursor).cloned();
+                                mode = InputMode::Normal;
+                                match picked {
+                                    Some(entry) => match jump_to(&mut state, &entry) {
+                                        Ok(m) => msg = Some(m),
+                                        Err(e) => msg = Some(e),
+                                    },
+                                    None => msg = Some("跳转: 无选定条目".to_owned()),
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                input.pop();
+                                *cursor = 0;
+                            }
+                            KeyCode::Down => *cursor = cursor.saturating_add(1),
+                            KeyCode::Up => *cursor = cursor.saturating_sub(1),
+                            KeyCode::Char(c) => {
+                                input.push(c);
+                                *cursor = 0;
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -954,11 +1177,68 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::JumpSelect {
+        input,
+        cursor,
+        entries,
+        kind,
+    } = mode
+    {
+        // M8-12：跳转选择器覆盖层（纯只读；分级与 pick 一致）。
+        let title = match kind {
+            JumpKind::Unified => "跳转（合一 · 全局时钟）",
+            JumpKind::Dir => "跳转（仅目录 · dir 时钟）",
+            JumpKind::File => "跳转（仅文件 · file 时钟）",
+        };
+        let visible = filter_jump(entries, input);
+        let area = frame.area();
+        let items: Vec<ListItem> = visible
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| {
+                let topic_mark = if e.topic == "dir" {
+                    "[目录]"
+                } else {
+                    "[文件]"
+                };
+                let bm = if e.keyword.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ✦{}", e.keyword)
+                };
+                ListItem::new(Line::from(format!("{topic_mark}{bm} {}", e.path))).style(
+                    if idx == *cursor {
+                        Style::new().add_modifier(Modifier::REVERSED)
+                    } else {
+                        Style::new()
+                    },
+                )
+            })
+            .collect();
+        let inner: [ratatui::prelude::Rect; 3] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(3),
+            Constraint::Length(1),
+        ])
+        .areas(ratatui::widgets::Block::bordered().title(title).inner(area));
+        frame.render_widget(ratatui::widgets::Block::bordered().title(title), area);
+        frame.render_widget(Paragraph::new(Line::from(format!("/{}", input))), inner[0]);
+        let list = ratatui::widgets::List::new(items)
+            .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
+        let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
+        frame.render_stateful_widget(list, inner[1], &mut list_state);
+        frame.render_widget(
+            Paragraph::new("Enter=选定  Esc=取消  输入模糊筛选"),
+            inner[2],
+        );
+        return;
+    }
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input } => Line::from(format!("/{input}")),
         InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
+        InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
         InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
         InputMode::ConfirmTagDelete => {
             let n = tab.tagged_count();
@@ -2516,6 +2796,195 @@ mod tests {
         assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+    }
+
+    // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
+
+    fn scored(path: &str, topic: &str, score: f64) -> crate::frecency::ScoredEntry {
+        crate::frecency::ScoredEntry {
+            path: path.to_owned(),
+            topic: topic.to_owned(),
+            keyword: String::new(),
+            score,
+            grade: crate::frecency::Grade::None,
+        }
+    }
+
+    #[test]
+    fn replay_unified_uses_global_seq_for_all_topics() {
+        // M8-12 统一视角：file 条目的 aging 跟随全局序号——dir 高频推进
+        // 全局时钟会稀释 file 分数（与分型视角互补，o/:j/:J 双视角的基础）。
+        let file_ev = |clock: u64| crate::frecency::EntryRecord {
+            path: "/f/notes.txt".to_owned(),
+            topic: "file".to_owned(),
+            kind: crate::frecency::EntryKind::Open,
+            ts: 1000,
+            clock,
+        };
+        let events = [(1u64, file_ev(1))];
+        // 统一视角：全局序号推进到 100 → file 条目大幅衰减。
+        let u = crate::frecency::replay_unified(&[], &events, 100);
+        // 分型视角：file 时钟停在 2 → 衰减很小。
+        let p = crate::frecency::replay(&[], &events, 2, 2);
+        let su = u.iter().find(|e| e.path == "/f/notes.txt").unwrap();
+        let sp = p.iter().find(|e| e.path == "/f/notes.txt").unwrap();
+        assert!(
+            su.score < sp.score,
+            "统一视角(dir 高频)衰减应大于分型视角: {} vs {}",
+            su.score,
+            sp.score
+        );
+    }
+
+    #[test]
+    fn filter_jump_empty_query_shows_all_and_ranked_order() {
+        // M8-12：空查询全显且保持传入序（load_jump_entries 返回时已按
+        // aging ranked 排序，选择器不再二次排序）。
+        let entries = vec![
+            scored("/b/high", "file", 9.0),
+            scored("/c/mid", "dir", 5.0),
+            scored("/a/low", "dir", 1.0),
+        ];
+        let out = filter_jump(&entries, "");
+        assert_eq!(out.len(), 3);
+        let paths: Vec<&str> = out.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, ["/b/high", "/c/mid", "/a/low"]);
+    }
+
+    #[test]
+    fn filter_jump_query_filters_by_grade() {
+        // M8-12：非空查询按分级过滤（文件名包含 notes），排除无关条目。
+        let entries = vec![
+            scored("/f/notes.txt", "file", 5.0),
+            scored("/w/proj", "dir", 9.0),
+            scored("/other/noTES.md", "file", 1.0),
+        ];
+        let out = filter_jump(&entries, "notes");
+        assert_eq!(out.len(), 2, "包含 notes 的条目应保留");
+        assert!(
+            out.iter()
+                .all(|e| e.path.contains("notes") || e.path.contains("noTES"))
+        );
+        // 无匹配查询 → 空。
+        let none = filter_jump(&entries, "zzz-no-match");
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn jump_to_dir_navigates_and_pushes_history() {
+        // M8-12：选定目录条目 → 当前 tab cd（history 入栈、光标复位）。
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("target");
+        std::fs::create_dir(&sub).unwrap();
+        let (_t, mut state) = make_state(2);
+        let hist_before = state.active_tab().history.len();
+
+        let entry = scored(&sub.display().to_string().replace('\\', "/"), "dir", 5.0);
+        let msg = jump_to(&mut state, &entry).unwrap();
+        assert!(msg.contains("跳转目录"), "{msg}");
+        assert_eq!(state.active_tab().history.len(), hist_before + 1);
+        assert_eq!(
+            state.active_tab().location.base_dir(),
+            sub,
+            "应 cd 到目标目录"
+        );
+        assert_eq!(state.active_tab().cursor, 0);
+    }
+
+    #[test]
+    fn jump_to_file_positions_cursor_in_parent() {
+        // M8-12：选定文件条目 → 切到父目录并光标定位（纯导航，不开 opener）。
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("docs");
+        std::fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("hello.txt"), "x").unwrap();
+        let (_t, mut state) = make_state(1);
+
+        let file_path = sub
+            .join("hello.txt")
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let entry = scored(&file_path, "file", 5.0);
+        let msg = jump_to(&mut state, &entry).unwrap();
+        assert!(msg.contains("定位"), "{msg}");
+        assert_eq!(
+            state.active_tab().location.base_dir(),
+            sub,
+            "应切到文件父目录"
+        );
+        let cursor_name = state
+            .active_tab()
+            .entries
+            .get(state.active_tab().cursor)
+            .map(|i| i.name.clone());
+        assert_eq!(
+            cursor_name.as_deref(),
+            Some("hello.txt"),
+            "光标应定位在文件"
+        );
+    }
+
+    #[test]
+    fn jump_selector_renders_overlay_with_entries() {
+        // M8-12：TestBackend 渲染选择器覆盖层——标题、条目、输入行。
+        let entries = vec![
+            scored("/w/proj", "dir", 9.0),
+            scored("/f/a.txt", "file", 1.0),
+        ];
+        let (_tmp, state) = make_state(1);
+        let mode = InputMode::JumpSelect {
+            input: String::new(),
+            cursor: 0,
+            entries: entries.clone(),
+            kind: JumpKind::Unified,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let row = |y: u16| {
+            (0..80u16)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        };
+        let all: String = (0..12u16).map(|y| row(y)).collect();
+        assert!(all.contains("/w/proj"), "条目渲染: {all}");
+        assert!(all.contains("/f/a.txt"), "条目渲染: {all}");
+        // 光标行反显（第一条列表行 y=2：边框 1 + 输入行 1）。
+        let diag: String = [(1u16, 2u16), (1, 3), (2, 2)]
+            .iter()
+            .map(|(x, y)| {
+                format!(
+                    "({x},{y})={:?} m={:?} ",
+                    buffer[(*x, *y)].symbol(),
+                    buffer[(*x, *y)].modifier
+                )
+            })
+            .collect();
+        assert!(
+            buffer[(1, 2)].modifier.contains(Modifier::REVERSED),
+            "首条目应高亮: {diag}"
+        );
+    }
+
+    #[test]
+    fn exec_j_and_big_j_open_jump_selectors() {
+        // M8-12：:j → 仅目录；:J → 仅文件。open_store 读全局 config 路径
+        //（测试机 DB 可能为空——entries 数量不参与断言，只验证 kind 与形态）。
+        let mut state = make_state(1).1;
+        let r = exec_command_impl(&mut state, "j");
+        match r {
+            Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::Dir),
+            other => panic!("expected OpenJump Dir, got {other:?}"),
+        }
+        let r = exec_command_impl(&mut state, "J");
+        match r {
+            Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::File),
+            other => panic!("expected OpenJump File, got {other:?}"),
+        }
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
