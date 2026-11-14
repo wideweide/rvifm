@@ -62,10 +62,13 @@ jobs:
           name: test-output-${{ matrix.os }}
           path: test-output.txt
 
-  # M6-5 发布门禁：tag 推送（v*）时双平台 --release 构建并产出归档。
+  # M6-5 发布门禁：tag 推送（v*）时双平台 --release 构建并产出归档，
+  # 自动创建 GitHub Release 并上传产物（0.2.0 起，页面公开可下载）。
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +91,16 @@ jobs:
           else
             tar czf dist/rvifm-${GITHUB_REF_NAME}-linux-x64.tar.gz -C target/release rvifm
           fi
+      - name: create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 两平台并行：create 只成功一次（已存在则忽略），upload 各自上传。
+          gh release create "$GITHUB_REF_NAME" \
+            --title "rvifm $GITHUB_REF_NAME" \
+            --generate-notes --verify-tag || true
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: rvifm-${{ matrix.os }}
