@@ -1032,7 +1032,20 @@ fn handle_key(
                 .unwrap_or(false);
             let is_physical = matches!(tab.location, crate::tab::Location::Physical(_));
             if is_file && is_physical {
-                let path = tab.location.base_dir().join(&tab.entries[tab.cursor].name);
+                let name = tab.entries[tab.cursor].name.clone();
+                // FIX-3：归档文件（zip/tar/tar.gz…）走 enter_selected 进入
+                // 只读虚拟目录（M7-4），不被系统 opener 抢占；不支持格式
+                // （.7z/.rar，M7-9）经同一路径给出解压提示。
+                if crate::archive::is_archive_file(&name)
+                    || crate::archive::is_unsupported_archive(&name)
+                {
+                    input.count = None;
+                    if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+                        *msg = Some(format!("进入失败: {e}"));
+                    }
+                    return Outcome::Continue;
+                }
+                let path = tab.location.base_dir().join(&name);
                 match crate::opener::system_open(&path) {
                     Ok(()) => *msg = None,
                     Err(e) => *msg = Some(format!("打开失败: {e}")),
@@ -3149,6 +3162,138 @@ mod tests {
         let m = msg.as_deref().unwrap();
         assert!(m.contains("0/1"), "msg: {m:?}");
         assert!(!ro_dir.join("a.txt").exists(), "不留半成品文件");
+    }
+
+    #[test]
+    fn fix3_enter_routes_archive_to_virtual_dir_and_back() {
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        // 排序：host.txt(0) / t.zip(1)。l → 进入虚拟目录（不再被 opener 抢占）。
+        state.active_tab_mut().cursor = 1;
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(outcome, Outcome::Continue);
+        assert!(
+            matches!(state.active_tab().location, Location::Archive { .. }),
+            "l 应进入归档虚拟目录，location={:?}",
+            state.active_tab().location
+        );
+        assert!(!state.active_tab().entries.is_empty());
+        // 面包屑 host:/inner 形式。
+        let shown = state.active_tab().location.display_path();
+        assert!(shown.contains("t.zip:/"), "display: {shown}");
+
+        // 归档根 h → 返回归档文件所在物理目录。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        assert!(matches!(state.active_tab().location, Location::Physical(_)));
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .any(|i| i.name == "host.txt")
+        );
+    }
+
+    #[test]
+    fn fix3_corrupt_archive_reports_error_and_stays() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("bad.zip"), b"PK junk bytes").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(state.active_tab().location, Location::Physical(_)),
+            "损坏归档进入失败后位置不变"
+        );
+        let m = msg.as_deref().unwrap();
+        assert!(m.contains("进入失败"), "msg: {m:?}");
+    }
+
+    #[test]
+    fn fix3_unsupported_archive_prompts_extract() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.7z"), b"7z fake").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        let m = msg.as_deref().unwrap();
+        assert!(m.contains("解压"), "msg: {m:?}");
+        assert!(matches!(state.active_tab().location, Location::Physical(_)));
+    }
+
+    #[test]
+    fn fix3_dd_inside_archive_is_noop() {
+        // 归档内 dd：DeleteSelected 的 Physical 守卫不匹配 → 无确认、无删除。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        state.active_tab_mut().cursor = 0;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Archive { .. }
+        ));
+        let before = state.active_tab().entries.len();
+
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(outcome, Outcome::Continue, "归档内 dd 不进入确认");
+        assert_eq!(state.active_tab().entries.len(), before, "条目不变");
     }
 
     #[test]
