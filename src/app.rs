@@ -117,6 +117,9 @@ enum InputMode {
         entries: Vec<crate::frecency::ScoredEntry>,
         kind: JumpKind,
     },
+    /// 右键上下文菜单（FEAT-3）：`cursor` = 菜单内选中项；Enter 执行，
+    /// Esc/点击外部关闭。
+    ContextMenu { cursor: usize },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`）。
@@ -218,6 +221,167 @@ enum ExecOutcome {
     ShowJobs,
     /// 打开暂存区菜单（M13-10：`:trash`，条目已读好）。
     ShowTrash { items: Vec<crate::ops::TrashEntry> },
+    /// 打开文件详情对话框（FEAT-3：`:file`，与 Ctrl-G 同源）。
+    ShowInfo { path: PathBuf, text: String },
+}
+
+/// FEAT-3：右键上下文菜单（单级、内建动作，作用于右键聚焦的条目）。
+const CONTEXT_MENU: [&str; 6] = [
+    "Open",
+    "File Info (:file)",
+    "Copy",
+    "Move",
+    "Rename",
+    "Delete",
+];
+
+/// FEAT-3：菜单动作执行结果——run 循环据此迁移模式。
+#[derive(Debug)]
+enum ContextMenuOutcome {
+    /// 动作完成（或无动作），关闭菜单。
+    Close,
+    /// 打开文件详情对话框。
+    Info { path: PathBuf, text: String },
+    /// 进入删除确认（permanent=false，走应用内暂存可撤销）。
+    Delete { path: PathBuf },
+    /// 打开命令行并预填（Rename → `rename `）。
+    RenamePrefill { line: String },
+}
+
+/// FEAT-3：菜单浮窗矩形——固定 34×8 居中（含边框）。
+fn context_menu_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    let w = 34u16.min(area.width);
+    let h = ((CONTEXT_MENU.len() as u16) + 2).min(area.height);
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
+/// FEAT-3：当前焦点条目的详情（物理 → fs 元数据；归档成员 →
+/// `host:/inner/name` 路径 + 成员索引元数据）。`:file` 与右键菜单同源。
+fn current_item_info(state: &AppState) -> Option<(PathBuf, String)> {
+    let tab = state.active_tab();
+    let item = tab.entries.get(tab.cursor)?;
+    match &tab.location {
+        Location::Physical(base) => {
+            let path = base.join(&item.name);
+            Some((path.clone(), file_info_text(&path, &item.name)))
+        }
+        Location::Archive { host, inner } => {
+            let shown = format!(
+                "{}:/{}",
+                host.display(),
+                crate::archive::normalize_inner(inner.to_string_lossy().as_ref())
+            );
+            let kind = if item.is_dir {
+                "目录（归档内）"
+            } else {
+                "文件（归档内）"
+            };
+            let text = [
+                format!("名称: {}", item.name),
+                format!("类型: {kind}"),
+                format!("大小: {}", crate::tab::format_size(item.size)),
+                "权限: -".to_owned(),
+                format!("路径: {shown}/{}", item.name),
+            ]
+            .join("\n");
+            Some((host.clone(), text))
+        }
+    }
+}
+
+/// FEAT-3：执行菜单动作（作用于当前光标条目 = 右键聚焦项）。
+fn run_context_menu_action(
+    state: &mut AppState,
+    action: usize,
+    msg: &mut Option<String>,
+) -> ContextMenuOutcome {
+    match action {
+        0 => {
+            // Open：目录/归档进入，文件走系统 opener（与 l/Enter 同链）。
+            open_selected(state, msg);
+            ContextMenuOutcome::Close
+        }
+        1 => match current_item_info(state) {
+            Some((path, text)) => ContextMenuOutcome::Info { path, text },
+            None => {
+                *msg = Some("无选中条目".to_owned());
+                ContextMenuOutcome::Close
+            }
+        },
+        2 | 3 => {
+            // Copy / Move：目标 = 另一 pane 所在目录（vifm 双栏约定）。
+            let other_dir = {
+                let tab = state.active_tab();
+                let other = if tab.focus == crate::tab::Focus::Right {
+                    &tab.location
+                } else {
+                    &tab.right.location
+                };
+                match other {
+                    Location::Physical(p) => Some(p.clone()),
+                    Location::Archive { .. } => None,
+                }
+            };
+            let Some(other_dir) = other_dir else {
+                *msg = Some("目标 pane 在归档视图（无物理目录）".to_owned());
+                return ContextMenuOutcome::Close;
+            };
+            let tab = state.active_tab();
+            let is_physical = matches!(tab.location, Location::Physical(_));
+            let path = if is_physical {
+                tab.entries
+                    .get(tab.cursor)
+                    .map(|item| tab.location.base_dir().join(&item.name))
+            } else {
+                None
+            };
+            let Some(path) = path else {
+                *msg = Some("无选中条目".to_owned());
+                return ContextMenuOutcome::Close;
+            };
+            let result = if action == 3 {
+                ops::move_to(state.active, &path, &other_dir)
+            } else {
+                ops::copy_to(state.active, &path, &other_dir)
+            };
+            match result {
+                Ok(op) => {
+                    state.undo_stack.push(op);
+                    refresh_tab_panes(state, state.active);
+                    *msg = Some(format!(
+                        "{} 1 item to {}",
+                        if action == 3 { "Moved" } else { "Copied" },
+                        other_dir.display()
+                    ));
+                }
+                Err(e) => *msg = Some(format!("失败: {e}")),
+            }
+            ContextMenuOutcome::Close
+        }
+        4 => ContextMenuOutcome::RenamePrefill {
+            line: "rename ".to_owned(),
+        },
+        _ => {
+            // Delete：走 dd 的确认流程（应用内暂存，u 可逆）。
+            let tab = state.active_tab();
+            if let (Location::Physical(base), Some(item)) =
+                (&tab.location, tab.entries.get(tab.cursor))
+            {
+                ContextMenuOutcome::Delete {
+                    path: base.join(&item.name),
+                }
+            } else {
+                *msg = Some("无选中条目".to_owned());
+                ContextMenuOutcome::Close
+            }
+        }
+    }
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -635,6 +799,14 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M13-10：暂存区菜单（staged 仍存在的条目）。
             let items = crate::ops::read_trash_index();
             Ok(ExecOutcome::ShowTrash { items })
+        }
+        Some("file") => {
+            // FEAT-3：`:file` 显示当前选中项详情（与 Ctrl-G/右键菜单同源；
+            // 归档成员显示 host:/inner/name）。`..` 行已被前置守卫拒绝。
+            match current_item_info(state) {
+                Some((path, text)) => Ok(ExecOutcome::ShowInfo { path, text }),
+                None => Err("file: 无选中条目".to_owned()),
+            }
         }
         Some("view") => {
             // M13-9：:view 同 w——预览窗格完整内容视图开关。
@@ -1225,6 +1397,29 @@ fn list_offset(cursor: usize, height: usize) -> usize {
     }
 }
 
+/// FEAT-1/FEAT-3：条目行命中测试——鼠标行 → 条目索引；不在条目区
+/// （`..` 行/右 pane/标签栏/状态栏/越界）返回 None。
+fn hit_entry_index(
+    state: &AppState,
+    mouse: &MouseEvent,
+    area: ratatui::layout::Rect,
+) -> Option<usize> {
+    let has_parent = state.active_tab().has_parent_row() as usize;
+    let list_h = area.height.saturating_sub(2) as usize;
+    let view_h = list_h.saturating_sub(has_parent);
+    let list_w = area.width * 60 / 100;
+    if mouse.column >= list_w
+        || mouse.row < 1 + has_parent as u16
+        || mouse.row >= area.height.saturating_sub(1)
+    {
+        return None;
+    }
+    let tab = state.active_tab();
+    let offset = list_offset(tab.cursor, view_h);
+    let idx = (mouse.row as usize - 1 - has_parent).checked_add(offset)?;
+    Some(idx.min(tab.entries.len().saturating_sub(1)))
+}
+
 /// FEAT-1：鼠标事件处理——左键单击聚焦（已聚焦行再击 = 打开，双击的第二击
 /// 自然落到此路径）、滚轮逐行滚动（每次精确移动一行，不跳变）。仅 Normal
 /// 模式响应（输入模式忽略）；标签栏/状态栏/右 pane 不响应。Visual 选择由
@@ -1242,8 +1437,6 @@ fn handle_mouse(
     // 列表几何：与 render 相同——标签栏 1 行 + 主区（左 60%）+ 状态栏 1 行；
     // FEAT-2：`..` 行占用条目视口首行（有父行时条目从第 2 行开始）。
     let has_parent = state.active_tab().has_parent_row() as usize;
-    let list_h = area.height.saturating_sub(2) as usize;
-    let view_h = list_h.saturating_sub(has_parent);
     let list_w = area.width * 60 / 100;
     let in_columns =
         mouse.column < list_w && mouse.row >= 1 && mouse.row < area.height.saturating_sub(1);
@@ -1260,14 +1453,12 @@ fn handle_mouse(
             }
         }
         MouseEventKind::Down(MouseButton::Left) if in_entries => {
-            let (idx, focused) = {
+            let Some(idx) = hit_entry_index(state, mouse, area) else {
+                return;
+            };
+            let focused = {
                 let tab = state.active_tab();
-                let offset = list_offset(tab.cursor, view_h);
-                let Some(raw) = (mouse.row as usize - 1 - has_parent).checked_add(offset) else {
-                    return;
-                };
-                let idx = raw.min(tab.entries.len().saturating_sub(1));
-                (idx, idx == tab.cursor && !tab.on_parent_row)
+                idx == tab.cursor && !tab.on_parent_row
             };
             state.active_tab_mut().on_parent_row = false;
             if focused {
@@ -1738,6 +1929,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             Ok(ExecOutcome::ShowTrash { items }) => {
                                 mode = InputMode::TrashMenu { cursor: 0, items };
                             }
+                            Ok(ExecOutcome::ShowInfo { path, text }) => {
+                                // FEAT-3：`:file` → 详情对话框（任意键关闭）。
+                                mode = InputMode::FileInfo { path, text };
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -1901,6 +2096,40 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // M13-8：作业菜单——任意键关闭。
                     mode = InputMode::Normal;
                 }
+                InputMode::ContextMenu { cursor } => {
+                    // FEAT-3：右键菜单——j/k 移动、Enter 执行、Esc/q 关闭。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                *cursor = (*cursor + 1).min(CONTEXT_MENU.len() - 1);
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                *cursor = cursor.saturating_sub(1);
+                            }
+                            KeyCode::Enter | KeyCode::Char('l') => {
+                                let action = *cursor;
+                                mode = InputMode::Normal;
+                                match run_context_menu_action(&mut state, action, &mut msg) {
+                                    ContextMenuOutcome::Close => {}
+                                    ContextMenuOutcome::Info { path, text } => {
+                                        mode = InputMode::FileInfo { path, text };
+                                    }
+                                    ContextMenuOutcome::Delete { path } => {
+                                        mode = InputMode::Confirm {
+                                            path,
+                                            permanent: false,
+                                        };
+                                    }
+                                    ContextMenuOutcome::RenamePrefill { line } => {
+                                        mode = InputMode::Command { input: line };
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 InputMode::TrashMenu { cursor, items } => {
                     // M13-10：暂存区菜单——j/k 移动、Enter 恢复、Esc 关闭。
                     if key.kind == KeyEventKind::Press {
@@ -1990,9 +2219,53 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             } // match &mut mode
         } else if let Some(Event::Mouse(mouse)) = key_ev {
             // FEAT-1：鼠标事件（单击聚焦/再击打开/滚轮滚动）。
+            // FEAT-3：右键聚焦条目并弹出上下文菜单；菜单内点击执行、外部关闭。
             let size = terminal.size()?;
             let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-            handle_mouse(&mut state, &mode, &mouse, &mut msg, area);
+            if let InputMode::ContextMenu { cursor: _ } = &mut mode {
+                let popup = context_menu_rect(area);
+                let inside_item = mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                    && mouse.row > popup.y
+                    && mouse.row < popup.y + popup.height - 1
+                    && mouse.column > popup.x
+                    && mouse.column < popup.x + popup.width;
+                if inside_item {
+                    let action = mouse.row - popup.y - 1;
+                    mode = InputMode::Normal;
+                    match run_context_menu_action(&mut state, action as usize, &mut msg) {
+                        ContextMenuOutcome::Close => {}
+                        ContextMenuOutcome::Info { path, text } => {
+                            mode = InputMode::FileInfo { path, text };
+                        }
+                        ContextMenuOutcome::Delete { path } => {
+                            mode = InputMode::Confirm {
+                                path,
+                                permanent: false,
+                            };
+                        }
+                        ContextMenuOutcome::RenamePrefill { line } => {
+                            mode = InputMode::Command { input: line };
+                        }
+                    }
+                } else if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                    || mouse.kind == MouseEventKind::Down(MouseButton::Right)
+                {
+                    // 点击菜单外 → 关闭（无副作用）。
+                    mode = InputMode::Normal;
+                }
+            } else if mouse.kind == MouseEventKind::Down(MouseButton::Right)
+                && matches!(mode, InputMode::Normal)
+            {
+                // 右键条目行：聚焦该项并打开菜单（左 pane；`..` 行无菜单）。
+                if let Some(idx) = hit_entry_index(&state, &mouse, area) {
+                    let tab = state.active_tab_mut();
+                    tab.on_parent_row = false;
+                    tab.cursor = idx;
+                    mode = InputMode::ContextMenu { cursor: 0 };
+                }
+            } else {
+                handle_mouse(&mut state, &mode, &mouse, &mut msg, area);
+            }
         } // if event::poll && let Event::Key
     } // loop
 } // fn run
@@ -2236,6 +2509,35 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::ContextMenu { cursor } = mode {
+        // FEAT-3：右键菜单浮窗（固定尺寸居中，遮罩背景）。
+        let area = frame.area();
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(
+            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
+            area,
+        );
+        let popup = context_menu_rect(area);
+        let lines: Vec<Line> = CONTEXT_MENU
+            .iter()
+            .enumerate()
+            .map(|(idx, label)| {
+                if idx == *cursor {
+                    Line::from((*label).to_owned())
+                        .style(Style::new().add_modifier(Modifier::REVERSED))
+                } else {
+                    Line::from((*label).to_owned())
+                }
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered().title("操作菜单（Enter=执行 Esc=关闭）"),
+            ),
+            popup,
+        );
+        return;
+    }
     if let InputMode::JumpSelect {
         input,
         cursor,
@@ -2305,6 +2607,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         return;
     }
     let status = match mode {
+        InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input, .. } => {
             // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
@@ -5597,6 +5900,153 @@ mod tests {
         assert!(
             state.active_tab().entries.iter().any(|i| i.name == "t.zip"),
             "应回到归档所在物理目录"
+        );
+    }
+
+    #[test]
+    fn feat3_file_command_shows_info() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "hello").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // cursor 0 = a.txt（物理目录无过滤，排序后 a.txt 首位）。
+        match exec_command_impl(&mut state, "file") {
+            Ok(ExecOutcome::ShowInfo { path, text }) => {
+                assert_eq!(path, tmp.path().join("a.txt"));
+                assert!(text.contains("名称: a.txt"), "text: {text}");
+                assert!(text.contains("路径:"), "text: {text}");
+                assert!(text.contains("修改时间:"), "text: {text}");
+            }
+            other => panic!("expected ShowInfo, got {other:?}"),
+        }
+        // 空目录：可读错误。
+        let empty = TempDir::new().unwrap();
+        let mut state2 =
+            AppState::new(Tab::from_physical(empty.path(), Config::default()).unwrap());
+        assert_eq!(
+            exec_command_impl(&mut state2, "file"),
+            Err("file: 无选中条目".to_owned())
+        );
+    }
+
+    #[test]
+    fn feat3_file_command_in_archive_shows_host_inner_path() {
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 进入归档（排序 host.txt(0)/t.zip(1)，cursor 1 = t.zip）。
+        state.active_tab_mut().cursor = 1;
+        let mut msg = None;
+        open_selected(&mut state, &mut msg);
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Archive { .. }
+        ));
+        state.active_tab_mut().on_parent_row = false;
+        state.active_tab_mut().cursor = 0; // 首个成员
+        match exec_command_impl(&mut state, "file") {
+            Ok(ExecOutcome::ShowInfo { text, .. }) => {
+                assert!(text.contains("t.zip:/"), "归档路径形式: {text}");
+                assert!(text.contains("（归档内）"), "类型标注: {text}");
+            }
+            other => panic!("expected ShowInfo, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn feat3_context_menu_actions_copy_move_rename_delete() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let other = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+        // 另一 pane 落在 other 目录（Copy/Move 的目标）。
+        state.active_tab_mut().right.location = Location::Physical(other.path().to_path_buf());
+
+        // Copy（动作 2）：副本出现在 other，u 可撤销。
+        match run_context_menu_action(&mut state, 2, &mut msg) {
+            ContextMenuOutcome::Close => {}
+            other => panic!("expected Close, got {other:?}"),
+        }
+        assert!(
+            other.path().join("a.txt").exists(),
+            "Copy 应复制到另一 pane"
+        );
+        assert!(msg.as_deref().unwrap().starts_with("Copied 1 item"));
+        undo_last(&mut state, &mut msg);
+        assert!(!other.path().join("a.txt").exists(), "u 应移除副本");
+
+        // Move（动作 3）。
+        run_context_menu_action(&mut state, 3, &mut msg);
+        assert!(other.path().join("a.txt").exists());
+        assert!(!tmp.path().join("a.txt").exists(), "Move 应移走原文件");
+        undo_last(&mut state, &mut msg);
+        assert!(tmp.path().join("a.txt").exists());
+
+        // RenamePrefill（动作 4）。
+        match run_context_menu_action(&mut state, 4, &mut msg) {
+            ContextMenuOutcome::RenamePrefill { line } => assert_eq!(line, "rename "),
+            other => panic!("expected RenamePrefill, got {other:?}"),
+        }
+
+        // Delete（动作 5）→ Confirm 流程路径。
+        match run_context_menu_action(&mut state, 5, &mut msg) {
+            ContextMenuOutcome::Delete { path } => {
+                assert_eq!(path, tmp.path().join("a.txt"))
+            }
+            other => panic!("expected Delete, got {other:?}"),
+        }
+
+        // Info（动作 1）。
+        match run_context_menu_action(&mut state, 1, &mut msg) {
+            ContextMenuOutcome::Info { text, .. } => {
+                assert!(text.contains("名称: a.txt"))
+            }
+            other => panic!("expected Info, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn feat3_context_menu_renders_centered_and_masked() {
+        let (_tmp, state) = make_state(2);
+        let mode = InputMode::ContextMenu { cursor: 1 };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        // 34×8 popup @ ((80-34)/2=23, (24-8)/2=8)。
+        assert_eq!(buffer[(23, 8)].symbol(), "┌", "菜单左上角");
+        assert_eq!(buffer[(56, 8)].symbol(), "┐");
+        // 菜单项渲染 + 选中项反显（第 2 项 = File Info，行 10）。
+        let row = |y: u16| {
+            (0..80u16)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        };
+        assert!(row(10).contains("File Info (:file)"), "row: {}", row(10));
+        assert!(buffer[(24, 10)].modifier.contains(Modifier::REVERSED));
+        // 遮罩：菜单外无列表残影。
+        assert!(buffer[(0, 1)].symbol().trim().is_empty());
+    }
+
+    #[test]
+    fn feat3_context_menu_open_on_dir_enters() {
+        // Open（动作 0）与 l/Enter 同链：目录 → enter_selected 进入。
+        // 注意：对文件会调系统 opener（阻塞等待外部程序），测试只用目录。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+        // cursor 0：sub 排在首位（目录优先）。
+        let out = run_context_menu_action(&mut state, 0, &mut msg);
+        assert!(matches!(out, ContextMenuOutcome::Close));
+        assert!(
+            state.active_tab().location.display_path().ends_with("sub"),
+            "Open 应进入目录，loc={}",
+            state.active_tab().location.display_path()
         );
     }
 

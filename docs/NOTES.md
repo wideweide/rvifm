@@ -399,3 +399,9 @@ rvifm record  → 静默记录访问
 - **结论**：滚轮每格精确移动光标一行（`move_cursor(±1)`，边界钳制、无环绕）。"不跳变"取"每次精确一行、不跳到无关位置"的解释；列表随之滚动，选中项永不消失。这也是 vifm/ranger 的实际行为。
 - **配套**：视口偏移改为显式维护（`list_offset(cursor, height)` 与 `ListState::with_offset` 同源），渲染与鼠标命中测试共用同一推导，单击行号 → 条目索引的映射不再依赖 ratatui 内部调整。
 - **双击**：无需计时器——单击聚焦 → 已聚焦行再击打开，双击的第二击天然落入"再击已聚焦行"路径。
+
+### 2026-11-15 — FEAT-3 右键菜单 Copy/Move 目标语义 + system_open 测试踩坑
+
+- **Copy/Move 目标**：菜单动作无目标参数，采用 vifm 双栏约定——复制/移动到**另一 pane 所在目录**（焦点 pane 的对侧）。对侧在归档视图时报可读错误（无物理目录）；同名冲突走 ops::copy_to/move_to 的既有报错（不覆盖）。
+- **Rename**：预填 `rename ` 进命令行（SIMPLIFIED：复用既有输入行，不弹专用对话框）；Delete 走 dd 的 Confirm 流程（应用内暂存，u 可逆）；Open 与 l/Enter 同链（目录/归档进入、文件走系统 opener）。
+- **踩坑**：`opener::system_open` 用 `Command::status()` **阻塞等待**外部程序退出——单测对"文件"执行 Open 动作会挂起整个测试进程（本机 gio 可用时会真的弹出查看器）。测试中 Open 动作只能对**目录**验证（enter_selected 无外部进程）。
