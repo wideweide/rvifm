@@ -1,5 +1,5 @@
 # STATE —
-- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io + tag `v0.5.0` → GitHub Release。
+- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io（API 验证 0.5.0）+ tag `v0.5.0`。**踩坑**：tag 原指向的 bump 提交有两个平台差异测试在 Linux CI 失败（perm 硬编码 644 受 umask 影响；根路径测试用 C:\\ 在 Unix NotFound）→ 修复后 tag 重指向并强推，release job 重新产出。
 
 - `M14-2`（2026-11-15）：标签栏 UI——render 顶部 1 行（`N:dirname` + 当前 REVERSED|BOLD）；`:tabnew`/`gt` 切换有可见反馈；tab 栏偏移导致 4 个渲染测试行号修正。164 单测全绿。
 
@@ -59,10 +59,10 @@
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
-- **更新时间**：2026-11-14
-- **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M14-3 ACCEPTANCE §16 修订 + M14-4 发布 0.5.0
-- **阶段状态**：M0–M13 全部关闭（M11-6 真实终端验证保留人工步骤；v0.4.0 已发布）
+- **更新时间**：2026-11-15
+- **当前阶段**：M15 用户实测反馈批次（缺陷修复 FIX-1～4 → 新增 FEAT-1～4）
+- **当前任务**：FIX-1 搜索高亮与实时索引
+- **阶段状态**：M0–M14 完成（M14-4 发布流程收尾：crates.io 0.5.0 已发、tag 已重指向待 CI release job 产出 GitHub Release）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
