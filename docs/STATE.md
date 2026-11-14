@@ -1,4 +1,6 @@
 # STATE —
+- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io + tag `v0.5.0` → GitHub Release。
+
 - `M14-2`（2026-11-15）：标签栏 UI——render 顶部 1 行（`N:dirname` + 当前 REVERSED|BOLD）；`:tabnew`/`gt` 切换有可见反馈；tab 栏偏移导致 4 个渲染测试行号修正。164 单测全绿。
 
 - `M14-1`（2026-11-15）：双 pane 模型对齐 vifm——`Pane`（location/entries/cursor/scroll + 导航方法）+ `Tab.right`/`focus`；handle_key 焦点分发（Right → `handle_right_key` 精简导航集：j/k/gg/G/Ctrl-u/d/l/Enter/h/Ctrl-G/w；写命令提示切回）；exec 写命令焦点化（`focus_base`/physical_base 焦点感知）；`refresh_tab_panes` 双刷新；渲染双栏（右 pane 目录列表 ↔ 预览视图，图片渲染保留）。163 单测全绿。
