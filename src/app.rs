@@ -5,7 +5,10 @@
 //! 统一命令解析在 M5-4 接入）。
 
 use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
+};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -1022,39 +1025,7 @@ fn handle_key(
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
-            let cfg = state.config;
-            // M11-7：目录/归档 → enter_selected 导航；普通文件 → 系统 opener。
-            let tab = state.active_tab();
-            let is_file = tab
-                .entries
-                .get(tab.cursor)
-                .map(|item| !item.is_dir)
-                .unwrap_or(false);
-            let is_physical = matches!(tab.location, crate::tab::Location::Physical(_));
-            if is_file && is_physical {
-                let name = tab.entries[tab.cursor].name.clone();
-                // FIX-3：归档文件（zip/tar/tar.gz…）走 enter_selected 进入
-                // 只读虚拟目录（M7-4），不被系统 opener 抢占；不支持格式
-                // （.7z/.rar，M7-9）经同一路径给出解压提示。
-                if crate::archive::is_archive_file(&name)
-                    || crate::archive::is_unsupported_archive(&name)
-                {
-                    input.count = None;
-                    if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
-                        *msg = Some(format!("进入失败: {e}"));
-                    }
-                    return Outcome::Continue;
-                }
-                let path = tab.location.base_dir().join(&name);
-                match crate::opener::system_open(&path) {
-                    Ok(()) => *msg = None,
-                    Err(e) => *msg = Some(format!("打开失败: {e}")),
-                }
-                return Outcome::Continue;
-            }
-            if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
-                *msg = Some(format!("进入失败: {e}"));
-            }
+            open_selected(state, msg);
         }
         KeyCode::Char('h') => {
             input.count = None;
@@ -1163,6 +1134,99 @@ fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
     if let Some(tab) = state.tabs.get_mut(tab_id) {
         let _ = tab.refresh(cfg);
         let _ = tab.right.refresh(cfg);
+    }
+}
+
+/// `l`/Enter 与鼠标再击共用的打开逻辑（FEAT-1）：目录/归档 → enter_selected
+/// 导航（FIX-3：归档文件优先于 opener）；普通文件 → 系统 opener（M11-7）。
+fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
+    let cfg = state.config;
+    let tab = state.active_tab();
+    let is_file = tab
+        .entries
+        .get(tab.cursor)
+        .map(|item| !item.is_dir)
+        .unwrap_or(false);
+    let is_physical = matches!(tab.location, crate::tab::Location::Physical(_));
+    if is_file && is_physical {
+        let name = tab.entries[tab.cursor].name.clone();
+        // FIX-3：归档文件（zip/tar/tar.gz…）走 enter_selected 进入
+        // 只读虚拟目录（M7-4），不被系统 opener 抢占；不支持格式
+        // （.7z/.rar，M7-9）经同一路径给出解压提示。
+        if crate::archive::is_archive_file(&name) || crate::archive::is_unsupported_archive(&name) {
+            if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+                *msg = Some(format!("进入失败: {e}"));
+            }
+            return;
+        }
+        let path = tab.location.base_dir().join(&name);
+        match crate::opener::system_open(&path) {
+            Ok(()) => *msg = None,
+            Err(e) => *msg = Some(format!("打开失败: {e}")),
+        }
+        return;
+    }
+    if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+        *msg = Some(format!("进入失败: {e}"));
+    }
+}
+
+/// FEAT-1：列表视口偏移——保证光标可见（offset ≤ cursor < offset+height）。
+/// 渲染（ListState.with_offset）与鼠标命中测试共用同一推导，避免偏差；
+/// 与 ratatui List 从 0 起自动调整的结果一致。
+fn list_offset(cursor: usize, height: usize) -> usize {
+    if height == 0 || cursor < height {
+        0
+    } else {
+        cursor + 1 - height
+    }
+}
+
+/// FEAT-1：鼠标事件处理——左键单击聚焦（已聚焦行再击 = 打开，双击的第二击
+/// 自然落到此路径）、滚轮逐行滚动（每次精确移动一行，不跳变）。仅 Normal
+/// 模式响应（输入模式忽略）；标签栏/状态栏/右 pane 不响应。Visual 选择由
+/// tab.visual 锚点 + 光标移动自然延伸，鼠标只移动光标不破坏选区。
+fn handle_mouse(
+    state: &mut AppState,
+    mode: &InputMode,
+    mouse: &MouseEvent,
+    msg: &mut Option<String>,
+    area: ratatui::layout::Rect,
+) {
+    if !matches!(mode, InputMode::Normal) {
+        return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
+    }
+    // 列表几何：与 render 相同——标签栏 1 行 + 主区（左 60%）+ 状态栏 1 行。
+    let list_h = area.height.saturating_sub(2) as usize;
+    let list_w = area.width * 60 / 100;
+    let in_list =
+        mouse.row >= 1 && mouse.row < area.height.saturating_sub(1) && mouse.column < list_w;
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) if in_list => {
+            let (idx, focused) = {
+                let tab = state.active_tab();
+                let offset = list_offset(tab.cursor, list_h);
+                let Some(raw) = (mouse.row as usize - 1).checked_add(offset) else {
+                    return;
+                };
+                let idx = raw.min(tab.entries.len().saturating_sub(1));
+                (idx, idx == tab.cursor)
+            };
+            if focused {
+                // 已聚焦行再次单击（含双击第二击）→ 打开。
+                open_selected(state, msg);
+            } else {
+                // 单击聚焦：仅移动光标，不打开。
+                state.active_tab_mut().cursor = idx;
+            }
+        }
+        MouseEventKind::ScrollUp if in_list => {
+            state.active_tab_mut().move_cursor(-1);
+        }
+        MouseEventKind::ScrollDown if in_list => {
+            state.active_tab_mut().move_cursor(1);
+        }
+        _ => {}
     }
 }
 
@@ -1531,6 +1595,8 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
 }
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
+    // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
+    let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
     // M5-1：启动加载用户配置；缺失用默认值，语法错误在状态栏提示（不退出）。
     let mut msg: Option<String> = None;
     let config = match config::load() {
@@ -1757,6 +1823,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             ratatui::restore();
                             let result = batch_rename_flow(&mut state, &base, &names);
                             terminal = ratatui::init();
+                            // FEAT-1：init 不含鼠标捕获，重新启用。
+                            let _ = ratatui::crossterm::execute!(
+                                std::io::stdout(),
+                                event::EnableMouseCapture
+                            );
                             msg = match result {
                                 Ok(m) => Some(m),
                                 Err(e) => Some(e),
@@ -1859,6 +1930,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     }
                 }
             } // match &mut mode
+        } else if let Some(Event::Mouse(mouse)) = key_ev {
+            // FEAT-1：鼠标事件（单击聚焦/再击打开/滚轮滚动）。
+            let size = terminal.size()?;
+            let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+            handle_mouse(&mut state, &mode, &mouse, &mut msg, area);
         } // if event::poll && let Event::Key
     } // loop
 } // fn run
@@ -1994,7 +2070,9 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             li
         })
         .collect();
-    let mut list_state = ListState::default().with_selected(Some(tab.cursor));
+    let mut list_state = ListState::default()
+        .with_selected(Some(tab.cursor))
+        .with_offset(list_offset(tab.cursor, list_area.height as usize));
     frame.render_stateful_widget(
         List::new(list_items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
         list_area,
@@ -5127,6 +5205,134 @@ mod tests {
             "光标行反显"
         );
         assert_eq!(state.active_tab().cursor, 2, "光标不变");
+    }
+
+    #[test]
+    fn feat1_list_offset_matches_cursor_visibility() {
+        assert_eq!(list_offset(0, 10), 0);
+        assert_eq!(list_offset(9, 10), 0);
+        assert_eq!(list_offset(15, 10), 6);
+        assert_eq!(list_offset(0, 0), 0);
+    }
+
+    #[test]
+    fn feat1_mouse_click_focus_then_reclick_opens_dir() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("d1")).unwrap();
+        fs::create_dir(tmp.path().join("d2")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mode = InputMode::Normal;
+        // 排序：d1(0) d2(1)；row=2 → idx=1（d2）。
+        let ev = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        // 单击：仅聚焦，不打开。
+        handle_mouse(&mut state, &mode, &ev, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 1, "单击聚焦不打开");
+        assert!(matches!(state.active_tab().location, Location::Physical(_)));
+
+        // 再击已聚焦行 → 打开（目录进入）。
+        handle_mouse(&mut state, &mode, &ev, &mut msg, area);
+        assert!(
+            state.active_tab().location.display_path().ends_with("d2"),
+            "再击已聚焦目录应进入，loc={}",
+            state.active_tab().location.display_path()
+        );
+    }
+
+    #[test]
+    fn feat1_mouse_wheel_scrolls_and_outside_click_ignored() {
+        let (_tmp, mut state) = make_state(3);
+        let mut msg = None;
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mode = InputMode::Normal;
+
+        // 滚轮逐行下移 + 边界钳制。
+        let down = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &mode, &down, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 1);
+        handle_mouse(&mut state, &mode, &down, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 2);
+        handle_mouse(&mut state, &mode, &down, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 2, "末行钳制");
+
+        // 滚轮上移。
+        let up = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &mode, &up, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 1);
+
+        // 列表外点击：右 pane（col=60）与状态栏（row=23）不改变光标。
+        let outside = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 60,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &mode, &outside, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 1, "右 pane 点击不响应");
+        let status_click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 23,
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &mode, &status_click, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 1, "状态栏点击不响应");
+    }
+
+    #[test]
+    fn feat1_mouse_click_extends_visual_selection() {
+        let (_tmp, mut state) = make_state(5);
+        state.active_tab_mut().toggle_visual(); // 锚点 0
+        let mut msg = None;
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let ev = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 4, // idx 3
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &InputMode::Normal, &ev, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 3);
+        assert_eq!(
+            state.active_tab().visual_range(),
+            Some((0, 3)),
+            "选区随光标延伸，锚点不破坏"
+        );
+    }
+
+    #[test]
+    fn feat1_mouse_ignored_in_input_modes() {
+        let (_tmp, mut state) = make_state(2);
+        let mut msg = None;
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mode = InputMode::Command {
+            input: String::new(),
+        };
+        let ev = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        };
+        handle_mouse(&mut state, &mode, &ev, &mut msg, area);
+        assert_eq!(state.active_tab().cursor, 0, "输入模式忽略鼠标");
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

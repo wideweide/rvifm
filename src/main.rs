@@ -65,6 +65,11 @@ fn main() -> std::io::Result<()> {
     let terminal = ratatui::init();
     let result = app::run(terminal);
     ratatui::restore();
+    // FEAT-1：退出时恢复鼠标捕获状态（含错误退出路径）。
+    let _ = ratatui::crossterm::execute!(
+        std::io::stdout(),
+        ratatui::crossterm::event::DisableMouseCapture
+    );
     result
 }
 
