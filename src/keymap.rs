@@ -37,6 +37,8 @@ pub enum Action {
     ToggleTag,
     // 文件操作
     DeleteSelected,
+    /// 永久删除（M13-3：DD——跳过应用内暂存，不可逆强提示）。
+    DeletePermanent,
     PutCopy,
     PutMove,
     // 撤销
@@ -92,6 +94,7 @@ impl Keymap {
             (vec![kc(Char('d'))], HalfPageDown),
             (vec![kc(Char('u'))], HalfPageUp),
             (vec![k(Char('d')), k(Char('d'))], DeleteSelected),
+            (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),
             (vec![k(Char('p'))], PutCopy),

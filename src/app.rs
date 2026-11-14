@@ -57,8 +57,9 @@ enum Outcome {
     EnterSearch,
     /// 请求进入过滤输入模式（`=`，M4-2）。
     EnterFilter,
-    /// 请求确认删除（`dd`，M2-2）：携带待删完整路径。
-    ConfirmDelete(PathBuf),
+    /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
+    /// permanent = 跳过暂存的不可逆删除（DD）。
+    ConfirmDelete(PathBuf, bool),
     /// 打开跳转选择器（M8-12：`o` 合一视角；数据已在 handle_key 读好）。
     OpenJump {
         kind: JumpKind,
@@ -87,8 +88,9 @@ enum InputMode {
     Search { input: String },
     /// 过滤输入模式：正在输入 `=` 后的内容（M4-2）。
     Filter { input: String },
-    /// 删除确认模式：`y` 执行，其余取消（M2-2）。
-    Confirm { path: PathBuf },
+    /// 删除确认模式：`y` 执行，其余取消（M2-2；M13-3 起 permanent 标志
+    /// 区分 dd 暂存删除与 DD 永久删除，渲染与执行分支不同）。
+    Confirm { path: PathBuf, permanent: bool },
     /// 标记批量删除确认模式（`:tag delete`，M3-3）。
     ConfirmTagDelete,
     /// 帮助覆盖层（`:help`，M5-3；任意键返回）。
@@ -703,7 +705,16 @@ fn handle_key(
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
-                    return Outcome::ConfirmDelete(base.join(&item.name));
+                    return Outcome::ConfirmDelete(base.join(&item.name), false);
+                }
+            }
+            Some(Action::DeletePermanent) => {
+                // M13-3：DD 永久删除——确认提示后跳过暂存（不可逆强提示）。
+                let tab = state.active_tab();
+                if let (Location::Physical(base), Some(item)) =
+                    (&tab.location, tab.entries.get(tab.cursor))
+                {
+                    return Outcome::ConfirmDelete(base.join(&item.name), true);
                 }
             }
             _ => {} // 未知序列整体丢弃
@@ -827,7 +838,7 @@ fn handle_key(
             }
         }
         // M10-3：`g`/`d`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
-        KeyCode::Char('g') | KeyCode::Char('d') => {
+        KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('D') => {
             let k = crate::keymap::Key::plain(key.code);
             if input.keymap.has_prefix(&[k]) {
                 input.seq.push(k);
@@ -851,14 +862,45 @@ fn handle_key(
 }
 
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
+/// `permanent = true`（M13-3，`DD`）：**跳过暂存直接删除**，不进撤销栈
+/// （不可逆——确认提示已强警示）。
 /// 返回 `Some(op)` = EACCES 需要提权（M12-3），调用方进入 AskPass 模式。
 fn execute_delete(
     state: &mut AppState,
     msg: &mut Option<String>,
     path: PathBuf,
+    permanent: bool,
 ) -> Option<crate::privilege::PrivOp> {
     let tab_id = state.active;
     let cfg = state.config;
+    if permanent {
+        // M13-3 永久删除：不可逆，不进撤销栈。权限错误仍走提权链。
+        let is_dir = path.is_dir();
+        let result = if is_dir {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        return match result {
+            Ok(()) => {
+                *msg = Some("永久删除（不可恢复）".to_owned());
+                if let Some(tab) = state.tabs.get_mut(tab_id)
+                    && let Err(e) = tab.refresh(cfg)
+                {
+                    *msg = Some(format!("刷新失败: {e}"));
+                }
+                None
+            }
+            Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                *msg = None;
+                Some(crate::privilege::PrivOp::Delete { path })
+            }
+            Err(e) => {
+                *msg = Some(format!("永久删除失败: {e}"));
+                None
+            }
+        };
+    }
     match ops::delete_to_trash(tab_id, &path) {
         Ok(op) => {
             state.undo_stack.push(op);
@@ -1020,14 +1062,17 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         msg = None;
                     }
                 },
-                InputMode::Confirm { path } => {
+                InputMode::Confirm { path, permanent } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 let path = std::mem::take(path);
+                                let permanent = *permanent;
                                 mode = InputMode::Normal;
-                                if let Some(op) = execute_delete(&mut state, &mut msg, path) {
+                                if let Some(op) =
+                                    execute_delete(&mut state, &mut msg, path, permanent)
+                                {
                                     // M12-3：EACCES → 原地进入 sudo 密码输入。
                                     mode = InputMode::AskPass {
                                         input: String::new(),
@@ -1111,8 +1156,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                             };
                         }
-                        Outcome::ConfirmDelete(path) => {
-                            mode = InputMode::Confirm { path };
+                        Outcome::ConfirmDelete(path, permanent) => {
+                            mode = InputMode::Confirm { path, permanent };
                         }
                         Outcome::OpenJump { kind, entries } => {
                             mode = InputMode::JumpSelect {
@@ -1299,7 +1344,17 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
-        InputMode::Confirm { path } => Line::from(format!("删除 {}? [y/N]", path.display())),
+        InputMode::Confirm { path, permanent } => {
+            if *permanent {
+                // M13-3：DD 永久删除强提示（不可恢复）。
+                Line::from(format!(
+                    "**永久删除** {}（不可恢复）? [y/N]",
+                    path.display()
+                ))
+            } else {
+                Line::from(format!("删除 {}? [y/N]", path.display()))
+            }
+        }
         InputMode::ConfirmTagDelete => {
             let n = tab.tagged_count();
             Line::from(format!("删除 {n} 个标记文件? [y/N]"))
@@ -1994,7 +2049,10 @@ mod tests {
             KeyModifiers::NONE,
         );
         match outcome {
-            Outcome::ConfirmDelete(p) => assert_eq!(p, tmp.path().join("target.txt")),
+            Outcome::ConfirmDelete(p, permanent) => {
+                assert_eq!(p, tmp.path().join("target.txt"));
+                assert!(!permanent, "dd 应为暂存删除");
+            }
             other => panic!("expected ConfirmDelete, got {other:?}"),
         }
 
@@ -2030,7 +2088,7 @@ mod tests {
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
-        execute_delete(&mut state, &mut msg, file.clone());
+        execute_delete(&mut state, &mut msg, file.clone(), false);
         assert!(msg.is_none());
         assert!(!file.exists(), "file should be staged out of the dir");
         assert_eq!(state.undo_stack.len(), 1);
@@ -2237,7 +2295,7 @@ mod tests {
 
         // 在 tab 1 删除 x.txt（entries = [x.txt]，cursor 0）。
         let mut msg = None;
-        execute_delete(&mut state, &mut msg, file.clone());
+        execute_delete(&mut state, &mut msg, file.clone(), false);
         assert!(!file.exists());
         assert_eq!(state.undo_stack.len(), 1);
 
@@ -3027,6 +3085,48 @@ mod tests {
             KeyModifiers::NONE,
         );
         assert_eq!(state.active_tab().tagged_count(), 1);
+    }
+
+    #[test]
+    fn dd_permanent_delete_skips_staging_and_undo_stack() {
+        // M13-3：DD → Confirm(permanent) 强提示 → y：文件直接删除，
+        // 不进暂存（u 无法恢复）、不进撤销栈。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("gone.txt"), "G").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+
+        // DD 序列（D 前缀 + D）→ ConfirmDelete(path, true)。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('D'),
+            KeyModifiers::NONE,
+        );
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('D'),
+            KeyModifiers::NONE,
+        );
+        let Outcome::ConfirmDelete(path, permanent) = outcome else {
+            panic!("expected ConfirmDelete, got {outcome:?}");
+        };
+        assert!(permanent, "DD 必须标记永久删除");
+
+        // 确认 y 的执行在 run() 的 Confirm 分支（mode 迁移在 run 内）——
+        // 此处直接验证永久删除执行语义：不进暂存、不进撤销栈。
+        let mut msg = None;
+        execute_delete(&mut state, &mut msg, path.clone(), true);
+        assert!(!path.exists(), "文件应被直接删除");
+        assert_eq!(state.undo_stack.len(), 0, "永久删除不进撤销栈");
+        assert!(
+            msg.as_deref().is_some_and(|m| m.contains("不可恢复")),
+            "msg: {msg:?}"
+        );
     }
 
     #[test]
