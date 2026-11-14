@@ -380,7 +380,7 @@ impl Tab {
                         },
                         perm: String::new(),
                     });
-                    if out.len() >= 10_000 {
+                    if out.len() >= MAX_TREE_ITEMS {
                         *truncated = true;
                         return;
                     }
