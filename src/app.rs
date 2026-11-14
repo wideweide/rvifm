@@ -3490,7 +3490,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn view_mode_toggle_switches_preview_completeness() {
         // M13-9：w/:view 切换——摘要模式长文件截断，view 模式显示完整内容；
         // 光标移动（j）后预览跟随光标文件。
@@ -3574,6 +3573,7 @@ mod tests {
         assert!(matches!(r, ExecOutcome::Done { .. }));
     }
 
+    #[test]
     fn jobs_lifecycle_and_jobs_menu_render() {
         // M13-8：作业登记/更新流转 + :jobs 覆盖层渲染（Running/Done/Failed）。
         let tmp = TempDir::new().unwrap();
