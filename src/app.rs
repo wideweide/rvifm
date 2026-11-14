@@ -1720,8 +1720,36 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
 
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
-    let [main_area, status_area] =
-        Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+    // M14-2：标签栏（1 行）——每个 tab 的索引与目录名，当前 tab 高亮。
+    let [tab_bar_area, main_area, status_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
+    let tab_spans: Vec<Span> = state
+        .tabs
+        .iter()
+        .enumerate()
+        .map(|(idx, t)| {
+            let dir = t
+                .location
+                .base_dir()
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| t.location.display_path());
+            let label = format!("{}:{} ", idx + 1, dir);
+            if idx == state.active {
+                Span::styled(
+                    label,
+                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                )
+            } else {
+                Span::from(label)
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
     // M11-2：vifm 式双栏——左列表、右预览（SPEC SIMPLIFIED 允许单栏，
     // 统一预览窗格自 M11-2 起落地）。
     let [list_area, preview_area] =
@@ -3047,11 +3075,11 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 选区内反显（行 1、2），选区外不反显（行 0、3）。
-        assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
+        // 选区内反显（行 2、3），选区外不反显（行 1、4）——tab 栏占行 0。
         assert!(buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
 
         // 状态栏 VISUAL 指示。
         let status = (0..120u16)
@@ -3144,9 +3172,9 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 标记行加粗，未标记行不加粗。
-        assert!(buffer[(0, 1)].modifier.contains(Modifier::BOLD));
-        assert!(!buffer[(0, 0)].modifier.contains(Modifier::BOLD));
+        // 标记行加粗，未标记行不加粗——tab 栏占行 0，条目行 1→2。
+        assert!(buffer[(0, 2)].modifier.contains(Modifier::BOLD));
+        assert!(!buffer[(0, 1)].modifier.contains(Modifier::BOLD));
 
         // 状态栏计数。
         let status = (0..120u16)
@@ -3550,9 +3578,10 @@ mod tests {
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 0)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        // tab 栏占行 0，列表行 1 起；光标行 1（第二条目）→ y=2。
+        assert!(buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
     }
 
     // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
@@ -3831,6 +3860,47 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn tab_bar_visible_and_updates_on_tabnew() {
+        // M14-2：标签栏渲染（1:dir 高亮），:tabnew 后 2:dir 出现且高亮移动。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        // 单 tab：1:tmpdir 高亮。
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut tab_row = String::new();
+        for x in 0..80u16 {
+            let c = &buf[(x, 0)];
+            tab_row.push_str(c.symbol());
+        }
+        assert!(tab_row.contains("1:"), "tab bar: {tab_row}");
+
+        // :tabnew → 2 tabs，2:tmpdir 出现且高亮在第二个。
+        exec_command_impl(&mut state, "tabnew").unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut tab_row = String::new();
+        for x in 0..80u16 {
+            let c = &buf[(x, 0)];
+            tab_row.push_str(c.symbol());
+        }
+        assert!(tab_row.contains("2:"), "tabnew 后 tab bar: {tab_row}");
+        // 高亮（REVERSED）应落在 "2:" 起始处（第二个 tab 为当前）。
+        let two_x = tab_row.find("2:").unwrap_or(0) as u16;
+        assert!(
+            buf[(two_x, 0)].modifier.contains(Modifier::REVERSED),
+            "2: 段应高亮"
+        );
+    }
+
     fn jobs_lifecycle_and_jobs_menu_render() {
         // M13-8：作业登记/更新流转 + :jobs 覆盖层渲染（Running/Done/Failed）。
         let tmp = TempDir::new().unwrap();
@@ -4416,8 +4486,8 @@ mod tests {
         };
 
         // 目录在前并带 `/` 后缀。
-        assert!(row(0).contains("sub/"));
-        assert!(row(1).contains("hello.txt"));
+        assert!(row(1).contains("sub/"));
+        assert!(row(2).contains("hello.txt"));
         // 状态栏显示当前位置与条目数。
         let dir_name = tmp
             .path()

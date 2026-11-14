@@ -162,7 +162,7 @@
 ## M14 — 双栏模型与标签栏（2026-11-15 增补；用户实测反馈，见 SPEC M14 节）
 
 - [x] M14-1 双 pane 模型（`Pane` 结构 + `Tab.right`/`focus`；Tab 键焦点切换；`handle_right_key` 精简导航集；exec 写命令焦点化（`focus_base`）；`w`/`:view` 右 pane 目录列表↔预览切换；渲染双栏）
-- [ ] M14-2 标签栏 UI（tab 索引 + 目录名 + 当前高亮；`:tabnew`/`gt` 可见反馈）
+- [x] M14-2 标签栏 UI（顶部 1 行：`N:dirname` 列表 + 当前 tab REVERSED|BOLD 高亮；`:tabnew`/`gt` 可见反馈；相关渲染测试行号随 tab 栏偏移修正）
 - [ ] M14-3 ACCEPTANCE §16 修订（0.5.0 语义：双栏描述/标签栏可见性验收）
 - [ ] M14-4 发布 0.5.0：crates.io + tag `v0.5.0` → GitHub Release
 
