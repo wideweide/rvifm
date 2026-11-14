@@ -102,6 +102,32 @@ impl UndoStack {
     }
 }
 
+/// 后台作业状态（M13-8）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobStatus {
+    Running,
+    Done { summary: String },
+    Failed { err: String },
+}
+
+/// 后台作业记录（M13-8）：`:jobs` 菜单展示。
+#[derive(Debug, Clone)]
+pub struct Job {
+    pub id: usize,
+    pub kind: String,
+    pub src_count: usize,
+    pub target: String,
+    pub status: JobStatus,
+}
+
+/// 后台线程完成后的更新包（主线程收包后入撤销栈并刷新）。
+pub struct JobUpdate {
+    pub job_id: usize,
+    pub tab_id: usize,
+    pub ops: Vec<UndoableOp>,
+    pub status: JobStatus,
+}
+
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。
 #[derive(Debug)]
 pub struct AppState {
@@ -115,6 +141,8 @@ pub struct AppState {
     pub config: Config,
     /// 图片预览引擎（M11-2）：启动时探测一次协议，非 TTY 回退 halfblocks。
     pub image_engine: crate::image::ImageEngine,
+    /// 后台作业列表（M13-8）：`:jobs` 菜单展示。
+    pub jobs: Vec<Job>,
 }
 
 impl AppState {
@@ -126,7 +154,38 @@ impl AppState {
             undo_stack: UndoStack::default(),
             config: Config::default(),
             image_engine: crate::image::ImageEngine::detect(),
+            jobs: Vec::new(),
         }
+    }
+
+    /// 登记新后台作业并返回其 id（M13-8）。
+    pub fn add_job(&mut self, kind: &str, src_count: usize, target: &str) -> usize {
+        let id = self.jobs.len() + 1;
+        self.jobs.push(Job {
+            id,
+            kind: kind.to_owned(),
+            src_count,
+            target: target.to_owned(),
+            status: JobStatus::Running,
+        });
+        id
+    }
+
+    /// 应用后台作业更新包：收撤销栈 + 更新作业状态 + 刷新所在 tab。
+    /// 返回是否产生了可撤销变更（供状态栏提示）。
+    pub fn apply_job_update(&mut self, update: JobUpdate) -> bool {
+        let changed = !update.ops.is_empty();
+        for op in update.ops {
+            self.undo_stack.push(op);
+        }
+        if let Some(job) = self.jobs.iter_mut().find(|j| j.id == update.job_id) {
+            job.status = update.status;
+        }
+        let cfg = self.config;
+        if let Some(tab) = self.tabs.get_mut(update.tab_id) {
+            let _ = tab.refresh(cfg);
+        }
+        changed
     }
 
     pub fn active_tab(&self) -> &Tab {

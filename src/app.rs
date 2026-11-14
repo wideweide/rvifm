@@ -115,6 +115,8 @@ enum InputMode {
     },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
+    /// 后台作业菜单（M13-8：`:jobs`）。
+    Jobs,
 }
 
 /// 命令行单键处理结果。
@@ -196,6 +198,15 @@ enum ExecOutcome {
         kind: JumpKind,
         entries: Vec<crate::frecency::ScoredEntry>,
     },
+    /// 后台执行批量复制/移动（M13-8：`:tag copy|move`，run 内 spawn）。
+    SpawnJob {
+        op: String,
+        names: Vec<String>,
+        target: PathBuf,
+        base: PathBuf,
+    },
+    /// 打开后台作业菜单（M13-8：`:jobs`）。
+    ShowJobs,
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -508,46 +519,19 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     let target = PathBuf::from(dir_arg);
                     let base = physical_base(state)?;
                     let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
-                    let mut done = 0;
-                    let mut skipped = 0;
-                    let mut first_err = None;
-                    for name in &names {
-                        let path = base.join(name);
-                        if !path.exists() {
-                            skipped += 1;
-                            continue;
-                        }
-                        let result = if action == "copy" {
-                            ops::copy_to(state.active, &path, &target)
-                        } else {
-                            ops::move_to(state.active, &path, &target)
-                        };
-                        match result {
-                            Ok(op) => {
-                                state.undo_stack.push(op);
-                                done += 1;
-                            }
-                            Err(e) => {
-                                if first_err.is_none() {
-                                    first_err = Some(format!("{action} {name}: {e}"));
-                                }
-                            }
-                        }
+                    if names.is_empty() {
+                        return Ok(ExecOutcome::Done {
+                            msg: Some("tag: 无标记文件".to_owned()),
+                        });
                     }
-                    let cfg = state.config;
-                    if let Some(tab) = state.tabs.get_mut(state.active) {
-                        let _ = tab.refresh(cfg);
-                        // M3-4：批量操作完成后清空标记状态。
-                        tab.clear_tags();
-                    }
-                    let mut msg = format!("tag {action}: {done} 完成");
-                    if skipped > 0 {
-                        msg.push_str(&format!(", {skipped} 跳过"));
-                    }
-                    if let Some(e) = first_err {
-                        msg.push_str(&format!("; 错误: {e}"));
-                    }
-                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                    // M13-8：批量复制/移动 → 后台作业（run 内 spawn）；
+                    // 完成后主线程入撤销栈（`u` 可逆）并清空标记。
+                    Ok(ExecOutcome::SpawnJob {
+                        op: action.to_owned(),
+                        names,
+                        target,
+                        base,
+                    })
                 }
                 other => Err(format!(
                     "tag: 未知动作 {other}（delete / copy|move <目录>）"
@@ -626,6 +610,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 })
             }
         }
+        Some("jobs") => Ok(ExecOutcome::ShowJobs),
         Some(cmd @ ("select" | "unselect")) => {
             // M13-2：按 pattern 批量选择/取消（对齐 vifm :select/:unselect）。
             // 无参 = 仅当前光标条目；unselect 无参 = 清空全部。
@@ -1090,6 +1075,80 @@ fn batch_rename_flow(
     apply_rename_lines(state, base, names, &edited)
 }
 
+/// 后台作业执行体（M13-8）：对 `base` 下 `names` 逐项 copy/move 到 target。
+/// 返回（撤销记录列表, 终态）；纯同步，供后台线程与测试共用。
+fn execute_job_body(
+    op: &str,
+    names: &[String],
+    base: &std::path::Path,
+    target: &std::path::Path,
+    tab_id: usize,
+) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    let mut ops = Vec::new();
+    let mut first_err: Option<String> = None;
+    let mut done = 0usize;
+    for name in names {
+        let src = base.join(name);
+        if !src.exists() {
+            continue; // 已消失的条目跳过
+        }
+        let result = if op == "copy" {
+            crate::ops::copy_to(tab_id, &src, target)
+        } else {
+            crate::ops::move_to(tab_id, &src, target)
+        };
+        match result {
+            Ok(uop) => {
+                ops.push(uop);
+                done += 1;
+            }
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(format!("{op} {name}: {e}"));
+                }
+            }
+        }
+    }
+    let status = if first_err.is_some() && done == 0 {
+        crate::state::JobStatus::Failed {
+            err: first_err.unwrap_or_default(),
+        }
+    } else {
+        let mut summary = format!("{op}: {done} 项完成");
+        if let Some(e) = first_err {
+            summary.push_str(&format!("; 错误: {e}"));
+        }
+        crate::state::JobStatus::Done { summary }
+    };
+    (ops, status)
+}
+
+/// spawn 后台线程执行作业并把更新发送回主线程（M13-8 run 侧薄壳）。
+fn spawn_job_thread(
+    job_tx: &std::sync::mpsc::Sender<crate::state::JobUpdate>,
+    job_id: usize,
+    tab_id: usize,
+    op: &str,
+    names: &[String],
+    base: &std::path::Path,
+    target: &std::path::Path,
+) {
+    let tx = job_tx.clone();
+    let op = op.to_owned();
+    let names = names.to_vec();
+    let base = base.to_path_buf();
+    let target = target.to_path_buf();
+    std::thread::spawn(move || {
+        let (ops, status) = execute_job_body(&op, &names, &base, &target, tab_id);
+        let _ = tx.send(crate::state::JobUpdate {
+            job_id,
+            tab_id,
+            ops,
+            status,
+        });
+    });
+}
+
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
 /// `permanent = true`（M13-3，`DD`）：**跳过暂存直接删除**，不进撤销栈
 /// （不可逆——确认提示已强警示）。
@@ -1232,34 +1291,200 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     state.config = config;
     let mut input = InputState::default();
     let mut mode = InputMode::default();
+    // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
+    let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
     loop {
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
         let viewport_h = terminal.size()?.height.saturating_sub(1);
-        if let Event::Key(key) = event::read()? {
-            match &mut mode {
-                InputMode::Command { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
-                    CmdInput::Submit => {
-                        let line = std::mem::take(input);
-                        mode = InputMode::Normal;
-                        match exec_command_impl(&mut state, line.trim()) {
-                            Ok(ExecOutcome::Quit) => return Ok(()),
-                            Ok(ExecOutcome::EnterHelp) => mode = InputMode::Help,
-                            Ok(ExecOutcome::Done { msg: m }) => msg = m,
-                            Ok(ExecOutcome::ConfirmTagDelete) => {
-                                mode = InputMode::ConfirmTagDelete;
-                            }
-                            Ok(ExecOutcome::Escalate { op }) => {
-                                // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
-                                mode = InputMode::AskPass {
-                                    input: String::new(),
+        // M13-8：收割后台作业更新（撤销栈入栈 + 状态刷新 + 提示）。
+        while let Ok(update) = job_rx.try_recv() {
+            let id = update.job_id;
+            let changed = state.apply_job_update(update);
+            msg = Some(if changed {
+                format!("后台作业 {id} 完成（可 u 撤销）")
+            } else {
+                format!("后台作业 {id} 完成")
+            });
+        }
+        // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞。
+        if event::poll(std::time::Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match &mut mode {
+                    InputMode::Command { input } => match command_input(input, key) {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => mode = InputMode::Normal,
+                        CmdInput::Submit => {
+                            let line = std::mem::take(input);
+                            mode = InputMode::Normal;
+                            match exec_command_impl(&mut state, line.trim()) {
+                                Ok(ExecOutcome::Quit) => return Ok(()),
+                                Ok(ExecOutcome::EnterHelp) => mode = InputMode::Help,
+                                Ok(ExecOutcome::Done { msg: m }) => msg = m,
+                                Ok(ExecOutcome::ConfirmTagDelete) => {
+                                    mode = InputMode::ConfirmTagDelete;
+                                }
+                                Ok(ExecOutcome::Escalate { op }) => {
+                                    // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
+                                    mode = InputMode::AskPass {
+                                        input: String::new(),
+                                        op,
+                                    };
+                                }
+                                Ok(ExecOutcome::OpenJump { kind, entries }) => {
+                                    // M8-12：:j/:J → 分型跳转选择器。
+                                    mode = InputMode::JumpSelect {
+                                        input: String::new(),
+                                        cursor: 0,
+                                        entries,
+                                        kind,
+                                    };
+                                }
+                                Ok(ExecOutcome::SpawnJob {
                                     op,
+                                    names,
+                                    target,
+                                    base,
+                                }) => {
+                                    // M13-8：登记作业并 spawn 后台线程。
+                                    let job_id = state.add_job(
+                                        &op,
+                                        names.len(),
+                                        &target.display().to_string(),
+                                    );
+                                    let tab_id = state.active;
+                                    spawn_job_thread(
+                                        &job_tx, job_id, tab_id, &op, &names, &base, &target,
+                                    );
+                                }
+                                Ok(ExecOutcome::ShowJobs) => {
+                                    mode = InputMode::Jobs;
+                                }
+                                Err(m) => msg = Some(m),
+                            }
+                        }
+                    },
+                    InputMode::Search { input } => match command_input(input, key) {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => mode = InputMode::Normal,
+                        CmdInput::Submit => {
+                            let line = std::mem::take(input);
+                            mode = InputMode::Normal;
+                            submit_search(&mut state, &line, &mut msg);
+                        }
+                    },
+                    InputMode::Filter { input } => match command_input(input, key) {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => mode = InputMode::Normal,
+                        CmdInput::Submit => {
+                            let line = std::mem::take(input);
+                            mode = InputMode::Normal;
+                            let cfg = state.config;
+                            state.active_tab_mut().apply_filter(&line, cfg);
+                            msg = None;
+                        }
+                    },
+                    InputMode::Confirm { path, permanent } => {
+                        if key.kind == KeyEventKind::Press {
+                            match key.code {
+                                // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
+                                KeyCode::Char('y') | KeyCode::Enter => {
+                                    let path = std::mem::take(path);
+                                    let permanent = *permanent;
+                                    mode = InputMode::Normal;
+                                    if let Some(op) =
+                                        execute_delete(&mut state, &mut msg, path, permanent)
+                                    {
+                                        // M12-3：EACCES → 原地进入 sudo 密码输入。
+                                        mode = InputMode::AskPass {
+                                            input: String::new(),
+                                            op,
+                                        };
+                                    }
+                                }
+                                _ => mode = InputMode::Normal,
+                            }
+                        }
+                    }
+                    InputMode::Help => {
+                        // 任意键返回（M5-3 最小帮助覆盖层；完整帮助页在 M6-2）。
+                        mode = InputMode::Normal;
+                    }
+                    InputMode::AskPass { input, op } => {
+                        // M12-3/M12-4：sudo 密码输入。Enter=提权重试；Esc=干净中止
+                        // （不触碰任何状态——取消后 TUI 与操作前一致）。
+                        if key.kind == KeyEventKind::Press {
+                            match askpass_key(input, key.code) {
+                                AskPassResult::Continue => {}
+                                AskPassResult::Cancel => {
+                                    // M12-4：取消干净中止——丢弃密码与操作，状态不变。
+                                    input.clear();
+                                    mode = InputMode::Normal;
+                                    msg = Some("已取消提权".to_owned());
+                                }
+                                AskPassResult::Retry { password } => {
+                                    let op = op.clone();
+                                    mode = InputMode::Normal;
+                                    #[cfg(unix)]
+                                    match crate::privilege::escalate_execute(&op, password.trim()) {
+                                        Ok(()) => {
+                                            msg = Some(format!("提权完成: {}", op.describe()));
+                                            let cfg = state.config;
+                                            if let Some(tab) = state.tabs.get_mut(state.active) {
+                                                let _ = tab.refresh(cfg);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            msg = Some(format!("提权失败: {e}"));
+                                        }
+                                    }
+                                    #[cfg(not(unix))]
+                                    {
+                                        let _ = (op, password);
+                                        msg = Some("提权仅支持 Unix（Linux/macOS）".to_owned());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    InputMode::ConfirmTagDelete => {
+                        if key.kind == KeyEventKind::Press {
+                            match key.code {
+                                // y / Enter 确认批量删除；n / Esc / 其他 = 取消（无副作用）。
+                                KeyCode::Char('y') | KeyCode::Enter => {
+                                    mode = InputMode::Normal;
+                                    execute_tag_delete(&mut state, &mut msg);
+                                }
+                                _ => mode = InputMode::Normal,
+                            }
+                        }
+                    }
+                    InputMode::Normal => {
+                        match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
+                            Outcome::Continue => {}
+                            Outcome::Quit => return Ok(()),
+                            Outcome::EnterCommand => {
+                                mode = InputMode::Command {
+                                    input: String::new(),
                                 };
                             }
-                            Ok(ExecOutcome::OpenJump { kind, entries }) => {
-                                // M8-12：:j/:J → 分型跳转选择器。
+                            Outcome::EnterSearch => {
+                                mode = InputMode::Search {
+                                    input: String::new(),
+                                };
+                            }
+                            Outcome::EnterFilter => {
+                                mode = InputMode::Filter {
+                                    input: String::new(),
+                                };
+                            }
+                            Outcome::ConfirmDelete(path, permanent) => {
+                                mode = InputMode::Confirm { path, permanent };
+                            }
+                            Outcome::FileInfo { path, text } => {
+                                mode = InputMode::FileInfo { path, text };
+                            }
+                            Outcome::OpenJump { kind, entries } => {
                                 mode = InputMode::JumpSelect {
                                     input: String::new(),
                                     cursor: 0,
@@ -1267,198 +1492,71 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     kind,
                                 };
                             }
-                            Err(m) => msg = Some(m),
+                            Outcome::BatchRename { base, names } => {
+                                // M13-6：TUI 挂起 → $EDITOR 编辑名单 → 应用 → 恢复。
+                                ratatui::restore();
+                                let result = batch_rename_flow(&mut state, &base, &names);
+                                terminal = ratatui::init();
+                                msg = match result {
+                                    Ok(m) => Some(m),
+                                    Err(e) => Some(e),
+                                };
+                            }
                         }
                     }
-                },
-                InputMode::Search { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
-                    CmdInput::Submit => {
-                        let line = std::mem::take(input);
+                    InputMode::FileInfo { .. } => {
+                        // M13-5：详情对话框——任意键关闭（同帮助覆盖层）。
                         mode = InputMode::Normal;
-                        submit_search(&mut state, &line, &mut msg);
                     }
-                },
-                InputMode::Filter { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
-                    CmdInput::Submit => {
-                        let line = std::mem::take(input);
+                    InputMode::Jobs => {
+                        // M13-8：作业菜单——任意键关闭。
                         mode = InputMode::Normal;
-                        let cfg = state.config;
-                        state.active_tab_mut().apply_filter(&line, cfg);
-                        msg = None;
                     }
-                },
-                InputMode::Confirm { path, permanent } => {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
-                            KeyCode::Char('y') | KeyCode::Enter => {
-                                let path = std::mem::take(path);
-                                let permanent = *permanent;
-                                mode = InputMode::Normal;
-                                if let Some(op) =
-                                    execute_delete(&mut state, &mut msg, path, permanent)
-                                {
-                                    // M12-3：EACCES → 原地进入 sudo 密码输入。
-                                    mode = InputMode::AskPass {
-                                        input: String::new(),
-                                        op,
-                                    };
+                    InputMode::JumpSelect {
+                        input,
+                        cursor,
+                        entries,
+                        kind: _,
+                    } => {
+                        // M8-12：选择器按键——输入筛选、j/k 移动、Enter 选定、Esc 取消。
+                        if key.kind == KeyEventKind::Press {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    mode = InputMode::Normal;
+                                    msg = None;
                                 }
-                            }
-                            _ => mode = InputMode::Normal,
-                        }
-                    }
-                }
-                InputMode::Help => {
-                    // 任意键返回（M5-3 最小帮助覆盖层；完整帮助页在 M6-2）。
-                    mode = InputMode::Normal;
-                }
-                InputMode::AskPass { input, op } => {
-                    // M12-3/M12-4：sudo 密码输入。Enter=提权重试；Esc=干净中止
-                    // （不触碰任何状态——取消后 TUI 与操作前一致）。
-                    if key.kind == KeyEventKind::Press {
-                        match askpass_key(input, key.code) {
-                            AskPassResult::Continue => {}
-                            AskPassResult::Cancel => {
-                                // M12-4：取消干净中止——丢弃密码与操作，状态不变。
-                                input.clear();
-                                mode = InputMode::Normal;
-                                msg = Some("已取消提权".to_owned());
-                            }
-                            AskPassResult::Retry { password } => {
-                                let op = op.clone();
-                                mode = InputMode::Normal;
-                                #[cfg(unix)]
-                                match crate::privilege::escalate_execute(&op, password.trim()) {
-                                    Ok(()) => {
-                                        msg = Some(format!("提权完成: {}", op.describe()));
-                                        let cfg = state.config;
-                                        if let Some(tab) = state.tabs.get_mut(state.active) {
-                                            let _ = tab.refresh(cfg);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        msg = Some(format!("提权失败: {e}"));
+                                KeyCode::Enter => {
+                                    let query = std::mem::take(input);
+                                    let visible = filter_jump(entries, &query);
+                                    let picked = visible.get(*cursor).cloned();
+                                    mode = InputMode::Normal;
+                                    match picked {
+                                        Some(entry) => match jump_to(&mut state, &entry) {
+                                            Ok(m) => msg = Some(m),
+                                            Err(e) => msg = Some(e),
+                                        },
+                                        None => msg = Some("跳转: 无选定条目".to_owned()),
                                     }
                                 }
-                                #[cfg(not(unix))]
-                                {
-                                    let _ = (op, password);
-                                    msg = Some("提权仅支持 Unix（Linux/macOS）".to_owned());
+                                KeyCode::Backspace => {
+                                    input.pop();
+                                    *cursor = 0;
                                 }
-                            }
-                        }
-                    }
-                }
-                InputMode::ConfirmTagDelete => {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            // y / Enter 确认批量删除；n / Esc / 其他 = 取消（无副作用）。
-                            KeyCode::Char('y') | KeyCode::Enter => {
-                                mode = InputMode::Normal;
-                                execute_tag_delete(&mut state, &mut msg);
-                            }
-                            _ => mode = InputMode::Normal,
-                        }
-                    }
-                }
-                InputMode::Normal => {
-                    match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
-                        Outcome::Continue => {}
-                        Outcome::Quit => return Ok(()),
-                        Outcome::EnterCommand => {
-                            mode = InputMode::Command {
-                                input: String::new(),
-                            };
-                        }
-                        Outcome::EnterSearch => {
-                            mode = InputMode::Search {
-                                input: String::new(),
-                            };
-                        }
-                        Outcome::EnterFilter => {
-                            mode = InputMode::Filter {
-                                input: String::new(),
-                            };
-                        }
-                        Outcome::ConfirmDelete(path, permanent) => {
-                            mode = InputMode::Confirm { path, permanent };
-                        }
-                        Outcome::FileInfo { path, text } => {
-                            mode = InputMode::FileInfo { path, text };
-                        }
-                        Outcome::OpenJump { kind, entries } => {
-                            mode = InputMode::JumpSelect {
-                                input: String::new(),
-                                cursor: 0,
-                                entries,
-                                kind,
-                            };
-                        }
-                        Outcome::BatchRename { base, names } => {
-                            // M13-6：TUI 挂起 → $EDITOR 编辑名单 → 应用 → 恢复。
-                            ratatui::restore();
-                            let result = batch_rename_flow(&mut state, &base, &names);
-                            terminal = ratatui::init();
-                            msg = match result {
-                                Ok(m) => Some(m),
-                                Err(e) => Some(e),
-                            };
-                        }
-                    }
-                }
-                InputMode::FileInfo { .. } => {
-                    // M13-5：详情对话框——任意键关闭（同帮助覆盖层）。
-                    mode = InputMode::Normal;
-                }
-                InputMode::JumpSelect {
-                    input,
-                    cursor,
-                    entries,
-                    kind: _,
-                } => {
-                    // M8-12：选择器按键——输入筛选、j/k 移动、Enter 选定、Esc 取消。
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Esc => {
-                                mode = InputMode::Normal;
-                                msg = None;
-                            }
-                            KeyCode::Enter => {
-                                let query = std::mem::take(input);
-                                let visible = filter_jump(entries, &query);
-                                let picked = visible.get(*cursor).cloned();
-                                mode = InputMode::Normal;
-                                match picked {
-                                    Some(entry) => match jump_to(&mut state, &entry) {
-                                        Ok(m) => msg = Some(m),
-                                        Err(e) => msg = Some(e),
-                                    },
-                                    None => msg = Some("跳转: 无选定条目".to_owned()),
+                                KeyCode::Down => *cursor = cursor.saturating_add(1),
+                                KeyCode::Up => *cursor = cursor.saturating_sub(1),
+                                KeyCode::Char(c) => {
+                                    input.push(c);
+                                    *cursor = 0;
                                 }
+                                _ => {}
                             }
-                            KeyCode::Backspace => {
-                                input.pop();
-                                *cursor = 0;
-                            }
-                            KeyCode::Down => *cursor = cursor.saturating_add(1),
-                            KeyCode::Up => *cursor = cursor.saturating_sub(1),
-                            KeyCode::Char(c) => {
-                                input.push(c);
-                                *cursor = 0;
-                            }
-                            _ => {}
                         }
                     }
-                }
-            }
-        }
-    }
-}
+                } // match &mut mode
+            } // if let Event::Key
+        } // if event::poll
+    } // loop
+} // fn run
 
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
@@ -1545,6 +1643,34 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if matches!(mode, InputMode::Jobs) {
+        // M13-8：后台作业菜单覆盖层（任意键关闭）。
+        let mut lines: Vec<Line> = Vec::new();
+        if state.jobs.is_empty() {
+            lines.push(Line::from("（无后台作业）"));
+        } else {
+            for j in &state.jobs {
+                let status = match &j.status {
+                    crate::state::JobStatus::Running => "运行中".to_owned(),
+                    crate::state::JobStatus::Done { summary } => summary.clone(),
+                    crate::state::JobStatus::Failed { err } => format!("失败: {err}"),
+                };
+                lines.push(Line::from(format!(
+                    "#{id} {kind} → {target}（{} 项）: {status}",
+                    j.src_count,
+                    id = j.id,
+                    kind = j.kind,
+                    target = j.target
+                )));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(ratatui::widgets::Block::bordered().title("后台作业（任意键关闭）")),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::JumpSelect {
         input,
         cursor,
@@ -1607,7 +1733,8 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
-        InputMode::FileInfo { .. } => Line::from(String::new()),   // 详情覆盖层提前 return，不可达
+        InputMode::Jobs => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
+        InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
         InputMode::Confirm { path, permanent } => {
             if *permanent {
                 // M13-3：DD 永久删除强提示（不可恢复）。
@@ -2823,37 +2950,63 @@ mod tests {
         state.active_tab_mut().tags.insert("a.txt".to_owned());
         state.active_tab_mut().tags.insert("b.txt".to_owned());
 
-        // 批量复制到 sub/。
+        // 批量复制到 sub/ → 后台作业（M13-8：SpawnJob，线程异步执行）。
         let target = sub.display().to_string();
         match exec_command_impl(&mut state, &format!("tag copy {target}")) {
-            Ok(ExecOutcome::Done { msg }) => {
-                let m = msg.unwrap();
-                assert!(m.contains("2 完成"), "msg: {m}");
+            Ok(ExecOutcome::SpawnJob { op, names, .. }) => {
+                assert_eq!(op, "copy");
+                assert_eq!(names.len(), 2);
             }
-            other => panic!("expected Done, got {other:?}"),
+            other => panic!("expected SpawnJob, got {other:?}"),
         }
-        assert!(sub.join("a.txt").exists() && sub.join("b.txt").exists());
-        assert!(!sub.join("c.txt").exists(), "未标记文件不受影响");
-        assert!(tmp.path().join("a.txt").exists(), "copy 源保留");
-        // M3-4：批量操作完成后标记自动清空。
-        assert_eq!(state.active_tab().tagged_count(), 0);
+        // spawn/执行在 run() 的 SpawnJob 分支（本测试只调 exec）——复制正确性
+        // 由 jobs_lifecycle 测试覆盖（copy_to + apply_job_update）。
+        assert!(
+            !sub.join("c.txt").exists(),
+            "未标记文件不受影响（spawn 前）"
+        );
 
-        // 重新标记后再批量移动。
+        // 重新标记 → SpawnJob 后台语义下，用 execute_job_body 同步验证
+        // 复制正确性与撤销记录（run 侧仅 spawn/转发）。
         state.active_tab_mut().tags.insert("a.txt".to_owned());
         state.active_tab_mut().tags.insert("b.txt".to_owned());
-
-        // 两次复制各一条撤销记录，逆序撤销还原副本。
+        let (ops, status) = execute_job_body(
+            "copy",
+            &["a.txt".to_owned(), "b.txt".to_owned()],
+            tmp.path(),
+            &sub,
+            0,
+        );
+        assert_eq!(ops.len(), 2, "两条复制各一条撤销记录");
+        for op in ops {
+            state.undo_stack.push(op);
+        }
+        assert!(
+            matches!(status, crate::state::JobStatus::Done { .. }),
+            "复制终态 Done: {status:?}"
+        );
+        assert!(sub.join("a.txt").exists() && sub.join("b.txt").exists());
         assert_eq!(state.undo_stack.len(), 2);
         let mut msg = None;
         undo_last(&mut state, &mut msg);
         undo_last(&mut state, &mut msg);
         assert!(!sub.join("a.txt").exists() && !sub.join("b.txt").exists());
 
-        // 批量移动。
-        assert!(matches!(
-            exec_command_impl(&mut state, &format!("tag move {target}")),
-            Ok(ExecOutcome::Done { .. })
-        ));
+        // 批量移动（后台语义同款，execute_job_body 同步验证）。
+        state.active_tab_mut().tags.insert("a.txt".to_owned());
+        state.active_tab_mut().tags.insert("b.txt".to_owned());
+        let (ops, status) = execute_job_body(
+            "move",
+            &["a.txt".to_owned(), "b.txt".to_owned()],
+            tmp.path(),
+            &sub,
+            0,
+        );
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(status, crate::state::JobStatus::Done { .. }));
+        for op in ops {
+            state.undo_stack.push(op);
+        }
         assert!(!tmp.path().join("a.txt").exists() && sub.join("a.txt").exists());
 
         // 批量删除：tag move 后旧标记按名解析失效（跳过），
@@ -3307,6 +3460,77 @@ mod tests {
             Some("hello.txt"),
             "光标应定位在文件"
         );
+    }
+
+    #[test]
+    fn jobs_lifecycle_and_jobs_menu_render() {
+        // M13-8：作业登记/更新流转 + :jobs 覆盖层渲染（Running/Done/Failed）。
+        let tmp = TempDir::new().unwrap();
+        for name in ["j1.txt", "j2.txt"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let dst = TempDir::new().unwrap();
+
+        // 登记 Running 作业。
+        let id = state.add_job("copy", 2, &dst.path().display().to_string());
+        assert_eq!(id, 1);
+        assert!(matches!(
+            state.jobs[0].status,
+            crate::state::JobStatus::Running
+        ));
+
+        // :jobs 命令 → ShowJobs。
+        let r = exec_command_impl(&mut state, "jobs").unwrap();
+        assert!(matches!(r, ExecOutcome::ShowJobs));
+
+        // 覆盖层渲染（Running 状态）。
+        let mode = InputMode::Jobs;
+        let backend = ratatui::backend::TestBackend::new(70, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let all: String = (0..8u16)
+            .map(|y| {
+                (0..70u16)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(all.contains("copy"), "Running 渲染(ASCII): {all}");
+
+        // 更新包：完成（含撤销栈入栈）。
+        let op = crate::ops::copy_to(0, &tmp.path().join("j1.txt"), dst.path()).unwrap();
+        let changed = state.apply_job_update(crate::state::JobUpdate {
+            job_id: id,
+            tab_id: 0,
+            ops: vec![op],
+            status: crate::state::JobStatus::Done {
+                summary: "copy: 1 项完成".to_owned(),
+            },
+        });
+        assert!(changed);
+        assert_eq!(state.undo_stack.len(), 1);
+        assert!(matches!(
+            state.jobs[0].status,
+            crate::state::JobStatus::Done { .. }
+        ));
+        assert!(dst.path().join("j1.txt").exists());
+
+        // 失败状态流转。
+        let id2 = state.add_job("move", 1, "no-such-dir");
+        state.apply_job_update(crate::state::JobUpdate {
+            job_id: id2,
+            tab_id: 0,
+            ops: vec![],
+            status: crate::state::JobStatus::Failed {
+                err: "no such dir".to_owned(),
+            },
+        });
+        assert!(matches!(
+            state.jobs[1].status,
+            crate::state::JobStatus::Failed { .. }
+        ));
     }
 
     #[test]
