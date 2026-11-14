@@ -96,7 +96,7 @@
 - [x] M8-8 抽出 `PreviewRenderer`（文本/目录/图像），TUI 和 pick 共用
 - [x] M8-9 在 vifm 场景下验证：替换现有薄插件，对比排名稳定性（aging 测试固化，见 STATE）
 - [x] M8-10 目录/文件独立事件时钟（2026-11-14 增补）：meta 增 `dir_tick`/`file_tick`，事件携带类型时钟 `clock`，aging 按同类型时钟衰减；旧库自动兼容（无迁移，clock=0 兜底全局序号）
-- [ ] M8-11 发布 0.2.1（M8-10 后）：crates.io + tag `v0.2.1` → GitHub Release（CI 自动归档）
+- [x] M8-11 发布 0.2.1（M8-10 后）：crates.io（API 验证 0.2.1）+ tag `v0.2.1` → GitHub Release（双平台 job 绿，双归档已上传）
 
 ## M9 — 图标与主题
 
