@@ -117,6 +117,11 @@ enum InputMode {
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`）。
     Jobs,
+    /// 暂存区菜单（M13-10：`:trash`，Enter 恢复选中项到原路径）。
+    TrashMenu {
+        cursor: usize,
+        items: Vec<crate::ops::TrashEntry>,
+    },
 }
 
 /// 命令行单键处理结果。
@@ -207,6 +212,8 @@ enum ExecOutcome {
     },
     /// 打开后台作业菜单（M13-8：`:jobs`）。
     ShowJobs,
+    /// 打开暂存区菜单（M13-10：`:trash`，条目已读好）。
+    ShowTrash { items: Vec<crate::ops::TrashEntry> },
 }
 
 /// 测试兼容包装：沿用 `Ok(true)` = 退出的旧契约（丢弃提示）。
@@ -611,6 +618,11 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             }
         }
         Some("jobs") => Ok(ExecOutcome::ShowJobs),
+        Some("trash") => {
+            // M13-10：暂存区菜单（staged 仍存在的条目）。
+            let items = crate::ops::read_trash_index();
+            Ok(ExecOutcome::ShowTrash { items })
+        }
         Some("view") => {
             // M13-9：:view 同 w——预览窗格完整内容视图开关。
             let on = state.active_tab_mut().toggle_view();
@@ -1379,6 +1391,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             Ok(ExecOutcome::ShowJobs) => {
                                 mode = InputMode::Jobs;
                             }
+                            Ok(ExecOutcome::ShowTrash { items }) => {
+                                mode = InputMode::TrashMenu { cursor: 0, items };
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -1531,6 +1546,52 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // M13-8：作业菜单——任意键关闭。
                     mode = InputMode::Normal;
                 }
+                InputMode::TrashMenu { cursor, items } => {
+                    // M13-10：暂存区菜单——j/k 移动、Enter 恢复、Esc 关闭。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc => mode = InputMode::Normal,
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                *cursor = cursor.saturating_add(1);
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                *cursor = cursor.saturating_sub(1);
+                            }
+                            KeyCode::Enter => {
+                                let entry = items.get(*cursor).cloned();
+                                let snapshot = items.clone();
+                                let cur = *cursor;
+                                mode = InputMode::Normal;
+                                match entry {
+                                    Some(e) => match crate::ops::restore_from_trash(&e) {
+                                        Ok(orig) => {
+                                            msg = Some(format!("已恢复: {}", orig.display()));
+                                            let cfg = state.config;
+                                            if let Some(tab) = state.tabs.get_mut(state.active) {
+                                                let _ = tab.refresh(cfg);
+                                            }
+                                            let rest: Vec<crate::ops::TrashEntry> = snapshot
+                                                .into_iter()
+                                                .filter(|it| it.staged != e.staged)
+                                                .collect();
+                                            let new_cursor = rest
+                                                .len()
+                                                .saturating_sub(1)
+                                                .min(cur.saturating_sub(1));
+                                            mode = InputMode::TrashMenu {
+                                                cursor: new_cursor,
+                                                items: rest,
+                                            };
+                                        }
+                                        Err(err) => msg = Some(format!("恢复失败: {err}")),
+                                    },
+                                    None => msg = Some("暂存区: 无选定条目".to_owned()),
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 InputMode::JumpSelect {
                     input,
                     cursor,
@@ -1661,6 +1722,24 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::TrashMenu { cursor, items } = mode {
+        // M13-10：暂存区菜单覆盖层（staged → orig，Enter 恢复）。
+        let mut lines: Vec<Line> = Vec::new();
+        if items.is_empty() {
+            lines.push(Line::from("（暂存区为空）"));
+        } else {
+            for (idx, e) in items.iter().enumerate() {
+                let mark = if idx == *cursor { "▶ " } else { "  " };
+                lines.push(Line::from(format!("{mark}{} → {}", e.staged, e.orig)));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(ratatui::widgets::Block::bordered().title("暂存区（Enter=恢复 Esc=关闭）")),
+            frame.area(),
+        );
+        return;
+    }
     if matches!(mode, InputMode::Jobs) {
         // M13-8：后台作业菜单覆盖层（任意键关闭）。
         let mut lines: Vec<Line> = Vec::new();
@@ -1752,6 +1831,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
         InputMode::Jobs => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
+        InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
         InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
         InputMode::Confirm { path, permanent } => {
             if *permanent {
@@ -3489,7 +3569,70 @@ mod tests {
         );
     }
 
+    static TRASH_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
+    fn trash_menu_records_and_restores_to_origin() {
+        // M13-10：dd → 暂存索引记录（staged→orig）；restore_from_trash
+        // 移回原位 + 索引清理；orig 冲突 → Err。
+        let _guard = TRASH_TEST_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("victim.txt");
+        fs::write(&file, "V").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg: Option<String> = None;
+
+        // dd → 确认 → 暂存删除（索引记录；两键共享同一 seq 缓冲）。
+        let mut seq_input = InputState::default();
+        press_msg(
+            &mut state,
+            &mut seq_input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        let outcome = press_msg(
+            &mut state,
+            &mut seq_input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        let Outcome::ConfirmDelete(path, _permanent) = outcome else {
+            panic!("expected ConfirmDelete, got {outcome:?}");
+        };
+        execute_delete(&mut state, &mut msg, path, false);
+        assert!(!file.exists());
+
+        // 索引应有记录且 staged 仍存在。
+        let items = crate::ops::read_trash_index();
+        let mine = items
+            .iter()
+            .find(|e| std::path::Path::new(&e.orig) == file.as_path());
+        assert!(mine.is_some(), "本实例的暂存记录应在索引中: {items:?}");
+        let mine = mine.unwrap();
+        assert!(std::path::Path::new(&mine.staged).exists());
+
+        // 恢复：移回原位 + 索引清理。
+        let orig = crate::ops::restore_from_trash(mine).unwrap();
+        assert_eq!(orig, file);
+        assert!(file.exists(), "文件应回到原位");
+        let items = crate::ops::read_trash_index();
+        assert!(
+            !items
+                .iter()
+                .any(|e| std::path::Path::new(&e.orig) == file.as_path()),
+            "恢复后本实例条目应清空"
+        );
+
+        // 冲突：orig 已存在 → Err。
+        let conflict = crate::ops::TrashEntry {
+            staged: tmp.path().join("nonexistent-staged").display().to_string(),
+            orig: file.display().to_string(),
+        };
+        assert!(crate::ops::restore_from_trash(&conflict).is_err());
+    }
+
     fn view_mode_toggle_switches_preview_completeness() {
         // M13-9：w/:view 切换——摘要模式长文件截断，view 模式显示完整内容；
         // 光标移动（j）后预览跟随光标文件。

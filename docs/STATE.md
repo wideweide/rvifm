@@ -1,4 +1,6 @@
 # STATE —
+- `M13-10`（2026-11-15）：暂存区菜单——ops 增 `TrashEntry`/`record_staging`/`read_trash_index`/`restore_from_trash`（**index/ 每记录独立 .json**，JSONL 并发 append 会粘连）；`:trash` → `InputMode::TrashMenu` 覆盖层（Enter 恢复到原位、orig 冲突 Err、Esc 关）；测试串行锁（全局 trash 目录共享）。162 单测全绿。
+
 - `M13-9`（2026-11-15）：view mode——`w` 键/`:view` 切换 `Tab.view_mode`；预览窗格渲染 max_lines：摘要=窗格高度 / view=5000（完整内容）；j/k 列表移动视图跟随光标文件（render 每帧重建）；双栏布局保持非全屏。162 单测全绿（+1：截断/完整/跟随三态对照）。
 
 - `M13-8`（2026-11-15）：后台作业 + :jobs——事件循环 `event::read` → `event::poll(100ms)` + `job_rx.try_recv()` 收割；`state.jobs`/`add_job`/`apply_job_update`（撤销栈主线程入栈）；`execute_job_body`（线程与测试共用）+ `spawn_job_thread` 薄壳；`:tag copy/move` 返回 `ExecOutcome::SpawnJob`、`:jobs` → `InputMode::Jobs` 覆盖层。161 单测全绿。
@@ -51,7 +53,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M13-10 暂存区菜单
+- **当前任务**：M13-11 发布 0.4.0
 - **阶段状态**：M0–M12 关闭 + M8-10/11/12/13 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

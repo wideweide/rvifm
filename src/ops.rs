@@ -74,11 +74,94 @@ fn stage_into(trash_root: &Path, path: &Path) -> std::io::Result<PathBuf> {
 /// 可恢复删除（M2-2，`dd`）：移入应用内暂存并生成撤销记录。
 pub fn delete_to_trash(tab_id: usize, path: &Path) -> std::io::Result<UndoableOp> {
     let staged = stage_into(&trash_dir(), path)?;
+    record_staging(&trash_dir(), &staged, path);
     Ok(UndoableOp::Delete {
         tab_id,
         path: path.to_path_buf(),
         staged,
     })
+}
+
+// ── M13-10：暂存区索引（orig 路径持久化，供 `:trash` 菜单恢复） ─────────────
+
+/// 暂存区一条记录：staged（暂存位置）→ orig（删除前原路径）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TrashEntry {
+    pub staged: String,
+    pub orig: String,
+}
+
+fn trash_index_dir() -> PathBuf {
+    trash_dir().join("index")
+}
+
+/// 追加一条暂存记录：每条独立 `.json` 文件（staged 名唯一 → 无跨进程
+/// 写竞争；失败静默——索引是增强，不影响主流程）。
+fn record_staging(trash_root: &Path, staged: &Path, orig: &Path) {
+    let dir = trash_root.join("index");
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let entry = TrashEntry {
+        staged: staged.to_string_lossy().into_owned(),
+        orig: orig.to_string_lossy().into_owned(),
+    };
+    let file = staged
+        .file_name()
+        .map(|n| dir.join(format!("{}.json", n.to_string_lossy())))
+        .unwrap_or_else(|| dir.join(format!("{}.json", std::process::id())));
+    if let Ok(json) = serde_json::to_string(&entry) {
+        let _ = fs::write(file, json);
+    }
+}
+
+/// 读取暂存区索引：仅返回 staged 仍存在的条目（已恢复/已撤销的过滤）。
+pub fn read_trash_index() -> Vec<TrashEntry> {
+    let dir = trash_index_dir();
+    let Ok(rd) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for e in rd.filter_map(|e| e.ok()) {
+        if let Ok(json) = fs::read_to_string(e.path())
+            && let Ok(entry) = serde_json::from_str::<TrashEntry>(&json)
+            && Path::new(&entry.staged).exists()
+        {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// 从索引移除指定 staged 记录（恢复成功后删除对应索引文件）。
+fn remove_trash_index(trash_root: &Path, staged: &Path) {
+    let name = match staged.file_name() {
+        Some(n) => n.to_string_lossy().into_owned(),
+        None => return,
+    };
+    let _ = fs::remove_file(trash_root.join("index").join(format!("{name}.json")));
+}
+
+/// 恢复暂存文件到原路径（M13-10，`:trash` 菜单）：staged 存在且 orig
+/// 不存在时移动；返回恢复后的原路径。冲突/缺失返回 Err。
+pub fn restore_from_trash(entry: &TrashEntry) -> std::io::Result<PathBuf> {
+    let staged = Path::new(&entry.staged);
+    let orig = Path::new(&entry.orig);
+    if !staged.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "暂存文件已不存在",
+        ));
+    }
+    if orig.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("原位置已存在同名文件: {}", orig.display()),
+        ));
+    }
+    move_path(staged, orig)?;
+    remove_trash_index(&trash_dir(), staged);
+    Ok(orig.to_path_buf())
 }
 
 /// 重命名（M2-3，`:rename <新名字>`）：仅改文件名，不允许路径分隔符。
