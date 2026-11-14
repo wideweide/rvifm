@@ -41,6 +41,8 @@ pub enum Action {
     DeletePermanent,
     /// 批量重命名（M13-6：cw——多选名单交 $EDITOR 编辑）。
     RenameBatch,
+    /// 切换 view 模式（M13-9：w——预览窗格完整文件视图）。
+    ToggleView,
     PutCopy,
     PutMove,
     // 撤销
@@ -98,6 +100,7 @@ impl Keymap {
             (vec![k(Char('d')), k(Char('d'))], DeleteSelected),
             (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
             (vec![k(Char('c')), k(Char('w'))], RenameBatch),
+            (vec![k(Char('w'))], ToggleView),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),
             (vec![k(Char('p'))], PutCopy),

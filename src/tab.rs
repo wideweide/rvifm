@@ -88,6 +88,9 @@ pub struct Tab {
     /// 树视图模式（M13-7）：Some(depth) = 当前列表为当前目录的静态树
     /// （只读浏览，`:tree` 再执行恢复平铺）。
     pub tree: Option<u32>,
+    /// view 模式（M13-9）：预览窗格切换为当前光标文件的完整内容视图
+    /// （非全屏，双栏保持；j/k 列表移动时视图跟随光标文件）。
+    pub view_mode: bool,
 }
 
 impl Tab {
@@ -105,6 +108,7 @@ impl Tab {
             tags: HashSet::new(),
             char_search: None,
             tree: None,
+            view_mode: false,
         })
     }
 
@@ -392,6 +396,13 @@ impl Tab {
         }
         walk(root, "", 0, depth, &mut out, &mut truncated);
         Ok(out)
+    }
+
+    /// 切换 view 模式（M13-9）：预览窗格在摘要预览与完整内容视图间切换。
+    /// 返回切换后的状态（true = 完整视图开启）。
+    pub fn toggle_view(&mut self) -> bool {
+        self.view_mode = !self.view_mode;
+        self.view_mode
     }
 
     /// 进入树视图（M13-7）：记录深度并把 entries 替换为静态树。
@@ -967,6 +978,7 @@ mod tests {
             tags: HashSet::new(),
             char_search: None,
             tree: None,
+            view_mode: false,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));

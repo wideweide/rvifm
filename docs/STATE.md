@@ -1,4 +1,6 @@
 # STATE —
+- `M13-9`（2026-11-15）：view mode——`w` 键/`:view` 切换 `Tab.view_mode`；预览窗格渲染 max_lines：摘要=窗格高度 / view=5000（完整内容）；j/k 列表移动视图跟随光标文件（render 每帧重建）；双栏布局保持非全屏。162 单测全绿（+1：截断/完整/跟随三态对照）。
+
 - `M13-8`（2026-11-15）：后台作业 + :jobs——事件循环 `event::read` → `event::poll(100ms)` + `job_rx.try_recv()` 收割；`state.jobs`/`add_job`/`apply_job_update`（撤销栈主线程入栈）；`execute_job_body`（线程与测试共用）+ `spawn_job_thread` 薄壳；`:tag copy/move` 返回 `ExecOutcome::SpawnJob`、`:jobs` → `InputMode::Jobs` 覆盖层。161 单测全绿。
 
 - `M13-7`（2026-11-15）：:tree 树视图——`Tab::build_tree_entries`（递归 walk，目录优先+字典序，depth 缺省 8、上限 1 万条截断）+ `enter_tree`/`exit_tree` toggle；渲染按相对路径深度缩进；树模式只读守卫（exec 白名单 tree/q/help + handle_key 写/导航键拒绝）。**踩坑**：SplitWhitespace 无 peek（改先取 cmd_head）；node 脚本 split 补字段会重复追加（去重修复）。160 单测全绿。
@@ -49,7 +51,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M13-9 view mode
+- **当前任务**：M13-10 暂存区菜单
 - **阶段状态**：M0–M12 关闭 + M8-10/11/12/13 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

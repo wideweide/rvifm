@@ -611,6 +611,17 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             }
         }
         Some("jobs") => Ok(ExecOutcome::ShowJobs),
+        Some("view") => {
+            // M13-9：:view 同 w——预览窗格完整内容视图开关。
+            let on = state.active_tab_mut().toggle_view();
+            Ok(ExecOutcome::Done {
+                msg: Some(if on {
+                    "view: 完整内容视图开启".to_owned()
+                } else {
+                    "view: 已恢复摘要预览".to_owned()
+                }),
+            })
+        }
         Some(cmd @ ("select" | "unselect")) => {
             // M13-2：按 pattern 批量选择/取消（对齐 vifm :select/:unselect）。
             // 无参 = 仅当前光标条目；unselect 无参 = 清空全部。
@@ -945,6 +956,16 @@ fn handle_key(
         KeyCode::Char('t') => {
             input.count = None;
             state.active_tab_mut().toggle_tag();
+        }
+        KeyCode::Char('w') => {
+            // M13-9：view 模式切换（预览窗格完整内容视图 ↔ 摘要预览）。
+            input.count = None;
+            let on = state.active_tab_mut().toggle_view();
+            *msg = Some(if on {
+                "view: 完整内容视图开启".to_owned()
+            } else {
+                "view: 已恢复摘要预览".to_owned()
+            });
         }
         KeyCode::Char('p') | KeyCode::Char('P') => {
             // M10-1：PutCopy/PutMove 已入 Keymap；yy 缓冲区在 M10-7 接入。
@@ -1826,16 +1847,24 @@ fn render_preview_pane(frame: &mut Frame, state: &AppState, area: ratatui::layou
             return;
         }
     };
+    // M13-9：view 模式下预览显示完整内容（行数上限放大，j/k 移动光标
+    // 时视图跟随光标文件重置）；摘要模式保持窗口高度截断。
+    let view_max = 5000usize;
+    let max_lines = if state.active_tab().view_mode {
+        view_max
+    } else {
+        inner.height as usize
+    };
     match crate::preview::preview_kind(&path) {
         crate::preview::PreviewKind::Image => {
             // 图片渲染失败（损坏/超大）→ 降级为共享提示行。
             if state.image_engine.render_file(frame, inner, &path).is_err() {
-                let p = crate::preview::render_preview(&path, inner.height as usize);
+                let p = crate::preview::render_preview(&path, max_lines);
                 frame.render_widget(p.into_paragraph(), inner);
             }
         }
         _ => {
-            let p = crate::preview::render_preview(&path, inner.height as usize);
+            let p = crate::preview::render_preview(&path, max_lines);
             frame.render_widget(p.into_paragraph(), inner);
         }
     }
@@ -1897,6 +1926,7 @@ mod tests {
             tags: HashSet::new(),
             char_search: None,
             tree: None,
+            view_mode: false,
         }
     }
 
@@ -3460,6 +3490,90 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn view_mode_toggle_switches_preview_completeness() {
+        // M13-9：w/:view 切换——摘要模式长文件截断，view 模式显示完整内容；
+        // 光标移动（j）后预览跟随光标文件。
+        let tmp = TempDir::new().unwrap();
+        let mut content = String::new();
+        for i in 0..200 {
+            content.push_str(&format!(
+                "line {i:03}
+"
+            ));
+        }
+        fs::write(tmp.path().join("long.txt"), &content).unwrap();
+        fs::write(tmp.path().join("short.txt"), "SHORT MARKER").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // 摘要模式：默认截断（仅窗口高度行）。
+        assert!(!state.active_tab().view_mode);
+        let backend = ratatui::backend::TestBackend::new(80, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut all = String::new();
+        for y in 0..12u16 {
+            for x in 40u16..80 {
+                all.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(!all.contains("line 150"), "摘要模式不应显示深处行: {all}");
+
+        // w 开启 view 模式 → 完整内容（深处行可见）。
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('w'),
+            KeyModifiers::NONE,
+        );
+        assert!(state.active_tab().view_mode);
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut all = String::new();
+        for y in 0..12u16 {
+            for x in 40u16..80 {
+                all.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(
+            all.contains("line 000") || all.contains("line 0"),
+            "view 模式从文件头渲染: {all}"
+        );
+
+        // j 移动光标 → 视图跟随（short.txt 的 SHORT MARKER 出现）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut all = String::new();
+        for y in 0..12u16 {
+            for x in 40u16..80 {
+                all.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(all.contains("SHORT MARKER"), "视图应跟随光标文件: {all}");
+
+        // :view 关闭。
+        let r = exec_command_impl(&mut state, "view").unwrap();
+        assert!(!state.active_tab().view_mode);
+        assert!(matches!(r, ExecOutcome::Done { .. }));
+    }
+
     fn jobs_lifecycle_and_jobs_menu_render() {
         // M13-8：作业登记/更新流转 + :jobs 覆盖层渲染（Running/Done/Failed）。
         let tmp = TempDir::new().unwrap();
