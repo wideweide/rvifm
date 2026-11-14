@@ -1,4 +1,6 @@
 # STATE —
+- `M8-12`（2026-11-14）：TUI 跳转选择器——`o` 合一视角（`replay_unified`：全部条目按全局序号 aging，dir+file 混合排名）+ `:j`/`:J` 分型（仅目录/仅文件，独立时钟）；`InputMode::JumpSelect` 覆盖层（输入筛选 + j/k 移动 + Enter 选定 + Esc 取消）；选定 = 目录 cd（history 入栈）/ 文件切父目录定位光标（纯导航不调 opener）；选择器纯只读（不写任何表/时钟）。150 单测全绿（新增统一视角对照、筛选分级、cd/定位、渲染、:j/:J 共 7 测试）。
+
 - `M8-11`（2026-11-14）：发布 0.2.1（M8-10 独立时钟行为修正，patch bump）——crates.io（持久授权）+ tag `v0.2.1` → CI release job 自动创建 GitHub Release 并上传双平台归档。
 
 - `M8-10`（2026-11-14）：目录/文件独立事件时钟——store 增 `dir_tick`/`file_tick`（缺失时自 global_tick 连续分叉初始化）；`append_event` 事务内推进全局序号 + 对应类型时钟并注入事件 JSON `clock`；`replay`/`replay_merge` aging 的 Δclock 一律同类型（clock=0 旧格式以全局序号兜底）；`pick` 读 `type_tick("dir")/("file")` 分别对齐。143 单测全绿（新增独立性 A/B、独立推进、旧库分叉 3 测试）。
@@ -29,7 +31,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：无（M8-10/M8-11 闭环；frecency 独立时钟已发布 v0.2.1）
+- **当前任务**：M8-13 发布 0.3.0
 - **阶段状态**：M0–M12 关闭 + M8-10/11 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

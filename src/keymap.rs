@@ -46,6 +46,8 @@ pub enum Action {
     PrevTab,
     // 模式与命令
     EnterCommand,
+    /// 打开合一跳转选择器（M8-12：o，全局统一时钟视角）。
+    OpenJump,
     Quit,
 }
 
@@ -103,6 +105,7 @@ impl Keymap {
             (vec![k(Char('g')), k(Char('t'))], NextTab),
             (vec![k(Char('g')), k(Char('T'))], PrevTab),
             (vec![k(Char(':'))], EnterCommand),
+            (vec![k(Char('o'))], OpenJump),
         ];
         Self { bindings: pairs }
     }

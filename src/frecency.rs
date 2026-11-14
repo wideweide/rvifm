@@ -226,6 +226,35 @@ pub fn replay(
     now_dir: u64,
     now_file: u64,
 ) -> Vec<ScoredEntry> {
+    replay_inner(
+        snapshot,
+        events,
+        ReplayClocks::PerType { now_dir, now_file },
+    )
+}
+
+/// 统一视角（M8-12）：全部条目按**全局事件序号** aging（dir + file 混合
+/// 排名）——保留合一表/全局时钟的旧语义，供  合一跳转选择器使用。
+pub fn replay_unified(
+    snapshot: &[SnapshotEntry],
+    events: &[(u64, EntryRecord)],
+    now_seq: u64,
+) -> Vec<ScoredEntry> {
+    replay_inner(snapshot, events, ReplayClocks::Unified(now_seq))
+}
+
+/// 时钟视角（M8-12）：PerType = dir/file 各自独立时钟；Unified = 全局序号。
+#[derive(Debug, Clone, Copy)]
+enum ReplayClocks {
+    PerType { now_dir: u64, now_file: u64 },
+    Unified(u64),
+}
+
+fn replay_inner(
+    snapshot: &[SnapshotEntry],
+    events: &[(u64, EntryRecord)],
+    clocks: ReplayClocks,
+) -> Vec<ScoredEntry> {
     let lambda = AGING_LAMBDA;
     let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
         std::collections::BTreeMap::new();
@@ -234,7 +263,17 @@ pub fn replay(
     }
     for (seq, ev) in events {
         let key = (ev.topic.clone(), ev.path.clone());
-        let clock = if ev.clock == 0 { *seq } else { ev.clock };
+        // 统一视角一律用全局序号；分型视角用事件携带的类型时钟（旧格式兜底）。
+        let clock = match clocks {
+            ReplayClocks::Unified(_) => *seq,
+            ReplayClocks::PerType { .. } => {
+                if ev.clock == 0 {
+                    *seq
+                } else {
+                    ev.clock
+                }
+            }
+        };
         let entry = map.entry(key).or_insert_with(|| SnapshotEntry {
             path: ev.path.clone(),
             topic: ev.topic.clone(),
@@ -251,8 +290,15 @@ pub fn replay(
     let mut out: Vec<ScoredEntry> = map
         .values()
         .map(|s| {
-            let now = if s.topic == "dir" { now_dir } else { now_file };
-            let clock = if s.clock == 0 { s.tick } else { s.clock };
+            // 统一视角：now = 全局序号，clock 兜底 tick（全局序号语义）。
+            let (now, clock) = match clocks {
+                ReplayClocks::Unified(now) => (now, s.tick),
+                ReplayClocks::PerType { now_dir, now_file } => {
+                    let now = if s.topic == "dir" { now_dir } else { now_file };
+                    let clock = if s.clock == 0 { s.tick } else { s.clock };
+                    (now, clock)
+                }
+            };
             let delta = now.saturating_sub(clock);
             ScoredEntry {
                 path: s.path.clone(),
@@ -281,7 +327,8 @@ fn pending_path() -> std::path::PathBuf {
 }
 
 /// 打开 frecency 存储：先合并上次降级的 pending 事件（"下次启动合并"）。
-fn open_store() -> std::io::Result<Store> {
+/// TUI 跳转选择器（M8-12）复用同一只读入口。
+pub fn open_store() -> std::io::Result<Store> {
     let store = Store::open(&crate::config::frecency_db_path())?;
     merge_pending(&store, &pending_path())?;
     Ok(store)
