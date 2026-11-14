@@ -39,6 +39,8 @@ pub enum Action {
     DeleteSelected,
     /// 永久删除（M13-3：DD——跳过应用内暂存，不可逆强提示）。
     DeletePermanent,
+    /// 批量重命名（M13-6：cw——多选名单交 $EDITOR 编辑）。
+    RenameBatch,
     PutCopy,
     PutMove,
     // 撤销
@@ -95,6 +97,7 @@ impl Keymap {
             (vec![kc(Char('u'))], HalfPageUp),
             (vec![k(Char('d')), k(Char('d'))], DeleteSelected),
             (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
+            (vec![k(Char('c')), k(Char('w'))], RenameBatch),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),
             (vec![k(Char('p'))], PutCopy),

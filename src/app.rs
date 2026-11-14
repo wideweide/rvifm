@@ -67,6 +67,8 @@ enum Outcome {
     },
     /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
     FileInfo { path: PathBuf, text: String },
+    /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
+    BatchRename { base: PathBuf, names: Vec<String> },
 }
 
 /// 跳转选择器视角（M8-12）：Unified = 合一表 + 全局统一时钟；Dir/File =
@@ -712,6 +714,34 @@ fn handle_key(
                     return Outcome::ConfirmDelete(base.join(&item.name), false);
                 }
             }
+            Some(Action::RenameBatch) => {
+                // M13-6：cw 批量重命名——收集标记（或光标单条）名单。
+                let tab = state.active_tab();
+                if let Location::Physical(base) = &tab.location {
+                    let names: Vec<String> = if tab.tags.is_empty() {
+                        tab.entries
+                            .get(tab.cursor)
+                            .map(|i| i.name.clone())
+                            .into_iter()
+                            .collect()
+                    } else {
+                        // 按列表顺序收集标记条目（确定性）。
+                        tab.entries
+                            .iter()
+                            .filter(|i| tab.tags.contains(&i.name))
+                            .map(|i| i.name.clone())
+                            .collect()
+                    };
+                    if !names.is_empty() {
+                        input.seq.clear();
+                        return Outcome::BatchRename {
+                            base: base.clone(),
+                            names,
+                        };
+                    }
+                }
+                input.seq.clear();
+            }
             Some(Action::DeletePermanent) => {
                 // M13-3：DD 永久删除——确认提示后跳过暂存（不可逆强提示）。
                 let tab = state.active_tab();
@@ -858,7 +888,7 @@ fn handle_key(
             }
         }
         // M10-3：`g`/`d`/`v`/`t` 前缀检测经 Keymap；单键动作经 dispatch。
-        KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('D') => {
+        KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('D') | KeyCode::Char('c') => {
             let k = crate::keymap::Key::plain(key.code);
             if input.keymap.has_prefix(&[k]) {
                 input.seq.push(k);
@@ -907,6 +937,98 @@ fn file_info_text(path: &std::path::Path, name: &str) -> String {
     }
     lines.push(format!("路径: {}", path.display()));
     lines.join("\n")
+}
+
+// ── M13-6：cw 批量重命名 ──────────────────────────────────────────────────
+
+/// 批量重命名全流程：名单临时文件 → 挂起 TUI 后由调用方运行 `$EDITOR` →
+/// 读回按行对齐 → 逐项 `rename_to`（入撤销栈，`u` 逐项可逆）。
+/// 行数与文件数不符时整批中止（保守策略：批量改名出错比部分改名更危险）。
+/// 同名行跳过；目标已存在/非法名跳过并计数。
+fn apply_rename_lines(
+    state: &mut AppState,
+    base: &std::path::Path,
+    old_names: &[String],
+    edited: &str,
+) -> Result<String, String> {
+    let lines: Vec<&str> = edited.lines().collect();
+    if lines.len() != old_names.len() {
+        return Err(format!(
+            "批量重命名中止：名单行数不符（{} 行 != {} 个文件）",
+            lines.len(),
+            old_names.len()
+        ));
+    }
+    let tab_id = state.active;
+    let cfg = state.config;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    for (old, line) in old_names.iter().zip(&lines) {
+        let new = line.trim();
+        if new.is_empty() || new == old || new.contains('/') || new.contains('\\') {
+            skipped += 1;
+            continue;
+        }
+        let old_path = base.join(old);
+        match crate::ops::rename_to(tab_id, &old_path, new) {
+            Ok(op) => {
+                state.undo_stack.push(op);
+                updated += 1;
+            }
+            Err(e) => {
+                skipped += 1;
+                let _ = e; // 目标已存在/非法名：跳过该行
+            }
+        }
+    }
+    if let Some(tab) = state.tabs.get_mut(tab_id) {
+        let _ = tab.refresh(cfg);
+    }
+    Ok(format!("批量重命名: {updated} 项更新, {skipped} 项跳过"))
+}
+
+/// `cw` 全流程（M13-6）：名单临时文件 → 挂起 TUI 后由调用方运行 `$EDITOR` →
+/// 读回按行对齐 → 逐项 `rename_to`（入撤销栈，`u` 逐项可逆）。
+/// 编辑器选择：`EDITOR` → `VISUAL` → 平台缺省（Windows notepad / Unix vi）。
+fn batch_rename_flow(
+    state: &mut AppState,
+    base: &std::path::Path,
+    names: &[String],
+) -> Result<String, String> {
+    use std::io::Write as _;
+    // 手写临时文件（tempfile 是 dev-dependency，主代码不引入）。
+    let tmp_path = std::env::temp_dir().join(format!("rvifm-rename-{}.txt", std::process::id()));
+    std::fs::write(&tmp_path, "").map_err(|e| format!("名单临时文件创建失败: {e}"))?;
+    {
+        let mut f =
+            std::fs::File::create(&tmp_path).map_err(|e| format!("名单临时文件打开失败: {e}"))?;
+        for name in names {
+            writeln!(f, "{name}").map_err(|e| format!("名单写入失败: {e}"))?;
+        }
+        f.flush().ok();
+    }
+
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "notepad".to_owned()
+            } else {
+                "vi".to_owned()
+            }
+        });
+    let status = std::process::Command::new(&editor)
+        .arg(&tmp_path)
+        .status()
+        .map_err(|e| format!("编辑器 {editor} 启动失败: {e}"))?;
+    if !status.success() {
+        std::fs::remove_file(&tmp_path).ok();
+        return Err(format!("编辑器 {editor} 非零退出（{status}），名单未应用"));
+    }
+
+    let edited = std::fs::read_to_string(&tmp_path).map_err(|e| format!("名单读取失败: {e}"))?;
+    std::fs::remove_file(&tmp_path).ok();
+    apply_rename_lines(state, base, names, &edited)
 }
 
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
@@ -1216,6 +1338,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 cursor: 0,
                                 entries,
                                 kind,
+                            };
+                        }
+                        Outcome::BatchRename { base, names } => {
+                            // M13-6：TUI 挂起 → $EDITOR 编辑名单 → 应用 → 恢复。
+                            ratatui::restore();
+                            let result = batch_rename_flow(&mut state, &base, &names);
+                            terminal = ratatui::init();
+                            msg = match result {
+                                Ok(m) => Some(m),
+                                Err(e) => Some(e),
                             };
                         }
                     }
@@ -3193,6 +3325,61 @@ mod tests {
             msg.as_deref().is_some_and(|m| m.contains("不可恢复")),
             "msg: {msg:?}"
         );
+    }
+
+    #[test]
+    fn batch_rename_apply_updates_and_undo_restores() {
+        // M13-6：名单应用——改名成功 + 同名跳过 + u 逆序恢复。
+        let tmp = TempDir::new().unwrap();
+        for name in ["one.txt", "two.txt", "same.txt"] {
+            fs::write(tmp.path().join(name), "x").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let base = tmp.path();
+
+        let edited = "uno.txt\ntwo.txt\nsame.txt"; // two/same 同名跳过
+        let summary = apply_rename_lines(
+            &mut state,
+            base,
+            &[
+                "one.txt".to_owned(),
+                "two.txt".to_owned(),
+                "same.txt".to_owned(),
+            ],
+            edited,
+        )
+        .unwrap();
+        assert!(summary.contains("1 项更新"), "{summary}");
+        assert!(summary.contains("2 项跳过"), "{summary}");
+        assert!(!base.join("one.txt").exists());
+        assert!(base.join("uno.txt").exists());
+        assert_eq!(state.undo_stack.len(), 1, "仅实际改名入撤销栈");
+
+        // u 逆序恢复。
+        undo_last(&mut state, &mut {
+            let mut m: Option<String> = None;
+            m
+        });
+        assert!(base.join("one.txt").exists());
+        assert!(!base.join("uno.txt").exists());
+    }
+
+    #[test]
+    fn batch_rename_line_count_mismatch_aborts() {
+        // M13-6：名单行数与文件数不符 → 整批中止（无任何改名）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        let r = apply_rename_lines(
+            &mut state,
+            tmp.path(),
+            &["a.txt".to_owned()],
+            "x.txt\ny.txt",
+        );
+        assert!(r.is_err(), "行数不符应 Err");
+        assert!(tmp.path().join("a.txt").exists(), "中止后无任何改名");
+        assert_eq!(state.undo_stack.len(), 0);
     }
 
     #[test]
