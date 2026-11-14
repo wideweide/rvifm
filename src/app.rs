@@ -7,7 +7,7 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
@@ -88,8 +88,9 @@ enum InputMode {
     Normal,
     /// 命令行模式：正在输入 `:` 后的内容。
     Command { input: String },
-    /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。
-    Search { input: String },
+    /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。`origin` 为进入搜索时
+    /// 的光标位置（FIX-1：实时跳转的起点，Esc 时恢复）。
+    Search { input: String, origin: usize },
     /// 过滤输入模式：正在输入 `=` 后的内容（M4-2）。
     Filter { input: String },
     /// 删除确认模式：`y` 执行，其余取消（M2-2；M13-3 起 permanent 标志
@@ -677,13 +678,25 @@ fn run_search(state: &mut AppState, msg: &mut Option<String>, forward: bool) {
 }
 
 /// 提交搜索词（M1-7）：设置搜索状态并移动到首个匹配（从光标下一位环绕）。
+/// FIX-1：实时跳转已把光标停在匹配项上时不重复前跳；空查询清除搜索状态
+/// （高亮与计数随之消失）。
 fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
     let query = line.trim().to_owned();
     if query.is_empty() {
+        state.active_tab_mut().search = None;
         *msg = None;
         return;
     }
     let tab = state.active_tab_mut();
+    let on_match = tab
+        .entries
+        .get(tab.cursor)
+        .is_some_and(|item| crate::tab::match_range(&item.name, &query).is_some());
+    if on_match {
+        tab.search = Some(SearchState { query });
+        *msg = None;
+        return;
+    }
     let start = tab.cursor + 1;
     match tab.find_match(&query, start, true) {
         Some(idx) => {
@@ -693,6 +706,28 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
         }
         None => {
             tab.search = Some(SearchState { query });
+            *msg = Some("无匹配".to_owned());
+        }
+    }
+}
+
+/// FIX-1：搜索输入期间的实时跳转（incsearch）——从进入搜索前的光标位置
+/// `origin` 出发跳到第一个匹配项；输入为空或无匹配时回到 `origin`。
+fn live_search_jump(state: &mut AppState, origin: usize, input: &str, msg: &mut Option<String>) {
+    let query = input.trim();
+    let tab = state.active_tab_mut();
+    if query.is_empty() {
+        tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
+        *msg = None;
+        return;
+    }
+    match tab.find_match(query, origin + 1, true) {
+        Some(idx) => {
+            tab.cursor = idx;
+            *msg = None;
+        }
+        None => {
+            tab.cursor = origin;
             *msg = Some("无匹配".to_owned());
         }
     }
@@ -1481,9 +1516,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 },
-                InputMode::Search { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
+                InputMode::Search { input, origin } => match command_input(input, key) {
+                    // FIX-1：输入变化即实时跳转到第一个匹配项（incsearch）。
+                    CmdInput::Continue => live_search_jump(&mut state, *origin, input, &mut msg),
+                    CmdInput::Cancel => {
+                        // 取消输入：光标回到进入搜索前的位置，清除瞬时提示。
+                        let tab = state.active_tab_mut();
+                        tab.cursor = (*origin).min(tab.entries.len().saturating_sub(1));
+                        msg = None;
+                        mode = InputMode::Normal;
+                    }
                     CmdInput::Submit => {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
@@ -1586,6 +1628,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::EnterSearch => {
                             mode = InputMode::Search {
                                 input: String::new(),
+                                origin: state.active_tab().cursor,
                             };
                         }
                         Outcome::EnterFilter => {
@@ -1757,30 +1800,71 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             .areas(main_area);
 
     let visual_range = tab.visual_range();
+    // FIX-1：当前生效的搜索查询——搜索输入期用实时输入（不回退旧查询，
+    // 清空即无高亮），其余用已提交的 tab.search。
+    let active_query: Option<String> = match mode {
+        InputMode::Search { input, .. } => {
+            let query = input.trim();
+            (!query.is_empty()).then(|| query.to_owned())
+        }
+        _ => tab
+            .search
+            .as_ref()
+            .map(|s| s.query.clone())
+            .filter(|query| !query.is_empty()),
+    };
     let list_items: Vec<ListItem> = tab
         .entries
         .iter()
         .enumerate()
         .map(|(idx, item)| {
-            let label = if item.is_dir {
-                format!("{}/", item.name)
-            } else {
-                item.name.clone()
-            };
-            // M13-7：树视图按相对路径深度缩进。
-            let label = if tab.tree.is_some() {
+            // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
+            // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
+            let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
+            if tab.tree.is_some() {
                 let depth = item.name.matches('/').count();
-                format!("  {}{}", "  ".repeat(depth), label)
-            } else {
-                label
-            };
-            // M9-1：行首渲染 devicons 类型图标。
-            let label = format!("{} {label}", item.icon.glyph);
+                spans.push(Span::from("  ".repeat(depth)));
+            }
+            match active_query
+                .as_deref()
+                .and_then(|query| crate::tab::match_range(&item.name, query))
+            {
+                Some((start, end)) => {
+                    let (before, mid, after) = (
+                        &item.name[..start],
+                        &item.name[start..end],
+                        &item.name[end..],
+                    );
+                    if !before.is_empty() {
+                        spans.push(Span::from(before.to_owned()));
+                    }
+                    spans.push(Span::styled(
+                        mid.to_owned(),
+                        Style::new().fg(Color::Black).bg(Color::LightYellow),
+                    ));
+                    let suffix = if item.is_dir {
+                        format!("{after}/")
+                    } else {
+                        after.to_owned()
+                    };
+                    if !suffix.is_empty() {
+                        spans.push(Span::from(suffix));
+                    }
+                }
+                None => {
+                    let label = if item.is_dir {
+                        format!("{}/", item.name)
+                    } else {
+                        item.name.clone()
+                    };
+                    spans.push(Span::from(label));
+                }
+            }
             // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
             let base_style = crate::theme::style("file_icon");
             // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
             // 光标行由 highlight_style 叠加。
-            let mut li = ListItem::new(Line::from(label)).style(base_style);
+            let mut li = ListItem::new(Line::from(spans)).style(base_style);
             let mut mods = Modifier::empty();
             if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
                 mods |= Modifier::REVERSED;
@@ -1935,7 +2019,20 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::Command { input } => Line::from(format!(":{input}")),
-        InputMode::Search { input } => Line::from(format!("/{input}")),
+        InputMode::Search { input, .. } => {
+            // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
+            let query = input.trim();
+            if query.is_empty() {
+                Line::from(format!("/{input}"))
+            } else {
+                let (cur, total) = tab.search_status(query);
+                let mut text = format!("/{input}  [{cur}/{total}]");
+                if total == 0 {
+                    text.push_str("  无匹配");
+                }
+                Line::from(text)
+            }
+        }
         InputMode::Filter { input } => Line::from(format!("={input}")),
         InputMode::Help => Line::from(String::new()), // 帮助覆盖层提前 return，不可达
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
@@ -1986,7 +2083,17 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 Span::from(format!(" | {} items", tab.entries.len())),
             ];
             if let Some(s) = &tab.search {
-                spans.push(Span::from(format!("  /{}", s.query)));
+                if s.query.is_empty() {
+                    spans.push(Span::from(format!("  /{}", s.query)));
+                } else {
+                    // FIX-1：已提交搜索的匹配计数（n/N 移动后随光标同步）。
+                    let (cur, total) = tab.search_status(&s.query);
+                    let mut text = format!("  /{}  [{cur}/{total}]", s.query);
+                    if total == 0 {
+                        text.push_str("  无匹配");
+                    }
+                    spans.push(Span::from(text));
+                }
             }
             if let Some(f) = &tab.filter {
                 // M4-2：过滤指示。
@@ -2660,6 +2767,108 @@ mod tests {
             ),
             Outcome::EnterSearch
         );
+    }
+
+    #[test]
+    fn fix1_live_search_jumps_and_restores_on_no_match_or_empty() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "src.txt", "srconly"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+
+        // 输入 "src"：实时跳到第一个匹配 src.txt(1)。
+        live_search_jump(&mut state, 0, "src", &mut msg);
+        assert_eq!(state.active_tab().cursor, 1);
+        assert!(msg.is_none());
+
+        // 继续输入 "srcx"：无匹配 → 回 origin 并提示。
+        live_search_jump(&mut state, 0, "srcx", &mut msg);
+        assert_eq!(state.active_tab().cursor, 0);
+        assert_eq!(msg.as_deref(), Some("无匹配"));
+
+        // 清空输入：回 origin，提示消失。
+        live_search_jump(&mut state, 0, "", &mut msg);
+        assert_eq!(state.active_tab().cursor, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn fix1_submit_keeps_live_position_and_empty_clears_search() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "src.txt", "srconly"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+
+        live_search_jump(&mut state, 0, "src", &mut msg); // cursor → 1
+        submit_search(&mut state, "src", &mut msg);
+        assert_eq!(state.active_tab().cursor, 1, "提交不重复前跳");
+        assert!(msg.is_none());
+        assert_eq!(state.active_tab().search.as_ref().unwrap().query, "src");
+
+        // 空提交：清除搜索状态（高亮与计数随之消失）。
+        submit_search(&mut state, "", &mut msg);
+        assert!(state.active_tab().search.is_none());
+    }
+
+    #[test]
+    fn fix1_render_search_highlight_and_count() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "src.txt", "srconly"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+        live_search_jump(&mut state, 0, "src", &mut msg); // cursor → 1
+
+        let mode = InputMode::Search {
+            input: "src".to_owned(),
+            origin: 0,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // 匹配子串黄底高亮：存在高亮单元格。
+        let mut highlighted = 0;
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                if buffer[(x, y)].bg == Color::LightYellow {
+                    highlighted += 1;
+                }
+            }
+        }
+        assert!(highlighted > 0, "应存在匹配高亮单元格");
+
+        // 状态栏（行 23）：/src 计数 [1/2]。
+        let status = (0..80u16)
+            .map(|x| buffer[(x, 23)].symbol())
+            .collect::<String>();
+        assert!(status.contains("/src"), "status: {status}");
+        assert!(status.contains("[1/2]"), "status: {status}");
+
+        // 无查询（Normal 且未提交搜索）：无高亮单元格。
+        let mut terminal2 =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        terminal2
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer2 = terminal2.backend().buffer().clone();
+        let mut highlighted2 = 0;
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                if buffer2[(x, y)].bg == Color::LightYellow {
+                    highlighted2 += 1;
+                }
+            }
+        }
+        assert_eq!(highlighted2, 0, "无查询时不应有高亮");
     }
 
     #[test]

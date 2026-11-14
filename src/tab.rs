@@ -332,6 +332,21 @@ impl Tab {
         }
     }
 
+    /// 搜索匹配计数（FIX-1）：`(当前匹配序号, 总匹配数)`；光标项不匹配时
+    /// 序号为 0（调用方据此显示 `i/N` 或 `0/0`）。
+    pub fn search_status(&self, query: &str) -> (usize, usize) {
+        let matched = |item: &FileItem| query_matches(&item.name, query);
+        let total = self.entries.iter().filter(|item| matched(item)).count();
+        let cur = match self.entries.get(self.cursor) {
+            Some(item) if matched(item) => self.entries[..=self.cursor]
+                .iter()
+                .filter(|item| matched(item))
+                .count(),
+            _ => 0,
+        };
+        (cur, total)
+    }
+
     /// 重读当前物理目录条目并钳制光标（删除/撤销后刷新，M2-2）。
     /// 归档位置为 no-op（M7 接入）。
     pub fn refresh(&mut self, config: Config) -> std::io::Result<()> {
@@ -698,6 +713,22 @@ fn query_matches(name: &str, query: &str) -> bool {
     } else {
         name.to_lowercase().contains(query)
     }
+}
+
+/// `name` 中查询子串的字节区间（FIX-1 渲染高亮用；smart-case 同 M4-1）。
+/// 查询为空返回 `None`；不区分大小写匹配若改变字节布局（非常规 Unicode
+/// 大小写映射）则放弃高亮，返回 `None`（匹配判定仍以 `query_matches` 为准）。
+pub fn match_range(name: &str, query: &str) -> Option<(usize, usize)> {
+    if query.is_empty() {
+        return None;
+    }
+    if query.chars().any(char::is_uppercase) {
+        return name.find(query).map(|pos| (pos, pos + query.len()));
+    }
+    let lower_name = name.to_lowercase();
+    let lower_query = query.to_lowercase();
+    let pos = lower_name.find(&lower_query)?;
+    (lower_name.len() == name.len()).then_some((pos, pos + lower_query.len()))
 }
 
 /// 简单 glob 匹配（M4-2）：支持 `*`（任意序列）与 `?`（单字符），不区分大小写。
@@ -1101,5 +1132,40 @@ mod tests {
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(root));
         assert!(root_tab.history.is_empty());
+    }
+
+    #[test]
+    fn match_range_smart_case() {
+        // FIX-1：渲染高亮用匹配区间，smart-case 同 M4-1。
+        // 小写查询：不区分大小写。
+        assert_eq!(match_range("Beta2.txt", "ta2"), Some((2, 5)));
+        assert_eq!(match_range("beta.txt", "eta"), Some((1, 4)));
+        // 大写查询：区分大小写。
+        assert_eq!(match_range("Beta2.txt", "B"), Some((0, 1)));
+        assert_eq!(match_range("beta.txt", "B"), None);
+        assert_eq!(match_range("beta.txt", "Eta"), None);
+        // 不匹配 / 空查询。
+        assert_eq!(match_range("alpha", "zz"), None);
+        assert_eq!(match_range("alpha", ""), None);
+    }
+
+    #[test]
+    fn search_status_counts_current_and_total() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "src.txt", "srconly", "beta"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        // 排序后：alpha(0) beta(1) src.txt(2) srconly(3)；"src" 匹配 2、3。
+        assert_eq!(tab.entries[2].name, "src.txt");
+        assert_eq!(tab.cursor, 0);
+        assert_eq!(tab.search_status("src"), (0, 2), "光标项非匹配 → 序号 0");
+        tab.cursor = 2;
+        assert_eq!(tab.search_status("src"), (1, 2));
+        tab.cursor = 3;
+        assert_eq!(tab.search_status("src"), (2, 2));
+        tab.cursor = 1;
+        assert_eq!(tab.search_status("src"), (0, 2));
+        assert_eq!(tab.search_status("zzz"), (0, 0), "无匹配 → 0/0");
     }
 }

@@ -1,4 +1,5 @@
 # STATE —
+- `FIX-1`（2026-11-15）：搜索高亮与实时索引——`/` 改"高亮+跳转"语义（不隐藏非匹配项）：`match_range`（smart-case 子串区间）+ `search_status`（i/N 计数）；Search 模式加 `origin` 字段，输入实时跳第一匹配（incsearch）、无匹配回 origin+提示、Esc 恢复光标；列表匹配子串黄底黑字高亮（与光标反显区分）；状态栏 Search/Normal 双口径显示 `[i/N]`+无匹配提示；空提交清除搜索状态。175 单测全绿。
 - `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io（API 验证 0.5.0）+ tag `v0.5.0`。**踩坑**：tag 原指向的 bump 提交有两个平台差异测试在 Linux CI 失败（perm 硬编码 644 受 umask 影响；根路径测试用 C:\\ 在 Unix NotFound）→ 修复后 tag 重指向并强推，release job 重新产出。
 
 - `M14-2`（2026-11-15）：标签栏 UI——render 顶部 1 行（`N:dirname` + 当前 REVERSED|BOLD）；`:tabnew`/`gt` 切换有可见反馈；tab 栏偏移导致 4 个渲染测试行号修正。164 单测全绿。
