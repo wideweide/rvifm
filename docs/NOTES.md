@@ -311,6 +311,14 @@ rvifm record  → 静默记录访问
 | 嵌入 SVG / 字体 | 体积与许可问题；Nerd Font 由终端提供 |
 | 实例级提权（重启 root rvifm） | vifm 的 `:!sudo vifm %c` 路线：状态同步差、攻击面大；改为操作级内联提权（M12） |
 
+### 2026-11-14 — frecency 目录/文件独立事件时钟
+
+- **背景**：单一 `global_tick` 下，目录跳转（cd，高频）与文件打开（Open，低频）共用一个 aging 时钟——目录重度使用会加速文件条目老化（文件条目的 Δtick 被目录事件数推高），两类访问频率互相稀释排名。
+- **结论**：meta 增加 `dir_tick` / `file_tick` 两个类型时钟；事件 JSON 携带其类型时钟值 `clock`；aging 的 Δtick 只取同类型时钟差。`global_tick` 保留为全局事件序号（events 表 key 必须全局单调唯一 + compaction 增量游标），不再参与 aging。
+- **兼容策略（无迁移）**：事件/snapshot 的 `clock` 字段 `#[serde(default)]`——旧 JSON 无此字段时值为 0，重放侧以全局序号（events key / snapshot.tick）兜底，旧语义等价；`dir_tick`/`file_tick` 首次缺失时以 `global_tick` 当前值初始化，新旧 aging 连续分叉。
+- **备选与放弃**：拆两张 events 表（dir/file 各一）——compaction 游标与合并逻辑翻倍且仍需第三计数器，收益不抵复杂度；用 wall-clock ts aging——改变 EMS 的"事件数衰减"语义（M8-9 排名稳定性测试基于事件时钟），不采用。
+- **影响文件**：docs/SPEC.md §4.4、docs/TASKS.md M8-10/M8-11、src/store.rs、src/frecency.rs。
+
 ### 2026-11-12 — M12 采用操作级内联提权，不模仿 vifm 的实例级提权
 
 - **背景**：vifm 官方明确无内建 sudo 支持（"there is no builtin support for executing anything as a different user"），社区靠 `:!sudo cp %c` 或重启提权实例（`nnoremap <c-s> :!sudo -E vifm %c`）绕过，两种方式都离开 TUI 上下文：前者打断文件管理流程，后者需要两实例间同步状态且原实例不自动刷新。
