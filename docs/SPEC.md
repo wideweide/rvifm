@@ -200,6 +200,23 @@ redb 三表，无后台守护进程：
 - 分级匹配（0–7 档，具体档位在 M8-1 固化）：书签 > 文件名 > 中间段 > 通用子串；在 Rust 内存中排序。
 - 书签：`keyword != ''` 作为分级标志，书签自身也参与 EMS 评分；取消书签后保留累积分数正常衰减。
 
+#### vifm 对齐增强（M13，2026-11-14 增补；依据：vifm 官方文档 + GitHub issues）
+
+**第一批（低成本）**
+- f/F/;/,：首字母快速搜索（按文件名首字符正向/反向移动，官方定义环绕列表首尾；;/, 为重复导航）。
+- :select / :unselect：按 pattern 批量选择/取消（如 :select *.md），形态对齐官方 [range]select {pattern}；t 单文件切换语义不变（官方 t = select or unselect (tag)）。
+- DD：永久删除——跳过应用内暂存，不可逆强提示（官方：like dd but always omits trash）。
+- j/k 列表环绕（wrap-around）：光标到列表尾/首后继续移动则环绕（官方 issue #874）。
+- Ctrl-G：文件详情对话框（名称/大小/权限/时间/路径等，比状态栏更全）。
+
+**第二批（中成本）**
+- cw 批量重命名：多选时生成名单文件并交 $EDITOR 编辑，应用后每文件可 u 逆（官方：cw 多选时 behaves as :rename without arguments；issues #515/#682）。
+- :tree 树视图：当前目录为根的树形浏览，与文件系统状态和过滤器联动（官方：automatically kept in sync）。
+- 后台作业 + :jobs：重操作（复制/移动）后台执行不阻塞 UI（官方：background command by adding " &"；issues #481 最高呼声/#210/#336）。
+- view mode（w / :view）：切换**非活动窗格（右预览窗格）**为当前光标文件的完整内容视图（**非全屏**：保持双栏布局；j/k 在列表移动时视图跟随光标文件重置）；再次 w 或 :view 关闭并恢复摘要预览。用户澄清：vifm 默认 w 映射 :view，显示于对侧窗格、受窗格布局限制、光标保持在列表窗格。
+- 暂存区菜单（对齐官方 :lstrash）：列出应用内暂存文件并可逐项恢复（对 u 逆序撤销的补充，纯导航语义）。
+- 选择器与上述新命令均不触碰 frecency 时钟（只读红线不变）。
+
 #### TUI 跳转选择器（2026-11-14 增补）
 
 - 合一的 events 表与全局时钟（`global_tick` 序号）**保留**：统一视角 = 全部条目按全局序号 aging（dir + file 混合排名）。
