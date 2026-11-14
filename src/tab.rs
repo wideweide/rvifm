@@ -114,6 +114,21 @@ impl Tab {
         self.cursor = next.clamp(0, max) as usize;
     }
 
+    /// 光标环绕移动（M13-4，`j`/`k`）：尾行向下环绕到首行、首行向上环绕到
+    /// 尾行（官方 issue #874）；`delta` 仅支持 ±1，其余回退钳制语义。
+    /// 空目录为 no-op。
+    pub fn move_cursor_wrap(&mut self, delta: isize) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let len = self.entries.len();
+        match delta {
+            1 => self.cursor = (self.cursor + 1) % len,
+            -1 => self.cursor = (self.cursor + len - 1) % len,
+            _ => self.move_cursor(delta),
+        }
+    }
+
     /// 跳到首项（M1-3，`gg`）。
     pub fn cursor_top(&mut self) {
         self.cursor = 0;
@@ -557,6 +572,30 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    #[test]
+    fn move_cursor_wrap_round_trips_ends() {
+        // M13-4：j/k 环绕——尾行向下回首行、首行向上回尾行；非 ±1 回退钳制。
+        let mut tab = Tab::from_physical(std::path::Path::new("."), Config::default()).unwrap();
+        tab.entries = vec![
+            FileItem {
+                name: "a".to_owned(),
+                ..make_item("a", false)
+            },
+            FileItem {
+                name: "b".to_owned(),
+                ..make_item("b", false)
+            },
+        ];
+        tab.cursor = 1;
+        tab.move_cursor_wrap(1);
+        assert_eq!(tab.cursor, 0, "尾行向下环绕到首行");
+        tab.move_cursor_wrap(-1);
+        assert_eq!(tab.cursor, 1, "首行向上环绕到尾行");
+        tab.move_cursor(5); // 钳制语义保持（半页等非环绕路径不受影响）
+        assert_eq!(tab.cursor, 1);
+    }
 
     #[test]
     fn find_first_char_wraps_and_respects_direction() {

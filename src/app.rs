@@ -745,12 +745,13 @@ fn handle_key(
             undo_last(state, msg);
         }
         KeyCode::Char('j') => {
+            // M13-4：j/k 环绕（尾→首 / 首→尾）。
             input.count = None;
-            state.active_tab_mut().move_cursor(1);
+            state.active_tab_mut().move_cursor_wrap(1);
         }
         KeyCode::Char('k') => {
             input.count = None;
-            state.active_tab_mut().move_cursor(-1);
+            state.active_tab_mut().move_cursor_wrap(-1);
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
@@ -3130,6 +3131,31 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn jk_wrap_around_in_handle_key() {
+        // M13-4：handle_key 层 j/k 环绕。
+        let (_t, mut state) = make_state(3);
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+        state.active_tab_mut().cursor = 2; // 尾行
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 0, "尾行 j 环绕到首行");
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().cursor, 2, "首行 k 环绕到尾行");
+    }
+
     fn char_search_f_and_semicolon_repeat_and_comma_reverse() {
         // M13-1：f<char> 正向搜索 → ; 同向重复 → , 反向重复。
         let tmp = TempDir::new().unwrap();
