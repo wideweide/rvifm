@@ -262,10 +262,45 @@ impl Tab {
         self.tags.len()
     }
 
-    /// 清空全部标记（M3-4：批量操作完成后调用；此前仅测试使用）。
-    #[allow(dead_code)]
+    /// 清空全部标记（M3-4：批量操作完成后调用；`:unselect` 无参同此语义）。
     pub fn clear_tags(&mut self) {
         self.tags.clear();
+    }
+
+    /// 按 pattern 批量选择/取消（M13-2，对齐 vifm `:select`/`:unselect`）：
+    /// glob 匹配当前列表条目名，`select` 加入 tag 集合、`unselect` 移除。
+    /// 返回本次受影响的条目数（用于状态栏提示）。
+    /// pattern 缺失 = 仅当前光标条目（对齐官方无 range 时选当前文件）。
+    pub fn select_by_pattern(&mut self, pattern: Option<&str>, select: bool) -> usize {
+        let mut affected = 0;
+        match pattern {
+            Some(pat) => {
+                for item in &self.entries {
+                    if crate::tab::glob_match(pat, &item.name) {
+                        if select {
+                            if self.tags.insert(item.name.clone()) {
+                                affected += 1;
+                            }
+                        } else if self.tags.remove(&item.name) {
+                            affected += 1;
+                        }
+                    }
+                }
+            }
+            None => {
+                if let Some(item) = self.entries.get(self.cursor) {
+                    let name = item.name.clone();
+                    if select {
+                        if self.tags.insert(name) {
+                            affected += 1;
+                        }
+                    } else if self.tags.remove(&name) {
+                        affected += 1;
+                    }
+                }
+            }
+        }
+        affected
     }
 
     /// 进入光标选中的条目（M1-2 目录；M7-4 归档虚拟目录）。

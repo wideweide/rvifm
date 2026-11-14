@@ -1,4 +1,6 @@
 # STATE —
+- `M13-2`（2026-11-14）：:select/:unselect 按 pattern 批量选择——`Tab::select_by_pattern(Option<&str>, bool)`（glob 匹配当前列表条目名，join/remove tags；无参=仅当前条目，:unselect 无参=清空全部）；153 单测全绿。
+
 - `M13-1`（2026-11-14）：f/F/;/, 首字母快速搜索——`Tab::find_first_char`（文件名首字符精确匹配、环绕列表首尾）+ `jump_first_char`（更新 char_search 状态）；app 层 f/F 两键序列（seq 拦截通配第二键）+ `;` 同向 / `,` 反向重复。152 单测全绿。
 
 - `M8-13`（2026-11-14）：发布 0.3.0（M8-12 跳转选择器新特性，minor bump）——crates.io（持久授权）+ tag `v0.3.0` → GitHub Release。
@@ -35,7 +37,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：M13-2 :select/:unselect 批量选择
+- **当前任务**：M13-3 DD 永久删除
 - **阶段状态**：M0–M12 关闭 + M8-10/11/12/13 增补闭环（M11-6 真实终端验证保留人工步骤）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

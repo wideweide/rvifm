@@ -579,6 +579,30 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let entries = load_jump_entries(kind)?;
             Ok(ExecOutcome::OpenJump { kind, entries })
         }
+        Some(cmd @ ("select" | "unselect")) => {
+            // M13-2：按 pattern 批量选择/取消（对齐 vifm :select/:unselect）。
+            // 无参 = 仅当前光标条目；unselect 无参 = 清空全部。
+            let pattern = parts.next();
+            let select = cmd == "select";
+            let tab = state.active_tab_mut();
+            if select {
+                let n = tab.select_by_pattern(pattern, true);
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!("{cmd}: {n} 个条目")),
+                })
+            } else if pattern.is_none() {
+                let n = tab.tagged_count();
+                tab.clear_tags();
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!("unselect: 清除 {n} 个标记")),
+                })
+            } else {
+                let n = tab.select_by_pattern(pattern, false);
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!("{cmd}: {n} 个条目")),
+                })
+            }
+        }
         Some(other) => Err(format!("未知命令: {other}（完整命令解析在 M5-4 接入）")),
     }
 }
@@ -2960,6 +2984,49 @@ mod tests {
             Some("hello.txt"),
             "光标应定位在文件"
         );
+    }
+
+    #[test]
+    fn select_unselect_patterns_batch_tagging() {
+        // M13-2：:select {pattern} 批量打标 / :unselect 按模式移除 /
+        // :unselect 无参清空 / :select 无参选当前条目；t 语义不受影响。
+        let tmp = TempDir::new().unwrap();
+        for name in ["a.md", "b.md", "c.txt"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // :select *.md → 2 个条目打标。
+        let r = exec_command_impl(&mut state, "select *.md").unwrap();
+        assert_eq!(state.active_tab().tagged_count(), 2);
+        assert!(matches!(r, ExecOutcome::Done { msg: Some(m) } if m.contains("2")));
+
+        // :unselect b.md → 只剩 a.md。
+        exec_command_impl(&mut state, "unselect b.md").unwrap();
+        assert_eq!(state.active_tab().tagged_count(), 1);
+        assert!(state.active_tab().tags.contains("a.md"));
+
+        // :select 无参 = 选当前光标条目（c.txt）。
+        state.active_tab_mut().cursor = 2;
+        exec_command_impl(&mut state, "select").unwrap();
+        assert!(state.active_tab().tags.contains("c.txt"));
+        assert_eq!(state.active_tab().tagged_count(), 2);
+
+        // :unselect 无参 = 清空全部。
+        exec_command_impl(&mut state, "unselect").unwrap();
+        assert_eq!(state.active_tab().tagged_count(), 0);
+
+        // t 单文件切换语义不受影响。
+        let mut input = InputState::default();
+        let mut msg: Option<String> = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().tagged_count(), 1);
     }
 
     #[test]
