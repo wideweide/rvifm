@@ -166,7 +166,7 @@ rvifm record    → 静默记录一次访问事件
   - stdin：候选列表，每行一个；
   - stdout：选中的一行；
   - 退出码：0 选中 / 1 取消。
-- `pick` **只读**：不写 redb、不更新 `global_tick`、选中后不追加事件。
+- `pick` **只读**：不写 redb、不更新任何时钟（`global_tick`/`dir_tick`/`file_tick`）、选中后不追加事件。
 - `record` 是**唯一写入入口**；只在 shell 真正 `cd` 成功、或文件管理器真正跳转/打开成功后调用。
 - 典型用法：
 
@@ -181,11 +181,13 @@ redb 三表，无后台守护进程：
 
 | 表 | 内容 | 写入方 | 读取方 |
 |---|---|---|---|
-| `events` | append-only 事件：`{path, topic, kind, ts}`，key 为单调 tick | `record`、TUI 退出时批量追加 | `pick` / TUI 启动时读增量 |
-| `snapshot` | compaction 产物：key = `path+topic`，value = `{content, keyword, score, tick}` | compaction | `pick` / TUI 启动时读 |
-| `meta` | `global_tick`、`last_compaction` | `record`、compaction | 所有读方 |
+| `events` | append-only 事件：`{path, topic, kind, ts, clock}`，key 为全局单调序号 | `record`、TUI 退出时批量追加 | `pick` / TUI 启动时读增量 |
+| `snapshot` | compaction 产物：key = `path+topic`，value = `{content, keyword, score, tick, clock}` | compaction | `pick` / TUI 启动时读 |
+| `meta` | `global_tick`（全局事件序号）、`dir_tick` / `file_tick`（类型时钟，2026-11-14 增补）、`last_compaction` | `record`、compaction | 所有读方 |
 
-- `record` 只追加事件并推进 `global_tick`，**不做评分**。
+- `record` 追加事件、推进 `global_tick` 并推进**对应类型时钟**（dir → `dir_tick`，file → `file_tick`），**不做评分**。
+
+**独立事件时钟（2026-11-14 增补）**：目录（`topic = dir`）与文件（`topic = file`）事件分别推进 `dir_tick` / `file_tick`，事件 JSON 携带其类型时钟值 `clock`；EMS aging 的 Δtick 一律取**同类型时钟差**——目录高频访问不得稀释文件条目的新鲜度，反之亦然。`global_tick` 退化为全局事件序号：仅作 events 表 key 与 compaction 增量游标，不参与 aging。兼容：旧库缺 `clock` 字段时以全局序号兜底（旧语义等价）；`dir_tick`/`file_tick` 缺失时以 `global_tick` 当前值初始化（新旧 aging 连续分叉）。
 - `pick` / TUI 启动时读取 `snapshot`，以 `meta.last_compaction` 为增量起点读取 `tick > last_compaction` 的事件，在内存中重放得到当前评分；`snapshot` 中每条记录的 `tick` 用于 aging。
 - TUI 运行中所有跳转先在内存中更新评分，不每次写盘；退出时把本次会话访问批量追加到 `events`。
 - compaction 在 `events` 超过阈值（建议默认 5000 条，具体值待定）时由 `pick` / TUI 启动惰性触发，或由 `rvifm maintenance compact` 手动执行；写 `snapshot` 后截断已合并事件。
@@ -194,7 +196,7 @@ redb 三表，无后台守护进程：
 #### 评分与分级
 
 - EMS 评分 + event clock。
-- 读时统一 aging：存储分数只在其最后一次访问的 tick 上有效，查询时按 `score * exp(-λ * (T_now - tick))` 对齐后再比较。
+- 读时统一 aging：存储分数只在其最后一次访问的类型时钟值上有效，查询时按 `score * exp(-λ * (clock_now - clock))` 对齐后再比较；`clock_now` 取该条目 topic 对应的类型时钟（dir → `dir_tick`，file → `file_tick`）。
 - 分级匹配（0–7 档，具体档位在 M8-1 固化）：书签 > 文件名 > 中间段 > 通用子串；在 Rust 内存中排序。
 - 书签：`keyword != ''` 作为分级标志，书签自身也参与 EMS 评分；取消书签后保留累积分数正常衰减。
 - 1000–2000 条记录量级要求在内存中完成重放与排序，不引入 SQL。
