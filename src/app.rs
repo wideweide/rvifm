@@ -3196,7 +3196,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn ctrl_g_opens_file_info_dialog_and_renders() {
         // M13-5：Ctrl-G → FileInfo 覆盖层（名称/大小/路径），任意键关闭。
         let tmp = TempDir::new().unwrap();
@@ -3240,6 +3239,7 @@ mod tests {
         assert!(closed, "FileInfo 任意键关闭");
     }
 
+    #[test]
     fn jk_wrap_around_in_handle_key() {
         // M13-4：handle_key 层 j/k 环绕。
         let (_t, mut state) = make_state(3);
