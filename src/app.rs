@@ -3131,7 +3131,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn jk_wrap_around_in_handle_key() {
         // M13-4：handle_key 层 j/k 环绕。
         let (_t, mut state) = make_state(3);
@@ -3156,6 +3155,7 @@ mod tests {
         assert_eq!(state.active_tab().cursor, 2, "首行 k 环绕到尾行");
     }
 
+    #[test]
     fn char_search_f_and_semicolon_repeat_and_comma_reverse() {
         // M13-1：f<char> 正向搜索 → ; 同向重复 → , 反向重复。
         let tmp = TempDir::new().unwrap();

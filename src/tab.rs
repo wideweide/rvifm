@@ -574,7 +574,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    #[test]
     fn move_cursor_wrap_round_trips_ends() {
         // M13-4：j/k 环绕——尾行向下回首行、首行向上回尾行；非 ±1 回退钳制。
         let mut tab = Tab::from_physical(std::path::Path::new("."), Config::default()).unwrap();
