@@ -1,4 +1,6 @@
 # STATE —
+- `M14-1`（2026-11-15）：双 pane 模型对齐 vifm——`Pane`（location/entries/cursor/scroll + 导航方法）+ `Tab.right`/`focus`；handle_key 焦点分发（Right → `handle_right_key` 精简导航集：j/k/gg/G/Ctrl-u/d/l/Enter/h/Ctrl-G/w；写命令提示切回）；exec 写命令焦点化（`focus_base`/physical_base 焦点感知）；`refresh_tab_panes` 双刷新；渲染双栏（右 pane 目录列表 ↔ 预览视图，图片渲染保留）。163 单测全绿。
+
 - `M13-11`（2026-11-15）：发布 0.4.0（M13 十项 vifm 对齐增强，minor bump）——crates.io（持久授权）+ tag `v0.4.0` → GitHub Release 自动归档。
 
 - `M13-10`（2026-11-15）：暂存区菜单——ops 增 `TrashEntry`/`record_staging`/`read_trash_index`/`restore_from_trash`（**index/ 每记录独立 .json**，JSONL 并发 append 会粘连）；`:trash` → `InputMode::TrashMenu` 覆盖层（Enter 恢复到原位、orig 冲突 Err、Esc 关）；测试串行锁（全局 trash 目录共享）。162 单测全绿。
@@ -55,7 +57,7 @@
 
 - **更新时间**：2026-11-14
 - **当前阶段**：deferred 任务清零冲刺（M11/M12 未实现项逐个落地）
-- **当前任务**：无（M13 全部关闭：vifm 对齐增强十项 + v0.4.0 发布完成）
+- **当前任务**：M14-2 标签栏 UI
 - **阶段状态**：M0–M13 全部关闭（M11-6 真实终端验证保留人工步骤；v0.4.0 已发布）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 

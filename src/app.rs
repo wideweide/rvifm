@@ -222,13 +222,22 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
     exec_command_impl(state, line).map(|o| matches!(o, ExecOutcome::Quit))
 }
 
-/// 取当前 tab 的物理操作基准目录；归档视图只读（M7 边界），返回错误提示。
-/// （归档内条目不可改——SPEC §4.5"归档内不出现删除/重命名/移动入口"。）
+/// 取当前 tab **焦点 pane** 的物理操作基准目录（M14-1：文件操作作用于
+/// 焦点 pane）；归档视图只读（M7 边界），返回错误提示。
 fn physical_base(state: &AppState) -> Result<PathBuf, String> {
-    match &state.active_tab().location {
-        Location::Physical(p) => Ok(p.clone()),
-        Location::Archive { .. } => Err("归档视图只读（解压后可修改）".to_owned()),
+    let tab = state.active_tab();
+    // M14-1：焦点 pane 基准目录（focus_base）；归档视图只读（M7 边界）。
+    if matches!(tab.focus, crate::tab::Focus::Right)
+        && matches!(tab.right.location, Location::Archive { .. })
+    {
+        return Err("归档视图只读（解压后可修改）".to_owned());
     }
+    if matches!(tab.focus, crate::tab::Focus::Left)
+        && matches!(tab.location, Location::Archive { .. })
+    {
+        return Err("归档视图只读（解压后可修改）".to_owned());
+    }
+    Ok(tab.focus_base().to_path_buf())
 }
 
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────────
@@ -432,10 +441,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("rename: {e}")),
             };
             state.undo_stack.push(op);
-            let cfg = state.config;
-            if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh(cfg);
-            }
+            refresh_tab_panes(state, state.active);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("move") => {
@@ -464,10 +470,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("move: {e}")),
             };
             state.undo_stack.push(op);
-            let cfg = state.config;
-            if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh(cfg);
-            }
+            refresh_tab_panes(state, state.active);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("copy") => {
@@ -497,10 +500,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("copy: {e}")),
             };
             state.undo_stack.push(op);
-            let cfg = state.config;
-            if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh(cfg);
-            }
+            refresh_tab_panes(state, state.active);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("tag") => {
@@ -572,10 +572,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("{cmd}: {e}")),
             };
             state.undo_stack.push(op);
-            let cfg = state.config;
-            if let Some(tab) = state.tabs.get_mut(state.active) {
-                let _ = tab.refresh(cfg);
-            }
+            refresh_tab_panes(state, state.active);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some(cmd @ ("j" | "J")) => {
@@ -697,6 +694,68 @@ fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<String>) {
     }
 }
 
+/// 右 pane 焦点下的按键分发（M14-1）：精简导航集。
+/// SIMPLIFIED：搜索（/）、可视选择（v）、标记（t）、树（:tree 仍可退出）、
+/// 提权（写命令 EACCES 时提示切回左 pane）仅左 pane。
+fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEvent) -> Outcome {
+    if key.kind != KeyEventKind::Press {
+        return Outcome::Continue;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let cfg = state.config;
+    let tab = state.active_tab_mut();
+    let half = 8isize; // 右 pane 半页步进（固定近似值，视口高度不可得）
+    match key.code {
+        KeyCode::Tab => {
+            tab.focus = crate::tab::Focus::Left;
+            *msg = Some("焦点: 左 pane".to_owned());
+        }
+        KeyCode::Char('j') if !ctrl => tab.right.move_cursor(1),
+        KeyCode::Char('k') if !ctrl => tab.right.move_cursor(-1),
+        KeyCode::Char('d') if ctrl => tab.right.move_cursor(half),
+        KeyCode::Char('u') if ctrl => tab.right.move_cursor(-half),
+        KeyCode::Char('g') if !ctrl => {
+            // M14-1 右 pane 精简集：g = 跳到顶部（无 gg 序列）。
+            tab.right.cursor_top();
+        }
+        KeyCode::Char('G') if !ctrl => tab.right.cursor_bottom(),
+        KeyCode::Enter | KeyCode::Char('l') if !ctrl => {
+            if let Err(e) = tab.right.enter_selected(cfg) {
+                *msg = Some(format!("进入失败: {e}"));
+            }
+        }
+        KeyCode::Char('h') if !ctrl => {
+            if let Err(e) = tab.right.return_parent(cfg) {
+                *msg = Some(format!("返回失败: {e}"));
+            }
+        }
+        KeyCode::Char('g') if ctrl => {
+            // Ctrl-G：右 pane 光标文件的详情对话框。
+            if let (Location::Physical(base), Some(item)) =
+                (&tab.right.location, tab.right.entries.get(tab.right.cursor))
+            {
+                let path = base.join(&item.name);
+                let text = file_info_text(&path, &item.name);
+                return Outcome::FileInfo { path, text };
+            }
+        }
+        KeyCode::Char('w') if !ctrl => {
+            // view 切换：右 pane 目录列表 ↔ 预览视图（M13-9 语义保持）。
+            let on = tab.toggle_view();
+            *msg = Some(if on {
+                "view: 预览视图（活动 pane 光标文件）".to_owned()
+            } else {
+                "view: 已恢复目录列表".to_owned()
+            });
+        }
+        KeyCode::Char('d' | 'D' | 'c') if !ctrl => {
+            *msg = Some("右 pane 仅导航（文件操作请 Tab 切回左 pane）".to_owned());
+        }
+        _ => {}
+    }
+    Outcome::Continue
+}
+
 /// 分发 Normal 模式按键。
 ///
 /// `viewport_h` 为列表区高度（行数），用于 `Ctrl-u`/`Ctrl-d` 的半页步进。
@@ -806,6 +865,21 @@ fn handle_key(
 
     if is_quit_key(key) {
         return Outcome::Quit;
+    }
+
+    // M14-1：右 pane 焦点——精简导航分支（SIMPLIFIED：搜索/可视选择/标记/
+    // 树/选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
+    if state.active_tab().focus == crate::tab::Focus::Right {
+        return handle_right_key(state, msg, key);
+    }
+
+    // M14-1：Tab 键切换焦点 pane（左 → 右）。
+    if key.code == KeyCode::Tab && key.kind == KeyEventKind::Press {
+        input.count = None;
+        let tab = state.active_tab_mut();
+        tab.focus = crate::tab::Focus::Right;
+        *msg = Some("焦点: 右 pane（Tab 切回）".to_owned());
+        return Outcome::Continue;
     }
 
     // Esc：退出可视选择（M3-1）；非可视模式忽略。
@@ -986,6 +1060,15 @@ fn handle_key(
         _ => input.count = None,
     }
     Outcome::Continue
+}
+
+/// 刷新 tab 的双 pane（M14-1）：左 pane 走 Tab::refresh，右 pane 走 Pane::refresh。
+fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
+    let cfg = state.config;
+    if let Some(tab) = state.tabs.get_mut(tab_id) {
+        let _ = tab.refresh(cfg);
+        let _ = tab.right.refresh(cfg);
+    }
 }
 
 /// 文件详情文本（M13-5，Ctrl-G）：名称/类型/大小/权限/修改时间/完整路径。
@@ -1226,11 +1309,7 @@ fn execute_delete(
         Ok(op) => {
             state.undo_stack.push(op);
             *msg = None;
-            if let Some(tab) = state.tabs.get_mut(tab_id)
-                && let Err(e) = tab.refresh(cfg)
-            {
-                *msg = Some(format!("刷新失败: {e}"));
-            }
+            refresh_tab_panes(state, tab_id);
             None
         }
         Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
@@ -1463,10 +1542,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 match crate::privilege::escalate_execute(&op, password.trim()) {
                                     Ok(()) => {
                                         msg = Some(format!("提权完成: {}", op.describe()));
-                                        let cfg = state.config;
-                                        if let Some(tab) = state.tabs.get_mut(state.active) {
-                                            let _ = tab.refresh(cfg);
-                                        }
+                                        refresh_tab_panes(state, state.active);
                                     }
                                     Err(e) => {
                                         msg = Some(format!("提权失败: {e}"));
@@ -1694,7 +1770,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 
     // M11-2：预览窗格——光标项按 `preview_kind` 分流；图片走
     // ImageEngine（解码失败降级为提示行），其余走共享 PreviewRenderer。
-    render_preview_pane(frame, state, preview_area);
+    render_right_pane(frame, state, preview_area);
 
     if matches!(mode, InputMode::Help) {
         // 帮助覆盖层（M5-3）。
@@ -1906,48 +1982,78 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 
 /// 预览窗格（M11-2）：与 `pick` 共用同一分流与渲染入口。
 /// 归档视图条目暂不预览（M7 只读 VFS 的文本读取未接入预览）。
-fn render_preview_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
+/// 右 pane 渲染（M14-1）：view 模式 = 活动 pane 光标文件的完整内容预览
+/// （跟随光标重置）；默认 = 右 pane 独立目录列表（可导航）。
+fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let pane = ratatui::widgets::Block::bordered().title("预览");
+    let tab = state.active_tab();
+    let focused = tab.focus == crate::tab::Focus::Right;
+    // view 模式：预览活动 pane 光标文件（M13-9 语义保持）。
+    if tab.view_mode {
+        let pane = ratatui::widgets::Block::bordered().title(if focused {
+            "view · 预览（焦点）"
+        } else {
+            "view · 预览"
+        });
+        let inner = pane.inner(area);
+        frame.render_widget(pane, area);
+        let path = match &tab.location {
+            Location::Physical(base) => base.join(
+                tab.entries
+                    .get(tab.cursor)
+                    .map(|i| i.name.as_str())
+                    .unwrap_or_default(),
+            ),
+            Location::Archive { .. } => {
+                frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
+                return;
+            }
+        };
+        let p = match crate::preview::preview_kind(&path) {
+            crate::preview::PreviewKind::Image => {
+                // 图片渲染失败（损坏/超大）→ 降级为共享提示行。
+                if state.image_engine.render_file(frame, inner, &path).is_ok() {
+                    return;
+                }
+                crate::preview::render_preview(&path, 5000)
+            }
+            _ => crate::preview::render_preview(&path, 5000),
+        };
+        frame.render_widget(p.into_paragraph(), inner);
+        return;
+    }
+    // 默认：右 pane 目录列表（独立导航）。
+    let title = if focused {
+        "右 pane（焦点 · Tab 切换）"
+    } else {
+        "右 pane（Tab 切换焦点）"
+    };
+    let pane = ratatui::widgets::Block::bordered().title(title);
     let inner = pane.inner(area);
     frame.render_widget(pane, area);
-    let path = match physical_base(state) {
-        Ok(base) => base.join(
-            state
-                .active_tab()
-                .entries
-                .get(state.active_tab().cursor)
-                .map(|i| i.name.as_str())
-                .unwrap_or_default(),
-        ),
-        Err(_) => {
-            frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
-            return;
-        }
-    };
-    // M13-9：view 模式下预览显示完整内容（行数上限放大，j/k 移动光标
-    // 时视图跟随光标文件重置）；摘要模式保持窗口高度截断。
-    let view_max = 5000usize;
-    let max_lines = if state.active_tab().view_mode {
-        view_max
-    } else {
-        inner.height as usize
-    };
-    match crate::preview::preview_kind(&path) {
-        crate::preview::PreviewKind::Image => {
-            // 图片渲染失败（损坏/超大）→ 降级为共享提示行。
-            if state.image_engine.render_file(frame, inner, &path).is_err() {
-                let p = crate::preview::render_preview(&path, max_lines);
-                frame.render_widget(p.into_paragraph(), inner);
-            }
-        }
-        _ => {
-            let p = crate::preview::render_preview(&path, max_lines);
-            frame.render_widget(p.into_paragraph(), inner);
-        }
-    }
+    let items: Vec<ListItem> = tab
+        .right
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let label = if item.is_dir {
+                format!("{}/", item.name)
+            } else {
+                item.name.clone()
+            };
+            let label = format!("{} {label}", item.icon.glyph);
+            ListItem::new(Line::from(label)).style(if idx == tab.right.cursor && focused {
+                Style::new().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::new()
+            })
+        })
+        .collect();
+    let mut list_state = ListState::default().with_selected(Some(tab.right.cursor));
+    frame.render_stateful_widget(ratatui::widgets::List::new(items), inner, &mut list_state);
 }
 
 #[cfg(test)]
@@ -2006,6 +2112,8 @@ mod tests {
             tags: HashSet::new(),
             char_search: None,
             tree: None,
+            right: crate::tab::Pane::from_physical(Path::new("."), Config::default()).unwrap(),
+            focus: Default::default(),
             view_mode: false,
         }
     }
@@ -4325,28 +4433,38 @@ mod tests {
 
     #[test]
     fn preview_pane_renders_image_and_text_by_kind() {
-        // M11-2：光标在图片文件上 → 预览窗格 halfblocks 渲染非空白；
-        // 光标在文本文件上 → 预览窗格显示文本内容。
+        // M11-2/M14-1：右 pane 默认显示目录列表；view 态（w）显示活动 pane
+        // 光标文件的预览——文本文件显示内容，图片文件 halfblocks 渲染。
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("notes.txt"), "hello preview").unwrap();
         let img = image::DynamicImage::new_rgba8(16, 16).into_rgba8();
         let mut png = std::io::Cursor::new(Vec::new());
         img.write_to(&mut png, image::ImageFormat::Png).unwrap();
         fs::write(tmp.path().join("pic.png"), png.into_inner()).unwrap();
-        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
 
         let backend = ratatui::backend::TestBackend::new(80, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
 
-        // 条目按排序：notes.txt < pic.png。光标 0 = notes.txt → 文本预览。
-        terminal
-            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
-            .unwrap();
         let row_text = |buf: &ratatui::buffer::Buffer, y: u16, x0: u16, x1: u16| {
             (x0..x1).map(|x| buf[(x, y)].symbol()).collect::<String>()
         };
+
+        // 默认态：右 pane = 目录列表（显示条目名，非预览内容）。
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
         let buf = terminal.backend().buffer().clone();
-        // 右侧 40% 窗格：x 48..80。
+        let pane_list: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
+        assert!(pane_list.contains("notes.txt"), "列表渲染: {pane_list}");
+        assert!(pane_list.contains("pic.png"), "列表渲染: {pane_list}");
+
+        // view 态开启：右 pane = 左光标文件（notes.txt）的文本预览。
+        state.active_tab_mut().view_mode = true;
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
         let pane_txt: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
         assert!(
             pane_txt.contains("hello preview"),
@@ -4354,20 +4472,18 @@ mod tests {
         );
 
         // 光标移到 pic.png → 图片预览（halfblocks 非空白）。
-        let mut st = state;
-        st.active_tab_mut().cursor = 1;
+        state.active_tab_mut().cursor = 1;
         terminal
-            .draw(|frame| render(frame, &st, &InputMode::Normal, None))
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
-        let pane_img: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
         let has_blocks = (1..9).any(|y| {
             (48..80).any(|x| {
                 let c = &buf[(x, y)];
                 c.symbol() != " " || c.fg != ratatui::style::Color::Reset
             })
         });
-        assert!(has_blocks, "image preview pane empty: {pane_img}");
+        assert!(has_blocks, "image preview pane empty");
     }
 
     #[test]

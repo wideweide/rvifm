@@ -63,6 +63,102 @@ pub struct SearchState {
     pub query: String,
 }
 
+/// 单个 pane 的最小导航状态（M14-1）：右 pane 使用。
+#[derive(Debug, Clone)]
+pub struct Pane {
+    pub location: Location,
+    pub entries: Vec<FileItem>,
+    pub cursor: usize,
+    pub scroll: usize,
+}
+
+impl Pane {
+    /// 从物理目录构建 pane（加载排序条目，M5-2 options 生效）。
+    pub fn from_physical(dir: &Path, config: Config) -> std::io::Result<Self> {
+        Ok(Self {
+            location: Location::Physical(dir.to_path_buf()),
+            entries: load_entries(dir, &config)?,
+            cursor: 0,
+            scroll: 0,
+        })
+    }
+
+    /// 光标移动（M14-1）：±1 环绕，其余钳制（与左 pane 语义一致）。
+    pub fn move_cursor(&mut self, delta: isize) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let len = self.entries.len();
+        match delta {
+            1 => self.cursor = (self.cursor + 1) % len,
+            -1 => self.cursor = (self.cursor + len - 1) % len,
+            _ => {
+                let max = len as isize - 1;
+                let next = self.cursor as isize + delta;
+                self.cursor = next.clamp(0, max) as usize;
+            }
+        }
+    }
+
+    pub fn cursor_top(&mut self) {
+        self.cursor = 0;
+    }
+
+    pub fn cursor_bottom(&mut self) {
+        if !self.entries.is_empty() {
+            self.cursor = self.entries.len() - 1;
+        }
+    }
+
+    /// 进入光标条目（M14-1）：仅物理目录；文件/归档 no-op（SIMPLIFIED）。
+    pub fn enter_selected(&mut self, config: Config) -> std::io::Result<()> {
+        if let Location::Physical(base) = &self.location {
+            let Some(item) = self.entries.get(self.cursor) else {
+                return Ok(());
+            };
+            if item.is_dir {
+                self.location = Location::Physical(base.join(&item.name));
+                self.cursor = 0;
+                self.scroll = 0;
+                return self.refresh(config);
+            }
+        }
+        Ok(())
+    }
+
+    /// 返回父目录（M14-1，h）。
+    pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
+        if let Location::Physical(base) = &self.location {
+            if let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty()) {
+                self.location = Location::Physical(parent.to_path_buf());
+                self.cursor = 0;
+                self.scroll = 0;
+                return self.refresh(config);
+            }
+        }
+        Ok(())
+    }
+
+    /// 重读当前目录条目并钳制光标。
+    pub fn refresh(&mut self, config: Config) -> std::io::Result<()> {
+        if let Location::Physical(dir) = &self.location {
+            self.entries = load_entries(dir, &config)?;
+            if self.cursor >= self.entries.len() {
+                self.cursor = self.entries.len().saturating_sub(1);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 焦点 pane（M14-1）：左 = 活动工作区（完整能力）；右 = 导航 pane。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    #[default]
+    Left,
+    Right,
+}
+
 /// 每标签独立状态：位置、条目、光标、滚动、搜索、历史（SPEC §4.2）。
 /// `visual` 为可视选择锚点（M3-1）；`tags` 为文件标记（M3-2）；`scroll` 为
 /// 显式偏移预留（视口滚动当前由 `ListState` 从 cursor 派生，显式存储待 M10）。
@@ -88,9 +184,13 @@ pub struct Tab {
     /// 树视图模式（M13-7）：Some(depth) = 当前列表为当前目录的静态树
     /// （只读浏览，`:tree` 再执行恢复平铺）。
     pub tree: Option<u32>,
-    /// view 模式（M13-9）：预览窗格切换为当前光标文件的完整内容视图
-    /// （非全屏，双栏保持；j/k 列表移动时视图跟随光标文件）。
+    /// view 模式（M13-9/M14-1）：右 pane 显示活动 pane 光标文件的完整
+    /// 内容预览（false = 右 pane 显示目录列表）。
     pub view_mode: bool,
+    /// 右 pane（M14-1）：独立目录列表（独立 Location/光标/滚动）。
+    pub right: Pane,
+    /// 焦点 pane（M14-1）：Tab 键切换；导航与文件操作作用于焦点 pane。
+    pub focus: Focus,
 }
 
 impl Tab {
@@ -109,7 +209,18 @@ impl Tab {
             char_search: None,
             tree: None,
             view_mode: false,
+            // M14-1：右 pane 默认同目录（vifm 启动行为），独立导航。
+            right: Pane::from_physical(dir, config)?,
+            focus: Focus::Left,
         })
+    }
+
+    /// 焦点 pane 的基准目录（M14-1）：exec 写命令作用于焦点 pane。
+    pub fn focus_base(&self) -> &Path {
+        match self.focus {
+            Focus::Right => self.right.location.base_dir(),
+            Focus::Left => self.location.base_dir(),
+        }
     }
 
     /// 光标移动（M1-1）：`delta` 为正向下。空目录为 no-op，两端钳制不越界。
@@ -979,6 +1090,8 @@ mod tests {
             char_search: None,
             tree: None,
             view_mode: false,
+            right: Pane::from_physical(Path::new("C:\\"), Config::default()).unwrap(),
+            focus: Focus::Left,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(PathBuf::from("C:\\")));

@@ -278,6 +278,9 @@ mod tests {
             char_search: None,
             view_mode: false,
             tree: None,
+            right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
+                .unwrap(),
+            focus: crate::tab::Focus::Left,
         }
     }
 
@@ -295,6 +298,9 @@ mod tests {
             char_search: None,
             view_mode: false,
             tree: None,
+            right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
+                .unwrap(),
+            focus: crate::tab::Focus::Left,
         }
     }
 
