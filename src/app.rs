@@ -60,6 +60,8 @@ enum Outcome {
     EnterSearch,
     /// 请求进入过滤输入模式（`=`，M4-2）。
     EnterFilter,
+    /// 请求进入查看器搜索输入（M17 VIEW-1：查看器内 `/`）。
+    EnterViewerSearch,
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool),
@@ -135,6 +137,8 @@ enum InputMode {
     /// 目录历史菜单（M16 NAV-2）：`cursor` = 历史条目下标（live 渲染
     /// `history[..=hist_pos]`）；Enter/l 导航、dd 移除、Esc/q 关闭。
     HistoryMenu { cursor: usize },
+    /// 查看器搜索输入（M17 VIEW-1）：Enter 提交定位，Esc 取消。
+    ViewerSearch { input: String },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`）。
@@ -1424,6 +1428,76 @@ fn handle_key(
         return Outcome::Continue;
     }
 
+    // M17 VIEW-1：查看器激活时按键路由——滚动/搜索/退出全部作用于
+    // 查看器（列表光标不动）；`:` 放行进入命令模式。
+    if state.active_tab().viewer.is_some() {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let half = (viewport_h.saturating_sub(1) / 2).max(1) as usize;
+        match key.code {
+            KeyCode::Char('w') | KeyCode::Esc | KeyCode::Char('q') => {
+                input.count = None;
+                let tab = state.active_tab_mut();
+                tab.viewer = None;
+                tab.view_mode = false;
+                *msg = Some("已退出查看器".to_owned());
+                return Outcome::Continue;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                input.count = None;
+                state.active_tab_mut().viewer_scroll(1, half);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                input.count = None;
+                state.active_tab_mut().viewer_scroll(-1, half);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('d') if ctrl => {
+                input.count = None;
+                state.active_tab_mut().viewer_scroll(2, half);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('u') if ctrl => {
+                input.count = None;
+                state.active_tab_mut().viewer_scroll(-2, half);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('G') => {
+                input.count = None;
+                state.active_tab_mut().viewer_goto(false);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('g') => {
+                input.count = None;
+                state.active_tab_mut().viewer_goto(true);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('/') => {
+                input.count = None;
+                return Outcome::EnterViewerSearch;
+            }
+            KeyCode::Char('n') => {
+                input.count = None;
+                if !state.active_tab_mut().viewer_jump_match(true) {
+                    *msg = Some("无匹配".to_owned());
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char('N') => {
+                input.count = None;
+                if !state.active_tab_mut().viewer_jump_match(false) {
+                    *msg = Some("无匹配".to_owned());
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char(':') => {} // 放行：进入命令模式
+            _ => {
+                input.count = None;
+                return Outcome::Continue; // 查看器消费其余按键（列表不动）
+            }
+        }
+    }
+
     if is_quit_key(key) {
         return Outcome::Quit;
     }
@@ -2480,6 +2554,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                             };
                         }
+                        Outcome::EnterViewerSearch => {
+                            mode = InputMode::ViewerSearch {
+                                input: String::new(),
+                            };
+                        }
                         Outcome::ConfirmDelete(path, permanent) => {
                             mode = InputMode::Confirm { path, permanent };
                         }
@@ -2518,6 +2597,18 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Jobs => {
                     // M13-8：作业菜单——任意键关闭。
                     mode = InputMode::Normal;
+                }
+                InputMode::ViewerSearch { input } => {
+                    // M17 VIEW-1：查看器搜索输入——Enter 提交定位，Esc 取消。
+                    match command_input(input, key) {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => mode = InputMode::Normal,
+                        CmdInput::Submit => {
+                            let query = std::mem::take(input);
+                            mode = InputMode::Normal;
+                            state.active_tab_mut().viewer_search_commit(query.trim());
+                        }
+                    }
                 }
                 InputMode::HistoryMenu { cursor } => {
                     // M16 NAV-2：历史菜单——j/k 移动、Enter/l 导航、dd 移除。
@@ -3104,6 +3195,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         return;
     }
     let status = match mode {
+        InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
         InputMode::Command { input } => Line::from(format!(":{input}")),
@@ -3234,31 +3326,89 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
     }
     let tab = state.active_tab();
     let focused = tab.focus == crate::tab::Focus::Right;
-    // view 模式：预览活动 pane 光标文件（M13-9 语义保持）。
+    // view 模式：M17 VIEW-1 交互式查看器（行号 + 滚动 + 搜索高亮）。
     if tab.view_mode {
-        let pane = ratatui::widgets::Block::bordered().title(if focused {
-            "view · 预览（焦点）"
-        } else {
-            "view · 预览"
-        });
-        let inner = pane.inner(area);
-        frame.render_widget(pane, area);
         // M17 SRCH：预览源抽象——结果模式取命中文件，物理视图取 base.join。
         let Some(path) = tab.preview_path() else {
+            let pane = ratatui::widgets::Block::bordered().title("view · 预览");
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
             frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
             return;
         };
-        let p = match crate::preview::preview_kind(&path) {
-            crate::preview::PreviewKind::Image => {
-                // 图片渲染失败（损坏/超大）→ 降级为共享提示行。
-                if state.image_engine.render_file(frame, inner, &path).is_ok() {
-                    return;
-                }
-                crate::preview::render_preview(&path, 5000)
+        // 图片仍走 ImageEngine（查看器针对文本）。
+        if matches!(
+            crate::preview::preview_kind(&path),
+            crate::preview::PreviewKind::Image
+        ) {
+            let pane = ratatui::widgets::Block::bordered().title("view · 图片预览");
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            if state.image_engine.render_file(frame, inner, &path).is_err() {
+                frame.render_widget(Paragraph::new("图片渲染失败（损坏/超大）"), inner);
             }
-            _ => crate::preview::render_preview(&path, 5000),
+            return;
+        }
+        let viewer = tab.viewer.clone().unwrap_or_default();
+        let title = match &viewer.query {
+            Some(q) => format!(
+                "查看器 行 {}/{}  /{}（n/N 跳转）",
+                viewer.scroll + 1,
+                viewer.line_count,
+                q
+            ),
+            None => format!(
+                "查看器 行 {}/{}（w/Esc 退出 / 搜索）",
+                viewer.scroll + 1,
+                viewer.line_count
+            ),
         };
-        frame.render_widget(p.into_paragraph(), inner);
+        let pane = ratatui::widgets::Block::bordered().title(title);
+        let inner = pane.inner(area);
+        frame.render_widget(pane, area);
+        // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            frame.render_widget(Paragraph::new("无法读取（非 UTF-8 或已删除）"), inner);
+            return;
+        };
+        let height = inner.height as usize;
+        let width = inner.width as usize;
+        let lines: Vec<&str> = text.lines().take(100_000).collect();
+        let mut out: Vec<Line> = Vec::new();
+        for (i, line) in lines.iter().skip(viewer.scroll).take(height).enumerate() {
+            let lineno = viewer.scroll + i + 1;
+            let is_current = viewer.query.is_some() && viewer.scroll + i == viewer.match_line;
+            let gutter = if is_current {
+                format!("{lineno:>4} ▶ ")
+            } else {
+                format!("{lineno:>4} │ ")
+            };
+            let mut spans = vec![Span::styled(
+                gutter,
+                Style::new().add_modifier(Modifier::DIM),
+            )];
+            // 行内容按查询子串分段高亮（超宽截断由渲染器裁剪）。
+            let display: String = line.chars().take(width).collect();
+            match viewer
+                .query
+                .as_deref()
+                .and_then(|q| crate::tab::match_range(&display, q))
+            {
+                Some((start, end)) => {
+                    if start > 0 {
+                        spans.push(Span::from(display[..start].to_owned()));
+                    }
+                    spans.push(Span::styled(
+                        display[start..end].to_owned(),
+                        Style::new().fg(Color::Black).bg(Color::LightYellow),
+                    ));
+                    spans.push(Span::from(display[end..].to_owned()));
+                }
+                None => spans.push(Span::from(display)),
+            }
+            out.push(Line::from(spans));
+        }
+        frame.render_widget(Paragraph::new(out), inner);
         return;
     }
     // 默认：右 pane 目录列表（独立导航）。
@@ -3346,6 +3496,7 @@ mod tests {
             history: Vec::new(),
             hist_pos: 0,
             results: None,
+            viewer: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -5470,7 +5621,7 @@ mod tests {
             "view 模式从文件头渲染: {all}"
         );
 
-        // j 移动光标 → 视图跟随（short.txt 的 SHORT MARKER 出现）。
+        // M17 VIEW-1：查看器内 j 滚动视口（列表光标不动）。
         press_msg(
             &mut state,
             &mut input,
@@ -5478,6 +5629,7 @@ mod tests {
             KeyCode::Char('j'),
             KeyModifiers::NONE,
         );
+        assert_eq!(state.active_tab().viewer.as_ref().unwrap().scroll, 1);
         terminal
             .draw(|f| render(f, &state, &InputMode::Normal, None))
             .unwrap();
@@ -5488,12 +5640,37 @@ mod tests {
                 all.push_str(buf[(x, y)].symbol());
             }
         }
-        assert!(all.contains("SHORT MARKER"), "视图应跟随光标文件: {all}");
+        // 行号 gutter 存在（"   2 │"），视口从第 2 行起（line 000 滚出）。
+        assert!(all.contains('│'), "应渲染行号 gutter: {all}");
+        assert!(!all.contains("line 000"), "滚动后首行滚出: {all}");
 
-        // :view 关闭。
-        let r = exec_command_impl(&mut state, "view").unwrap();
+        // Esc 退出查看器 → 回列表导航（M14 模型：右 pane 恢复目录列表）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        );
         assert!(!state.active_tab().view_mode);
-        assert!(matches!(r, ExecOutcome::Done { .. }));
+        assert!(state.active_tab().viewer.is_none());
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut all = String::new();
+        for y in 0..12u16 {
+            for x in 40u16..80 {
+                all.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(all.contains("pane"), "右 pane 恢复目录列表: {all}");
+
+        // :view toggle：关→开→关。
+        let _ = exec_command_impl(&mut state, "view").unwrap();
+        assert!(state.active_tab().view_mode, ":view 重新开启");
+        let _ = exec_command_impl(&mut state, "view").unwrap();
+        assert!(!state.active_tab().view_mode, ":view 再次关闭");
     }
 
     #[test]
@@ -7057,6 +7234,81 @@ mod tests {
         // 状态栏结果指示（重进结果视图断言 query 展示）。
         let _ = exec_command_impl(&mut state, "grep TODO");
         assert!(state.active_tab().in_results());
+    }
+
+    #[test]
+    fn view1_viewer_search_and_line_jump() {
+        // / 搜索定位首个匹配 + 高亮；n/N 循环；grep 命中打开查看器定位行。
+        let tmp = TempDir::new().unwrap();
+        let mut content = String::new();
+        for i in 0..50 {
+            content.push_str(&format!("line {i:03} TARGET {i:03}\n"));
+        }
+        content.push_str("tail without target\n");
+        fs::write(tmp.path().join("f.txt"), &content).unwrap();
+        fs::create_dir_all(tmp.path().join("d")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // :grep TARGET → 结果视图 → w 打开查看器 → 视口定位命中行（3）。
+        let _ = exec_command_impl(&mut state, "grep TARGET");
+        assert!(state.active_tab().in_results());
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('w'),
+            KeyModifiers::NONE,
+        );
+        assert!(state.active_tab().view_mode);
+        let v = state.active_tab().viewer.as_ref().unwrap();
+        assert_eq!(v.scroll, 0, "首个命中在第 1 行（-2 钳制为 0）");
+
+        // / 搜索（ViewerSearch 提交）→ 定位 + 高亮视口。
+        state.active_tab_mut().viewer_search_commit("TARGET");
+        let v = state.active_tab().viewer.as_ref().unwrap();
+        assert_eq!(v.match_line, 0, "TARGET 首个匹配在行 0（当前视口处）");
+        assert_eq!(v.query.as_deref(), Some("TARGET"));
+
+        // n → 下一匹配（行 1）；N → 回到上一匹配（行 0，环绕）。
+        assert!(state.active_tab_mut().viewer_jump_match(true));
+        assert_eq!(state.active_tab().viewer.as_ref().unwrap().match_line, 1);
+        assert!(state.active_tab_mut().viewer_jump_match(false));
+        assert_eq!(state.active_tab().viewer.as_ref().unwrap().match_line, 0);
+
+        // 渲染：行号 gutter + 高亮（黄底）+ 当前匹配 ▶。
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let mut hl = 0;
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                if buffer[(x, y)].bg == Color::LightYellow {
+                    hl += 1;
+                }
+            }
+        }
+        assert!(hl > 0, "匹配应黄底高亮");
+        let all: String = (0..24u16)
+            .flat_map(|y| (0..80u16).map(move |x| (x, y)))
+            .map(|(x, y)| buffer[(x, y)].symbol())
+            .collect();
+        assert!(all.contains('▶'), "当前匹配行标记");
+
+        // w 退出查看器。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('w'),
+            KeyModifiers::NONE,
+        );
+        assert!(!state.active_tab().view_mode);
+        assert!(state.active_tab().viewer.is_none());
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

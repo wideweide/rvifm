@@ -201,6 +201,21 @@ pub struct Tab {
     /// M17 SRCH：搜索结果虚拟目录（:find/:grep；沿 :tree 同构——静态
     /// 条目 + 只读守卫，items/entries 平行表）。
     pub results: Option<crate::search::SearchResults>,
+    /// M17 VIEW-1：交互式查看器状态（view_mode 激活时右 pane）。
+    pub viewer: Option<ViewerState>,
+}
+
+/// M17 VIEW-1：查看器状态（行号滚动 + 搜索定位）。
+#[derive(Debug, Clone, Default)]
+pub struct ViewerState {
+    /// 视口首行（0-based）。
+    pub scroll: usize,
+    /// 文件总行数（激活时一次性读取，滚动钳制用）。
+    pub line_count: usize,
+    /// `/` 搜索词（None = 未搜索）。
+    pub query: Option<String>,
+    /// 当前匹配行（0-based）。
+    pub match_line: usize,
 }
 
 impl Tab {
@@ -215,6 +230,7 @@ impl Tab {
             history: vec![Location::Physical(dir.to_path_buf())],
             hist_pos: 0,
             results: None,
+            viewer: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -649,7 +665,129 @@ impl Tab {
     /// 返回切换后的状态（true = 完整视图开启）。
     pub fn toggle_view(&mut self) -> bool {
         self.view_mode = !self.view_mode;
+        if self.view_mode {
+            // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
+            let hit_line = self
+                .results
+                .as_ref()
+                .and_then(|r| r.items.get(self.cursor))
+                .and_then(|i| i.line);
+            let line_count = self.viewer_lines().map(|l| l.len()).unwrap_or(0);
+            let scroll = hit_line
+                .map(|l| l.saturating_sub(2))
+                .unwrap_or(0)
+                .min(line_count.saturating_sub(1));
+            self.viewer = Some(ViewerState {
+                scroll,
+                line_count,
+                query: None,
+                match_line: 0,
+            });
+        } else {
+            self.viewer = None;
+        }
         self.view_mode
+    }
+
+    /// M17 VIEW-1：查看器内容行（激活时一次性读取；上限 10 万行）。
+    pub fn viewer_lines(&self) -> Option<Vec<String>> {
+        let path = self.preview_path()?;
+        let text = std::fs::read_to_string(path).ok()?;
+        Some(text.lines().take(100_000).map(|l| l.to_owned()).collect())
+    }
+
+    /// M17 VIEW-1：查看器滚动（delta 行，钳制到内容范围）。
+    pub fn viewer_scroll(&mut self, delta: isize, half: usize) {
+        let Some(v) = self.viewer.as_mut() else {
+            return;
+        };
+        let max = v.line_count.saturating_sub(1);
+        let delta = match delta {
+            i if i.abs() > 1 => {
+                let sign = if i < 0 { -1 } else { 1 };
+                sign * half as isize
+            }
+            i => i,
+        };
+        let next = v.scroll as isize + delta;
+        v.scroll = next.clamp(0, max as isize) as usize;
+    }
+
+    /// M17 VIEW-1：查看器跳顶/跳底（gg/G）。
+    pub fn viewer_goto(&mut self, top: bool) {
+        let Some(v) = self.viewer.as_mut() else {
+            return;
+        };
+        v.scroll = if top {
+            0
+        } else {
+            v.line_count.saturating_sub(1)
+        };
+    }
+
+    /// M17 VIEW-1：查看器搜索提交——定位第一个匹配（自当前滚动行起，
+    /// 环绕）；空查询清除。
+    pub fn viewer_search_commit(&mut self, query: &str) {
+        if query.is_empty() {
+            if let Some(v) = self.viewer.as_mut() {
+                v.query = None;
+            }
+            return;
+        }
+        let Some(lines) = self.viewer_lines() else {
+            return;
+        };
+        let Some(v) = self.viewer.as_mut() else {
+            return;
+        };
+        v.query = Some(query.to_owned());
+        let lower = query.to_lowercase();
+        let start = v.scroll;
+        let len = lines.len();
+        let mut found = None;
+        for i in 0..len {
+            let idx = (start + i) % len;
+            if lines[idx].to_lowercase().contains(&lower) {
+                found = Some(idx);
+                break;
+            }
+        }
+        if let Some(idx) = found {
+            v.match_line = idx;
+            v.scroll = idx.saturating_sub(2);
+        }
+    }
+
+    /// M17 VIEW-1：查看器 n/N——上一/下一匹配（环绕）。
+    pub fn viewer_jump_match(&mut self, forward: bool) -> bool {
+        let Some(v) = self.viewer.clone() else {
+            return false;
+        };
+        let Some(query) = &v.query else { return false };
+        let Some(lines) = self.viewer_lines() else {
+            return false;
+        };
+        if lines.is_empty() {
+            return false;
+        }
+        let lower = query.to_lowercase();
+        let len = lines.len();
+        let start = if forward {
+            v.match_line + 1
+        } else {
+            v.match_line + len - 1
+        };
+        for i in 0..len {
+            let idx = (start + i) % len;
+            if lines[idx].to_lowercase().contains(&lower) {
+                if let Some(vv) = self.viewer.as_mut() {
+                    vv.match_line = idx;
+                    vv.scroll = idx.saturating_sub(2).min(len.saturating_sub(1));
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// 进入树视图（M13-7）：记录深度并把 entries 替换为静态树。
@@ -1337,6 +1475,7 @@ mod tests {
             history: Vec::new(),
             hist_pos: 0,
             results: None,
+            viewer: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
