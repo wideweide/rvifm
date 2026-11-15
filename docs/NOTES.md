@@ -476,3 +476,22 @@ rvifm record  → 静默记录访问
 - **[ui] 嵌套表**：用户规格的 `[ui] terminal_in_new_window` 是嵌套表——Config 平铺结构收不到（serde 忽略未知顶层表 → 字段始终默认值）。实现为嵌套 UiConfig（Copy，Default terminal=true）。经验：TOML 分节配置必须用嵌套 struct 对齐。
 - **流程教训（重要）**：用 python 大块 replace 重写 handle_key 关键区域时，锚点静默不匹配 + 重复插入导致 app.rs 结构损坏（重复定义/截断/串位）。本次靠 stash 丢弃损坏工作、以 Edit 工具小步重做恢复。**规则固化：跨函数结构改动必须用 Edit 工具小步提交式修改，每步 cargo check；禁止对核心文件做多处大范围 python replace。**
 - **tmux 新窗口**：`tmux new-window -d "sh -c '<cmd>'"`（fire-and-forget，退出即关窗）；POSIX 单引号转义 shell_quote。screen 走 `screen -X screen -t rvifm sh -c`。
+
+### 2026-11-15 — M19-3a SFTP spike 结论（实测 127.0.0.1，rustc 1.95 / Linux）
+
+**候选 A：russh 0.65 + russh-sftp 3.0 + tokio（推荐）**
+- 纯 Rust、MIT/Apache；无 C 依赖（Windows MSVC 构建友好）
+- 实测：密钥认证（Ed25519）→ connect+auth 77ms → list /（26 项）→ 写操作全链路通过（create_dir / write（需 `create()`+`write_all`，`write()` 仅 WRITE flag 不建文件）/ read / rename / remove_file / remove_dir）
+- 异步模型：tokio async；集成 ratatui 需同步桥（专用 runtime 线程 + channel，或 `Runtime::block_on` 于非渲染阶段）——集成难度中等
+- API 摩擦（spike 中实际踩到 4 处）：① `check_server_key` 默认拒绝全部（必须覆写接受/校验）；② 通道须先 `request_subsystem("sftp")` 否则握手超时；③ 路径参数是 `String` 而非 Path（SFTPv3 规约）；④ `write()` 不带 CREATE flag（新文件须 `create()`+`write_all`）
+- 依赖体积：dev 树新增 russh/russh-sftp/tokio/tokio-stream + 传递（全部纯 Rust）
+
+**候选 B：remotefs 1.0 + remotefs-ssh 1.1（否决）**
+- 同步 API 与本项目 RemoteFs trait 形态 1:1（list_dir/create_dir/rename/remove_file/remove_dir_all + stream）——集成代码最少
+- 实测：密钥认证（需实现 `SshKeyStorage` trait 提供 ~/.ssh 密钥路径）→ connect+auth 188ms → list + 写操作全链路通过
+- **否决理由**：默认后端 libssh2（C 绑定）+ openssl（C）——Cargo.lock 拉入 libssh2-sys/openssl；Windows MSVC 下 openssl/libssh2 构建链复杂，违背"跨平台零 C 依赖"取向；另 `SftpFs` 泛型带 session 类型参数、remotefs 1.0 与 0.2 两代 API 并存的版本碎片风险
+- 备选价值：若 M20 需要 scp 或更完整的企业特性可复评
+
+**结论（待用户确认后执行 M19-3b）**：采用候选 A russh + russh-sftp；同步适配层放 `src/remote/sftp.rs`（tokio runtime 于后台线程常驻，RemoteFs 同步方法 block_on 桥接）；密钥路径默认 ~/.ssh/id_ed25519/id_rsa，密钥口令交互 M19 不做。
+- **dev 依赖现状**：russh/russh-sftp/tokio/tokio-stream 已入 dev-dependencies（spike 运行依赖）；M19-3b 集成时迁移至 [dependencies]。
+- **影响文件**：examples/sftp_spike.rs（候选 A 实测代码，保留作回归参考）、Cargo.toml/lock、本节。
