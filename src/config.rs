@@ -16,6 +16,25 @@ pub struct Config {
     pub sort_dirs_first: bool,
     /// 排序时不区分大小写（默认开）。
     pub ignore_case_sort: bool,
+    /// M18-4：界面行为选项（[ui] 表）。
+    #[serde(default)]
+    pub ui: UiConfig,
+}
+
+/// M18-4：[ui] 表——外部命令/shell 在新终端窗口执行（检测 $TMUX/$STY；
+/// 默认开；false = 始终当前 pane）。
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct UiConfig {
+    pub terminal_in_new_window: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            terminal_in_new_window: true,
+        }
+    }
 }
 
 impl Default for Config {
@@ -24,6 +43,7 @@ impl Default for Config {
             show_hidden: false,
             sort_dirs_first: true,
             ignore_case_sort: true,
+            ui: UiConfig::default(),
         }
     }
 }

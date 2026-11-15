@@ -470,3 +470,9 @@ rvifm record  → 静默记录访问
 - **远端搜索边界修正**：用户原文"远端排序、搜索、预览复用本地同一套实现"中，排序与列表内 `/` 搜索可复用（entries 基）；`:find`/`:grep` 基于 ignore 遍历仅作用本地 fs——远端递归搜索列入后续增强（SPEC SIMPLIFIED 已注明）。
 - **SFTP spike 纪律**：候选 russh+justsftp / remotefs-rs；spike 只进 dev-dependencies + examples/（正式集成待用户确认 NOTES 结论后）；spike 完成**暂停等确认**再 M19-3b。
 - **影响文件**：SPEC M18/M19/M20、TASKS、PLAN（里程碑表补 M12–M20 行）、本节。
+
+### 2026-11-15 — M18-4 踩坑与流程教训
+
+- **[ui] 嵌套表**：用户规格的 `[ui] terminal_in_new_window` 是嵌套表——Config 平铺结构收不到（serde 忽略未知顶层表 → 字段始终默认值）。实现为嵌套 UiConfig（Copy，Default terminal=true）。经验：TOML 分节配置必须用嵌套 struct 对齐。
+- **流程教训（重要）**：用 python 大块 replace 重写 handle_key 关键区域时，锚点静默不匹配 + 重复插入导致 app.rs 结构损坏（重复定义/截断/串位）。本次靠 stash 丢弃损坏工作、以 Edit 工具小步重做恢复。**规则固化：跨函数结构改动必须用 Edit 工具小步提交式修改，每步 cargo check；禁止对核心文件做多处大范围 python replace。**
+- **tmux 新窗口**：`tmux new-window -d "sh -c '<cmd>'"`（fire-and-forget，退出即关窗）；POSIX 单引号转义 shell_quote。screen 走 `screen -X screen -t rvifm sh -c`。

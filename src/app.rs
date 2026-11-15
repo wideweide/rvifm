@@ -262,6 +262,8 @@ enum ExecOutcome {
     ShowInfo { path: PathBuf, text: String },
     /// 打开目录历史菜单（M16 NAV-2：`:history`）。
     ShowHistory,
+    /// 当前 pane 执行外部命令（M18-4：`:!`；run 循环挂起 TUI 后执行）。
+    RunExternal { cmd: String },
 }
 
 /// FEAT-3：右键上下文菜单（单级、内建动作，作用于右键聚焦的条目）。
@@ -326,18 +328,72 @@ fn parse_sort_spec(args: &str) -> Result<Vec<crate::tab::SortSpec>, String> {
     Ok(specs)
 }
 
-/// M18-3：shell 命令构造——Unix $SHELL（缺省 /bin/sh）；Windows cmd。
-/// 可测试纯函数。
-fn shell_command() -> std::process::Command {
-    #[cfg(unix)]
-    {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-        std::process::Command::new(shell)
+/// M18-4：tmux 新窗口参数（可测试纯函数）——命令经 sh -c 包裹，
+/// 退出后窗口自动关闭。
+fn tmux_window_args(cmd: &str) -> Vec<String> {
+    vec![
+        "new-window".to_owned(),
+        "-d".to_owned(),
+        format!("sh -c {}", shell_quote(cmd)),
+    ]
+}
+
+/// M18-4：极简 POSIX 单引号转义（tmux 窗口命令用）。
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// M18-4：外部命令执行目标判定——`[ui] terminal_in_new_window=true` 且
+/// 检测到 $TMUX/$STY 时走复用器新窗口（fire-and-forget），否则当前 pane
+/// （调用方挂起 TUI 后以 sh -c / cmd /C 执行）。
+enum ExternalRun {
+    /// 复用器新窗口已完成（携带状态栏消息）。
+    Multiplexer(String),
+    /// 当前 pane 执行（携带命令串）。
+    CurrentPane(String),
+}
+
+fn run_external_target(cfg: &config::UiConfig, cmd: &str) -> ExternalRun {
+    if cfg.terminal_in_new_window {
+        if std::env::var_os("TMUX").is_some() {
+            let out = std::process::Command::new("tmux")
+                .args(tmux_window_args(cmd))
+                .status();
+            return match out {
+                Ok(st) if st.success() => {
+                    ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
+                }
+                _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
+            };
+        }
+        if std::env::var_os("STY").is_some() {
+            let out = std::process::Command::new("screen")
+                .args(["-X", "screen", "-t", "rvifm", "sh", "-c", cmd])
+                .status();
+            return match out {
+                Ok(st) if st.success() => {
+                    ExternalRun::Multiplexer(format!("已在 screen 新窗口执行: {cmd}"))
+                }
+                _ => ExternalRun::CurrentPane(cmd.to_owned()),
+            };
+        }
     }
-    #[cfg(windows)]
-    {
-        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_owned());
-        std::process::Command::new(shell)
+    ExternalRun::CurrentPane(cmd.to_owned())
+}
+
+/// M18-4：退出状态 → 状态栏消息（shell 与 :! 共用）。
+fn run_external_current_result(
+    result: std::io::Result<std::process::ExitStatus>,
+) -> Option<String> {
+    match result {
+        Ok(st) if st.success() => None,
+        Ok(st) => Some(format!(
+            "命令退出码: {}",
+            st.code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "信号终止".to_owned())
+        )),
+        Err(e) => Some(format!("命令执行失败: {e}")),
     }
 }
 
@@ -792,6 +848,14 @@ fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result
 
 /// 执行最小 `:` 命令（M1-5/M2-6）。
 fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
+    // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
+    if let Some(rest) = line.strip_prefix('!') {
+        let cfg = state.config.ui;
+        return match run_external_target(&cfg, rest.trim()) {
+            ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
+            ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
+        };
+    }
     let mut parts = line.split_whitespace();
     let cmd_head = parts.next();
     // FEAT-2：`..` 行仅导航——写操作与详情命令拒绝（cd/q/help/tree 例外）。
@@ -1322,7 +1386,7 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
     let tab = state.active_tab_mut();
     let half = 8isize; // 右 pane 半页步进（固定近似值，视口高度不可得）
     match key.code {
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::Char(' ') => {
             tab.focus = crate::tab::Focus::Left;
             *msg = Some("焦点: 左 pane".to_owned());
         }
@@ -1757,12 +1821,14 @@ fn handle_key(
         }
     }
 
-    // M14-1：Tab 键切换焦点 pane（左 → 右）。
-    if key.code == KeyCode::Tab && key.kind == KeyEventKind::Press {
+    // M14-1/M18-4：Tab 或 Space 切换焦点 pane（左 → 右；vifm 语义）。
+    if (key.code == KeyCode::Tab || key.code == KeyCode::Char(' '))
+        && key.kind == KeyEventKind::Press
+    {
         input.count = None;
         let tab = state.active_tab_mut();
         tab.focus = crate::tab::Focus::Right;
-        *msg = Some("焦点: 右 pane（Tab 切回）".to_owned());
+        *msg = Some("焦点: 右 pane（Tab/Space 切回）".to_owned());
         return Outcome::Continue;
     }
 
@@ -2674,6 +2740,26 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 let cur = state.active_tab().hist_pos;
                                 mode = InputMode::HistoryMenu { cursor: cur };
                             }
+                            Ok(ExecOutcome::RunExternal { cmd }) => {
+                                // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
+                                ratatui::restore();
+                                #[cfg(unix)]
+                                let result = std::process::Command::new("sh")
+                                    .arg("-c")
+                                    .arg(&cmd)
+                                    .status();
+                                #[cfg(windows)]
+                                let result = std::process::Command::new("cmd")
+                                    .args(["/C", &cmd])
+                                    .status();
+                                terminal = ratatui::init();
+                                // FEAT-1：init 不含鼠标捕获，重新启用。
+                                let _ = ratatui::crossterm::execute!(
+                                    std::io::stdout(),
+                                    event::EnableMouseCapture
+                                );
+                                msg = run_external_current_result(result);
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -2907,26 +2993,29 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             };
                         }
                         Outcome::EnterShell => {
-                            // M18-3：挂起 TUI 进入 shell；退出后恢复光标/滚动
-                            //（state 全程未动）与 raw mode/alt screen。
-                            ratatui::restore();
-                            let result = shell_command().status();
-                            terminal = ratatui::init();
-                            // FEAT-1：init 不含鼠标捕获，重新启用。
-                            let _ = ratatui::crossterm::execute!(
-                                std::io::stdout(),
-                                event::EnableMouseCapture
-                            );
-                            msg = match result {
-                                Ok(st) if st.success() => None,
-                                Ok(st) => Some(format!(
-                                    "shell 退出码: {}",
-                                    st.code()
-                                        .map(|c| c.to_string())
-                                        .unwrap_or_else(|| "信号终止".to_owned())
-                                )),
-                                Err(e) => Some(format!("shell 启动失败: {e}")),
-                            };
+                            // M18-3/M18-4：shell 入口——按 [ui] 配置分流复用器
+                            // 新窗口（不挂起）/ 当前 pane（挂起 TUI；state 全程
+                            // 未动，光标/滚动与 raw mode/alt screen 恢复）。
+                            let ui = state.config.ui;
+                            let shell =
+                                std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+                            match run_external_target(&ui, &shell) {
+                                ExternalRun::Multiplexer(m) => msg = Some(m),
+                                ExternalRun::CurrentPane(cmd) => {
+                                    ratatui::restore();
+                                    let result = std::process::Command::new("sh")
+                                        .arg("-c")
+                                        .arg(&cmd)
+                                        .status();
+                                    terminal = ratatui::init();
+                                    // FEAT-1：init 不含鼠标捕获，重新启用。
+                                    let _ = ratatui::crossterm::execute!(
+                                        std::io::stdout(),
+                                        event::EnableMouseCapture
+                                    );
+                                    msg = run_external_current_result(result);
+                                }
+                            }
                         }
                         Outcome::BatchRename { base, names } => {
                             // M13-6：TUI 挂起 → $EDITOR 编辑名单 → 应用 → 恢复。
@@ -8164,11 +8253,81 @@ mod tests {
         );
         assert!(msg.is_none(), "无副作用");
         assert_eq!(state.active_tab().cursor, 0);
+    }
 
-        // shell_command：平台缺省可构造（Unix $SHELL/缺省 /bin/sh）。
-        let cmd = shell_command();
-        #[cfg(unix)]
-        assert!(!cmd.get_program().is_empty());
+    #[test]
+    fn m18_4_bang_routes_and_config() {
+        // :!echo → 无 tmux 环境 → CurrentPane outcome（run 循环执行）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        match exec_command_impl(&mut state, "!echo rvifm-test") {
+            Ok(ExecOutcome::RunExternal { cmd }) => assert_eq!(cmd, "echo rvifm-test"),
+            other => panic!("expected RunExternal, got {other:?}"),
+        }
+        // 失败命令：命令串照传（执行失败消息由 run 循环产生）。
+        match exec_command_impl(&mut state, "!rvifm-nonexistent-cmd-xyz") {
+            Ok(ExecOutcome::RunExternal { cmd }) => {
+                assert!(cmd.contains("rvifm-nonexistent-cmd-xyz"));
+            }
+            other => panic!("expected RunExternal, got {other:?}"),
+        }
+        // 退出状态 → 消息（成功 None；失败可读）。
+        let ok = std::process::Command::new("echo").arg("hi").status();
+        assert!(run_external_current_result(ok).is_none());
+        let bad = std::process::Command::new("rvifm-nonexistent-cmd-xyz").status();
+        assert!(run_external_current_result(bad).unwrap().contains("失败"));
+        // 配置：缺省 true；[ui] 可覆盖。
+        assert!(state.config.ui.terminal_in_new_window);
+        let tmp2 = TempDir::new().unwrap();
+        let path = tmp2.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[ui]
+terminal_in_new_window = false
+"#,
+        )
+        .unwrap();
+        let cfg = crate::config::load_from(&path).unwrap();
+        assert!(!cfg.ui.terminal_in_new_window);
+    }
+
+    #[test]
+    fn m18_4_space_switches_focus_both_panes() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.active_tab().focus,
+            crate::tab::Focus::Right,
+            "Space 切到右 pane"
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+        assert_eq!(state.active_tab().cursor, 0, "光标不受影响");
+    }
+
+    #[test]
+    fn m18_4_tmux_window_args_quoting() {
+        let args = tmux_window_args("ls -la 'a b'");
+        assert_eq!(args[0], "new-window");
+        assert_eq!(args[1], "-d");
+        assert!(args[2].starts_with("sh -c 'ls -la"));
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
