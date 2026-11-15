@@ -1,5 +1,5 @@
 # STATE —
-- `release 0.6.0`（2026-11-15）：版本 bump 0.5.0→0.6.0（M15 反馈批次 + M16 导航增强 + M17 搜索查看器 + GAP-1/2 收尾，minor bump）——README 状态行与里程碑表同步；tag `v0.6.0` → CI release job 产 GitHub Release；crates.io 发布需在有凭据的机器执行 `cargo publish`（本机无 ~/.cargo/credentials）。
+- `release 0.6.0`（2026-11-15）：版本 bump 0.5.0→0.6.0（M15 反馈批次 + M16 导航增强 + M17 搜索查看器 + GAP-1/2 收尾，minor bump）——README 状态行与里程碑表同步；tag `v0.6.0` → CI release job 产 GitHub Release；crates.io 0.6.0 已发布（API 验证 max_version=0.6.0；用户提供 token 授权执行，未落盘）。
 - `清单`（2026-11-15）：ACCEPTANCE §16 升级 v0.6.0 手册——新增 N（搜索与查看器：:find/:grep 虚拟目录、只读守卫、定位、行号/高亮/n/N、grep 命中直达行）、O（快速跳转与历史：keyword/quickjump/histprev/history/recent/用户键位绑定）、P（frecency 退出落盘抽验）、Q（交互复核：M11-6 图片 + 鼠标 + .. 行 + :file + :help）四节；版本与产物引用改 0.6.0。
 - `GAP-2`（2026-11-15）：TUI 退出事件刷写（M8 收尾）——frecency::flush_visits_at/flush_visits（Store 短事务 + 3 次重试逐条 + 打开失败整批降级 pending）；collect_session_records 纯函数（各 tab history[1..] → Navigate 事件——**启动落点不算导航**；归档位置跳过）；flush_session_visits 在 run() 两个 Quit 退出点调用（失败 eprintln 不阻塞退出）。语义边界：q/:q 触发；终端 IO 错误路径不刷写（可接受）。230 单测全绿（+1）。GAP-1/GAP-2 排队缺口全部清零。
 - `GAP-1`（2026-11-15）：keymap TOML 分层接线（M10-5 收尾）——keymap.rs：`Action::from_name`（snake_case + vifm 惯用别名）+ `parse_key`（"P"/"C-o"/enter/方向等）+ `Keymap::with_layers`（prepend 覆盖默认、append 低于默认、replace 替换；用户序列进 explicit 集合）+ `is_explicit`；config.rs：KeymapLayers 解析（[normal] 三层，未知 run/非法键整条跳过）+ OnceLock 静态；app.rs：**execute_action 抽取**（seq 派发与单键共用，调用方统一 clear seq——顺带根除序列残留吞键缺陷类）、单键路径显式绑定优先（覆盖内建）、通用 Char 前缀臂（替换 g/d/D/c/y 硬编码列表，任意多键绑定可用）、非 Char 键兜底；`Action::HistPrev/HistNext` 变体接入（无默认键，用户可绑）；run() 加载分层。229 单测全绿（+3）。
@@ -85,7 +85,7 @@
 - **更新时间**：2026-11-15
 - **当前阶段**：M17 递归搜索与查看器批次（SRCH-1 → SRCH-2 → VIEW-1）
 - **当前任务**：无（v0.6.0 发布流程中；人工验证清单见 ACCEPTANCE §16 v0.6.0 手册）
-- **阶段状态**：M0–M17 全部关闭 + GAP-1/2 清零；v0.6.0 发布中（GitHub Release 自动，crates.io 待有凭据机器执行）
+- **阶段状态**：M0–M17 全部关闭 + GAP-1/2 清零；**v0.6.0 已发布**（crates.io + GitHub Release 双归档）
 （注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
 
 ## 已完成
