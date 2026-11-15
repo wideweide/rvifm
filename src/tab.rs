@@ -19,10 +19,18 @@ pub enum Location {
         host: PathBuf,
         inner: PathBuf,
     },
+    /// M19-2：远端位置——`remote` 为会话名（remotes.toml / ssh config
+    /// Host 别名），`path` 为远端绝对路径（`/` 分隔）。
+    #[allow(dead_code)]
+    Remote {
+        remote: String,
+        path: PathBuf,
+    },
 }
 
 impl Location {
-    /// 状态栏/面包屑显示。归档位置显示为 `host:/inner/path`（SPEC §4.1）。
+    /// 状态栏/面包屑显示。归档位置显示为 `host:/inner/path`（SPEC §4.1）；
+    /// 远端位置显示为 `remote:/path`（M19-2）。
     pub fn display_path(&self) -> String {
         match self {
             Location::Physical(p) => p.to_string_lossy().into_owned(),
@@ -31,15 +39,20 @@ impl Location {
                 host.display(),
                 inner.to_string_lossy().replace('\\', "/")
             ),
+            Location::Remote { remote, path } => {
+                format!("{}:{}", remote, path.to_string_lossy().replace('\\', "/"))
+            }
         }
     }
 
     /// `:tabnew` 的落点目录：Physical 为该目录；Archive 为宿主目录
-    /// （归档内新建标签复用宿主，M7 再细化）。
+    /// （归档内新建标签复用宿主，M7 再细化）；Remote 为远端当前路径
+    /// （新标签仍在该远端会话，M19-2）。
     pub fn base_dir(&self) -> &Path {
         match self {
             Location::Physical(p) => p,
             Location::Archive { host, .. } => host,
+            Location::Remote { path, .. } => path,
         }
     }
 }
@@ -208,6 +221,8 @@ pub struct Tab {
     pub sort: Option<Vec<SortSpec>>,
     /// M17 VIEW-1：交互式查看器状态（view_mode 激活时右 pane）。
     pub viewer: Option<ViewerState>,
+    /// M19-2：进入远端前的本地位置（`h` 在远端根目录时返回此地）。
+    pub pre_remote: Option<Location>,
 }
 
 /// M18-1：运行时排序字段。
@@ -272,6 +287,7 @@ impl Tab {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -286,12 +302,14 @@ impl Tab {
     }
 
     /// 任意 Location 的条目加载（NAV-3：历史跳转后恢复条目列表用）。
+    /// M19-2：远端位置由会话驱动（remote_navigate），此处不支持。
     fn load_for(location: &Location, config: Config) -> std::io::Result<Vec<FileItem>> {
         match location {
             Location::Physical(p) => load_entries(p, &config),
             Location::Archive { host, inner } => {
                 load_archive_entries(host, &inner.to_string_lossy())
             }
+            Location::Remote { .. } => Err(std::io::Error::other("远端条目由会话驱动加载")),
         }
     }
 
@@ -349,13 +367,14 @@ impl Tab {
     }
 
     /// FEAT-2：列表顶部是否渲染 `..` 行——物理目录存在父目录时显示；
-    /// 归档视图恒显示（`..`/`h` 返回归档文件所在物理目录，M7-5）。
+    /// 归档视图恒显示（`..`/`h` 返回归档文件所在物理目录，M7-5）；
+    /// 远端视图恒显示（`..`/`h` 返回上级或本地目录，M19-2）。
     pub fn has_parent_row(&self) -> bool {
         match &self.location {
             Location::Physical(p) => p
                 .parent()
                 .is_some_and(|parent| !parent.as_os_str().is_empty()),
-            Location::Archive { .. } => true,
+            Location::Archive { .. } | Location::Remote { .. } => true,
         }
     }
 
@@ -974,14 +993,15 @@ impl Tab {
     }
 
     /// M17 SRCH：预览/操作的目标文件路径——结果模式取命中项，
-    /// 物理视图取 base.join(name)；归档视图 None（预览未接入）。
+    /// 物理视图取 base.join(name)；归档视图 None（预览未接入）；
+    /// 远端视图 None（预览经 RemoteFs read 的链路在 M20 后接入）。
     pub fn preview_path(&self) -> Option<PathBuf> {
         if let Some(r) = &self.results {
             return r.items.get(self.cursor).map(|i| i.path.clone());
         }
         match &self.location {
             Location::Physical(base) => self.entries.get(self.cursor).map(|i| base.join(&i.name)),
-            Location::Archive { .. } => None,
+            Location::Archive { .. } | Location::Remote { .. } => None,
         }
     }
 
@@ -1026,6 +1046,8 @@ impl Tab {
         let name = item.name.clone();
         let is_dir = item.is_dir;
         match self.location.clone() {
+            // M19-2：远端导航由 app 层会话驱动（remote_navigate）。
+            Location::Remote { .. } => Ok(()),
             Location::Physical(base) => {
                 let target = base.join(&name);
                 if is_dir {
@@ -1082,9 +1104,11 @@ impl Tab {
     /// 返回父目录（M1-2，`h`）。
     /// 物理目录：已在文件系统根时为 no-op（ACCEPTANCE §3）。
     /// 归档内（M7-4）：上一层虚拟目录；归档根处返回宿主目录。
+    /// M19-2：远端视图的 h 由 app 层 remote_up 驱动，此处 no-op。
     /// 读取失败时返回 Err 且不产生副作用（提示经 M6-1 进状态栏）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
         match self.location.clone() {
+            Location::Remote { .. } => Ok(()),
             Location::Archive { host, inner } => {
                 let inner_str = inner.to_string_lossy().into_owned();
                 if inner_str.is_empty() {
@@ -1595,6 +1619,7 @@ mod tests {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -1702,6 +1727,7 @@ mod tests {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),

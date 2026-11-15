@@ -495,6 +495,24 @@ fn current_item_info(state: &AppState) -> Option<(PathBuf, String)> {
             .join("\n");
             Some((host.clone(), text))
         }
+        Location::Remote { remote, path } => {
+            // M19-2：远端成员信息（元数据取自条目列表，无 fs 权限位）。
+            let shown = format!("{}:{}", remote, path.to_string_lossy().replace('\\', "/"));
+            let kind = if item.is_dir {
+                "目录（远端）"
+            } else {
+                "文件（远端）"
+            };
+            let text = [
+                format!("名称: {}", item.name),
+                format!("类型: {kind}"),
+                format!("大小: {}", crate::tab::format_size(item.size)),
+                "权限: -".to_owned(),
+                format!("路径: {shown}/{}", item.name),
+            ]
+            .join("\n");
+            Some((PathBuf::from("/"), text))
+        }
     }
 }
 
@@ -551,7 +569,7 @@ fn run_context_menu_action(
                 };
                 match other {
                     Location::Physical(p) => Some(p.clone()),
-                    Location::Archive { .. } => None,
+                    Location::Archive { .. } | Location::Remote { .. } => None,
                 }
             };
             let Some(other_dir) = other_dir else {
@@ -614,6 +632,237 @@ fn run_context_menu_action(
 #[cfg(test)]
 fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
     exec_command_impl(state, line).map(|o| matches!(o, ExecOutcome::Quit))
+}
+
+// ── M19-2：远端会话导航 ──────────────────────────────────────────────
+
+/// 注册远端会话（M19-2：测试/mock 注入；M19-4 由 :remote 配置构造真实后端）。
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn register_remote_session(
+    state: &mut AppState,
+    name: &str,
+    backend: Box<dyn crate::remote::RemoteFs>,
+) {
+    state.remote_sessions.insert(name.to_owned(), backend);
+}
+
+/// 进入远端会话根目录（`:remote <name>`）：list 根目录 → 条目列表；
+/// 记录 pre_remote（h 在远端根返回本地）。会话不存在 → 可读错误。
+pub(crate) fn remote_enter(state: &mut AppState, name: &str) -> Result<(), String> {
+    let Some(backend) = state.remote_sessions.get(name) else {
+        return Err(format!(
+            "remote: 未找到会话 `{name}`（:remote 无参列出已配置项）"
+        ));
+    };
+    let root = PathBuf::from("/");
+    let items = backend.list(&root).map_err(|e| format!("remote: {e}"))?;
+    let cfg = state.config;
+    let tab = state.active_tab_mut();
+    if tab.pre_remote.is_none() {
+        tab.pre_remote = Some(tab.location.clone());
+    }
+    // 轨迹管理同 navigate_to（截断 forward + 追加 + 落位）。
+    tab.history.truncate(tab.hist_pos + 1);
+    tab.history.push(Location::Remote {
+        remote: name.to_owned(),
+        path: root.clone(),
+    });
+    tab.hist_pos = tab.history.len() - 1;
+    tab.location = Location::Remote {
+        remote: name.to_owned(),
+        path: root,
+    };
+    tab.entries = items
+        .into_iter()
+        .map(|i| crate::tab::FileItem {
+            icon: crate::icons::icon_for(
+                std::path::Path::new(&format!("/{}", i.name)),
+                crate::icons::IconTheme::Dark,
+            ),
+            name: i.name.clone(),
+            is_dir: i.is_dir,
+            size: i.size,
+            perm: String::new(),
+            mtime: i.mtime,
+        })
+        .collect();
+    tab.cursor = 0;
+    tab.scroll = 0;
+    tab.on_parent_row = false;
+    tab.sort = None;
+    let _ = cfg;
+    Ok(())
+}
+
+/// 远端目录内导航：进入子目录 / 上级（沿用会话 list）。返回新远端路径。
+pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> Result<(), String> {
+    let (name, items) = {
+        let tab = state.active_tab();
+        let Location::Remote { remote, .. } = &tab.location else {
+            return Err("remote: 非远端视图".to_owned());
+        };
+        let name = remote.clone();
+        let Some(backend) = state.remote_sessions.get(&name) else {
+            return Err("remote: 会话已断开".to_owned());
+        };
+        (
+            name,
+            backend.list(path).map_err(|e| format!("remote: {e}"))?,
+        )
+    };
+    let cfg = state.config;
+    let tab = state.active_tab_mut();
+    tab.history.truncate(tab.hist_pos + 1);
+    tab.history.push(Location::Remote {
+        remote: name.clone(),
+        path: path.to_path_buf(),
+    });
+    tab.hist_pos = tab.history.len() - 1;
+    tab.location = Location::Remote {
+        remote: name,
+        path: path.to_path_buf(),
+    };
+    tab.entries = items
+        .into_iter()
+        .map(|i| crate::tab::FileItem {
+            icon: crate::icons::icon_for(
+                std::path::Path::new(&format!("{}/{}", path.display(), i.name)),
+                crate::icons::IconTheme::Dark,
+            ),
+            name: i.name.clone(),
+            is_dir: i.is_dir,
+            size: i.size,
+            perm: String::new(),
+            mtime: i.mtime,
+        })
+        .collect();
+    tab.cursor = 0;
+    tab.scroll = 0;
+    tab.on_parent_row = false;
+    let _ = cfg;
+    Ok(())
+}
+
+/// 远端 `h`：非根目录 → 上级；根目录 → 返回 pre_remote（本地目录）。
+pub(crate) fn remote_up(state: &mut AppState) -> Result<(), String> {
+    let (name, parent, at_root) = {
+        let tab = state.active_tab();
+        let Location::Remote { remote, path } = &tab.location else {
+            return Err("remote: 非远端视图".to_owned());
+        };
+        let parent = path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("/"));
+        let at_root = parent == *path || path == &PathBuf::from("/");
+        (
+            remote.clone(),
+            if at_root { None } else { Some(parent) },
+            at_root,
+        )
+    };
+    if at_root {
+        // 回到进入前的本地目录。
+        let back = state
+            .active_tab()
+            .pre_remote
+            .clone()
+            .unwrap_or_else(|| Location::Physical(std::env::current_dir().unwrap_or_default()));
+        let cfg = state.config;
+        let tab = state.active_tab_mut();
+        tab.pre_remote = None;
+        tab.navigate_to(back, cfg)
+            .map_err(|e| format!("remote: {e}"))?;
+        return Ok(());
+    }
+    let _ = &name;
+    remote_navigate(state, &parent.unwrap_or_else(|| PathBuf::from("/")))
+}
+
+/// M19-2：恢复历史中的远端位置（histprev/histnext 目标为 Remote 时）——
+/// 条目经会话重载；只移动游标不截断 forward。
+pub(crate) fn remote_jump(state: &mut AppState, pos: usize) -> Result<(), String> {
+    let (name, path) = {
+        let tab = state.active_tab();
+        match tab.history.get(pos) {
+            Some(Location::Remote { remote, path }) => (remote.clone(), path.clone()),
+            _ => return Err("remote: 历史目标不是远端位置".to_owned()),
+        }
+    };
+    let items = {
+        let Some(backend) = state.remote_sessions.get(&name) else {
+            return Err("remote: 会话已断开".to_owned());
+        };
+        backend.list(&path).map_err(|e| format!("remote: {e}"))?
+    };
+    let cfg = state.config;
+    let tab = state.active_tab_mut();
+    tab.hist_pos = pos;
+    tab.location = Location::Remote {
+        remote: name,
+        path: path.clone(),
+    };
+    tab.entries = items
+        .into_iter()
+        .map(|i| crate::tab::FileItem {
+            icon: crate::icons::icon_for(
+                std::path::Path::new(&format!("{}/{}", path.display(), i.name)),
+                crate::icons::IconTheme::Dark,
+            ),
+            name: i.name.clone(),
+            is_dir: i.is_dir,
+            size: i.size,
+            perm: String::new(),
+            mtime: i.mtime,
+        })
+        .collect();
+    tab.cursor = 0;
+    tab.scroll = 0;
+    tab.on_parent_row = false;
+    let _ = cfg;
+    Ok(())
+}
+
+/// NAV-3/M19-2：历史后退/前进统一入口——目标为远端位置走 remote_jump
+/// （会话重载），否则 hist_jump；移动成功更新状态栏位置消息。
+fn hist_move(state: &mut AppState, forward: bool, msg: &mut Option<String>) -> Result<(), String> {
+    let tab = state.active_tab();
+    let target_pos = if forward {
+        tab.hist_pos + 1
+    } else {
+        tab.hist_pos.saturating_sub(1)
+    };
+    let target_is_remote = matches!(tab.history.get(target_pos), Some(Location::Remote { .. }));
+    let moved = if target_is_remote {
+        remote_jump(state, target_pos).map(|_| true)
+    } else {
+        let cfg = state.config;
+        state
+            .active_tab_mut()
+            .hist_jump(forward, cfg)
+            .map_err(|e| format!("hist: {e}"))
+    };
+    let moved =
+        moved.map_err(|e| format!("{}: {e}", if forward { "histnext" } else { "histprev" }))?;
+    if moved {
+        let (pos, len) = {
+            let tab = state.active_tab();
+            (tab.hist_pos, tab.history.len())
+        };
+        *msg = Some(format!(
+            "{} {}/{}",
+            if forward { "前进" } else { "后退" },
+            pos + 1,
+            len
+        ));
+    } else {
+        *msg = Some(if forward {
+            "无前进历史".to_owned()
+        } else {
+            "无后退历史".to_owned()
+        });
+    }
+    Ok(())
 }
 
 /// 取当前 tab **焦点 pane** 的物理操作基准目录（M14-1：文件操作作用于
@@ -866,6 +1115,19 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
     }
+    // M19-2：远端视图只读——M20 前写命令拒绝（导航/退出/只读展示豁免）。
+    if matches!(state.active_tab().location, Location::Remote { .. }) {
+        match cmd_head {
+            Some(
+                "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
+                | "his" | "sort" | "find" | "grep" | "recent" | "file",
+            ) => {}
+            Some(other) => {
+                return Err(format!("远端写操作在 M20 接入: {other}"));
+            }
+            None => return Ok(ExecOutcome::Done { msg: None }),
+        }
+    }
     // M17 SRCH：结果视图只读——find/grep 重执行与退出类命令豁免。
     if state.active_tab().in_results() {
         match cmd_head {
@@ -943,6 +1205,29 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     if truncated { "（已截断）" } else { "" }
                 )),
             })
+        }
+        Some("remote") => {
+            // M19-2/M19-4：进入远端会话；无参列出（配置来源 M19-4 补全）。
+            match parts.next() {
+                None => {
+                    let names: Vec<String> = state.remote_sessions.keys().cloned().collect();
+                    if names.is_empty() {
+                        Ok(ExecOutcome::Done {
+                            msg: Some("remote: 无活动会话（配置来源在 M19-4 接入）".to_owned()),
+                        })
+                    } else {
+                        Ok(ExecOutcome::Done {
+                            msg: Some(format!("remote: {}", names.join(", "))),
+                        })
+                    }
+                }
+                Some(name) => {
+                    remote_enter(state, name)?;
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("remote: 已进入 {}（Esc 不可用，h 返回本地）", name)),
+                    })
+                }
+            }
         }
         Some("recent") => {
             // M16 NAV-4：近期视角——全部条目按最后访问时间倒序（含会话合并）。
@@ -1208,31 +1493,11 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             Ok(ExecOutcome::ShowHistory)
         }
         Some("histprev" | "histnext") => {
-            // M16 NAV-3：当前 tab 视图历史后退/前进（无默认键位）。
+            // M16 NAV-3/M19-2：当前 tab 视图历史后退/前进（无默认键位）。
             let forward = cmd_head == Some("histnext");
-            let cfg = state.config;
-            let moved = state
-                .active_tab_mut()
-                .hist_jump(forward, cfg)
-                .map_err(|e| format!("{}: {e}", if forward { "histnext" } else { "histprev" }))?;
-            Ok(ExecOutcome::Done {
-                msg: Some(if moved {
-                    let (pos, len) = {
-                        let tab = state.active_tab();
-                        (tab.hist_pos, tab.history.len())
-                    };
-                    format!(
-                        "{} {}/{}",
-                        if forward { "前进" } else { "后退" },
-                        pos + 1,
-                        len
-                    )
-                } else if forward {
-                    "无前进历史".to_owned()
-                } else {
-                    "无后退历史".to_owned()
-                }),
-            })
+            let mut m = None;
+            hist_move(state, forward, &mut m)?;
+            Ok(ExecOutcome::Done { msg: m })
         }
         Some("keyword") => {
             // M16 NAV-1：设置/清除当前目录书签 keyword（append-only 事件）。
@@ -1621,34 +1886,10 @@ fn handle_key(
                 }
             }
             Some(Action::HistPrev) | Some(Action::HistNext) => {
-                // M16 NAV-3：目录历史后退/前进（用户键位映射入口）。
+                // M16 NAV-3/M19-2：目录历史后退/前进（远端位置走会话恢复）。
                 let forward = matches!(action, Some(Action::HistNext));
-                let cfg = state.config;
-                let moved = state
-                    .active_tab_mut()
-                    .hist_jump(forward, cfg)
-                    .map_err(|e| format!("{}: {e}", if forward { "histnext" } else { "histprev" }));
-                match moved {
-                    Ok(true) => {
-                        let (pos, len) = {
-                            let tab = state.active_tab();
-                            (tab.hist_pos, tab.history.len())
-                        };
-                        *msg = Some(format!(
-                            "{} {}/{}",
-                            if forward { "前进" } else { "后退" },
-                            pos + 1,
-                            len
-                        ));
-                    }
-                    Ok(false) => {
-                        *msg = Some(if forward {
-                            "无前进历史".to_owned()
-                        } else {
-                            "无后退历史".to_owned()
-                        });
-                    }
-                    Err(e) => *msg = Some(e),
+                if hist_move(state, forward, msg).is_err() {
+                    return None; // 错误已入 msg
                 }
             }
             Some(Action::Yank) => {
@@ -1789,6 +2030,48 @@ fn handle_key(
     // 树/选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
     if state.active_tab().focus == crate::tab::Focus::Right {
         return handle_right_key(state, msg, key);
+    }
+
+    // M19-2：远端视图——l/Enter=进入子目录或打开、h=上级/返回本地。
+    if matches!(state.active_tab().location, Location::Remote { .. }) {
+        match key.code {
+            KeyCode::Char('h') => {
+                input.count = None;
+                if let Err(e) = remote_up(state) {
+                    *msg = Some(e);
+                } else {
+                    *msg = None;
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char('l') | KeyCode::Enter => {
+                input.count = None;
+                let tab = state.active_tab();
+                let (path, is_dir, name) = match (&tab.location, tab.entries.get(tab.cursor)) {
+                    (Location::Remote { path, .. }, Some(item)) => {
+                        (path.clone(), item.is_dir, item.name.clone())
+                    }
+                    _ => return Outcome::Continue,
+                };
+                if is_dir {
+                    let child = if path == std::path::Path::new("/") {
+                        PathBuf::from(format!("/{name}"))
+                    } else {
+                        path.join(&name)
+                    };
+                    if let Err(e) = remote_navigate(state, &child) {
+                        *msg = Some(e);
+                    } else {
+                        *msg = None;
+                    }
+                } else {
+                    // M19 SIMPLIFIED：远端文件打开/预览经 read 的链路后续接入。
+                    *msg = Some("远端文件打开暂不支持（M20 后接入）".to_owned());
+                }
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
     }
 
     // M17 SRCH：结果虚拟目录——l/Enter=定位、Esc/h=退出、v/t=只读拒绝；
@@ -4030,6 +4313,7 @@ mod tests {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -8328,6 +8612,179 @@ terminal_in_new_window = false
         assert_eq!(args[0], "new-window");
         assert_eq!(args[1], "-d");
         assert!(args[2].starts_with("sh -c 'ls -la"));
+    }
+
+    /// 内存 mock 远端（M19-2 测试用）。
+    struct MockRemote {
+        tree: std::collections::BTreeMap<String, Vec<crate::remote::RemoteEntry>>,
+    }
+    impl crate::remote::RemoteFs for MockRemote {
+        fn list(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            self.tree
+                .get(&path.to_string_lossy().replace('\\', "/"))
+                .cloned()
+                .ok_or_else(|| crate::remote::RemoteError::NotFound(path.display().to_string()))
+        }
+        fn read(&self, path: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            if path == std::path::Path::new("/readme.md") {
+                Ok(b"remote readme".to_vec())
+            } else {
+                Err(crate::remote::RemoteError::NotFound(
+                    path.display().to_string(),
+                ))
+            }
+        }
+        fn metadata(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            Ok(crate::remote::RemoteMeta {
+                size: 0,
+                mtime: 0,
+                is_dir: false,
+            })
+        }
+    }
+
+    fn mock_remote_state() -> (TempDir, AppState) {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("local.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut tree = std::collections::BTreeMap::new();
+        tree.insert(
+            "/".to_owned(),
+            vec![
+                crate::remote::RemoteEntry {
+                    name: "docs".to_owned(),
+                    is_dir: true,
+                    size: 0,
+                    mtime: 0,
+                },
+                crate::remote::RemoteEntry {
+                    name: "readme.md".to_owned(),
+                    is_dir: false,
+                    size: 13,
+                    mtime: 100,
+                },
+            ],
+        );
+        tree.insert(
+            "/docs".to_owned(),
+            vec![crate::remote::RemoteEntry {
+                name: "guide.txt".to_owned(),
+                is_dir: false,
+                size: 9,
+                mtime: 200,
+            }],
+        );
+        register_remote_session(&mut state, "dev", Box::new(MockRemote { tree }));
+        (tmp, state)
+    }
+
+    #[test]
+    fn m19_2_remote_enter_navigate_and_return() {
+        let (tmp, mut state) = mock_remote_state();
+        let mut msg = None;
+
+        // :remote dev → 根目录列表 + 面包屑 dev:/。
+        remote_enter(&mut state, "dev").unwrap();
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Remote { .. }
+        ));
+        assert_eq!(
+            state.active_tab().location.display_path(),
+            "dev:/",
+            "面包屑 host 形式"
+        );
+        let names: Vec<&str> = state
+            .active_tab()
+            .entries
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect();
+        assert_eq!(names, ["docs", "readme.md"]);
+
+        // l 进入 docs/ → 远端子目录。
+        state.active_tab_mut().cursor = 0;
+        let mut input = InputState::default();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().location.display_path(), "dev:/docs");
+        assert_eq!(state.active_tab().entries[0].name, "guide.txt");
+
+        // h → 回远端根；h → 返回本地目录（pre_remote）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().location.display_path(), "dev:/");
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().to_path_buf()),
+            "h 在远端根返回本地"
+        );
+        assert!(state.active_tab().pre_remote.is_none());
+        // 本地列表恢复。
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .any(|i| i.name == "local.txt")
+        );
+    }
+
+    #[test]
+    fn m19_2_remote_guards_and_unknown_session() {
+        let (_tmp, mut state) = mock_remote_state();
+        // 未知会话。
+        assert!(
+            remote_enter(&mut state, "nope")
+                .unwrap_err()
+                .contains("未找到会话")
+        );
+        // 进入后写命令被拒（M20 前占位）。
+        remote_enter(&mut state, "dev").unwrap();
+        assert!(exec_command_impl(&mut state, "rename x").is_err());
+        assert!(exec_command_impl(&mut state, "mkdir d").is_err());
+        // 导航类豁免。
+        assert!(matches!(
+            exec_command_impl(&mut state, "histprev"),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        // histnext 回到远端（histprev 移动了视图）。
+        let _ = exec_command_impl(&mut state, "histnext");
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Remote { .. }
+        ));
+        // :file 显示远端信息。
+        match exec_command_impl(&mut state, "file") {
+            Ok(ExecOutcome::ShowInfo { text, .. }) => {
+                assert!(text.contains("（远端）"), "text: {text}");
+                assert!(text.contains("dev:/"), "text: {text}");
+            }
+            other => panic!("expected ShowInfo, got {other:?}"),
+        }
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

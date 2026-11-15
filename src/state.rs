@@ -138,7 +138,7 @@ pub struct YankBuffer {
 }
 
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。
-#[derive(Debug)]
+/// Debug 手工实现（remote_sessions 的 Box<dyn RemoteFs> 无 Debug）。
 pub struct AppState {
     pub tabs: Vec<Tab>,
     pub active: usize,
@@ -154,6 +154,18 @@ pub struct AppState {
     pub jobs: Vec<Job>,
     /// yank 缓冲区（FIX-2）：`yy` 复制 / `P` 移动 / `p` 按缓冲类型粘贴。
     pub yank: Option<YankBuffer>,
+    /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
+    pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("tabs", &self.tabs)
+            .field("active", &self.active)
+            .field("remotes", &self.remote_sessions.keys().collect::<Vec<_>>())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AppState {
@@ -167,6 +179,7 @@ impl AppState {
             image_engine: crate::image::ImageEngine::detect(),
             jobs: Vec::new(),
             yank: None,
+            remote_sessions: std::collections::BTreeMap::new(),
         }
     }
 
@@ -288,6 +301,7 @@ mod tests {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -313,6 +327,7 @@ mod tests {
             results: None,
             viewer: None,
             sort: None,
+            pre_remote: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
