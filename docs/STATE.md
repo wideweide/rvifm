@@ -1,4 +1,5 @@
 # STATE —
+- `M18-3`（2026-11-15）：s 进入 shell——Outcome::EnterShell（handle_key 臂，S 排序对话框不受影响）；run 循环挂起处理（ratatui::restore → shell_command().status() → init → 鼠标重启用；state 全程未动 → 光标/滚动不变）；shell_command 可测纯函数（Unix $SHELL 缺省 /bin/sh；Windows COMSPEC/cmd）。235 单测全绿（+1）。
 - `M18-2`（2026-11-15）：:sort 多字段——Tab.sort 升级 Vec<SortSpec>（对话框写单元素）；apply_sort_multi + sort_entries 逐字段链（目录优先 + 名称平手）；parse_sort_spec（逗号分隔 + asc/desc 后缀；未知字段/坏方向/空参数可读错误）；exec 臂 + results 视图豁免；状态栏多字段 join（[sort: name asc,size desc]）。234 单测全绿（+1）。
 - `M18-1`（2026-11-15）：S 排序对话框——FileItem 增 mtime（Unix 秒；load_entries/tree 真实值，归档/结果条目 0）；Tab.sort（SortSpec{field,desc}）+ apply_sort（目录优先 + 字段 + 名称平手；光标跟随原文件）+ refresh 重应用；InputMode::SortDialog{cursor,desc}（S 打开；字母 n/N/m/M/s/S/e/E 直接应用并关闭；空格换向不应用；回车应用高亮字段；Esc 取消）；渲染居中遮罩浮窗（字段说明 + 当前状态 [asc/desc] + 待定方向）；状态栏 [sort: name asc]；对话框内 s/S=大小字段键（模态，不触发 shell）。`handle_sort_dialog_key` 抽取直测。233 单测全绿（+3）。
 - `release 0.6.0`（2026-11-15）：版本 bump 0.5.0→0.6.0（M15 反馈批次 + M16 导航增强 + M17 搜索查看器 + GAP-1/2 收尾，minor bump）——README 状态行与里程碑表同步；tag `v0.6.0` → CI release job 产 GitHub Release；crates.io 0.6.0 已发布（API 验证 max_version=0.6.0；用户提供 token 授权执行，未落盘）。

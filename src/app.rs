@@ -75,6 +75,8 @@ enum Outcome {
     EnterViewerSearch,
     /// 请求打开排序对话框（M18-1：`S`）。
     EnterSortDialog,
+    /// 请求挂起 TUI 进入 shell（M18-3：`s`；vifm 既有习惯）。
+    EnterShell,
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool),
@@ -322,6 +324,21 @@ fn parse_sort_spec(args: &str) -> Result<Vec<crate::tab::SortSpec>, String> {
         return Err("sort: 缺少字段（如 name,size desc）".to_owned());
     }
     Ok(specs)
+}
+
+/// M18-3：shell 命令构造——Unix $SHELL（缺省 /bin/sh）；Windows cmd。
+/// 可测试纯函数。
+fn shell_command() -> std::process::Command {
+    #[cfg(unix)]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+        std::process::Command::new(shell)
+    }
+    #[cfg(windows)]
+    {
+        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_owned());
+        std::process::Command::new(shell)
+    }
 }
 
 /// M18-1：排序对话框按键结果。
@@ -1937,6 +1954,12 @@ fn handle_key(
             input.count = None;
             paste_yanked(state, key.code == KeyCode::Char('P'), msg);
         }
+        KeyCode::Char('s') => {
+            // M18-3：挂起 TUI 进入 shell（vifm 既有习惯；M18-4 接入
+            // terminal_in_new_window 配置后按配置分流）。
+            input.count = None;
+            return Outcome::EnterShell;
+        }
         KeyCode::Char('S') => {
             // M18-1：排序对话框（唯一排序入口；`s` 仍为 shell，见 M18-3）。
             input.count = None;
@@ -2881,6 +2904,28 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 cursor: 0,
                                 entries,
                                 kind,
+                            };
+                        }
+                        Outcome::EnterShell => {
+                            // M18-3：挂起 TUI 进入 shell；退出后恢复光标/滚动
+                            //（state 全程未动）与 raw mode/alt screen。
+                            ratatui::restore();
+                            let result = shell_command().status();
+                            terminal = ratatui::init();
+                            // FEAT-1：init 不含鼠标捕获，重新启用。
+                            let _ = ratatui::crossterm::execute!(
+                                std::io::stdout(),
+                                event::EnableMouseCapture
+                            );
+                            msg = match result {
+                                Ok(st) if st.success() => None,
+                                Ok(st) => Some(format!(
+                                    "shell 退出码: {}",
+                                    st.code()
+                                        .map(|c| c.to_string())
+                                        .unwrap_or_else(|| "信号终止".to_owned())
+                                )),
+                                Err(e) => Some(format!("shell 启动失败: {e}")),
                             };
                         }
                         Outcome::BatchRename { base, names } => {
@@ -8096,6 +8141,34 @@ mod tests {
         // exec 错误路径。
         assert!(exec_command_impl(&mut state, "sort badfield").is_err());
         assert!(exec_command_impl(&mut state, "sort").is_err());
+    }
+
+    #[test]
+    fn m18_3_s_requests_shell_and_command_constructed() {
+        // s → EnterShell（不进入其他模式、不产生副作用）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        state.active_tab_mut().cursor = 0;
+        assert_eq!(
+            press_msg(
+                &mut state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('s'),
+                KeyModifiers::NONE
+            ),
+            Outcome::EnterShell
+        );
+        assert!(msg.is_none(), "无副作用");
+        assert_eq!(state.active_tab().cursor, 0);
+
+        // shell_command：平台缺省可构造（Unix $SHELL/缺省 /bin/sh）。
+        let cmd = shell_command();
+        #[cfg(unix)]
+        assert!(!cmd.get_program().is_empty());
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
