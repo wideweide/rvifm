@@ -476,6 +476,56 @@ pub fn set_keyword_now(path: &str, keyword: &str) -> std::io::Result<()> {
     set_keyword_at(&db_path, &pending, path, keyword)
 }
 
+/// M8 收尾（GAP-2）：TUI 退出时批量追加会话访问事件——与 record 同链
+/// （Store 短事务 + 重试；打开失败整批降级到 events.pending）。返回写入数。
+pub fn flush_visits_at(
+    db_path: &Path,
+    pending: &Path,
+    records: &[EntryRecord],
+) -> std::io::Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+    let store = match Store::open(db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            // 整批降级：逐条追加到 pending（record 同款降级文件）。
+            for record in records {
+                let _ = degraded_write_at(pending, record, &e);
+            }
+            return Ok(0);
+        }
+    };
+    merge_pending(&store, pending)?;
+    let mut written = 0usize;
+    for record in records {
+        let mut ok = false;
+        for _ in 0..WRITE_RETRIES {
+            if store.append_event(record).is_ok() {
+                ok = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(WRITE_BACKOFF_MS));
+        }
+        if ok {
+            written += 1;
+        } else {
+            let _ = degraded_write_at(pending, record, "数据库写入连续失败");
+        }
+    }
+    Ok(written)
+}
+
+/// M8 收尾（GAP-2）：按平台默认存储路径刷写会话访问。
+pub fn flush_visits(records: &[EntryRecord]) -> std::io::Result<usize> {
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    flush_visits_at(&db_path, &pending, records)
+}
+
 /// record 的可测试实现（路径注入）。
 fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io::Result<()> {
     let store = match Store::open(db_path) {

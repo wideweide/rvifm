@@ -2346,6 +2346,43 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
         }
     }
 }
+/// M8 收尾（GAP-2）：会话访问事件刷写——各 tab 的 history[1..]（真实
+/// 导航轨迹，history[0] 为启动落点不算导航）转为 Navigate 事件批量追加。
+/// 失败降级 pending（不阻塞退出、不 panic）。
+fn flush_session_visits(state: &AppState) {
+    let records = collect_session_records(state);
+    if records.is_empty() {
+        return;
+    }
+    if let Err(e) = crate::frecency::flush_visits(&records) {
+        eprintln!("rvifm: 会话访问记录写入失败: {e}");
+    }
+}
+
+/// M8 收尾（GAP-2）：会话轨迹 → Navigate 事件（history[1..]；可测试纯函数）。
+fn collect_session_records(state: &AppState) -> Vec<crate::frecency::EntryRecord> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut records = Vec::new();
+    for tab in &state.tabs {
+        for loc in tab.history.iter().skip(1) {
+            if let Location::Physical(p) = loc {
+                records.push(crate::frecency::EntryRecord {
+                    path: p.to_string_lossy().replace('\\', "/"),
+                    topic: "dir".to_owned(),
+                    kind: crate::frecency::EntryKind::Navigate,
+                    ts: now,
+                    clock: 0,
+                    keyword: String::new(),
+                });
+            }
+        }
+    }
+    records
+}
+
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
@@ -2397,7 +2434,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
                         match exec_command_impl(&mut state, line.trim()) {
-                            Ok(ExecOutcome::Quit) => return Ok(()),
+                            Ok(ExecOutcome::Quit) => {
+                                flush_session_visits(&state);
+                                return Ok(());
+                            }
                             Ok(ExecOutcome::EnterHelp) => {
                                 mode = InputMode::HelpView {
                                     scroll: 0,
@@ -2629,7 +2669,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Normal => {
                     match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
                         Outcome::Continue => {}
-                        Outcome::Quit => return Ok(()),
+                        Outcome::Quit => {
+                            flush_session_visits(&state);
+                            return Ok(());
+                        }
                         Outcome::EnterCommand => {
                             mode = InputMode::Command {
                                 input: String::new(),
@@ -7583,6 +7626,40 @@ mod tests {
             "j 应执行 to_top（落 .. 行）"
         );
         assert_eq!(state.active_tab().cursor, 0);
+    }
+
+    #[test]
+    fn gap2_session_records_drain_history_and_flush() {
+        // collect：history[1..]（启动落点不算导航）→ Navigate 事件。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let cfg = state.config;
+        let a = tmp.path().join("a");
+        fs::create_dir(&a).unwrap();
+        state
+            .active_tab_mut()
+            .navigate_to(Location::Physical(a.clone()), cfg)
+            .unwrap();
+        state.push_tab(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
+        let records = collect_session_records(&state);
+        assert_eq!(records.len(), 1, "仅 tab A 的真实导航入列（启动落点不算）");
+        assert_eq!(records[0].path, a.to_string_lossy().replace('\\', "/"));
+        assert_eq!(records[0].kind, crate::frecency::EntryKind::Navigate);
+
+        // flush_visits_at：事件真正落库（注入路径）。
+        let dir = TempDir::new().unwrap();
+        let db = dir.path().join("frecency.redb");
+        let pending = dir.path().join("events.pending");
+        let written = crate::frecency::flush_visits_at(&db, &pending, &records).unwrap();
+        assert_eq!(written, 1);
+        // 回读验证。
+        let store = crate::store::Store::open(&db).unwrap();
+        assert_eq!(store.global_tick().unwrap(), 1, "事件入库");
+        // 空轨迹：写 0。
+        let mut empty_state =
+            AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        empty_state.active_tab_mut().history.truncate(1);
+        assert!(collect_session_records(&empty_state).is_empty());
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

@@ -457,3 +457,8 @@ rvifm record  → 静默记录访问
 - **execute_action 抽取**：seq 派发的 match 臂与单键用户绑定共用同一执行函数；序列清理由调用方统一处理（根除"早退跳过 clear → 残留吞键"缺陷类，此前 dd/DD 确认后即受此害）。
 - **run 字段命名**：snake_case 为主 + vifm 惯用别名（put_move/paste_move 等）；未知动作名与非法键**整条跳过**不 panic（配置容错与 M5-1 一致）。
 - **`histprev`/`histnext` 落为 Action 变体**（无默认键），用户 keymap.toml 可绑（如 C-o/C-i）——NAV-3 的推荐映射示例自此真正可用。
+
+### 2026-11-15 — GAP-2 实现决策
+
+- **事件边界**：history[0]（启动落点/:tabnew 落点）不算导航——SPEC"record 只在真实跳转成功后调用"的延伸；history[1..] 每条 = 一次真实 navigate_to（含 cd/quickjump/定位/前进后退）。重复访问保留（每次 = 一次访问，评分语义）。
+- **降级**：与 record 同链——Store 打不开整批写 events.pending；单条重试 3 次失败也落 pending；下次打开时 merge_pending 合并。刷写失败 eprintln 不阻塞退出。
