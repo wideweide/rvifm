@@ -2877,10 +2877,14 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             .take(tab_hist.hist_pos + 1)
             .enumerate()
             .map(|(idx, loc)| {
-                let mut text = loc.display_path();
-                if idx == tab_hist.hist_pos {
-                    text.push_str("  ● 当前");
-                }
+                // 标记放行首：长路径被浮窗宽度截断时标记仍可见（Windows
+                // 路径可达数十列，行尾标记会被截掉）。
+                let mut text = if idx == tab_hist.hist_pos {
+                    "● ".to_owned()
+                } else {
+                    String::new()
+                };
+                text.push_str(&loc.display_path());
                 if idx == *cursor {
                     Line::from(text).style(Style::new().add_modifier(Modifier::REVERSED))
                 } else {
