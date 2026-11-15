@@ -73,6 +73,8 @@ enum Outcome {
     EnterFilter,
     /// 请求进入查看器搜索输入（M17 VIEW-1：查看器内 `/`）。
     EnterViewerSearch,
+    /// 请求打开排序对话框（M18-1：`S`）。
+    EnterSortDialog,
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool),
@@ -150,6 +152,9 @@ enum InputMode {
     HistoryMenu { cursor: usize },
     /// 查看器搜索输入（M17 VIEW-1）：Enter 提交定位，Esc 取消。
     ViewerSearch { input: String },
+    /// 排序对话框（M18-1）：`cursor` = 高亮字段；`desc` = 空格切换的
+    /// 待定方向（Enter 应用到高亮字段）。字母键直接应用并关闭。
+    SortDialog { cursor: usize, desc: bool },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`）。
@@ -278,6 +283,60 @@ enum ContextMenuOutcome {
     Delete { path: PathBuf },
     /// 打开命令行并预填（Rename → `rename `）。
     RenamePrefill { line: String },
+}
+
+/// M18-1：排序对话框按键结果。
+#[derive(Debug)]
+enum SortDialogOutcome {
+    None,
+    Close,
+    Apply(crate::tab::SortSpec),
+}
+
+/// M18-1：排序对话框按键处理（字母=直接应用；空格=换向；回车=应用
+/// 高亮字段当前方向；j/k 移动；Esc=取消）。
+fn handle_sort_dialog_key(
+    _state: &mut AppState,
+    key: KeyEvent,
+    cursor: &mut usize,
+    desc: &mut bool,
+    msg: &mut Option<String>,
+) -> SortDialogOutcome {
+    let field_of = |code: KeyCode| -> Option<(crate::tab::SortField, bool)> {
+        SORT_FIELDS.iter().find_map(|(lo, hi, _, f)| {
+            if *lo == code {
+                Some((*f, false))
+            } else if *hi == code {
+                Some((*f, true))
+            } else {
+                None
+            }
+        })
+    };
+    if let Some((field, d)) = field_of(key.code) {
+        let _ = msg;
+        return SortDialogOutcome::Apply(crate::tab::SortSpec { field, desc: d });
+    }
+    match key.code {
+        KeyCode::Esc => SortDialogOutcome::Close,
+        KeyCode::Down | KeyCode::Char('j') => {
+            *cursor = (*cursor + 1).min(SORT_FIELDS.len() - 1);
+            SortDialogOutcome::None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            *cursor = cursor.saturating_sub(1);
+            SortDialogOutcome::None
+        }
+        KeyCode::Char(' ') => {
+            *desc = !*desc;
+            SortDialogOutcome::None
+        }
+        KeyCode::Enter => {
+            let field = SORT_FIELDS[*cursor].3;
+            SortDialogOutcome::Apply(crate::tab::SortSpec { field, desc: *desc })
+        }
+        _ => SortDialogOutcome::None,
+    }
 }
 
 /// FEAT-3：菜单浮窗矩形——固定 34×8 居中（含边框）。
@@ -1237,6 +1296,35 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
 /// 已接入：`j/k`、`l`/`Enter`、`h`、`gg`、`G`、`Ctrl-u/d`、`gt`/`gT`/`N gt`、
 /// `/`、`n`/`N`、`dd`（删除确认）、`u`（撤销）、`v`（可视选择）、Esc（退出选择）、
 /// `t`（tag 标记）、`q`/`Ctrl-C`、`:`。
+/// M18-1：排序对话框字段表（小写键, 大写键, 说明, 字段）——字母直接应用；
+/// 对话框内 `s`/`S` 是"大小"字段键，不触发 shell（模态）。
+const SORT_FIELDS: [(KeyCode, KeyCode, &str, crate::tab::SortField); 4] = [
+    (
+        KeyCode::Char('n'),
+        KeyCode::Char('N'),
+        "名称 name",
+        crate::tab::SortField::Name,
+    ),
+    (
+        KeyCode::Char('m'),
+        KeyCode::Char('M'),
+        "修改时间 mtime",
+        crate::tab::SortField::Mtime,
+    ),
+    (
+        KeyCode::Char('s'),
+        KeyCode::Char('S'),
+        "大小 size",
+        crate::tab::SortField::Size,
+    ),
+    (
+        KeyCode::Char('e'),
+        KeyCode::Char('E'),
+        "扩展名 ext",
+        crate::tab::SortField::Ext,
+    ),
+];
+
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
@@ -1783,6 +1871,11 @@ fn handle_key(
             // FIX-2：PutCopy/PutMove——消费 yank 缓冲区（复制/移动到当前目录）。
             input.count = None;
             paste_yanked(state, key.code == KeyCode::Char('P'), msg);
+        }
+        KeyCode::Char('S') => {
+            // M18-1：排序对话框（唯一排序入口；`s` 仍为 shell，见 M18-3）。
+            input.count = None;
+            return Outcome::EnterSortDialog;
         }
         _ => {
             // GAP-1：非 Char 键（F 键/Home 等）的单键用户绑定兜底。
@@ -2694,6 +2787,17 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                             };
                         }
+                        Outcome::EnterSortDialog => {
+                            // 高亮字段初始 = 当前排序字段（否则 name）。
+                            let cur = state
+                                .active_tab()
+                                .sort
+                                .map(|s| s.field)
+                                .unwrap_or(crate::tab::SortField::Name);
+                            let cursor = SORT_FIELDS.iter().position(|f| f.3 == cur).unwrap_or(0);
+                            let desc = state.active_tab().sort.map(|s| s.desc).unwrap_or(false);
+                            mode = InputMode::SortDialog { cursor, desc };
+                        }
                         Outcome::ConfirmDelete(path, permanent) => {
                             mode = InputMode::Confirm { path, permanent };
                         }
@@ -2732,6 +2836,25 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Jobs => {
                     // M13-8：作业菜单——任意键关闭。
                     mode = InputMode::Normal;
+                }
+                InputMode::SortDialog { cursor, desc } => {
+                    // M18-1：排序对话框——字母直接应用；空格换向；回车应用。
+                    if key.kind == KeyEventKind::Press {
+                        match handle_sort_dialog_key(&mut state, key, cursor, desc, &mut msg) {
+                            SortDialogOutcome::None => {}
+                            SortDialogOutcome::Close => mode = InputMode::Normal,
+                            SortDialogOutcome::Apply(spec) => {
+                                let cfg = state.config;
+                                state.active_tab_mut().apply_sort(spec, cfg);
+                                mode = InputMode::Normal;
+                                msg = Some(format!(
+                                    "已排序: {} {}",
+                                    spec.field.label(),
+                                    if spec.desc { "desc" } else { "asc" }
+                                ));
+                            }
+                        }
+                    }
                 }
                 InputMode::ViewerSearch { input } => {
                     // M17 VIEW-1：查看器搜索输入——Enter 提交定位，Esc 取消。
@@ -3191,6 +3314,52 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::SortDialog { cursor, desc } = mode {
+        // M18-1：排序对话框（固定尺寸居中遮罩）。
+        let area = frame.area();
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(
+            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
+            area,
+        );
+        let popup = context_menu_rect(area);
+        let cur_sort = state.active_tab().sort;
+        let lines: Vec<Line> = SORT_FIELDS
+            .iter()
+            .enumerate()
+            .map(|(idx, (_lo, _hi, label, field))| {
+                let current = cur_sort
+                    .filter(|s| s.field == *field)
+                    .map(|s| if s.desc { "desc" } else { "asc" });
+                let pending = if idx == *cursor {
+                    Some(if *desc { "desc" } else { "asc" })
+                } else {
+                    None
+                };
+                let text = match (current, pending) {
+                    (Some(cur), Some(pend)) => {
+                        format!("{label}  [{cur} → {pend}]")
+                    }
+                    (Some(cur), None) => format!("{label}  [{cur}]"),
+                    (None, Some(pend)) => format!("{label}  [→ {pend}]"),
+                    (None, None) => (*label).to_owned(),
+                };
+                if idx == *cursor {
+                    Line::from(text).style(Style::new().add_modifier(Modifier::REVERSED))
+                } else {
+                    Line::from(text)
+                }
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered()
+                    .title("排序（字母=直接应用 空格=换向 回车=应用 Esc=取消）"),
+            ),
+            popup,
+        );
+        return;
+    }
     if let InputMode::HistoryMenu { cursor } = mode {
         // M16 NAV-2：历史菜单浮窗（居中遮罩；条目 live 取自 history[..=hist_pos]）。
         let area = frame.area();
@@ -3331,6 +3500,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
+        InputMode::SortDialog { .. } => Line::from(String::new()), // 排序对话框提前 return，不可达
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
         InputMode::Command { input } => Line::from(format!(":{input}")),
@@ -3411,6 +3581,14 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                     r.query,
                     r.items.len(),
                     if r.truncated { " 已截断" } else { "" }
+                )));
+            }
+            if let Some(spec) = &tab.sort {
+                // M18-1：排序指示。
+                spans.push(Span::from(format!(
+                    "  [sort: {} {}]",
+                    spec.field.label(),
+                    if spec.desc { "desc" } else { "asc" }
                 )));
             }
             if let Some(s) = &tab.search {
@@ -3632,6 +3810,7 @@ mod tests {
             hist_pos: 0,
             results: None,
             viewer: None,
+            sort: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -5453,6 +5632,7 @@ mod tests {
             is_dir: false,
             size: 12,
             perm: String::new(),
+            mtime: 0,
         }];
 
         let backend = ratatui::backend::TestBackend::new(120, 8);
@@ -5489,6 +5669,7 @@ mod tests {
                 is_dir: true,
                 size: 0,
                 perm: String::new(),
+                mtime: 0,
             },
             FileItem {
                 icon: crate::icons::icon_for(Path::new("readme.md"), crate::icons::IconTheme::Dark),
@@ -5496,6 +5677,7 @@ mod tests {
                 is_dir: false,
                 size: 2,
                 perm: String::new(),
+                mtime: 0,
             },
             FileItem {
                 icon: crate::icons::icon_for(Path::new("src/"), crate::icons::IconTheme::Dark),
@@ -5503,6 +5685,7 @@ mod tests {
                 is_dir: true,
                 size: 0,
                 perm: String::new(),
+                mtime: 0,
             },
         ];
 
@@ -7660,6 +7843,130 @@ mod tests {
             AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         empty_state.active_tab_mut().history.truncate(1);
         assert!(collect_session_records(&empty_state).is_empty());
+    }
+
+    #[test]
+    fn m181_sort_dialog_keys_apply_and_close() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("b.txt"), "xx").unwrap();
+        fs::write(tmp.path().join("a.doc"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+        let mut cursor = 0usize;
+        let mut desc = false;
+
+        // 字母直接应用：m → mtime 升序 + 关闭。
+        match handle_sort_dialog_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE),
+            &mut cursor,
+            &mut desc,
+            &mut msg,
+        ) {
+            SortDialogOutcome::Apply(spec) => {
+                assert_eq!(spec.field, crate::tab::SortField::Mtime);
+                assert!(!spec.desc);
+                // 镜像 run 循环：Apply 由调用方执行 apply_sort。
+                state.active_tab_mut().apply_sort(spec, Config::default());
+            }
+            other => panic!("expected Apply, got {other:?}"),
+        }
+        // 应用后排序生效（mtime 平手回退名称：a.doc 在前）。
+        assert_eq!(state.active_tab().entries[0].name, "a.doc");
+        // 状态栏指示数据源。
+        assert_eq!(
+            state.active_tab().sort.unwrap().field,
+            crate::tab::SortField::Mtime
+        );
+
+        // 空格换向（不应用）→ 回车应用降序。
+        handle_sort_dialog_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+            &mut cursor,
+            &mut desc,
+            &mut msg,
+        );
+        assert!(desc, "空格切换待定方向");
+        match handle_sort_dialog_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut cursor,
+            &mut desc,
+            &mut msg,
+        ) {
+            SortDialogOutcome::Apply(spec) => {
+                assert!(spec.desc, "回车应用换向后的降序");
+                assert_eq!(spec.field, crate::tab::SortField::Name);
+                // 镜像 run 循环：Apply 由调用方执行 apply_sort。
+                state.active_tab_mut().apply_sort(spec, Config::default());
+            }
+            other => panic!("expected Apply, got {other:?}"),
+        }
+        assert_eq!(
+            state.active_tab().entries[0].name,
+            "b.txt",
+            "名称降序 b.txt 在前"
+        );
+
+        // Esc 取消：不改排序。
+        let before = state.active_tab().sort;
+        match handle_sort_dialog_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut cursor,
+            &mut desc,
+            &mut msg,
+        ) {
+            SortDialogOutcome::Close => {}
+            other => panic!("expected Close, got {other:?}"),
+        }
+        assert_eq!(state.active_tab().sort, before);
+    }
+
+    #[test]
+    fn m181_sort_dialog_opens_and_renders() {
+        // S → EnterSortDialog；渲染：字段说明 + 当前排序状态 + 遮罩。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        assert_eq!(
+            press_msg(
+                &mut state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('S'),
+                KeyModifiers::NONE
+            ),
+            Outcome::EnterSortDialog
+        );
+        // 预置一个排序状态供对话框显示"当前"。
+        state.active_tab_mut().sort = Some(crate::tab::SortSpec {
+            field: crate::tab::SortField::Size,
+            desc: true,
+        });
+        let mode = InputMode::SortDialog {
+            cursor: 2,
+            desc: false,
+        };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let all: String = (0..24u16)
+            .flat_map(|y| (0..80u16).map(move |x| (x, y)))
+            .map(|(x, y)| buffer[(x, y)].symbol())
+            .collect();
+        assert!(all.contains("size"), "字段说明: {all}");
+        assert!(
+            all.contains("desc"),
+            "当前排序状态（合并格式 [desc → asc]）: {all}"
+        );
+        assert!(buffer[(0, 1)].symbol().trim().is_empty(), "遮罩生效");
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

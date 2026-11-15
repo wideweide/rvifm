@@ -55,6 +55,8 @@ pub struct FileItem {
     pub size: u64,
     /// 平台相关权限摘要：unix 为 3 位八进制（如 `644`），Windows 为 `ro`/`rw`。
     pub perm: String,
+    /// 修改时间（Unix 秒；归档/结果条目可能为 0）。
+    pub mtime: u64,
 }
 
 /// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
@@ -201,8 +203,45 @@ pub struct Tab {
     /// M17 SRCH：搜索结果虚拟目录（:find/:grep；沿 :tree 同构——静态
     /// 条目 + 只读守卫，items/entries 平行表）。
     pub results: Option<crate::search::SearchResults>,
+    /// M18-1：运行时排序状态（`S` 对话框 / `:sort`；None = 默认顺序）。
+    pub sort: Option<SortSpec>,
     /// M17 VIEW-1：交互式查看器状态（view_mode 激活时右 pane）。
     pub viewer: Option<ViewerState>,
+}
+
+/// M18-1：运行时排序字段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortField {
+    Name,
+    Mtime,
+    Size,
+    Ext,
+}
+
+/// M18-1：排序规格（字段 + 方向）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SortSpec {
+    pub field: SortField,
+    pub desc: bool,
+}
+
+impl SortField {
+    /// 中文名（对话框显示）。
+    pub fn label(self) -> &'static str {
+        match self {
+            SortField::Name => "名称",
+            SortField::Mtime => "修改时间",
+            SortField::Size => "大小",
+            SortField::Ext => "扩展名",
+        }
+    }
+
+    /// 文件扩展名（小写；无扩展名 = 空串）。
+    fn ext_of(name: &str) -> String {
+        name.rsplit_once('.')
+            .map(|(_, e)| e.to_lowercase())
+            .unwrap_or_default()
+    }
 }
 
 /// M17 VIEW-1：查看器状态（行号滚动 + 搜索定位）。
@@ -231,6 +270,7 @@ impl Tab {
             hist_pos: 0,
             results: None,
             viewer: None,
+            sort: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -476,7 +516,43 @@ impl Tab {
         (cur, total)
     }
 
+    /// M18-1：就地应用运行时排序（目录优先保持 + 字段 + 名称平手）；
+    /// 光标保持在同一文件上。
+    pub fn apply_sort(&mut self, spec: SortSpec, config: Config) {
+        self.sort = Some(spec);
+        let keep = self.entries.get(self.cursor).map(|i| i.name.clone());
+        self.sort_entries(spec, &config);
+        if let Some(name) = keep
+            && let Some(idx) = self.entries.iter().position(|i| i.name == name)
+        {
+            self.cursor = idx;
+        }
+    }
+
+    /// 排序比较器（目录优先 + 字段 + 名称平手，确定性）。
+    fn sort_entries(&mut self, spec: SortSpec, config: &Config) {
+        let dirs_first = config.sort_dirs_first;
+        self.entries.sort_by(|a, b| {
+            let dir_cmp = if dirs_first {
+                b.is_dir.cmp(&a.is_dir)
+            } else {
+                std::cmp::Ordering::Equal
+            };
+            dir_cmp.then_with(|| {
+                let base = match spec.field {
+                    SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    SortField::Mtime => a.mtime.cmp(&b.mtime),
+                    SortField::Size => a.size.cmp(&b.size),
+                    SortField::Ext => SortField::ext_of(&a.name).cmp(&SortField::ext_of(&b.name)),
+                };
+                let ordered = if spec.desc { base.reverse() } else { base };
+                ordered.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            })
+        });
+    }
+
     /// 重读当前物理目录条目并钳制光标（删除/撤销后刷新，M2-2）。
+    /// M18-1：刷新后重应用 tab 排序，光标尽量保持在同一文件。
     /// 归档位置为 no-op（M7 接入）。
     pub fn refresh(&mut self, config: Config) -> std::io::Result<()> {
         let Location::Physical(dir) = &self.location else {
@@ -487,6 +563,15 @@ impl Tab {
             entries.retain(|item| glob_match(pat, &item.name));
         }
         self.entries = entries;
+        let keep_name = self.entries.get(self.cursor).map(|i| i.name.clone());
+        if let Some(spec) = self.sort {
+            self.sort_entries(spec, &config);
+        }
+        if let Some(name) = keep_name
+            && let Some(idx) = self.entries.iter().position(|i| i.name == name)
+        {
+            self.cursor = idx;
+        }
         self.cursor = self.cursor.min(self.entries.len().saturating_sub(1));
         self.visual = self
             .visual
@@ -645,6 +730,12 @@ impl Tab {
                         } else {
                             std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0)
                         },
+                        mtime: std::fs::metadata(&full)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
                         perm: String::new(),
                     });
                     if out.len() >= MAX_TREE_ITEMS {
@@ -839,6 +930,7 @@ impl Tab {
                     is_dir: false,
                     size: 0,
                     perm: String::new(),
+                    mtime: 0,
                 }
             })
             .collect();
@@ -1039,6 +1131,7 @@ fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileIte
                 is_dir: e.is_dir,
                 size: e.size,
                 perm: String::new(),
+                mtime: 0,
             }
         })
         .collect())
@@ -1100,6 +1193,12 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
         let meta = entry.metadata()?;
         let size = meta.len();
         let perm = perm_string(&meta);
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let icon = crate::icons::icon_for_active(&entry.path());
         items.push(FileItem {
             icon,
@@ -1107,6 +1206,7 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
             is_dir,
             size,
             perm,
+            mtime,
         });
     }
     items.sort_by(|a, b| {
@@ -1229,6 +1329,7 @@ mod tests {
             is_dir,
             size: 0,
             perm: String::new(),
+            mtime: 0,
         }
     }
 
@@ -1478,6 +1579,7 @@ mod tests {
             hist_pos: 0,
             results: None,
             viewer: None,
+            sort: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -1557,6 +1659,101 @@ mod tests {
             tab.history[1],
             Location::Physical(tmp.path().join("a").join("b"))
         );
+    }
+
+    #[test]
+    fn m181_apply_sort_fields_and_cursor_retention() {
+        // 手工条目：mtime/size 显式可控（不依赖真实 fs 时间戳）。
+        let mk = |name: &str, is_dir: bool, size: u64, mtime: u64| FileItem {
+            icon: crate::icons::icon_for(std::path::Path::new(name), crate::icons::IconTheme::Dark),
+            name: name.to_owned(),
+            is_dir,
+            size,
+            perm: String::new(),
+            mtime,
+        };
+        let mut tab = Tab {
+            location: Location::Physical(PathBuf::from("/x")),
+            entries: vec![
+                mk("b.txt", false, 2, 100),
+                mk("a.doc", false, 0, 200),
+                mk("c.md", false, 15, 300),
+            ],
+            cursor: 0,
+            scroll: 0,
+            search: None,
+            history: Vec::new(),
+            hist_pos: 0,
+            results: None,
+            viewer: None,
+            sort: None,
+            visual: None,
+            filter: None,
+            tags: HashSet::new(),
+            char_search: None,
+            tree: None,
+            view_mode: false,
+            right: Pane::from_physical(Path::new("."), Config::default()).unwrap(),
+            focus: Focus::Left,
+            on_parent_row: false,
+        };
+        let cfg = Config::default(); // sort_dirs_first 默认 true（无目录，不影响）
+
+        // 名称升序 → 光标跟随原文件（b.txt）。
+        tab.apply_sort(
+            SortSpec {
+                field: SortField::Name,
+                desc: false,
+            },
+            cfg,
+        );
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["a.doc", "b.txt", "c.md"]);
+        assert_eq!(tab.entries[tab.cursor].name, "b.txt", "光标跟随");
+
+        // 名称降序。
+        tab.apply_sort(
+            SortSpec {
+                field: SortField::Name,
+                desc: true,
+            },
+            cfg,
+        );
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["c.md", "b.txt", "a.doc"]);
+        assert_eq!(tab.entries[tab.cursor].name, "b.txt");
+
+        // 大小升序：a.doc(0) < b.txt(2) < c.md(15)。
+        tab.apply_sort(
+            SortSpec {
+                field: SortField::Size,
+                desc: false,
+            },
+            cfg,
+        );
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["a.doc", "b.txt", "c.md"]);
+
+        // mtime 降序：c.md(300) 最前。
+        tab.apply_sort(
+            SortSpec {
+                field: SortField::Mtime,
+                desc: true,
+            },
+            cfg,
+        );
+        assert_eq!(tab.entries[0].name, "c.md");
+
+        // 扩展名升序：doc < md < txt。
+        tab.apply_sort(
+            SortSpec {
+                field: SortField::Ext,
+                desc: false,
+            },
+            cfg,
+        );
+        let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["a.doc", "c.md", "b.txt"]);
     }
 
     #[test]
