@@ -38,7 +38,7 @@ jobs:
           exit ${PIPESTATUS[0]}
       # 失败诊断：把失败摘要作为 check-run annotation 追加（匿名 API 可读）。
       - name: publish failure digest
-        if: failure() && matrix.os == 'ubuntu-latest'
+        if: failure()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
