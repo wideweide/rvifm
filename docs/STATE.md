@@ -1,4 +1,5 @@
 # STATE —
+- `NAV-1`（2026-11-15）：frecency 快速映射层——EntryKind::Keyword + EntryRecord.keyword（serde default 旧格式兼容）；keyword 事件重放只应用元数据（不加分不推进时钟，±keyword 隔离断言分数全等）；record --keyword（纯元数据事件不记访问）；set_keyword_at/_now（TUI :keyword 同链，- 清除）；[quickjump] char→keyword 独立解析（OnceLock，不动 Config Copy；踩坑：toml 1.x Value::from_str 只解析单值，文档用 Table）；（反引号）+字符 quickjump（别名优先、缺省查 keyword==字符；quickjump_target 纯函数筛 dir 最高分——踩坑：cmp_ranked 是降序比较器不能直接喂 max_by，改显式 score 比较器）；未命中提示不静默；:cd 补 on_parent_row=false（FEAT-2 遗留）。help.txt 更新。208 单测全绿（+4）。
 - `M15 批次全部关闭`（2026-11-15）：FIX-1～4 + FEAT-1～4 八项完成（各自提交见上）；M14-4 发布闭环验证——GitHub Release v0.5.0 双平台归档（linux 9.8MB/windows 8.8MB）+ crates.io 0.5.0。
 - `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io + tag `v0.5.0` → GitHub Release。
 - `FEAT-4`（2026-11-15）：:help 全屏帮助视图——`src/help.txt` 内嵌（include_str!，完整键位/命令/鼠标/菜单参考）；`InputMode::Help` 替换为 `HelpView { scroll, search }` + `HelpSearch { input, scroll, search }`（搜索输入携带视图状态）：j/k 滚动（钳制）、/ 搜索、n/N 环绕跳转（help_find_match 大小写不敏感子串）、q/Esc 关闭返回（状态仅模式局部，列表光标/滚动不变）；渲染全屏 Block + 标题含搜索词。**踩坑**：TestBackend 渲染 CJK 全角为"字+空格"，断言取单字/ASCII token；反向搜索 start = scroll+len-1（排除当前行）。203 单测全绿（+3）。

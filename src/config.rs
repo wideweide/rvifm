@@ -81,6 +81,47 @@ pub fn load() -> Result<Config, String> {
     load_from(&config_path())
 }
 
+/// M16 NAV-1：char→keyword 快速映射（config.toml `[quickjump]` 表）。
+/// 独立于 `Config` 解析（表可选、缺省为空），不存路径——跳转目标由
+/// frecency keyword 检索决定。
+pub fn load_quickjump_from(path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    let mut map = std::collections::BTreeMap::new();
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return map;
+    };
+    // toml 1.x：`Value::from_str` 只解析单值；文档解析用 `Table`。
+    let value = match text.parse::<toml::Table>() {
+        Ok(v) => v,
+        Err(_) => return map,
+    };
+    #[cfg(test)]
+    eprintln!("DBG parsed: {value:?}");
+    if let Some(table) = value.get("quickjump").and_then(|v| v.as_table()) {
+        for (k, v) in table {
+            if let Some(kw) = v.as_str()
+                && let Some(ch) = k.chars().next()
+                && k.chars().count() == 1
+            {
+                map.insert(ch.to_string(), kw.to_owned());
+            }
+        }
+    }
+    map
+}
+
+static QUICKJUMP: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+    std::sync::OnceLock::new();
+
+/// TUI 启动时加载一次（run 入口调用）。
+pub fn init_quickjump() {
+    let _ = QUICKJUMP.set(load_quickjump_from(&config_path()));
+}
+
+/// `'`+字符 的 keyword 别名（未配置返回 None，调用方回退到字符本身）。
+pub fn quickjump_alias(c: char) -> Option<String> {
+    QUICKJUMP.get().and_then(|m| m.get(&c.to_string()).cloned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,6 +132,28 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg = load_from(&tmp.path().join("nope.toml")).unwrap();
         assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn quickjump_table_parses_single_char_keys_only() {
+        // M16 NAV-1：[quickjump] char→keyword；多字符键忽略。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[quickjump]
+d = "dl"
+c = "code"
+dl = "bad"
+"#,
+        )
+        .unwrap();
+        let m = load_quickjump_from(&path);
+        assert_eq!(m.get("d").map(String::as_str), Some("dl"));
+        assert_eq!(m.get("c").map(String::as_str), Some("code"));
+        assert!(!m.contains_key("dl"), "多字符键不进快速层");
+        // 缺文件 → 空。
+        assert!(load_quickjump_from(&tmp.path().join("nope.toml")).is_empty());
     }
 
     #[test]

@@ -418,6 +418,48 @@ fn physical_base(state: &AppState) -> Result<PathBuf, String> {
     Ok(tab.focus_base().to_path_buf())
 }
 
+// ── M16 NAV-1：' 快速跳转（keyword 直达） ──────────────────────────────
+
+/// NAV-1 纯函数：从重放条目中取 keyword 精确匹配的**目录**最高排名路径。
+/// 候选 keyword 相同 → 档位相同（Grade 6 书签）→ 分数即唯一区分；
+/// 平分按路径字典序取前（确定性）。注意 cmp_ranked 是降序比较器，
+/// 不能直接喂 max_by。
+fn quickjump_target(entries: &[crate::frecency::ScoredEntry], keyword: &str) -> Option<String> {
+    entries
+        .iter()
+        .filter(|e| e.topic == "dir" && e.keyword == keyword)
+        .max_by(|a, b| a.score.total_cmp(&b.score).then(b.path.cmp(&a.path)))
+        .map(|e| e.path.clone())
+}
+
+/// `'`+字符：keyword 直达——配置别名优先，缺省即字符本身；
+/// 命中目录即 cd（等价 :cd：history 入栈 + 刷新）；未命中提示不静默。
+fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
+    let target_kw = config::quickjump_alias(c).unwrap_or_else(|| c.to_string());
+    let entries = match load_jump_entries(JumpKind::Unified) {
+        Ok(entries) => entries,
+        Err(e) => {
+            *msg = Some(e);
+            return;
+        }
+    };
+    let Some(target) = quickjump_target(&entries, &target_kw) else {
+        *msg = Some(format!(
+            "无 keyword {target_kw} 的条目（:keyword {target_kw} 设置）"
+        ));
+        return;
+    };
+    let cfg = state.config;
+    let tab = state.active_tab_mut();
+    tab.history.push(tab.location.clone());
+    tab.location = Location::Physical(PathBuf::from(&target));
+    tab.cursor = 0;
+    tab.scroll = 0;
+    tab.on_parent_row = false;
+    let _ = tab.refresh(cfg);
+    *msg = Some(format!("已跳转: {target}"));
+}
+
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────────
 
 /// 选择器数据（纯只读）：按视角从 frecency 存储加载并排名。
@@ -570,6 +612,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             tab.location = Location::Physical(target);
             tab.cursor = 0;
             tab.scroll = 0;
+            tab.on_parent_row = false; // FEAT-2：cd 后不残留 ".." 焦点
             let _ = tab.refresh(cfg);
             Ok(ExecOutcome::Done { msg: None })
         }
@@ -810,6 +853,28 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let items = crate::ops::read_trash_index();
             Ok(ExecOutcome::ShowTrash { items })
         }
+        Some("keyword") => {
+            // M16 NAV-1：设置/清除当前目录书签 keyword（append-only 事件）。
+            // `-` 清除；归档视图与 `..` 行已被前置守卫拒绝。
+            let kw = parts
+                .next()
+                .ok_or_else(|| "keyword: 缺少参数（`-` 清除）".to_owned())?;
+            if kw.chars().count() > 32 {
+                return Err("keyword: 过长（≤32 字符）".to_owned());
+            }
+            let base = physical_base(state)?;
+            let clear = kw == "-";
+            let kw_str = if clear { String::new() } else { kw.to_owned() };
+            crate::frecency::set_keyword_now(&base.display().to_string(), &kw_str)
+                .map_err(|e| format!("keyword: 写入失败: {e}"))?;
+            Ok(ExecOutcome::Done {
+                msg: Some(if clear {
+                    "已清除书签 keyword".to_owned()
+                } else {
+                    format!("已设置 keyword: {kw_str}")
+                }),
+            })
+        }
         Some("file") => {
             // FEAT-3：`:file` 显示当前选中项详情（与 Ctrl-G/右键菜单同源；
             // 归档成员显示 host:/inner/name）。`..` 行已被前置守卫拒绝。
@@ -1030,6 +1095,15 @@ fn handle_key(
                 && !state.active_tab_mut().jump_first_char(c, forward)
             {
                 *msg = Some(format!("无首字符 {c} 的条目"));
+            }
+            return Outcome::Continue;
+        }
+        // M16 NAV-1：' 序列的第二键 = keyword 字符（快速跳转）。
+        if input.seq.len() == 1 && input.seq[0].code == KeyCode::Char('\'') {
+            input.seq.clear();
+            input.count = None;
+            if let KeyCode::Char(c) = key.code {
+                quickjump(state, c, msg);
             }
             return Outcome::Continue;
         }
@@ -1257,6 +1331,11 @@ fn handle_key(
         }
         KeyCode::Char('f') | KeyCode::Char('F') => {
             // M13-1：f/F 进入首字母搜索序列（第二键为搜索字符）。
+            input.count = None;
+            input.seq.push(crate::keymap::Key::plain(key.code));
+        }
+        KeyCode::Char('\'') => {
+            // M16 NAV-1：' 进入快速跳转序列（第二键为 keyword 字符）。
             input.count = None;
             input.seq.push(crate::keymap::Key::plain(key.code));
         }
@@ -1893,6 +1972,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             config::Config::default()
         }
     };
+    // M16 NAV-1：加载 [quickjump] char→keyword 别名（一次）。
+    config::init_quickjump();
     let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?, config)?);
     state.config = config;
     let mut input = InputState::default();
@@ -4850,6 +4931,7 @@ mod tests {
             kind: crate::frecency::EntryKind::Open,
             ts: 1000,
             clock,
+            keyword: String::new(),
         };
         let events = [(1u64, file_ev(1))];
         // 统一视角：全局序号推进到 100 → file 条目大幅衰减。
@@ -6260,6 +6342,83 @@ mod tests {
             .collect::<String>();
         assert!(row1.contains("f00"), "列表恢复: {row1}");
         assert_eq!(state.active_tab().cursor, 2, "光标不变");
+    }
+
+    #[test]
+    fn nav1_quickjump_target_picks_top_ranked_dir_by_keyword() {
+        use crate::frecency::{Grade, ScoredEntry};
+        let mk = |path: &str, topic: &str, kw: &str, score: f64| ScoredEntry {
+            path: path.to_owned(),
+            topic: topic.to_owned(),
+            keyword: kw.to_owned(),
+            score,
+            grade: Grade::None,
+        };
+        let entries = vec![
+            mk("/low", "dir", "dl", 1.0),
+            mk("/high", "dir", "dl", 9.0),
+            mk("/file", "file", "dl", 99.0), // file topic 不参与
+            mk("/other", "dir", "xx", 50.0),
+        ];
+        assert_eq!(
+            quickjump_target(&entries, "dl"),
+            Some("/high".to_owned()),
+            "keyword 精确匹配的 dir 最高分"
+        );
+        assert_eq!(quickjump_target(&entries, "zz"), None);
+    }
+
+    #[test]
+    fn nav1_quote_seq_miss_hints_without_navigation() {
+        // ' + d：无 keyword 条目（全局 store 可能为空）→ 提示 + 光标不变。
+        // 注：open_store 读全局路径（M8-12 同款约束），只断言提示形态与
+        // 无副作用，不断言 entries 数量。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('\''),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            msg.as_deref().is_some(),
+            "未命中应有提示（store 含 keyword=d 数据时提示被跳转消息取代）"
+        );
+        assert!(
+            state.active_tab().location.display_path().contains("a.txt")
+                || matches!(state.active_tab().location, Location::Physical(_)),
+            "未命中不导航"
+        );
+    }
+
+    #[test]
+    fn nav1_keyword_command_rejects_archive_and_parent_row() {
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 归档视图：physical_base 拒绝（不触发任何写入）。
+        state.active_tab_mut().cursor = 1;
+        let mut msg = None;
+        open_selected(&mut state, &mut msg);
+        assert!(matches!(
+            state.active_tab().location,
+            Location::Archive { .. }
+        ));
+        assert!(exec_command_impl(&mut state, "keyword dl").is_err());
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

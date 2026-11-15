@@ -17,6 +17,8 @@ rvifm 帮助（vim 风格文件管理器）
   f / F {字符}    按文件名首字符快速定位（; 同向重复，, 反向）
   o               跳转选择器（frecency 合一视角）
   :j / :J         仅目录 / 仅文件的跳转选择器
+  '{字符}         keyword 直达（如 'd 跳到 keyword=d 的最高排名目录；
+                  :keyword <chars> 设置书签，config.toml [quickjump] 可配别名）
 
 == 选择、标记与批量 ==
   v               可视选择（j/k 扩选，Esc 退出）
@@ -37,6 +39,7 @@ rvifm 帮助（vim 风格文件管理器）
   :mkdir / :touch <名>
   :cd <目录>
   :file           显示当前条目详情（路径/大小/权限/修改时间/类型）
+  :keyword <chars>  设置当前目录书签 keyword（`-` 清除；' 直达的锚点）
 
 == 多标签 ==
   :tabnew / :tabclose

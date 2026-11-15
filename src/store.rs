@@ -257,6 +257,7 @@ mod tests {
             kind: EntryKind::Navigate,
             ts,
             clock: 0,
+            keyword: String::new(),
         }
     }
 

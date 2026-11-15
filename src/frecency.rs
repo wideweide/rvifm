@@ -24,6 +24,9 @@ pub enum EntryKind {
     Navigate,
     /// 文件管理器打开文件成功。
     Open,
+    /// 书签 keyword 设置（M16 NAV-1）：元数据事件，重放时只应用 keyword
+    /// 字段，不推进时钟、不加分。
+    Keyword,
 }
 
 /// 访问事件记录（append-only；M8-2 起持久化到 redb `events` 表，
@@ -41,6 +44,10 @@ pub struct EntryRecord {
     /// 旧格式无此字段 → 0（重放侧以全局序号兜底）。
     #[serde(default)]
     pub clock: u64,
+    /// keyword 事件携带的书签字符（M16 NAV-1）；其余事件为空串。
+    /// 旧格式无此字段 → 空（重放侧跳过）。
+    #[serde(default)]
+    pub keyword: String,
 }
 
 /// snapshot 条目（compaction 产物；redb `snapshot` 表，key = `path + topic`）。
@@ -282,6 +289,12 @@ fn replay_inner(
             tick: *seq,
             clock,
         });
+        // M16 NAV-1：keyword 事件是元数据——只应用 keyword，不加分、
+        // 不推进时钟（书签不因设置动作本身获得访问权重）。
+        if matches!(ev.kind, EntryKind::Keyword) {
+            entry.keyword = ev.keyword.clone();
+            continue;
+        }
         let delta = clock.saturating_sub(entry.clock);
         entry.score = aged(entry.score, lambda, delta) + 1.0;
         entry.tick = *seq;
@@ -363,6 +376,7 @@ fn merge_pending(store: &Store, path: &Path) -> std::io::Result<()> {
 pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
     let mut topic = "dir".to_owned();
     let mut path: Option<String> = None;
+    let mut keyword: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -371,6 +385,13 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
                     .next()
                     .ok_or_else(|| arg_err("record: --topic 缺少值"))?
                     .clone();
+            }
+            "--keyword" => {
+                keyword = Some(
+                    it.next()
+                        .ok_or_else(|| arg_err("record: --keyword 缺少值"))?
+                        .clone(),
+                );
             }
             other => {
                 if path.is_some() {
@@ -386,8 +407,14 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
     let record = EntryRecord {
         path: path.replace('\\', "/"),
         topic,
-        kind: EntryKind::Navigate,
+        // M16 NAV-1：--keyword → 纯元数据事件（不记访问）。
+        kind: if keyword.is_some() {
+            EntryKind::Keyword
+        } else {
+            EntryKind::Navigate
+        },
         clock: 0, // M8-10：写入时由 store 注入类型时钟
+        keyword: keyword.unwrap_or_default(),
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -400,6 +427,38 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
         .unwrap_or(Path::new("."))
         .join("events.pending");
     record_impl(&db_path, &pending, &record)
+}
+
+/// M16 NAV-1：设置/清除书签 keyword（可注入路径，测试用）。
+/// `keyword` 为空 = 清除书签（保留累积分数正常衰减，SPEC §4.6）。
+pub fn set_keyword_at(
+    db_path: &Path,
+    pending: &Path,
+    path: &str,
+    keyword: &str,
+) -> std::io::Result<()> {
+    let record = EntryRecord {
+        path: path.replace('\\', "/"),
+        topic: "dir".to_owned(),
+        kind: EntryKind::Keyword,
+        clock: 0,
+        keyword: keyword.trim().to_owned(),
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+    record_impl(db_path, pending, &record)
+}
+
+/// M16 NAV-1：按平台默认存储路径设置 keyword（TUI `:keyword` 入口）。
+pub fn set_keyword_now(path: &str, keyword: &str) -> std::io::Result<()> {
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    set_keyword_at(&db_path, &pending, path, keyword)
 }
 
 /// record 的可测试实现（路径注入）。
@@ -690,6 +749,7 @@ mod tests {
             kind: EntryKind::Navigate,
             ts,
             clock: 0, // 0 = 旧格式兜底（replay 以全局序号回退）
+            keyword: String::new(),
         }
     }
 
@@ -807,6 +867,60 @@ mod tests {
     }
 
     #[test]
+    fn replay_keyword_event_applies_metadata_without_score() {
+        // M16 NAV-1：keyword 事件只应用 keyword——不加分、不推进时钟。
+        let snap = vec![];
+        let events: Vec<(u64, EntryRecord)> = vec![
+            (1, rec("/a", 100)),
+            (
+                2,
+                EntryRecord {
+                    path: "/a".into(),
+                    topic: "dir".into(),
+                    kind: EntryKind::Keyword,
+                    ts: 100,
+                    clock: 2,
+                    keyword: "dl".into(),
+                },
+            ),
+            (3, rec("/b", 100)),
+        ];
+        let entries = replay_inner(&snap, &events, ReplayClocks::Unified(10));
+        let a = entries.iter().find(|e| e.path == "/a").unwrap();
+        assert_eq!(a.keyword, "dl", "keyword 已应用");
+
+        // 隔离断言：同一访问序列 ± keyword 事件，分数必须完全一致
+        // （keyword 事件既不加分也不影响 aging 基线）。
+        let without_kw: Vec<(u64, EntryRecord)> = vec![(1, rec("/a", 100)), (3, rec("/b", 100))];
+        let base = replay_inner(&snap, &without_kw, ReplayClocks::Unified(10));
+        let base_a = base.iter().find(|e| e.path == "/a").unwrap();
+        assert!(
+            (a.score - base_a.score).abs() < 1e-12,
+            "keyword 事件不应改变分数: a={} base={}",
+            a.score,
+            base_a.score
+        );
+        // 清除：空 keyword 事件覆盖。
+        let events_clear: Vec<(u64, EntryRecord)> = vec![
+            (1, rec("/a", 100)),
+            (
+                2,
+                EntryRecord {
+                    path: "/a".into(),
+                    topic: "dir".into(),
+                    kind: EntryKind::Keyword,
+                    ts: 100,
+                    clock: 2,
+                    keyword: String::new(),
+                },
+            ),
+        ];
+        let entries2 = replay_inner(&snap, &events_clear, ReplayClocks::Unified(10));
+        let a2 = entries2.iter().find(|e| e.path == "/a").unwrap();
+        assert!(a2.keyword.is_empty(), "空 keyword = 清除书签");
+    }
+
+    #[test]
     fn replay_per_type_clocks_are_independent() {
         // M8-10：file 条目的 aging 只受 file 时钟影响——dir 时钟推进
         // （目录高频访问）不稀释文件条目的新鲜度。
@@ -816,6 +930,7 @@ mod tests {
             kind: EntryKind::Open,
             ts: 1000,
             clock,
+            keyword: String::new(),
         };
         let events = [(1u64, file_ev(1))]; // file 时钟 1 时打开一次
         // 场景 1：dir/file 时钟都停在 2（近期）。
@@ -940,6 +1055,7 @@ mod tests {
             kind: EntryKind::Navigate,
             clock: 0,
             ts: 1_700_000_000,
+            keyword: String::new(),
         };
         assert_eq!(r.path, "/w/proj");
         assert_eq!(r.kind, EntryKind::Navigate);

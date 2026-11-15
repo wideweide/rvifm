@@ -416,3 +416,10 @@ rvifm record  → 静默记录访问
 - **顺序**：NAV-1 → NAV-3 → NAV-2 → NAV-4（NAV-3 栈改造先定型，NAV-2 菜单消费最终结构）。
 - **影响文件**：SPEC M16、TASKS M16、ACCEPTANCE §18、本节。
 - **待定/风险**：keyword 事件的 replay 应用语义（与 Grade 分级/书签标志的合并）在 NAV-1 实现时细化；`:history` 菜单排序（时间正序/倒序）在 NAV-2 实现时定。
+
+### 2026-11-15 — NAV-1 实现决策与踩坑
+
+- **keyword 事件语义**：EntryKind::Keyword 只应用 keyword 字段，不加分、不推进时钟（书签设置本身不产生访问权重）；空 keyword = 清除书签（保留分数正常衰减，SPEC §4.6 一致）。隔离验证：同一访问序列 ± keyword 事件重放分数完全相等。
+- **toml 1.x 踩坑**：Value::from_str 只解析单值（"unexpected content, expected nothing"），文档解析必须 Table::from_str。
+- **cmp_ranked 是降序比较器**（b-vs-a），直接传给 max_by 会取到最小值——quickjump_target 用显式 score.total_cmp + 路径 tiebreak（候选 keyword 相同 → 档位相同 → 分数是唯一区分）。
+- **:keyword 写路径**：与 record 同链（Store 短事务 + 3 次重试 + events.pending 降级）；record --keyword 产生纯元数据事件（不记访问），TUI 会话内的跳转仍走退出时批量追加。
