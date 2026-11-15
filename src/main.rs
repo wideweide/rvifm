@@ -18,6 +18,8 @@ mod ops;
 mod pdf;
 mod preview;
 mod privilege;
+// M19-2/M19-3b 接入导航与后端；本阶段仅 trait 层（测试使用）。
+#[allow(dead_code)]
 mod remote;
 mod search;
 mod state;
