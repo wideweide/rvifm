@@ -462,3 +462,11 @@ rvifm record  → 静默记录访问
 
 - **事件边界**：history[0]（启动落点/:tabnew 落点）不算导航——SPEC"record 只在真实跳转成功后调用"的延伸；history[1..] 每条 = 一次真实 navigate_to（含 cd/quickjump/定位/前进后退）。重复访问保留（每次 = 一次访问，评分语义）。
 - **降级**：与 record 同链——Store 打不开整批写 events.pending；单条重试 3 次失败也落 pending；下次打开时 merge_pending 合并。刷写失败 eprintln 不阻塞退出。
+
+### 2026-11-15 — M18/M19/M20 立项：编号冲突修正 + 排序/SFTP 决策
+
+- **编号冲突（必须重编号）**：用户提案的 M16（排序）/M17（SFTP 浏览）/M18（SFTP 写）与已完成批次 M16（导航增强 NAV）/M17（递归搜索查看器）冲突——TASKS/SPEC 均已占用。按下一空闲号重编为 **M18/M19/M20**，任务 ID 相应映射（M16-1→M18-1、M17-3a→M19-3a、M18-1→M20-1），内容与硬约束不变。
+- **键位现状核实**：`s`/`S`/Space 此前均未绑定——无冲突。"空格=切换活动窗格"按 vifm 语义在 M18 新增（与既有 Tab 切换并存，M14 语义不变）。
+- **远端搜索边界修正**：用户原文"远端排序、搜索、预览复用本地同一套实现"中，排序与列表内 `/` 搜索可复用（entries 基）；`:find`/`:grep` 基于 ignore 遍历仅作用本地 fs——远端递归搜索列入后续增强（SPEC SIMPLIFIED 已注明）。
+- **SFTP spike 纪律**：候选 russh+justsftp / remotefs-rs；spike 只进 dev-dependencies + examples/（正式集成待用户确认 NOTES 结论后）；spike 完成**暂停等确认**再 M19-3b。
+- **影响文件**：SPEC M18/M19/M20、TASKS、PLAN（里程碑表补 M12–M20 行）、本节。

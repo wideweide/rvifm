@@ -232,6 +232,46 @@ redb 三表，无后台守护进程：
 - 搜索替换（amber 路线）；外部搜索 TUI 工具集成。
 - opener 行号插值（"打开并跳行"）；语法高亮。
 
+#### M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐）
+
+**硬约束**：`s` 保持 shell 入口；`S` 为排序唯一入口（对话框内字母直接触发，无快速排序前缀）；空格=切换活动窗格（vifm 语义，与 Tab 并存），仅对话框内用于升降切换；排序快捷键成对（小写升/大写降）；多字段仅经 :sort 参数，无 TUI 字段栈。
+
+**MUST**
+- `S` 排序对话框：列出字段（name/mtime/size/ext）与当前排序状态；对话框内 n/N/m/M/s/S/e/E 直接应用并关闭（小写升、大写降）；j/k 浏览、空格切换高亮字段升降（不立即应用）、回车应用；Esc 取消。应用后列表立即重排，光标保持在同一文件。
+- `:sort <字段列表>`：逗号分隔，字段后可跟 asc/desc（如 `:sort name,size desc`）；解析失败可读错误；无多字段 TUI 栈。
+- `s`：当前 pane 启动 $SHELL，退出后 raw mode/alternate screen 恢复、光标滚动不变；失败可读提示。
+- `:!<cmd>`：执行外部命令；`[ui] terminal_in_new_window`（默认 true）：true 时 $TMUX/$STY 检测新窗口执行否则当前 pane，false 始终当前 pane；同时作用于 `s` 与 `:!`。
+- Space：Normal 模式切换活动窗格（vifm 语义，与 Tab 等效）。
+
+**SIMPLIFIED**：排序状态为单字段（tab 持有）；重排仅当前条目集（跟随刷新恢复 tab 排序）；新窗口执行先支持 tmux。
+
+**OUT_OF_SCOPE**：多字段 TUI 栈；排序持久化到配置。
+
+#### M19 — SFTP 远端 VFS：浏览与配置（2026-11-15 增补）
+
+**MUST**
+- RemoteFs trait（协议无关）：list/read/metadata；错误分类：连接失败/认证失败/路径不存在/权限不足/超时；预留 write/remove/rename/create_dir 签名（M19 返回未实现）。
+- `Location::Remote { remote, path }`：导航 j/k/l/h 与 Physical 一致；h 在远端根返回进入前本地目录；面包屑 `remote:/path`。
+- 选型 spike（examples/sftp_spike.rs，dev-dependencies）：候选 russh+justsftp / remotefs-rs；对 127.0.0.1 SSH 完成根目录 list；记录编译/依赖体积/认证/异步模型/集成难度与写操作支持；结论入 NOTES 后**暂停等确认**再集成。
+- 正式后端（按 NOTES 锁定方案）：密钥认证为主、密码可选增强；超时与错误映射；网络 IO 不阻塞事件循环；M19 仅 list/read/metadata。
+- 浏览与配置：`~/.ssh/config` Host 别名 + `~/.config/rvifm/remotes.toml`（优先级最高，可覆盖同名 Host，protocol/host/port/user/key/root）；`:remote <name>` 进入远端根；`:remote` 列出全部；连接/认证/超时可读提示。
+
+**SIMPLIFIED**：远端排序与列表内 `/` 搜索复用本地实现（entries 基）；`:find`/`:grep` 不作用远端（ignore 遍历仅本地 fs，远端递归搜索为后续增强）；远端归档不进入虚拟目录；预览经 RemoteFs read 的文本/图片按本地同链路（SFTP read 供数据）。
+
+**OUT_OF_SCOPE**：写操作（M20）；远端递归搜索；密码交互式认证（可选增强）。
+
+#### M20 — SFTP 远端 VFS：写操作与本地体验对齐（2026-11-15 增补；依赖 M19 验收）
+
+**MUST**
+- RemoteFs write/remove/rename/create_dir 实现；远端写操作进入既有撤销栈（`UndoableOp::Remote` 变体：remote 名/路径/类型）；dd/yy/p/P/重命名/:mkdir 与本地同键同语义；失败可读错误。
+- 不可逆边界：覆盖远端已存在文件、删除非空目录弹确认（文案同本地场景）；远端删除走可恢复路径（后端支持临时目录）否则显式提示"远端删除不可撤销"并在撤销栈标记不可逆；取消后状态不变。
+- 跨 VFS 复制/移动：本地 yy → 远端 p/P 及反向；同进度提示与撤销语义；大文件传输显示状态/进度且不阻塞 UI 输入；失败清理半成品。
+- 验收边界：上传→列表→重命名→删除→撤销删除全链路可重复；断网写操作可读错误、不留半成品。
+
+**SIMPLIFIED**：进度先做"传输中"状态行，细粒度进度条后续；可恢复删除依赖后端能力探测。
+
+**OUT_OF_SCOPE**：SFTP 之外的协议（scp/rsync/ftp）；并发多远端连接池。
+
 #### M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐）
 
 **背景**：用户实测提出"两键直达"诉求（`'d` 对比 `o d <Enter>` 少一次确认，高频跳转可感知）。结论：**marks 不回归**（NOTES §4.3 决策维持），以 frecency 快速映射层补齐体验差异；history 对齐 vifm 的"菜单 + 可映射命令"机制（非单键跳转）。决策与调研结论见 NOTES 2026-11-15 条目。
