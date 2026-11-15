@@ -200,6 +200,44 @@ redb 三表，无后台守护进程：
 - 分级匹配（0–7 档，具体档位在 M8-1 固化）：书签 > 文件名 > 中间段 > 通用子串；在 Rust 内存中排序。
 - 书签：`keyword != ''` 作为分级标志，书签自身也参与 EMS 评分；取消书签后保留累积分数正常衰减。
 
+#### M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐）
+
+**背景**：用户实测提出"两键直达"诉求（`'d` 对比 `o d <Enter>` 少一次确认，高频跳转可感知）。结论：**marks 不回归**（NOTES §4.3 决策维持），以 frecency 快速映射层补齐体验差异；history 对齐 vifm 的"菜单 + 可映射命令"机制（非单键跳转）。决策与调研结论见 NOTES 2026-11-15 条目。
+
+**MUST**
+
+- **NAV-1 frecency 快速映射层**：
+  - Normal 模式 `'` + 单字符：直接跳到 frecency 中该 keyword 的最高排名条目（重放评分 + 读时 aging）；选定目录即 cd（等价 `:cd`，history 入栈，跳转即真实导航，走既有 record 链）。
+  - 缺省语义 `'d` 即查 `keyword == "d"`；配置 `~/.config/rvifm/` TOML `[quickjump]` 提供 char→keyword 可选别名（如 `d = "dl"`，配置不存路径）。
+  - keyword 设置入口（补 M8 缺口）：append-only keyword 事件（replay 时应用到条目）；`rvifm record --keyword <chars> <path>` 与 TUI `:keyword <chars>`（标记当前目录）同链产生。
+  - `'` 未配置且无命中：状态栏提示（如"无 keyword d 的条目（:keyword d 设置）"），不静默失败。
+- **NAV-3 `:histprev` / `:histnext`**：
+  - `Tab.history` 从单向 Vec 改造为 back/forward 游标结构；新导航（enter/return/`:cd` 等）截断 forward。
+  - `:histprev` 后退、`:histnext` 前进，作用于当前 tab 的视图历史；边界（无后退/前进）给提示。
+  - **不设默认键位**；help 与 keymap.toml 示例给推荐映射并注明 Ctrl-I==Tab 键码冲突（Tab 已被 pane 焦点占用）。
+  - 跨 tab 独立：tab A 的后退/前进不影响 tab B。
+- **NAV-2 `:history` 菜单**：
+  - `:history` / `:his` 弹出当前 tab 视图的目录历史菜单（back 栈）。
+  - 菜单内 j/k 移动、Enter/l 导航到选中目录、dd 移除该条记录（纯内存操作，不触碰 frecency 存储）。
+  - 按 tab 独立（切 tab 后菜单内容对应当前视图）；Esc/q 关闭，列表与光标状态不变。
+- **NAV-4 `o` 选择器"近期"视角**：
+  - JumpKind::Recent：按最后访问时间倒序（last_visit desc）；数据 = frecency replay + 当前会话内存评分合并（会话内跳转即时可见）。
+  - 复用 JumpSelect 覆盖层交互（模糊筛选/j/k/Enter/Esc）；Enter 语义与 `o` 一致；选择器只读红线不变。
+
+**SIMPLIFIED**
+
+- NAV-1：`'` 仅支持单字符第二键（f/F 通配序列模式）；多字符 keyword 不进快速层（仍可经 `o` 检索）；跳转目标限定 dir。
+- NAV-3：历史只含目录导航（不含命令行/搜索历史）；历史不持久化（会话内存态）。
+- NAV-2：菜单只做目录历史（不做 vifm 的 c[md]/s[earch] 变体）；dd 移除仅会话内有效。
+- NAV-4：视角入口命令名实现时定（写 NOTES）；条目量级与 `o` 一致（内存重放）。
+
+**OUT_OF_SCOPE**
+
+- marks（`m`+字母 / `'`+字母 路径标记）与 `''` 跳回——维持移除决策，`'` 不产生任何 marks 存储。
+- 命令行历史 / 搜索历史菜单（`:history` 的 c/s 变体）。
+- Ctrl-O / Ctrl-I 默认绑定（终端键码冲突，仅用户经 keymap 映射）。
+- 目录历史持久化到磁盘。
+
 #### M15 — 用户实测反馈批次（2026-11-15 增补；基线 0.5.0，缺陷修复×4 + 新增×4）
 
 **缺陷修复（MUST）**

@@ -405,3 +405,14 @@ rvifm record  → 静默记录访问
 - **Copy/Move 目标**：菜单动作无目标参数，采用 vifm 双栏约定——复制/移动到**另一 pane 所在目录**（焦点 pane 的对侧）。对侧在归档视图时报可读错误（无物理目录）；同名冲突走 ops::copy_to/move_to 的既有报错（不覆盖）。
 - **Rename**：预填 `rename ` 进命令行（SIMPLIFIED：复用既有输入行，不弹专用对话框）；Delete 走 dd 的 Confirm 流程（应用内暂存，u 可逆）；Open 与 l/Enter 同链（目录/归档进入、文件走系统 opener）。
 - **踩坑**：`opener::system_open` 用 `Command::status()` **阻塞等待**外部程序退出——单测对"文件"执行 Open 动作会挂起整个测试进程（本机 gio 可用时会真的弹出查看器）。测试中 Open 动作只能对**目录**验证（enter_selected 无外部进程）。
+
+### 2026-11-15 — M16 立项：marks 不回归，以 frecency 快速映射层补齐"两键直达"
+
+- **背景**：用户实测提出 `'d` 与 `o d <Enter>` 的差异（少一次确认，高频跳转可感知）。vifm marks = 单字符两键手动标记（约 62 个、需预设置、顺序不保留）；frecency = 自动、概率、容量近乎无限。两者分工不同，非二选一。
+- **结论**：marks 维持移除（SPEC OUT_OF_SCOPE / 本文档 §4.3 不推翻）；新增 `'`+单字符快速映射层（M16 NAV-1）——vim 肌肉记忆保留，底层仍是 frecency 评分/衰减/事件日志，无第二套路径存储。
+- **设计分叉（用户拍板）**：char→keyword 形态——配置只存 char→keyword（`[quickjump]` 可选别名层，缺省 `'d` 即查 keyword=="d"），跳转 = 该 keyword 最高排名条目直达 cd。**发现的缺口**：frecency keyword 字段此前无任何设置入口——以 append-only keyword 事件补（`record --keyword` / TUI `:keyword` 同链，replay 应用），不破"record 只追加、写入口唯一"红线。
+- **vifm history 调研结论**：`:history` 是菜单而非跳转；Ctrl-O/Ctrl-I 行为条件化（cpoptions `t` 标志）；历史绑定 view/pane、按 tab 独立；Ctrl-I 与 Tab 同键码且 rvifm Tab 已占用 pane 焦点——NAV-3 不设默认键是**必须**而非偏好。
+- **:ghistory 评估**：不做独立命令（命令面膨胀）；并入 `o` 选择器第四视角（JumpKind::Recent，last_visit 倒序 + 会话内存评分合并——注意会话内跳转只在内存、退出才写 events，必须合并否则显示旧数据）。replay 顺手记 last_visit，与 NAV-1 keyword 查找共用一次重放。
+- **顺序**：NAV-1 → NAV-3 → NAV-2 → NAV-4（NAV-3 栈改造先定型，NAV-2 菜单消费最终结构）。
+- **影响文件**：SPEC M16、TASKS M16、ACCEPTANCE §18、本节。
+- **待定/风险**：keyword 事件的 replay 应用语义（与 Grade 分级/书签标志的合并）在 NAV-1 实现时细化；`:history` 菜单排序（时间正序/倒序）在 NAV-2 实现时定。
