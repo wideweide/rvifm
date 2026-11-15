@@ -251,18 +251,18 @@
 - rvifm 进程本身不以 root 运行（ps 确认）。
 
 
-## 16. 人工验证清单（v0.5.0 手册，测试人员逐项勾选）
+## 16. 人工验证清单（v0.6.0 手册，测试人员逐项勾选）
 
 > 环境：Windows Terminal / PowerShell（提权节仅 Linux）。产物下载自
-> GitHub Release `v0.5.0`，解包后直接运行 `rvifm.exe`；或
-> `cargo install rvifm --version 0.5.0`。
+> GitHub Release `v0.6.0`，解包后直接运行 `rvifm.exe`；或
+> `cargo install rvifm --version 0.6.0`。
 > 准备：建工作目录 `rvifm-test/`，内含 3 个文本文件、1 张 PNG 图片、
 > 1 个 DOCX、1 个含文本层的 PDF、`demo.zip` 与 `demo.tar.gz` 各一
 > （内含子目录与文件）、1 个子目录 `sub/`。
 
 ### A. 启动与版本
 
-- [ ] `rvifm --version` 输出 `rvifm 0.5.0`，退出码 0。
+- [ ] `rvifm --version` 输出 `rvifm 0.6.0`，退出码 0。
 - [ ] `rvifm --help` 显示用法与子命令，退出码 0。
 - [ ] `rvifm` 启动进入 TUI（顶部标签栏 + 左目录列表 + 右 pane + 底部状态栏），
       `q` 退出干净，无乱码残留、无 panic。
@@ -361,6 +361,52 @@
 - [ ] `Esc` 取消：中止操作，光标/标记不变，无半完成状态。
 - [ ] `ps` 确认 rvifm 主进程 UID 未变（非 root）。
 - [ ] Windows：触发写权限错误时显示"提权仅支持 Unix"，不 panic。
+
+### N. 搜索与查看器（M17：:find/:grep + 查看器）
+
+- [ ] `:find 目标名`：结果以虚拟目录显示在当前栏（全路径、显示
+      devicons 图标），.gitignore/.ignore 内的路径不出现。
+- [ ] `j/k/gg/G/Ctrl-u/d` 导航；对侧预览窗格（`w`）跟随光标显示
+      命中文件内容。
+- [ ] `l`/`Enter`：跳到命中文件所在目录、光标停在该文件；
+      `Esc`/`h`：退出结果视图回到原目录。
+- [ ] 结果视图内 `dd`/`cw`/`t`/`v` 被拒绝（只读提示）；`yy` 复制的
+      是命中文件的完整路径（到别处 `p` 可粘贴）。
+- [ ] `:grep 关键词`：条目为 `路径:行号: 内容`；`:grep ([` 报可读错误；
+      二进制文件不出现乱码命中。
+- [ ] 查看器（结果视图按 `w`）：显示行号；`j/k/gg/G/Ctrl-u/d` 滚动；
+      `/关键词` 定位并黄底高亮；`n/N` 循环；`Esc/w/q` 退出。
+- [ ] `:grep` 命中后按 `w`：查看器直接打开在命中行附近。
+- [ ] 状态栏出现 `[find: …]` / `[grep: …]` 指示；结果超 1 万提示截断。
+
+### O. 快速跳转与历史（M16）
+
+- [ ] `:keyword dl`（当前目录）后，`o` 选择器中该目录带书签标志。
+- [ ] config.toml 配置 `[quickjump] d = "dl"` 后，`'d` 两键直达该目录；
+      未配置时 `'x` 状态栏提示不静默。
+- [ ] `:histprev`/`:histnext` 在当前 tab 内后退/前进目录历史；
+      切到另一 tab 后历史互不干扰。
+- [ ] `:history` 弹出历史菜单：`Enter`/`l` 导航、`dd` 移除、`Esc` 关闭。
+- [ ] `:recent`：近期视角按最后访问时间倒序；刚 cd 过的目录排最前。
+- [ ] keymap.toml 用户绑定生效：如 `prepend_keymap = [{ on = ["C-o"],
+      run = "histprev" }]` 后 Ctrl-O 触发后退；绑定 `j → to_top` 时
+      `j` 覆盖默认下移。
+
+### P. frecency 落盘（M8 收尾）
+
+- [ ] TUI 内 cd 数个目录后 `:q` 退出，再运行 `rvifm pick`（真实终端）
+      或 `o`：本次会话访问的目录已进入 frecency 排名（退出刷写生效）。
+
+### Q. 交互复核（M15/M16 已入清单项的抽验 + M11-6）
+
+- [ ] M11-6（Alacritty/Windows Terminal）：光标在 PNG 上按 `w`，
+      预览窗格显示图片（halfblocks 或原生协议），不空白、不 panic。
+- [ ] 鼠标：单击聚焦、已聚焦再击打开、双击直接打开、滚轮滚动；
+      右键条目弹出六项菜单且 Esc/外部点击关闭。
+- [ ] 顶部 `..` 行：普通目录可见、`l` 返回上级、根目录隐藏；
+      归档根 `..` 回到归档所在物理目录。
+- [ ] `:file` 与 Ctrl-G 信息一致；归档内成员显示 `host:/inner/path`。
+- [ ] `:help` 全屏帮助：`j/k` 滚动、`/` 搜索、`q` 返回后列表状态不变。
 
 ### M. 回归红线
 
