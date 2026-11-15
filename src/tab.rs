@@ -198,6 +198,9 @@ pub struct Tab {
     /// M16 NAV-3：当前视图在 `history` 中的下标（history 从 M16 起为
     /// **完整访问轨迹**，含当前视图；新导航截断 forward）。
     pub hist_pos: usize,
+    /// M17 SRCH：搜索结果虚拟目录（:find/:grep；沿 :tree 同构——静态
+    /// 条目 + 只读守卫，items/entries 平行表）。
+    pub results: Option<crate::search::SearchResults>,
 }
 
 impl Tab {
@@ -211,6 +214,7 @@ impl Tab {
             search: None,
             history: vec![Location::Physical(dir.to_path_buf())],
             hist_pos: 0,
+            results: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -670,6 +674,99 @@ impl Tab {
     /// 树视图守卫（M13-7 只读边界）：树模式下拒绝写操作/导航操作。
     pub fn in_tree(&self) -> bool {
         self.tree.is_some()
+    }
+
+    /// M17 SRCH-1：进入搜索结果虚拟目录——items/entries 平行表，
+    /// entries 的 name 为显示串（find=全路径；grep=路径:行号: 内容）。
+    pub fn enter_results(
+        &mut self,
+        kind: crate::search::SearchKind,
+        query: String,
+        root: PathBuf,
+        items: Vec<crate::search::ResultItem>,
+        truncated: bool,
+    ) {
+        self.entries = items
+            .iter()
+            .map(|item| {
+                let name = match item.line {
+                    Some(line) => format!("{}:{}: {}", item.path.display(), line, item.text),
+                    None => item.path.display().to_string(),
+                };
+                FileItem {
+                    icon: crate::icons::icon_for(&item.path, crate::icons::IconTheme::Dark),
+                    name,
+                    is_dir: false,
+                    size: 0,
+                    perm: String::new(),
+                }
+            })
+            .collect();
+        self.results = Some(crate::search::SearchResults {
+            kind,
+            query,
+            root,
+            truncated,
+            items,
+        });
+        self.cursor = 0;
+        self.scroll = 0;
+        self.on_parent_row = false;
+        self.tree = None;
+    }
+
+    /// M17 SRCH-1：退出结果视图——恢复原目录列表。
+    pub fn exit_results(&mut self, config: Config) {
+        self.results = None;
+        let _ = self.refresh(config);
+    }
+
+    /// M17 SRCH：结果虚拟目录守卫（只读边界）。
+    pub fn in_results(&self) -> bool {
+        self.results.is_some()
+    }
+
+    /// M17 SRCH：预览/操作的目标文件路径——结果模式取命中项，
+    /// 物理视图取 base.join(name)；归档视图 None（预览未接入）。
+    pub fn preview_path(&self) -> Option<PathBuf> {
+        if let Some(r) = &self.results {
+            return r.items.get(self.cursor).map(|i| i.path.clone());
+        }
+        match &self.location {
+            Location::Physical(base) => self.entries.get(self.cursor).map(|i| base.join(&i.name)),
+            Location::Archive { .. } => None,
+        }
+    }
+
+    /// M17 SRCH-1：定位当前命中文件——退出结果视图 + 导航到其父目录
+    /// + 光标停在该文件（navigate_to 入历史）。
+    pub fn locate_result(&mut self, config: Config) -> std::io::Result<()> {
+        let Some(path) = self.result_path_at(self.cursor) else {
+            return Ok(());
+        };
+        let parent = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.results = None;
+        self.navigate_to(Location::Physical(parent), config)?;
+        if let Some(idx) = self.entries.iter().position(|i| i.name == name) {
+            self.cursor = idx;
+        }
+        Ok(())
+    }
+
+    /// M17 SRCH：结果条目的文件路径。
+    pub fn result_path_at(&self, cursor: usize) -> Option<PathBuf> {
+        self.results
+            .as_ref()?
+            .items
+            .get(cursor)
+            .map(|i| i.path.clone())
     }
 
     /// 进入光标选中的条目（M1-2 目录；M7-4 归档虚拟目录）。
@@ -1239,6 +1336,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             hist_pos: 0,
+            results: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),

@@ -672,6 +672,16 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
     }
+    // M17 SRCH：结果视图只读——find/grep 重执行与退出类命令豁免。
+    if state.active_tab().in_results() {
+        match cmd_head {
+            Some("find" | "grep" | "q" | "quit" | "help") => {}
+            Some(other) => {
+                return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
+            }
+            None => return Ok(ExecOutcome::Done { msg: None }),
+        }
+    }
     // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
     if state.active_tab().in_tree() {
         match cmd_head {
@@ -684,6 +694,36 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("find" | "grep") => {
+            // M17 SRCH-1/2：递归搜索 → 结果虚拟目录（重执行 = 替换）。
+            let is_grep = cmd_head == Some("grep");
+            let pattern = parts.next().unwrap_or("").to_owned();
+            let base = physical_base(state)?;
+            let show_hidden = state.config.show_hidden;
+            let (items, truncated) = if is_grep {
+                crate::search::grep_files(&base, &pattern, show_hidden)
+                    .map_err(|e| format!("grep: {e}"))?
+            } else {
+                crate::search::find_files(&base, &pattern, show_hidden)
+            };
+            let n = items.len();
+            let kind = if is_grep {
+                crate::search::SearchKind::Grep
+            } else {
+                crate::search::SearchKind::Find
+            };
+            state
+                .active_tab_mut()
+                .enter_results(kind, pattern, base, items, truncated);
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "{}: {} 个结果{}",
+                    if is_grep { "grep" } else { "find" },
+                    n,
+                    if truncated { "（已截断）" } else { "" }
+                )),
+            })
+        }
         Some("recent") => {
             // M16 NAV-4：近期视角——全部条目按最后访问时间倒序（含会话合并）。
             let entries = load_jump_entries(state, JumpKind::Recent)?;
@@ -1242,23 +1282,36 @@ fn handle_key(
                 None => state.prev_tab(),
             },
             Some(Action::DeleteSelected) => {
+                if state.active_tab().in_results() {
+                    *msg = Some("搜索结果视图只读".to_owned());
+                    input.seq.clear();
+                    return Outcome::Continue;
+                }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
+                    input.seq.clear();
                     return Outcome::Continue;
                 }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
+                    input.seq.clear(); // 序列已完成，残留会吞掉后续按键
                     return Outcome::ConfirmDelete(base.join(&item.name), false);
                 }
             }
             Some(Action::RenameBatch) => {
                 // M13-6：cw 批量重命名——收集标记（或光标单条）名单。
+                if state.active_tab().in_results() {
+                    *msg = Some("搜索结果视图只读".to_owned());
+                    input.seq.clear();
+                    return Outcome::Continue;
+                }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
+                    input.seq.clear();
                     return Outcome::Continue;
                 }
                 let tab = state.active_tab();
@@ -1284,20 +1337,28 @@ fn handle_key(
                             names,
                         };
                     }
+                    input.seq.clear();
                 }
                 input.seq.clear();
             }
             Some(Action::DeletePermanent) => {
                 // M13-3：DD 永久删除——确认提示后跳过暂存（不可逆强提示）。
+                if state.active_tab().in_results() {
+                    *msg = Some("搜索结果视图只读".to_owned());
+                    input.seq.clear();
+                    return Outcome::Continue;
+                }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
+                    input.seq.clear();
                     return Outcome::Continue;
                 }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
+                    input.seq.clear();
                     return Outcome::ConfirmDelete(base.join(&item.name), true);
                 }
             }
@@ -1307,6 +1368,19 @@ fn handle_key(
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
+                    return Outcome::Continue;
+                }
+                // M17 SRCH：结果视图 yy = 命中文件路径本身。
+                if let Some(r) = state.active_tab().results.as_ref() {
+                    let count = count.unwrap_or(1).max(1);
+                    let start = state.active_tab().cursor.min(r.items.len());
+                    let end = (start + count).min(r.items.len());
+                    let paths: Vec<PathBuf> =
+                        r.items[start..end].iter().map(|i| i.path.clone()).collect();
+                    let n = paths.len();
+                    state.yank = Some(crate::state::YankBuffer { paths, cut: false });
+                    *msg = Some(format!("Yanked {n} item(s)"));
+                    input.seq.clear();
                     return Outcome::Continue;
                 }
                 let count = count.unwrap_or(1).max(1);
@@ -1358,6 +1432,36 @@ fn handle_key(
     // 树/选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
     if state.active_tab().focus == crate::tab::Focus::Right {
         return handle_right_key(state, msg, key);
+    }
+
+    // M17 SRCH：结果虚拟目录——l/Enter=定位、Esc/h=退出、v/t=只读拒绝；
+    // 其余导航/yy/预览键落回既有处理（目录语义）。
+    if state.active_tab().in_results() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => {
+                input.count = None;
+                let cfg = state.config;
+                state.active_tab_mut().exit_results(cfg);
+                *msg = Some("已退出搜索结果".to_owned());
+                return Outcome::Continue;
+            }
+            KeyCode::Char('l') | KeyCode::Enter => {
+                input.count = None;
+                let cfg = state.config;
+                if let Err(e) = state.active_tab_mut().locate_result(cfg) {
+                    *msg = Some(format!("定位失败: {e}"));
+                } else {
+                    *msg = None;
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char('t') | KeyCode::Char('v') => {
+                input.count = None;
+                *msg = Some("搜索结果视图只读".to_owned());
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
     }
 
     // M14-1：Tab 键切换焦点 pane（左 → 右）。
@@ -2672,7 +2776,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 
     // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
     // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
-    let parent_available = tab.has_parent_row();
+    let parent_available = tab.has_parent_row() && !tab.in_results();
     let parent_area = if parent_available {
         let [p, rest] =
             Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
@@ -3068,6 +3172,20 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 Span::from(selected),
                 Span::from(format!(" | {} items", tab.entries.len())),
             ];
+            if let Some(r) = &tab.results {
+                // M17 SRCH：结果视图指示（类别 + 查询 + 条数 + 截断）。
+                let kind = match r.kind {
+                    crate::search::SearchKind::Find => "find",
+                    crate::search::SearchKind::Grep => "grep",
+                };
+                spans.push(Span::from(format!(
+                    "  [{}: {} — {} 项{}]",
+                    kind,
+                    r.query,
+                    r.items.len(),
+                    if r.truncated { " 已截断" } else { "" }
+                )));
+            }
             if let Some(s) = &tab.search {
                 if s.query.is_empty() {
                     spans.push(Span::from(format!("  /{}", s.query)));
@@ -3125,17 +3243,10 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         });
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
-        let path = match &tab.location {
-            Location::Physical(base) => base.join(
-                tab.entries
-                    .get(tab.cursor)
-                    .map(|i| i.name.as_str())
-                    .unwrap_or_default(),
-            ),
-            Location::Archive { .. } => {
-                frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
-                return;
-            }
+        // M17 SRCH：预览源抽象——结果模式取命中文件，物理视图取 base.join。
+        let Some(path) = tab.preview_path() else {
+            frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
+            return;
         };
         let p = match crate::preview::preview_kind(&path) {
             crate::preview::PreviewKind::Image => {
@@ -3234,6 +3345,7 @@ mod tests {
             search: None,
             history: Vec::new(),
             hist_pos: 0,
+            results: None,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -6795,6 +6907,113 @@ mod tests {
             Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::Recent),
             other => panic!("expected OpenJump Recent, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn srch1_find_enters_results_and_locates() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("deep")).unwrap();
+        fs::write(tmp.path().join("deep/target.txt"), "hello").unwrap();
+        fs::write(tmp.path().join("noise.log"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+
+        // :find target → 结果虚拟目录（entries 显示全路径）。
+        match exec_command_impl(&mut state, "find target") {
+            Ok(ExecOutcome::Done { msg: m }) => {
+                assert!(m.as_deref().unwrap().contains("1 个结果"), "m: {m:?}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        assert!(state.active_tab().in_results());
+        assert_eq!(state.active_tab().entries.len(), 1);
+        assert!(
+            state.active_tab().entries[0]
+                .name
+                .contains("deep/target.txt"),
+            "显示全路径: {}",
+            state.active_tab().entries[0].name
+        );
+
+        // l/Enter → 定位：退出结果视图 + 导航到父目录 + 光标停在文件。
+        let mut input = InputState::default();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(!state.active_tab().in_results(), "定位后退出结果视图");
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("deep"))
+        );
+        assert_eq!(state.active_tab().cursor, 0);
+        assert_eq!(state.active_tab().entries[0].name, "target.txt");
+    }
+
+    #[test]
+    fn srch1_results_readonly_guards_and_exit() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let _ = exec_command_impl(&mut state, "find txt");
+        assert!(state.active_tab().in_results());
+
+        // dd 序列被拒绝（DeleteSelected 臂）。
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(msg.as_deref(), Some("搜索结果视图只读"));
+
+        // 写命令被拒绝（exec 守卫）。
+        assert!(exec_command_impl(&mut state, "rename x").is_err());
+
+        // yy = 命中文件路径本身；p 在别处可粘贴（既有链路）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        let yank = state.yank.as_ref().unwrap();
+        assert_eq!(yank.paths, vec![tmp.path().join("a.txt")]);
+
+        // Esc 退出 → 原目录恢复。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        );
+        assert!(!state.active_tab().in_results());
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().to_path_buf())
+        );
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

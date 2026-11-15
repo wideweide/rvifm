@@ -18,6 +18,7 @@ mod ops;
 mod pdf;
 mod preview;
 mod privilege;
+mod search;
 mod state;
 mod store;
 mod tab;
