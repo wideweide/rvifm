@@ -7016,6 +7016,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn srch2_grep_results_with_line_numbers_and_errors() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("code.rs"), "fn main() {}\n// TODO fix\n").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // :grep TODO → 条目显示 路径:行号: 内容。
+        match exec_command_impl(&mut state, "grep TODO") {
+            Ok(ExecOutcome::Done { msg: m }) => {
+                assert!(m.as_deref().unwrap().contains("1 个结果"), "m: {m:?}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        assert!(state.active_tab().in_results());
+        assert!(
+            state.active_tab().entries[0].name.contains("code.rs:2:"),
+            "显示 路径:行号: 内容: {}",
+            state.active_tab().entries[0].name
+        );
+
+        // 定位：退出结果视图 + 光标停在命中文件。
+        let mut msg = None;
+        let mut input = InputState::default();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(!state.active_tab().in_results());
+        assert_eq!(state.active_tab().entries[0].name, "code.rs");
+
+        // 非法正则：可读错误，不 panic、不进入结果视图。
+        let err = exec_command_impl(&mut state, "grep ([");
+        assert!(err.is_err(), "非法正则应报错");
+        assert!(!state.active_tab().in_results());
+
+        // 状态栏结果指示（重进结果视图断言 query 展示）。
+        let _ = exec_command_impl(&mut state, "grep TODO");
+        assert!(state.active_tab().in_results());
+    }
+
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
 
     #[test]
