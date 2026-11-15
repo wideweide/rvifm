@@ -195,6 +195,9 @@ pub struct Tab {
     /// 不进入 entries/搜索/过滤/标记集合）。`l`/Enter = return_parent；
     /// 写操作被守卫拒绝。
     pub on_parent_row: bool,
+    /// M16 NAV-3：当前视图在 `history` 中的下标（history 从 M16 起为
+    /// **完整访问轨迹**，含当前视图；新导航截断 forward）。
+    pub hist_pos: usize,
 }
 
 impl Tab {
@@ -206,7 +209,8 @@ impl Tab {
             cursor: 0,
             scroll: 0,
             search: None,
-            history: Vec::new(),
+            history: vec![Location::Physical(dir.to_path_buf())],
+            hist_pos: 0,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -218,6 +222,56 @@ impl Tab {
             focus: Focus::Left,
             on_parent_row: false,
         })
+    }
+
+    /// 任意 Location 的条目加载（NAV-3：历史跳转后恢复条目列表用）。
+    fn load_for(location: &Location, config: Config) -> std::io::Result<Vec<FileItem>> {
+        match location {
+            Location::Physical(p) => load_entries(p, &config),
+            Location::Archive { host, inner } => {
+                load_archive_entries(host, &inner.to_string_lossy())
+            }
+        }
+    }
+
+    /// M16 NAV-3：导航到新视图——截断 forward（游标之后全部丢弃），
+    /// 追加并落位。cursor/scroll/`..` 焦点重置，条目按新位置加载。
+    /// 注意：进入目录/归档后需调用方补 `on_parent_row = has_parent_row()`
+    /// （落在 ".." 行的 vifm 语义）。
+    pub fn navigate_to(&mut self, new: Location, config: Config) -> std::io::Result<()> {
+        // 先加载，成功才变更状态（损坏归档等失败路径无副作用，M7-4 契约）。
+        let entries = Self::load_for(&new, config)?;
+        self.history.truncate(self.hist_pos + 1);
+        self.history.push(new.clone());
+        self.hist_pos = self.history.len() - 1;
+        self.location = new;
+        self.entries = entries;
+        self.cursor = 0;
+        self.scroll = 0;
+        self.on_parent_row = false;
+        Ok(())
+    }
+
+    /// M16 NAV-3：`histprev`/`histnext`——沿当前 tab 的视图历史后退/前进。
+    /// 返回是否移动；边界（无更早/更新）返回 false 且不产生副作用。
+    pub fn hist_jump(&mut self, forward: bool, config: Config) -> std::io::Result<bool> {
+        let new_pos = if forward {
+            self.hist_pos + 1
+        } else {
+            self.hist_pos.saturating_sub(1)
+        };
+        if new_pos >= self.history.len() || (!forward && self.hist_pos == 0) {
+            return Ok(false);
+        }
+        let loc = self.history[new_pos].clone();
+        let entries = Self::load_for(&loc, config)?;
+        self.hist_pos = new_pos;
+        self.location = loc;
+        self.entries = entries;
+        self.cursor = 0;
+        self.scroll = 0;
+        self.on_parent_row = false;
+        Ok(true)
     }
 
     /// FEAT-2：列表顶部是否渲染 `..` 行——物理目录存在父目录时显示；
@@ -618,12 +672,7 @@ impl Tab {
             Location::Physical(base) => {
                 let target = base.join(&name);
                 if is_dir {
-                    let entries = load_entries(&target, &config)?;
-                    self.history.push(self.location.clone());
-                    self.location = Location::Physical(target);
-                    self.entries = entries;
-                    self.cursor = 0;
-                    self.scroll = 0;
+                    self.navigate_to(Location::Physical(target), config)?;
                     // FEAT-2：进入目录后光标落在 `..` 行（vifm 语义）。
                     self.on_parent_row = self.has_parent_row();
                     return Ok(());
@@ -636,15 +685,13 @@ impl Tab {
                     ));
                 }
                 if crate::archive::is_archive_file(&name) {
-                    let items = load_archive_entries(&target, "")?;
-                    self.history.push(self.location.clone());
-                    self.location = Location::Archive {
-                        host: target,
-                        inner: PathBuf::new(),
-                    };
-                    self.entries = items;
-                    self.cursor = 0;
-                    self.scroll = 0;
+                    self.navigate_to(
+                        Location::Archive {
+                            host: target,
+                            inner: PathBuf::new(),
+                        },
+                        config,
+                    )?;
                     // FEAT-2：进入归档后光标落在 `..` 行。
                     self.on_parent_row = self.has_parent_row();
                     return Ok(());
@@ -662,15 +709,13 @@ impl Tab {
                 } else {
                     format!("{inner_str}/{name}")
                 };
-                let items = load_archive_entries(&host, &new_inner)?;
-                self.history.push(self.location.clone());
-                self.location = Location::Archive {
-                    host,
-                    inner: PathBuf::from(crate::archive::normalize_inner(&new_inner)),
-                };
-                self.entries = items;
-                self.cursor = 0;
-                self.scroll = 0;
+                self.navigate_to(
+                    Location::Archive {
+                        host,
+                        inner: PathBuf::from(crate::archive::normalize_inner(&new_inner)),
+                    },
+                    config,
+                )?;
                 self.on_parent_row = self.has_parent_row();
                 Ok(())
             }
@@ -688,29 +733,20 @@ impl Tab {
                 if inner_str.is_empty() {
                     // 归档根：`h` 返回归档文件所在的物理目录（host 的父目录）。
                     let host_dir = host.parent().unwrap_or(host.as_path()).to_path_buf();
-                    let entries = load_entries(&host_dir, &config)?;
-                    self.history.push(self.location.clone());
-                    self.location = Location::Physical(host_dir);
-                    self.entries = entries;
-                    self.cursor = 0;
-                    self.scroll = 0;
-                    self.on_parent_row = false;
+                    self.navigate_to(Location::Physical(host_dir), config)?;
                     return Ok(());
                 }
                 // 归档内：上一层虚拟目录（parent 为空串 = 归档根，仍留在归档内）。
                 let parent = crate::archive::normalize_inner(
                     inner_str.rsplit_once('/').map(|(p, _)| p).unwrap_or(""),
                 );
-                let entries = load_archive_entries(&host, &parent)?;
-                self.history.push(self.location.clone());
-                self.location = Location::Archive {
-                    host,
-                    inner: PathBuf::from(parent),
-                };
-                self.entries = entries;
-                self.cursor = 0;
-                self.scroll = 0;
-                self.on_parent_row = false;
+                self.navigate_to(
+                    Location::Archive {
+                        host,
+                        inner: PathBuf::from(parent),
+                    },
+                    config,
+                )?;
                 Ok(())
             }
             Location::Physical(base) => {
@@ -720,13 +756,7 @@ impl Tab {
                 if parent == base {
                     return Ok(());
                 }
-                let entries = load_entries(parent, &config)?;
-                self.history.push(self.location.clone());
-                self.location = Location::Physical(parent.to_path_buf());
-                self.entries = entries;
-                self.cursor = 0;
-                self.scroll = 0;
-                self.on_parent_row = false;
+                self.navigate_to(Location::Physical(parent.to_path_buf()), config)?;
                 Ok(())
             }
         }
@@ -1044,7 +1074,9 @@ mod tests {
         let tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
         assert_eq!(tab.cursor, 0);
         assert!(tab.search.is_none());
-        assert!(tab.history.is_empty());
+        // M16 NAV-3：history 为完整轨迹（含当前视图），hist_pos 指向末尾。
+        assert_eq!(tab.history.len(), 1);
+        assert_eq!(tab.hist_pos, 0);
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["zdir", "apple.txt"]);
@@ -1127,10 +1159,15 @@ mod tests {
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["inner.txt"]);
         assert_eq!(tab.cursor, 0);
+        // M16 NAV-3：完整轨迹 [tmp, sub]，pos 指向当前（sub）。
         assert_eq!(
             tab.history,
-            vec![Location::Physical(tmp.path().to_path_buf())]
+            vec![
+                Location::Physical(tmp.path().to_path_buf()),
+                Location::Physical(tmp.path().join("sub")),
+            ]
         );
+        assert_eq!(tab.hist_pos, 1);
     }
 
     #[test]
@@ -1144,14 +1181,14 @@ mod tests {
         tab.cursor = 1; // "file.txt"（"gone" 为目录在前）
         tab.enter_selected(Config::default()).unwrap();
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
-        assert!(tab.history.is_empty());
+        assert_eq!(tab.history.len(), 1);
 
         // 目录在加载后被删除：读取失败返回 Err，不导航（M6-1 错误提示接入）。
         fs::remove_dir(tmp.path().join("gone")).unwrap();
         tab.cursor = 0;
         assert!(tab.enter_selected(Config::default()).is_err());
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
-        assert!(tab.history.is_empty());
+        assert_eq!(tab.history.len(), 1, "失败无副作用");
     }
 
     #[test]
@@ -1162,7 +1199,17 @@ mod tests {
 
         tab.return_parent(Config::default()).unwrap();
         assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
-        assert_eq!(tab.history.len(), 1);
+        // M16 NAV-3：完整轨迹 [sub, tmp]。
+        assert_eq!(tab.history.len(), 2);
+        assert_eq!(tab.hist_pos, 1);
+        // histprev 回 sub；histnext 前进回 tmp；再 prev 到底 false。
+        assert!(tab.hist_jump(false, Config::default()).unwrap());
+        assert_eq!(tab.location, Location::Physical(tmp.path().join("sub")));
+        assert!(tab.hist_jump(true, Config::default()).unwrap());
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert!(!tab.hist_jump(true, Config::default()).unwrap());
+        assert!(tab.hist_jump(false, Config::default()).unwrap());
+        assert!(!tab.hist_jump(false, Config::default()).unwrap());
 
         // 根目录：parent() 为 None（Windows 盘根同理），no-op。
         // 根路径平台相关：Windows 盘根 "C:\"，Unix "/"。
@@ -1178,6 +1225,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            hist_pos: 0,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -1191,6 +1239,49 @@ mod tests {
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(root));
         assert!(root_tab.history.is_empty());
+    }
+
+    #[test]
+    fn nav3_forward_truncated_on_new_navigation() {
+        // 嵌套 a/b/c：逐层进入 → 历史四条；后退两步到 a 再进 b → c 被截断。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("a").join("b").join("c")).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        for _ in 0..3 {
+            tab.cursor = 0; // 唯一条目即下一层目录
+            tab.enter_selected(Config::default()).unwrap();
+        }
+        assert_eq!(tab.history.len(), 4);
+        assert_eq!(tab.hist_pos, 3);
+        // 后退两步到 a（entries=[b]），再进 b → forward（c）被截断。
+        assert!(tab.hist_jump(false, Config::default()).unwrap());
+        assert!(tab.hist_jump(false, Config::default()).unwrap());
+        assert_eq!(tab.location, Location::Physical(tmp.path().join("a")));
+        let b_idx = tab.entries.iter().position(|i| i.name == "b").unwrap();
+        tab.cursor = b_idx;
+        tab.enter_selected(Config::default()).unwrap();
+        assert_eq!(tab.history.len(), 3, "forward 已截断");
+        assert_eq!(tab.hist_pos, 2);
+        assert!(!tab.hist_jump(true, Config::default()).unwrap(), "无前进");
+    }
+
+    #[test]
+    fn nav3_history_restores_archive_locations() {
+        // 归档位置在历史中往返：条目按归档索引重新加载。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.cursor = tab.entries.iter().position(|i| i.name == "t.zip").unwrap();
+        tab.enter_selected(Config::default()).unwrap();
+        assert!(matches!(tab.location, Location::Archive { .. }));
+        tab.return_parent(Config::default()).unwrap();
+        assert!(matches!(tab.location, Location::Physical(_)));
+        // histprev 回归档：条目重新从归档索引加载。
+        assert!(tab.hist_jump(false, Config::default()).unwrap());
+        assert!(matches!(tab.location, Location::Archive { .. }));
+        assert!(!tab.entries.is_empty(), "归档条目已恢复");
     }
 
     #[test]

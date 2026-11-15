@@ -423,3 +423,9 @@ rvifm record  → 静默记录访问
 - **toml 1.x 踩坑**：Value::from_str 只解析单值（"unexpected content, expected nothing"），文档解析必须 Table::from_str。
 - **cmp_ranked 是降序比较器**（b-vs-a），直接传给 max_by 会取到最小值——quickjump_target 用显式 score.total_cmp + 路径 tiebreak（候选 keyword 相同 → 档位相同 → 分数是唯一区分）。
 - **:keyword 写路径**：与 record 同链（Store 短事务 + 3 次重试 + events.pending 降级）；record --keyword 产生纯元数据事件（不记访问），TUI 会话内的跳转仍走退出时批量追加。
+
+### 2026-11-15 — NAV-3 实现决策与发现的缺口
+
+- **history 语义升级**：Vec（只存"来自哪里"）→ 完整轨迹 + hist_pos 游标。navigate_to 先加载后变更（损坏归档失败无副作用，M7-4 契约保持）；新导航截断 forward（vifm 语义）。
+- **发现的缺口**：M10-5 的 keymap TOML 分层（prepend/append/replace）实际未接线——InputState.keymap 只有默认表，config.rs 无解析。用户把键绑到 :histprev/:histnext 暂不可用；help 中的 keymap 示例为注释性展示。补全接线作为独立后续任务（在 TASKS 之外排队，属 M10-5 收尾）。
+- **无默认键是必须**：Ctrl-I 与 Tab 同键码，Tab 已被 M14 pane 焦点占用。

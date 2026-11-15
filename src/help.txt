@@ -61,6 +61,19 @@ rvifm 帮助（vim 风格文件管理器）
   右键条目        上下文菜单（Open/Info/Copy/Move/Rename/Delete）
   滚轮            逐行滚动列表
 
+== 历史 ==
+  :histprev       目录历史后退（当前 tab 独立）
+  :histnext       目录历史前进
+  :history        目录历史菜单（j/k 移动，Enter/l 导航，dd 移除）
+
+  推荐键位映射（keymap.toml，注意 Ctrl-I 与 Tab 同键码、
+  rvifm 已把 Tab 用于 pane 焦点切换，故不设默认键）：
+    [normal]
+    prepend_keymap = [
+      { on = ["C-o"], run = "histprev" },
+      { on = ["C-i"], run = "histnext" },
+    ]
+
 == 其他 ==
   :q              退出
   :help           本帮助页

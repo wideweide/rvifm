@@ -451,12 +451,10 @@ fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
     };
     let cfg = state.config;
     let tab = state.active_tab_mut();
-    tab.history.push(tab.location.clone());
-    tab.location = Location::Physical(PathBuf::from(&target));
-    tab.cursor = 0;
-    tab.scroll = 0;
-    tab.on_parent_row = false;
-    let _ = tab.refresh(cfg);
+    if let Err(e) = tab.navigate_to(Location::Physical(PathBuf::from(&target)), cfg) {
+        *msg = Some(format!("跳转失败: {e}"));
+        return;
+    }
     *msg = Some(format!("已跳转: {target}"));
 }
 
@@ -581,7 +579,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // FEAT-2：`..` 行仅导航——写操作与详情命令拒绝（cd/q/help/tree 例外）。
     if state.active_tab().on_parent_row {
         match cmd_head {
-            Some("cd" | "q" | "quit" | "help") => {}
+            Some("cd" | "q" | "quit" | "help" | "histprev" | "histnext") => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
@@ -608,12 +606,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             }
             let cfg = state.config;
             let tab = state.active_tab_mut();
-            tab.history.push(tab.location.clone());
-            tab.location = Location::Physical(target);
-            tab.cursor = 0;
-            tab.scroll = 0;
-            tab.on_parent_row = false; // FEAT-2：cd 后不残留 ".." 焦点
-            let _ = tab.refresh(cfg);
+            tab.navigate_to(Location::Physical(target), cfg)
+                .map_err(|e| format!("cd: {e}"))?;
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("help") => Ok(ExecOutcome::EnterHelp),
@@ -852,6 +846,33 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M13-10：暂存区菜单（staged 仍存在的条目）。
             let items = crate::ops::read_trash_index();
             Ok(ExecOutcome::ShowTrash { items })
+        }
+        Some("histprev" | "histnext") => {
+            // M16 NAV-3：当前 tab 视图历史后退/前进（无默认键位）。
+            let forward = cmd_head == Some("histnext");
+            let cfg = state.config;
+            let moved = state
+                .active_tab_mut()
+                .hist_jump(forward, cfg)
+                .map_err(|e| format!("{}: {e}", if forward { "histnext" } else { "histprev" }))?;
+            Ok(ExecOutcome::Done {
+                msg: Some(if moved {
+                    let (pos, len) = {
+                        let tab = state.active_tab();
+                        (tab.hist_pos, tab.history.len())
+                    };
+                    format!(
+                        "{} {}/{}",
+                        if forward { "前进" } else { "后退" },
+                        pos + 1,
+                        len
+                    )
+                } else if forward {
+                    "无前进历史".to_owned()
+                } else {
+                    "无后退历史".to_owned()
+                }),
+            })
         }
         Some("keyword") => {
             // M16 NAV-1：设置/清除当前目录书签 keyword（append-only 事件）。
@@ -3036,6 +3057,7 @@ mod tests {
             scroll: 0,
             search: None,
             history: Vec::new(),
+            hist_pos: 0,
             visual: None,
             filter: None,
             tags: HashSet::new(),
@@ -6419,6 +6441,71 @@ mod tests {
             Location::Archive { .. }
         ));
         assert!(exec_command_impl(&mut state, "keyword dl").is_err());
+    }
+
+    #[test]
+    fn nav3_histprev_histnext_exec_and_tab_isolation() {
+        let tmp = TempDir::new().unwrap();
+        for name in ["a", "b"] {
+            fs::create_dir(tmp.path().join(name)).unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // cd a → cd b：历史 [tmp, a, b]，pos 2。
+        let _ = exec_command_impl(
+            &mut state,
+            &format!("cd {}", tmp.path().join("a").display()),
+        );
+        let _ = exec_command_impl(
+            &mut state,
+            &format!("cd {}", tmp.path().join("b").display()),
+        );
+        match exec_command_impl(&mut state, "histprev") {
+            Ok(ExecOutcome::Done { msg }) => {
+                assert!(
+                    msg.as_deref().unwrap().starts_with("后退 2/3"),
+                    "msg: {msg:?}"
+                );
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("a")),
+            "后退应回到 a"
+        );
+        // 前进回 b；再前进 → 无前进历史。
+        let _ = exec_command_impl(&mut state, "histnext");
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("b"))
+        );
+        match exec_command_impl(&mut state, "histnext") {
+            Ok(ExecOutcome::Done { msg }) => {
+                assert_eq!(msg.as_deref(), Some("无前进历史"));
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        // 跨 tab 独立：新 tab 停在初始位置，不受 tab A 历史影响。
+        state.push_tab(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
+        assert!(matches!(
+            exec_command_impl(&mut state, "histnext"),
+            Ok(ExecOutcome::Done { .. })
+        ));
+        assert_eq!(state.active_tab().hist_pos, 0, "tab B 历史独立");
+    }
+
+    #[test]
+    fn nav3_no_default_binding_for_ctrl_o_ctrl_i() {
+        // SPEC M16：不设默认键位（Ctrl-I==Tab 键码冲突，Tab 已被 pane 焦点占用）。
+        let k = crate::keymap::Keymap::default_map();
+        assert_eq!(
+            k.lookup(&[crate::keymap::Key::ctrl(KeyCode::Char('o'))]),
+            None
+        );
+        assert_eq!(
+            k.lookup(&[crate::keymap::Key::ctrl(KeyCode::Char('i'))]),
+            None
+        );
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
