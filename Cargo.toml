@@ -11,6 +11,7 @@ repository = "https://github.com/wideweide/rvifm"
 bzip2-rs = "0.1.2"
 devicons = "0.6.13"
 flate2 = "1.1.11"
+ignore = "0.4.34"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 lzma-rs = "0.3.0"
 office_oxide = "~0.1.16"
@@ -19,6 +20,7 @@ pdf-inspector = "=1.25.2"
 ratatui = "0.30.2"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm", "image-defaults"] }
 redb = "4.5.0"
+regex = "1.13.1"
 ruzstd = "0.9.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

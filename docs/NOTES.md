@@ -440,3 +440,13 @@ rvifm record  → 静默记录访问
 - **会话合并**：不引入会话事件缓冲——直接合并各 tab 的 history（NAV-3 使 navigate_to 成为唯一导航咽喉，history 即会话访问轨迹）。轨迹顺序 = 访问顺序 → 递增时间戳（基准 = 墙钟 -1h，保证新于大多数已写盘事件且会话内有序）。只影响 last_visit（近期排序），不改分数（分数合并属 M8 会话评分语义，随退出刷写一起做）。
 - **发现的 M8 缺口**：SPEC §4.6 "TUI 运行中跳转在内存更新评分，退出时批量追加 events" 从未实现——会话访问退出即丢失，frecency 只学到 shell hook 的 cd。退出刷写（drain history → append_events）作为独立任务排队，优先级中（影响 frecency 数据完整性，不影响正确性）。
 - **入口命令名**：`:recent`（清晰、不与既有命令冲突）；SPEC SIMPLIFIED 授权实现时定名。
+
+### 2026-11-15 — M17 立项：递归搜索原生内建（结果=虚拟目录）
+
+- **背景**：用户提出 :find/:grep 需求后两轮设计收敛——第一轮"复用 frecency picker"被用户修订：picker"选中即跳转、列表消失"不符合搜索工作流；改为**结果=虚拟目录**（同目录导航语义探索）+ **预览窗格升级为交互式查看器**。这是 rvifm 用 Rust 内建能力超越 vifm"封装外部命令 + 菜单"的定位。
+- **依赖理由（获批）**：`ignore`（ripgrep 遍历组件，MIT OR Apache-2.0——原讨论中"MIT/UNLICENSE"表述有误已修正）为唯一净新增，其关键传递依赖（crossbeam-channel/regex-automata）已在树中；`regex 1.13.1` 原为间接依赖升为直接依赖（零新增编译单元）。纯 Rust、双许可、成熟度极高（ripgrep 生态）——符合"零配置、内建优先"原则。
+- **架构决策**：结果虚拟目录沿 :tree 同构（Tab.results 静态条目 + 只读守卫 + toggle/定位退出），items/entries 平行表——entries 驱动既有光标/预览/yy 机制，items 携带语义路径/行号。预览源抽象 preview_path()（结果模式取 item.path）。
+- **:grep 选中降预期**：系统 opener 无行号语义——选中=定位文件，"打开并跳行"依赖 opener 插值扩展（OUT_OF_SCOPE）；VIEW-1 查看器提供行级定位（grep 命中打开查看器直达命中行）弥补。
+- **发现勘误**：原讨论称 ignore 为"MIT/UNLICENSE"有误；"swpui"名称无法核实，以"外部搜索 TUI 工具"泛指并列入 OUT_OF_SCOPE。
+- **影响文件**：SPEC M17、TASKS M17、ACCEPTANCE §19、本节、Cargo.toml（ignore/regex）。
+- **待定/风险**：大仓库遍历的同步阻塞（ripgrep 级速度 + 1 万上限，暂可接受；后台化后续接 M13-8）。

@@ -200,6 +200,38 @@ redb 三表，无后台守护进程：
 - 分级匹配（0–7 档，具体档位在 M8-1 固化）：书签 > 文件名 > 中间段 > 通用子串；在 Rust 内存中排序。
 - 书签：`keyword != ''` 作为分级标志，书签自身也参与 EMS 评分；取消书签后保留累积分数正常衰减。
 
+#### M17 — 递归搜索与查看器批次（2026-11-15 增补；用户设计：结果=虚拟目录 + 交互式查看器）
+
+**背景**：vifm 的 :find/:grep 是外部工具封装（findprg/grepprg），结果进一次性菜单；社区靠 fzf 管道弥补。rvifm 用 ripgrep 拆出的 `ignore` crate（并行遍历 + gitignore 感知）+ `regex` 原生实现，且结果以**虚拟目录**形态进入既有导航体系——比"一次性 picker"更符合工作流（用户拍板的设计修订，替代 frecency picker 方案）。
+
+**MUST**
+
+- **SRCH-1 `:find [pattern]`**：
+  - `ignore` crate 递归遍历当前 tab 物理目录；尊重 .gitignore/.ignore；隐藏文件开关跟随 show_hidden 配置；结果上限 1 万（截断时状态栏提示）。
+  - 结果以**虚拟目录**呈现（沿 :tree 同构：`Tab.results`，items/entries 平行表）——条目显示**全路径**，既有导航操作（j/k/gg/G/Ctrl-u/d/yy/Ctrl-G/w）与对侧预览跟随即目录语义。
+  - `l`/Enter：定位到命中文件所在目录 + 光标停在该文件（退出结果视图）；Esc/h：退出回到原目录。
+  - 只读守卫：写操作（dd/DD/cw/rename/copy/move/t/v）在结果视图内拒绝；`:find`/`:grep` 重执行 = 替换结果。
+- **SRCH-2 `:grep [pattern]`**：
+  - `ignore` 遍历 + `regex` 逐行匹配；条目显示 `路径:行号: 内容`；二进制（含 NUL）/非 UTF-8 文件跳过。
+  - regex 非法表达式返回可读错误（不 panic）；其余语义与 SRCH-1 一致。
+- **VIEW-1 预览查看器**：
+  - `w` 在结果视图（或任意文件上）激活交互式查看器（右 pane）：**行号** + j/k/gg/G/Ctrl-u/d 滚动 + `/` 搜索（定位第一个匹配 + 匹配子串高亮）+ `n/N` 循环 + q/Esc/w 退出。
+  - `:grep` 命中打开查看器时定位到命中行。
+  - 查看器状态由 tab 持有；光标移动/重进重置。
+
+**SIMPLIFIED**
+
+- 遍历只收文件（目录不进结果）；匹配为大小写不敏感子串（:find）/正则（:grep）；非 UTF-8 文件跳过。
+- 查看器不做语法高亮（tree-sitter 另立任务）；匹配高亮复用 FIX-1 的 match_range。
+- 会话结果不缓存（重执行即重新遍历）；无后台化（M13-8 基础设施后续可接）。
+
+**OUT_OF_SCOPE**
+
+- 外部 find/grep 二进制封装（findprg/grepprg 路线）。
+- 归档内递归搜索（M7 只读 VFS 边界）；树视图/右 pane 结果模式。
+- 搜索替换（amber 路线）；外部搜索 TUI 工具集成。
+- opener 行号插值（"打开并跳行"）；语法高亮。
+
 #### M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐）
 
 **背景**：用户实测提出"两键直达"诉求（`'d` 对比 `o d <Enter>` 少一次确认，高频跳转可感知）。结论：**marks 不回归**（NOTES §4.3 决策维持），以 frecency 快速映射层补齐体验差异；history 对齐 vifm 的"菜单 + 可映射命令"机制（非单键跳转）。决策与调研结论见 NOTES 2026-11-15 条目。
