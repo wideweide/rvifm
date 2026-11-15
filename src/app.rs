@@ -47,6 +47,17 @@ impl Default for InputState {
     }
 }
 
+impl InputState {
+    /// M10-5 GAP-1：以（含用户分层的）键位表构造。
+    fn with_keymap(keymap: crate::keymap::Keymap) -> Self {
+        Self {
+            seq: Vec::new(),
+            count: None,
+            keymap,
+        }
+    }
+}
+
 /// Normal 模式按键的处理结果。
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -1275,7 +1286,26 @@ fn handle_key(
         input.seq.push(crate::keymap::Key::plain(key.code));
         let count = input.count.take();
         input.count = None;
-        match input.keymap.lookup(&input.seq) {
+        let action = input.keymap.lookup(&input.seq);
+        let result = execute_action(state, input, msg, action, count, viewport_h);
+        input.seq.clear();
+        if let Some(outcome) = result {
+            return outcome;
+        }
+        return Outcome::Continue;
+    }
+    /// M10-5 GAP-1：Action 执行（seq 完成与单键用户绑定共用）。返回
+    /// `Some(Outcome)` 表示模式迁移/退出请求；`None` 表示动作完成、继续循环。
+    /// 序列清理由调用方统一处理。
+    fn execute_action(
+        state: &mut AppState,
+        _input: &mut InputState,
+        msg: &mut Option<String>,
+        action: Option<crate::keymap::Action>,
+        count: Option<usize>,
+        _viewport_h: u16,
+    ) -> Option<Outcome> {
+        match action {
             Some(Action::ToTop) => state.active_tab_mut().cursor_top(),
             Some(Action::NextTab) => match count {
                 Some(n) => state.goto_tab(n),
@@ -1288,35 +1318,31 @@ fn handle_key(
             Some(Action::DeleteSelected) => {
                 if state.active_tab().in_results() {
                     *msg = Some("搜索结果视图只读".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
-                    input.seq.clear(); // 序列已完成，残留会吞掉后续按键
-                    return Outcome::ConfirmDelete(base.join(&item.name), false);
+                    // 序列已完成，残留会吞掉后续按键（调用方统一 clear）
+                    return Some(Outcome::ConfirmDelete(base.join(&item.name), false));
                 }
             }
             Some(Action::RenameBatch) => {
                 // M13-6：cw 批量重命名——收集标记（或光标单条）名单。
                 if state.active_tab().in_results() {
                     *msg = Some("搜索结果视图只读".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 let tab = state.active_tab();
                 if let Location::Physical(base) = &tab.location {
@@ -1335,35 +1361,60 @@ fn handle_key(
                             .collect()
                     };
                     if !names.is_empty() {
-                        input.seq.clear();
-                        return Outcome::BatchRename {
+                        return Some(Outcome::BatchRename {
                             base: base.clone(),
                             names,
-                        };
+                        });
                     }
-                    input.seq.clear();
                 }
-                input.seq.clear();
             }
             Some(Action::DeletePermanent) => {
                 // M13-3：DD 永久删除——确认提示后跳过暂存（不可逆强提示）。
                 if state.active_tab().in_results() {
                     *msg = Some("搜索结果视图只读".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 let tab = state.active_tab();
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
-                    input.seq.clear();
-                    return Outcome::ConfirmDelete(base.join(&item.name), true);
+                    return Some(Outcome::ConfirmDelete(base.join(&item.name), true));
+                }
+            }
+            Some(Action::HistPrev) | Some(Action::HistNext) => {
+                // M16 NAV-3：目录历史后退/前进（用户键位映射入口）。
+                let forward = matches!(action, Some(Action::HistNext));
+                let cfg = state.config;
+                let moved = state
+                    .active_tab_mut()
+                    .hist_jump(forward, cfg)
+                    .map_err(|e| format!("{}: {e}", if forward { "histnext" } else { "histprev" }));
+                match moved {
+                    Ok(true) => {
+                        let (pos, len) = {
+                            let tab = state.active_tab();
+                            (tab.hist_pos, tab.history.len())
+                        };
+                        *msg = Some(format!(
+                            "{} {}/{}",
+                            if forward { "前进" } else { "后退" },
+                            pos + 1,
+                            len
+                        ));
+                    }
+                    Ok(false) => {
+                        *msg = Some(if forward {
+                            "无前进历史".to_owned()
+                        } else {
+                            "无后退历史".to_owned()
+                        });
+                    }
+                    Err(e) => *msg = Some(e),
                 }
             }
             Some(Action::Yank) => {
@@ -1372,7 +1423,7 @@ fn handle_key(
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
                     *msg = Some("`..` 行仅导航".to_owned());
-                    return Outcome::Continue;
+                    return None;
                 }
                 // M17 SRCH：结果视图 yy = 命中文件路径本身。
                 if let Some(r) = state.active_tab().results.as_ref() {
@@ -1384,8 +1435,7 @@ fn handle_key(
                     let n = paths.len();
                     state.yank = Some(crate::state::YankBuffer { paths, cut: false });
                     *msg = Some(format!("Yanked {n} item(s)"));
-                    input.seq.clear();
-                    return Outcome::Continue;
+                    return None;
                 }
                 let count = count.unwrap_or(1).max(1);
                 let names: Vec<String> = {
@@ -1422,10 +1472,9 @@ fn handle_key(
                     *msg = Some(format!("Yanked {n} item(s)"));
                 }
             }
-            _ => {} // 未知序列整体丢弃
+            _ => {}
         }
-        input.seq.clear();
-        return Outcome::Continue;
+        None
     }
 
     // M17 VIEW-1：查看器激活时按键路由——滚动/搜索/退出全部作用于
@@ -1556,6 +1605,23 @@ fn handle_key(
 
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let half = (viewport_h.saturating_sub(1) / 2).max(1) as isize;
+
+    // M10-5 GAP-1：用户显式绑定优先于内建单键处理（prepend 覆盖默认）。
+    {
+        let probe = crate::keymap::Key {
+            code: key.code,
+            ctrl,
+        };
+        if input.keymap.is_explicit(&[probe]) {
+            let action = input.keymap.lookup(&[probe]);
+            let count = input.count.take();
+            input.count = None;
+            if let Some(outcome) = execute_action(state, input, msg, action, count, viewport_h) {
+                return outcome;
+            }
+            return Outcome::Continue;
+        }
+    }
 
     // M13-5：Ctrl-G → 文件详情对话框（Physical 视图；arm 顺序在
     // Char('g') 前缀分支之前，避免被前缀捕获）。
@@ -1718,7 +1784,29 @@ fn handle_key(
             input.count = None;
             paste_yanked(state, key.code == KeyCode::Char('P'), msg);
         }
-        _ => input.count = None,
+        _ => {
+            // GAP-1：非 Char 键（F 键/Home 等）的单键用户绑定兜底。
+            let plain = crate::keymap::Key::plain(key.code);
+            let with_ctrl = crate::keymap::Key {
+                code: key.code,
+                ctrl,
+            };
+            let action = input
+                .keymap
+                .lookup(&[plain])
+                .or_else(|| input.keymap.lookup(&[with_ctrl]));
+            input.count = None;
+            if let Some(action) = action
+                && !input.keymap.is_explicit(&[with_ctrl])
+            {
+                // 非显式（默认表绑定同键）才在此兜底；显式已在上方拦截。
+                if let Some(outcome) =
+                    execute_action(state, input, msg, Some(action), None, viewport_h)
+                {
+                    return outcome;
+                }
+            }
+        }
     }
     Outcome::Continue
 }
@@ -2273,9 +2361,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     };
     // M16 NAV-1：加载 [quickjump] char→keyword 别名（一次）。
     config::init_quickjump();
+    // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
+    config::init_keymap_layers();
     let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?, config)?);
     state.config = config;
-    let mut input = InputState::default();
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
     let mut mode = InputMode::default();
     // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
     let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
@@ -3542,7 +3634,10 @@ mod tests {
     #[test]
     fn j_k_move_cursor() {
         let (_tmp, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         assert_eq!(
             press(
                 &mut state,
@@ -3568,7 +3663,10 @@ mod tests {
     #[test]
     fn gg_and_g_jump_top_and_bottom() {
         let (_tmp, mut state) = make_state(5);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         assert_eq!(
             press(
@@ -3607,7 +3705,10 @@ mod tests {
     #[test]
     fn unknown_g_sequence_is_discarded() {
         let (_tmp, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         // `g` 后跟未知第二键：序列丢弃，不产生移动，也不退出。
         assert_eq!(
             press(
@@ -3662,7 +3763,10 @@ mod tests {
     #[test]
     fn ctrl_u_d_half_page() {
         let (_tmp, mut state) = make_state(20);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         assert_eq!(
             press(
@@ -3723,7 +3827,10 @@ mod tests {
         state.push_tab(tab_at("C:/b"));
         state.push_tab(tab_at("C:/c"));
         state.active = 0; // push_tab 会切到新 tab，这里归位到第一个
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         // gt 循环：a → b → c → a。
         assert_eq!(
@@ -3816,7 +3923,10 @@ mod tests {
     #[test]
     fn count_is_dropped_by_unrelated_keys() {
         let (_tmp, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         press(
             &mut state,
             &mut input,
@@ -3837,7 +3947,10 @@ mod tests {
     #[test]
     fn colon_enters_command_mode() {
         let (_tmp, mut state) = make_state(1);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         assert_eq!(
             press(
                 &mut state,
@@ -3937,7 +4050,10 @@ mod tests {
             fs::write(tmp.path().join(name), "").unwrap();
         }
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         submit_search(&mut state, "beta", &mut msg); // cursor → 1
@@ -3975,7 +4091,10 @@ mod tests {
     #[test]
     fn search_without_query_prompts_and_no_match_reports() {
         let (_tmp, mut state) = make_state(2);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // 未设置搜索词。
@@ -4006,7 +4125,10 @@ mod tests {
     #[test]
     fn slash_enters_search_mode() {
         let (_tmp, mut state) = make_state(1);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         assert_eq!(
             press_msg(
@@ -4128,7 +4250,10 @@ mod tests {
         fs::write(tmp.path().join("a.txt"), "A").unwrap();
         let out = TempDir::new().unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // yy → 复制缓冲区。
@@ -4180,7 +4305,10 @@ mod tests {
         fs::write(tmp.path().join("m.txt"), "M").unwrap();
         let out = TempDir::new().unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         press_msg(
@@ -4223,7 +4351,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.txt"), "A").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // 空缓冲区：可读提示。
@@ -4284,7 +4415,10 @@ mod tests {
         }
 
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         press_msg(
             &mut state,
@@ -4320,7 +4454,10 @@ mod tests {
         crate::archive::make_test_zip(&zip_path);
         fs::write(tmp.path().join("host.txt"), "H").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // 排序：host.txt(0) / t.zip(1)。l → 进入虚拟目录（不再被 opener 抢占）。
@@ -4366,7 +4503,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("bad.zip"), b"PK junk bytes").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         press_msg(
@@ -4389,7 +4529,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.7z"), b"7z fake").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         press_msg(
@@ -4411,7 +4554,10 @@ mod tests {
         let zip_path = tmp.path().join("t.zip");
         crate::archive::make_test_zip(&zip_path);
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         state.active_tab_mut().cursor = 0;
         press_msg(
@@ -4451,7 +4597,10 @@ mod tests {
         fs::write(tmp.path().join("target.txt"), "T").unwrap();
         fs::write(tmp.path().join("keep.txt"), "K").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         // 排序后 keep.txt(0) / target.txt(1)，把光标放到 target.txt。
         state.active_tab_mut().cursor = 1;
@@ -4771,7 +4920,10 @@ mod tests {
     fn visual_selection_flow() {
         // M3-1：v 进入 → j 扩大选区 → Esc 退出，状态正确。
         let (_tmp, mut state) = make_state(4);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         // 空目录 no-op。
         let empty_tmp = TempDir::new().unwrap();
@@ -4876,7 +5028,10 @@ mod tests {
     fn tag_toggle_flow() {
         // M3-2：t 标记多个文件，再次 t 取消；空目录 no-op；每 tab 独立。
         let (_tmp, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         // 标记 cursor 0（f00），j 后标记 f01。
         press(
@@ -5107,7 +5262,10 @@ mod tests {
             }
         }
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
 
         assert_eq!(
             press(
@@ -5311,7 +5469,10 @@ mod tests {
         assert!(msg.is_none());
         assert_eq!(state.active_tab().cursor, 1);
         // n 环绕回 0（deep 是目录名，不匹配 readme）。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         press_msg(
             &mut state,
             &mut input,
@@ -5596,7 +5757,10 @@ mod tests {
         assert!(!all.contains("line 150"), "摘要模式不应显示深处行: {all}");
 
         // w 开启 view 模式 → 完整内容（深处行可见）。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
         press_msg(
             &mut state,
@@ -5816,7 +5980,10 @@ mod tests {
         assert_eq!(state.active_tab().tagged_count(), 0);
 
         // t 单文件切换语义不受影响。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
         press_msg(
             &mut state,
@@ -5835,7 +6002,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("gone.txt"), "G").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
 
         // DD 序列（D 前缀 + D）→ ConfirmDelete(path, true)。
@@ -5915,7 +6085,10 @@ mod tests {
         assert!(r.unwrap_err().contains("只读"));
 
         // 树模式 Enter 拒绝（handle_key 守卫）。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
         press_msg(
             &mut state,
@@ -6003,7 +6176,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("info.txt"), "hello info").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
 
         // Ctrl-G 触发。
@@ -6045,7 +6221,10 @@ mod tests {
     fn jk_wrap_around_in_handle_key() {
         // M13-4：handle_key 层 j/k 环绕。
         let (_t, mut state) = make_state(3);
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
         state.active_tab_mut().cursor = 2; // 尾行
         press_msg(
@@ -6085,7 +6264,10 @@ mod tests {
             fs::write(tmp.path().join(name), "").unwrap();
         }
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg: Option<String> = None;
 
         // f + b：alpha(0) → beta(1)（第一个 b 开头的条目）。
@@ -6451,7 +6633,10 @@ mod tests {
         fs::create_dir(&sub).unwrap();
         fs::write(sub.join("inner.txt"), "").unwrap();
         let mut state = AppState::new(Tab::from_physical(&sub, Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // k：首条目上到 `..` 行。
@@ -6490,7 +6675,10 @@ mod tests {
         let sub = tmp.path().join("sub");
         fs::create_dir(&sub).unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
 
         // 进入目录 → 光标落在 `..` 行（vifm 语义）。
@@ -6561,7 +6749,10 @@ mod tests {
         let zip_path = tmp.path().join("t.zip");
         crate::archive::make_test_zip(&zip_path);
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         state.active_tab_mut().cursor = 0;
         press_msg(
@@ -6865,7 +7056,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.txt"), "A").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         press_msg(
             &mut state,
@@ -7113,7 +7307,10 @@ mod tests {
         );
 
         // l/Enter → 定位：退出结果视图 + 导航到父目录 + 光标停在文件。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         press_msg(
             &mut state,
             &mut input,
@@ -7139,7 +7336,10 @@ mod tests {
         assert!(state.active_tab().in_results());
 
         // dd 序列被拒绝（DeleteSelected 臂）。
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         press_msg(
             &mut state,
@@ -7215,7 +7415,10 @@ mod tests {
 
         // 定位：退出结果视图 + 光标停在命中文件。
         let mut msg = None;
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         press_msg(
             &mut state,
             &mut input,
@@ -7252,7 +7455,10 @@ mod tests {
         // :grep TARGET → 结果视图 → w 打开查看器 → 视口定位命中行（3）。
         let _ = exec_command_impl(&mut state, "grep TARGET");
         assert!(state.active_tab().in_results());
-        let mut input = InputState::default();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
         let mut msg = None;
         press_msg(
             &mut state,
@@ -7309,6 +7515,74 @@ mod tests {
         );
         assert!(!state.active_tab().view_mode);
         assert!(state.active_tab().viewer.is_none());
+    }
+
+    #[test]
+    fn gap1_user_bindings_execute_and_override() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let mut state =
+            AppState::new(Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap());
+        let cfg = state.config;
+        // 历史 [sub, tmp]；pos 1。
+        state
+            .active_tab_mut()
+            .navigate_to(Location::Physical(tmp.path().to_path_buf()), cfg)
+            .unwrap();
+
+        // 用户 prepend：C-o → histprev；j → to_top（覆盖默认 cursor_down）。
+        let prepend = vec![
+            (
+                vec![crate::keymap::Key::ctrl(KeyCode::Char('o'))],
+                crate::keymap::Action::HistPrev,
+            ),
+            (
+                vec![crate::keymap::Key::plain(KeyCode::Char('j'))],
+                crate::keymap::Action::ToTop,
+            ),
+        ];
+        let mut input =
+            InputState::with_keymap(crate::keymap::Keymap::with_layers(prepend, vec![], None));
+        let mut msg = None;
+
+        // C-o（非 Char 单键兜底路径）→ 历史后退到 sub。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('o'),
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("sub")),
+            "C-o 后退应回到 sub"
+        );
+        assert!(
+            msg.as_deref().unwrap().starts_with("后退 1/2"),
+            "msg: {msg:?}"
+        );
+
+        // 回到 sub；j 显式覆盖 → to_top（cursor 不动且 flag 置位）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('i'),
+            KeyModifiers::CONTROL,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            state.active_tab().on_parent_row,
+            "j 应执行 to_top（落 .. 行）"
+        );
+        assert_eq!(state.active_tab().cursor, 0);
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

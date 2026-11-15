@@ -450,3 +450,10 @@ rvifm record  → 静默记录访问
 - **发现勘误**：原讨论称 ignore 为"MIT/UNLICENSE"有误；"swpui"名称无法核实，以"外部搜索 TUI 工具"泛指并列入 OUT_OF_SCOPE。
 - **影响文件**：SPEC M17、TASKS M17、ACCEPTANCE §19、本节、Cargo.toml（ignore/regex）。
 - **待定/风险**：大仓库遍历的同步阻塞（ripgrep 级速度 + 1 万上限，暂可接受；后台化后续接 M13-8）。
+
+### 2026-11-15 — GAP-1 实现决策
+
+- **键位分层语义**：prepend 覆盖默认（含内建单键处理——explicit 集合在单键区最前拦截）、append 低于默认、replace 完全替换。用户序列全部记入 explicit 集合，单键按下时若该键是某显式绑定的完整单键序列则直接执行（绕过内建硬编码臂）。
+- **execute_action 抽取**：seq 派发的 match 臂与单键用户绑定共用同一执行函数；序列清理由调用方统一处理（根除"早退跳过 clear → 残留吞键"缺陷类，此前 dd/DD 确认后即受此害）。
+- **run 字段命名**：snake_case 为主 + vifm 惯用别名（put_move/paste_move 等）；未知动作名与非法键**整条跳过**不 panic（配置容错与 M5-1 一致）。
+- **`histprev`/`histnext` 落为 Action 变体**（无默认键），用户 keymap.toml 可绑（如 C-o/C-i）——NAV-3 的推荐映射示例自此真正可用。

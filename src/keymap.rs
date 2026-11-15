@@ -49,6 +49,10 @@ pub enum Action {
     PutMove,
     // 撤销
     Undo,
+    /// 目录历史后退（M16 NAV-3：仅用户键位映射，无默认键）。
+    HistPrev,
+    /// 目录历史前进（M16 NAV-3：仅用户键位映射，无默认键）。
+    HistNext,
     // 多标签
     NextTab,
     PrevTab,
@@ -59,8 +63,77 @@ pub enum Action {
     Quit,
 }
 
+impl Action {
+    /// GAP-1：TOML `run` 字段的动作名（snake_case 为主，附 vifm 惯用名）。
+    pub fn from_name(name: &str) -> Option<Action> {
+        use Action::*;
+        Some(match name {
+            "cursor_down" | "down" | "j" => CursorDown,
+            "cursor_up" | "up" | "k" => CursorUp,
+            "enter_selected" | "enter" | "l" => EnterSelected,
+            "return_parent" | "parent" | "h" => ReturnParent,
+            "to_top" | "gg" => ToTop,
+            "to_bottom" | "G" => ToBottom,
+            "half_page_down" | "half_down" => HalfPageDown,
+            "half_page_up" | "half_up" => HalfPageUp,
+            "start_search" | "search" => StartSearch,
+            "search_next" | "next_match" => SearchNext,
+            "search_prev" | "prev_match" => SearchPrev,
+            "start_filter" | "filter" => StartFilter,
+            "toggle_visual" | "visual" => ToggleVisual,
+            "toggle_tag" | "tag" => ToggleTag,
+            "delete_selected" | "delete" => DeleteSelected,
+            "yank" => Yank,
+            "delete_permanent" | "delete_hard" => DeletePermanent,
+            "rename_batch" | "batch_rename" | "rename" => RenameBatch,
+            "toggle_view" | "view" => ToggleView,
+            "put_copy" | "paste_copy" => PutCopy,
+            "put_move" | "paste_move" => PutMove,
+            "undo" => Undo,
+            "next_tab" | "tab_next" => NextTab,
+            "prev_tab" | "tab_prev" => PrevTab,
+            "enter_command" | "command" => EnterCommand,
+            "open_jump" | "jump" => OpenJump,
+            "quit" => Quit,
+            "histprev" | "hist_prev" => HistPrev,
+            "histnext" | "hist_next" => HistNext,
+            _ => return None,
+        })
+    }
+}
+
+/// GAP-1：TOML `on` 字段的按键解析——"P"（字符）、"C-o"（Ctrl）、
+/// "enter"/"esc"/"tab"/"backspace"/"space"/方向/Home/End/PageUp/PageDown。
+pub fn parse_key(spec: &str) -> Option<Key> {
+    let (ctrl, rest) = if let Some(r) = spec.strip_prefix("C-") {
+        (true, r)
+    } else if let Some(r) = spec.strip_prefix("c-") {
+        (true, r)
+    } else {
+        (false, spec)
+    };
+    let code = match rest.to_lowercase().as_str() {
+        "enter" | "cr" => KeyCode::Enter,
+        "esc" => KeyCode::Esc,
+        "tab" => KeyCode::Tab,
+        "backspace" | "bs" => KeyCode::Backspace,
+        "space" | "spc" => KeyCode::Char(' '),
+        "up" => KeyCode::Up,
+        "down" => KeyCode::Down,
+        "left" => KeyCode::Left,
+        "right" => KeyCode::Right,
+        "home" => KeyCode::Home,
+        "end" => KeyCode::End,
+        "pageup" => KeyCode::PageUp,
+        "pagedown" => KeyCode::PageDown,
+        other if other.chars().count() == 1 => KeyCode::Char(other.chars().next()?),
+        _ => return None,
+    };
+    Some(Key { code, ctrl })
+}
+
 /// 带修饰键的按键（键位表的原子单位）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Key {
     pub code: KeyCode,
     pub ctrl: bool,
@@ -77,9 +150,47 @@ impl Key {
 }
 
 /// 键位表：按键序列 → Action。多键序列（`gg`/`dd`/`gt`）按完整序列存储。
+/// `explicit` 记录用户 TOML 显式提供的序列（GAP-1：单键命中时覆盖内建）。
 #[derive(Debug, Default, Clone)]
 pub struct Keymap {
     bindings: Vec<(Vec<Key>, Action)>,
+    explicit: std::collections::HashSet<Vec<Key>>,
+}
+
+impl Keymap {
+    /// 分层合并（M10-5 GAP-1）：prepend 优先于默认、append 低于默认、
+    /// replace 完全替换默认；用户提供的序列全部记为显式绑定。
+    pub fn with_layers(
+        prepend: Vec<(Vec<Key>, Action)>,
+        append: Vec<(Vec<Key>, Action)>,
+        replace: Option<Vec<(Vec<Key>, Action)>>,
+    ) -> Self {
+        let mut explicit = std::collections::HashSet::new();
+        let mut bindings: Vec<(Vec<Key>, Action)> = Vec::new();
+        for (keys, action) in &prepend {
+            explicit.insert(keys.clone());
+            bindings.push((keys.clone(), *action));
+        }
+        match replace {
+            Some(replaced) => {
+                for (keys, action) in &replaced {
+                    explicit.insert(keys.clone());
+                    bindings.push((keys.clone(), *action));
+                }
+            }
+            None => bindings.extend(Self::default_map().bindings),
+        }
+        for (keys, action) in &append {
+            explicit.insert(keys.clone());
+            bindings.push((keys.clone(), *action));
+        }
+        Self { bindings, explicit }
+    }
+
+    /// 该序列是否为用户显式绑定（GAP-1：单键命中时优先于内建处理）。
+    pub fn is_explicit(&self, keys: &[Key]) -> bool {
+        self.explicit.contains(keys)
+    }
 }
 
 impl Keymap {
@@ -119,7 +230,10 @@ impl Keymap {
             (vec![k(Char(':'))], EnterCommand),
             (vec![k(Char('o'))], OpenJump),
         ];
-        Self { bindings: pairs }
+        Self {
+            bindings: pairs,
+            explicit: std::collections::HashSet::new(),
+        }
     }
 
     /// 精确匹配完整序列。

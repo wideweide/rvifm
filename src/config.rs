@@ -112,6 +112,109 @@ pub fn load_quickjump_from(path: &std::path::Path) -> std::collections::BTreeMap
 static QUICKJUMP: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
     std::sync::OnceLock::new();
 
+/// M10-5 GAP-1：键位分层（prepend/append/replace），绑定已完成
+/// TOML → (Key 序列, Action) 的解析；解析失败的条目跳过。
+#[derive(Debug, Default, Clone)]
+pub struct KeymapLayers {
+    pub prepend: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+    pub append: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+    pub replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>>,
+}
+
+/// 解析一条 `{ on = ..., run = ... }` 键位绑定。
+fn parse_binding(
+    value: &toml::Value,
+    into: &mut Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+) {
+    let on = value.get("on");
+    let Some(run) = value.get("run").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Some(action) = crate::keymap::Action::from_name(run) else {
+        return; // 未知动作名：跳过（不 panic）
+    };
+    let keys: Vec<crate::keymap::Key> = match on {
+        Some(toml::Value::String(spec)) => match crate::keymap::parse_key(spec) {
+            Some(k) => vec![k],
+            None => return,
+        },
+        Some(toml::Value::Array(arr)) => {
+            let mut keys = Vec::new();
+            for item in arr {
+                match item.as_str().and_then(crate::keymap::parse_key) {
+                    Some(k) => keys.push(k),
+                    None => return, // 任一键解析失败：整条跳过
+                }
+            }
+            keys
+        }
+        _ => return,
+    };
+    if keys.is_empty() {
+        return;
+    }
+    into.push((keys, action));
+}
+
+/// 解析一个模式表（如 `[normal]`）中的三层键位。
+fn parse_mode_layers(table: &toml::value::Table, layers: &mut KeymapLayers) {
+    let mut replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>> = None;
+    if let Some(arr) = table.get("prepend_keymap").and_then(|v| v.as_array()) {
+        for item in arr {
+            parse_binding(item, &mut layers.prepend);
+        }
+    }
+    if let Some(arr) = table.get("append_keymap").and_then(|v| v.as_array()) {
+        for item in arr {
+            parse_binding(item, &mut layers.append);
+        }
+    }
+    if let Some(arr) = table.get("keymap").and_then(|v| v.as_array()) {
+        let mut parsed = Vec::new();
+        for item in arr {
+            parse_binding(item, &mut parsed);
+        }
+        replace = Some(parsed);
+    }
+    layers.replace = match (layers.replace.clone(), replace) {
+        (None, r) => r,
+        (Some(existing), Some(new)) => {
+            let mut merged = existing;
+            merged.extend(new);
+            Some(merged)
+        }
+        (some, None) => some,
+    };
+}
+
+/// M10-5 GAP-1：从配置文件解析键位分层（当前支持 `[normal]`；其余模式
+/// 表保留解析框架，模式扩展时接入）。
+pub fn load_keymap_layers_from(path: &std::path::Path) -> KeymapLayers {
+    let mut layers = KeymapLayers::default();
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return layers;
+    };
+    let Ok(value) = text.parse::<toml::Table>() else {
+        return layers;
+    };
+    if let Some(mode) = value.get("normal").and_then(|v| v.as_table()) {
+        parse_mode_layers(mode, &mut layers);
+    }
+    layers
+}
+
+static KEYMAP_LAYERS: std::sync::OnceLock<KeymapLayers> = std::sync::OnceLock::new();
+
+/// TUI 启动时加载一次（run 入口调用）。
+pub fn init_keymap_layers() {
+    let _ = KEYMAP_LAYERS.set(load_keymap_layers_from(&config_path()));
+}
+
+/// 已加载的键位分层（未初始化时为空 = 纯默认表）。
+pub fn keymap_layers() -> KeymapLayers {
+    KEYMAP_LAYERS.get().cloned().unwrap_or_default()
+}
+
 /// TUI 启动时加载一次（run 入口调用）。
 pub fn init_quickjump() {
     let _ = QUICKJUMP.set(load_quickjump_from(&config_path()));
@@ -132,6 +235,41 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg = load_from(&tmp.path().join("nope.toml")).unwrap();
         assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn keymap_layers_parse_and_skip_invalid() {
+        // M10-5 GAP-1：[normal] 三层解析；未知 run/非法键整条跳过。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[normal]
+prepend_keymap = [
+  { on = "P", run = "put_move" },
+  { on = ["C-o"], run = "histprev" },
+  { on = "x", run = "unknown_action" },
+  { on = ["bogus!!"], run = "undo" },
+]
+append_keymap = [
+  { on = ["Z", "Z"], run = "delete_permanent" },
+]
+"#,
+        )
+        .unwrap();
+        let layers = load_keymap_layers_from(&path);
+        assert_eq!(layers.prepend.len(), 2, "无效条目跳过");
+        assert_eq!(layers.prepend[0].1, crate::keymap::Action::PutMove);
+        assert_eq!(layers.prepend[1].1, crate::keymap::Action::HistPrev);
+        assert_eq!(layers.append.len(), 1);
+        assert!(layers.replace.is_none());
+        // 缺文件 → 空。
+        assert!(
+            load_keymap_layers_from(&tmp.path().join("nope.toml"))
+                .prepend
+                .is_empty()
+        );
     }
 
     #[test]
