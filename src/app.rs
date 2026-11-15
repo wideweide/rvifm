@@ -81,6 +81,8 @@ enum JumpKind {
     Unified,
     Dir,
     File,
+    /// M16 NAV-4：近期视角——全部条目按最后访问时间倒序（含会话内合并）。
+    Recent,
 }
 
 /// 输入模式（M5-4 统一模式系统前先持有最小集合）。
@@ -464,7 +466,7 @@ fn quickjump_target(entries: &[crate::frecency::ScoredEntry], keyword: &str) -> 
 /// 命中目录即 cd（等价 :cd：history 入栈 + 刷新）；未命中提示不静默。
 fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
     let target_kw = config::quickjump_alias(c).unwrap_or_else(|| c.to_string());
-    let entries = match load_jump_entries(JumpKind::Unified) {
+    let entries = match load_jump_entries(state, JumpKind::Unified) {
         Ok(entries) => entries,
         Err(e) => {
             *msg = Some(e);
@@ -491,7 +493,10 @@ fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
 /// 选择器数据（纯只读）：按视角从 frecency 存储加载并排名。
 /// Unified = 合一表 + 全局统一时钟（全部条目混合排名）；
 /// Dir/File = 仅对应 topic + 独立类型时钟。交互与 `pick` 一致（分级 + aging）。
-fn load_jump_entries(kind: JumpKind) -> Result<Vec<crate::frecency::ScoredEntry>, String> {
+fn load_jump_entries(
+    state: &AppState,
+    kind: JumpKind,
+) -> Result<Vec<crate::frecency::ScoredEntry>, String> {
     let store = crate::frecency::open_store().map_err(|e| format!("frecency 存储打开失败: {e}"))?;
     let snapshot = store
         .snapshot_all()
@@ -509,6 +514,20 @@ fn load_jump_entries(kind: JumpKind) -> Result<Vec<crate::frecency::ScoredEntry>
                 .map_err(|e| format!("时钟读取失败: {e}"))?;
             crate::frecency::replay_unified(&snapshot, &events, now)
         }
+        JumpKind::Recent => {
+            // M16 NAV-4：近期视角——统一重放 + 会话内合并，按最后访问倒序。
+            let now = store
+                .global_tick()
+                .map_err(|e| format!("时钟读取失败: {e}"))?;
+            let mut entries = crate::frecency::replay_unified(&snapshot, &events, now);
+            merge_session_visits(&mut entries, state);
+            entries.sort_by(|a, b| {
+                b.last_visit
+                    .cmp(&a.last_visit)
+                    .then_with(|| b.score.total_cmp(&a.score))
+            });
+            entries
+        }
         JumpKind::Dir | JumpKind::File => {
             let now_dir = store
                 .type_tick("dir")
@@ -524,6 +543,47 @@ fn load_jump_entries(kind: JumpKind) -> Result<Vec<crate::frecency::ScoredEntry>
         }
     };
     Ok(all)
+}
+
+/// M16 NAV-4：会话内访问合并——各 tab 的 history（Physical）按轨迹顺序
+/// 赋予递增时间戳（基准 = 当前墙钟 -1 小时，严格新于大多数已写盘事件），
+/// Recent 视角即时可见会话内跳转。只影响 last_visit，不写任何存储。
+fn merge_session_visits(entries: &mut Vec<crate::frecency::ScoredEntry>, state: &AppState) {
+    let base = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(3600);
+    let mut seq = 0u64;
+    for tab in &state.tabs {
+        for loc in &tab.history {
+            let Location::Physical(p) = loc else {
+                continue;
+            };
+            let path = p.to_string_lossy().replace('\\', "/");
+            seq += 1;
+            let ts = base.saturating_add(seq);
+            match entries
+                .iter_mut()
+                .find(|e| e.topic == "dir" && e.path == path)
+            {
+                Some(e) => e.last_visit = e.last_visit.max(ts),
+                None => {
+                    let snap = crate::frecency::SnapshotEntry {
+                        path: path.clone(),
+                        topic: "dir".to_owned(),
+                        keyword: String::new(),
+                        score: 0.0,
+                        tick: 0,
+                        clock: 0,
+                    };
+                    let mut e = crate::frecency::ScoredEntry::from_snapshot(&snap, "");
+                    e.last_visit = ts;
+                    entries.push(e);
+                }
+            }
+        }
+    }
 }
 
 /// 选择器实时筛选（与 pick 的分级一致）：空查询全部显示，非空按分级
@@ -624,6 +684,14 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("recent") => {
+            // M16 NAV-4：近期视角——全部条目按最后访问时间倒序（含会话合并）。
+            let entries = load_jump_entries(state, JumpKind::Recent)?;
+            Ok(ExecOutcome::OpenJump {
+                kind: JumpKind::Recent,
+                entries,
+            })
+        }
         Some("q" | "quit") => Ok(ExecOutcome::Quit),
         Some("cd") => {
             // M5-3：切换当前 tab 到目标目录（保留原名导航语义）。
@@ -838,7 +906,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             } else {
                 JumpKind::File
             };
-            let entries = load_jump_entries(kind)?;
+            let entries = load_jump_entries(state, kind)?;
             Ok(ExecOutcome::OpenJump { kind, entries })
         }
         Some("tree") => {
@@ -1428,7 +1496,7 @@ fn handle_key(
         KeyCode::Char('o') => {
             // M8-12：合一跳转选择器（合一表 + 全局统一时钟视角，纯只读）。
             input.count = None;
-            match load_jump_entries(JumpKind::Unified) {
+            match load_jump_entries(state, JumpKind::Unified) {
                 Ok(entries) => {
                     return Outcome::OpenJump {
                         kind: JumpKind::Unified,
@@ -2878,6 +2946,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             JumpKind::Unified => "跳转（合一 · 全局时钟）",
             JumpKind::Dir => "跳转（仅目录 · dir 时钟）",
             JumpKind::File => "跳转（仅文件 · file 时钟）",
+            JumpKind::Recent => "跳转（近期 · 时间倒序）",
         };
         let visible = filter_jump(entries, input);
         let popup = centered_rect(area);
@@ -5043,6 +5112,7 @@ mod tests {
             keyword: String::new(),
             score,
             grade: crate::frecency::Grade::None,
+            last_visit: 0,
         }
     }
 
@@ -6478,6 +6548,7 @@ mod tests {
             keyword: kw.to_owned(),
             score,
             grade: Grade::None,
+            last_visit: 0,
         };
         let entries = vec![
             mk("/low", "dir", "dl", 1.0),
@@ -6685,6 +6756,41 @@ mod tests {
             "应含当前标记（CJK 全角拆字，取单字符号）"
         );
         assert!(buffer[(0, 1)].symbol().trim().is_empty(), "遮罩生效");
+    }
+
+    #[test]
+    fn nav4_merge_session_visits_orders_recent() {
+        // 会话 history（Physical）按轨迹顺序获得递增时间戳，新条目被创建。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().history = vec![
+            Location::Physical(tmp.path().join("first")),
+            Location::Physical(tmp.path().join("second")),
+        ];
+        let mut entries = vec![];
+        merge_session_visits(&mut entries, &state);
+        assert_eq!(entries.len(), 2, "会话新条目已创建");
+        // second 后访问 → 时间戳更大（近期倒序应排前）。
+        assert!(entries[1].last_visit > entries[0].last_visit);
+        // 既有条目：合并只更新 last_visit，不改分数。
+        let mut existing = vec![scored("/x", "dir", 5.0)];
+        let mut state2 =
+            AppState::new(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
+        state2.active_tab_mut().history = vec![Location::Physical(PathBuf::from("/x"))];
+        merge_session_visits(&mut existing, &state2);
+        assert_eq!(existing.len(), 1);
+        assert!((existing[0].score - 5.0).abs() < f64::EPSILON, "分数不变");
+        assert!(existing[0].last_visit > 0, "last_visit 已更新");
+    }
+
+    #[test]
+    fn nav4_recent_exec_opens_selector() {
+        // :recent → OpenJump{Recent}（空 store 容忍，形态断言同 :j/:J）。
+        let mut state = make_state(1).1;
+        match exec_command_impl(&mut state, "recent") {
+            Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::Recent),
+            other => panic!("expected OpenJump Recent, got {other:?}"),
+        }
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

@@ -176,6 +176,9 @@ pub struct ScoredEntry {
     /// aging 后分数（EMS，M8-4 接入重放计算）。
     pub score: f64,
     pub grade: Grade,
+    /// 最后一次访问的 Unix 时间戳（M16 NAV-4：近期视角排序用；
+    /// snapshot-only 条目为 0，排序时靠后）。
+    pub last_visit: u64,
 }
 
 impl ScoredEntry {
@@ -187,6 +190,7 @@ impl ScoredEntry {
             keyword: entry.keyword.clone(),
             score: entry.score,
             grade: grade_for(entry, query),
+            last_visit: 0,
         }
     }
 
@@ -268,7 +272,14 @@ fn replay_inner(
     for s in snapshot {
         map.insert((s.topic.clone(), s.path.clone()), s.clone());
     }
+    // M16 NAV-4：每条目最后访问的墙钟时间（事件 ts；snapshot-only 为 0）。
+    let mut last_visit: std::collections::BTreeMap<(String, String), u64> =
+        std::collections::BTreeMap::new();
     for (seq, ev) in events {
+        let lv = last_visit
+            .entry((ev.topic.clone(), ev.path.clone()))
+            .or_default();
+        *lv = (*lv).max(ev.ts);
         let key = (ev.topic.clone(), ev.path.clone());
         // 统一视角一律用全局序号；分型视角用事件携带的类型时钟（旧格式兜底）。
         let clock = match clocks {
@@ -319,6 +330,10 @@ fn replay_inner(
                 keyword: s.keyword.clone(),
                 score: aged(s.score, lambda, delta),
                 grade: grade_for(s, ""),
+                last_visit: last_visit
+                    .get(&(s.topic.clone(), s.path.clone()))
+                    .copied()
+                    .unwrap_or(0),
             }
         })
         .collect();
@@ -535,7 +550,14 @@ fn replay_merge(
     for s in snapshot {
         map.insert((s.topic.clone(), s.path.clone()), s.clone());
     }
+    // M16 NAV-4：每条目最后访问的墙钟时间（事件 ts；snapshot-only 为 0）。
+    let mut last_visit: std::collections::BTreeMap<(String, String), u64> =
+        std::collections::BTreeMap::new();
     for (seq, ev) in events {
+        let lv = last_visit
+            .entry((ev.topic.clone(), ev.path.clone()))
+            .or_default();
+        *lv = (*lv).max(ev.ts);
         let clock = if ev.clock == 0 { *seq } else { ev.clock };
         let entry = map
             .entry((ev.topic.clone(), ev.path.clone()))
@@ -864,6 +886,21 @@ mod tests {
         let b_pos = ranked.iter().position(|e| e.path == "/b").unwrap();
         let a_pos = ranked.iter().position(|e| e.path == "/a").unwrap();
         assert!(b_pos < a_pos, "B({b_pos}) 应在 A({a_pos}) 前");
+    }
+
+    #[test]
+    fn replay_records_last_visit_from_event_ts() {
+        // M16 NAV-4：last_visit = 该条目最近事件的 ts（snapshot-only 为 0）。
+        let events: Vec<(u64, EntryRecord)> = vec![
+            (1, rec("/a", 100)),
+            (2, rec("/b", 200)),
+            (3, rec("/a", 300)),
+        ];
+        let entries = replay_inner(&[], &events, ReplayClocks::Unified(10));
+        let a = entries.iter().find(|e| e.path == "/a").unwrap();
+        let b = entries.iter().find(|e| e.path == "/b").unwrap();
+        assert_eq!(a.last_visit, 300, "取最近事件 ts");
+        assert_eq!(b.last_visit, 200);
     }
 
     #[test]

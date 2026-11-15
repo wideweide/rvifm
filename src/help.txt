@@ -17,6 +17,7 @@ rvifm 帮助（vim 风格文件管理器）
   f / F {字符}    按文件名首字符快速定位（; 同向重复，, 反向）
   o               跳转选择器（frecency 合一视角）
   :j / :J         仅目录 / 仅文件的跳转选择器
+  :recent         近期视角（全部条目按最后访问时间倒序，含会话内跳转）
   '{字符}         keyword 直达（如 'd 跳到 keyword=d 的最高排名目录；
                   :keyword <chars> 设置书签，config.toml [quickjump] 可配别名）
 
