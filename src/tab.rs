@@ -203,8 +203,9 @@ pub struct Tab {
     /// M17 SRCH：搜索结果虚拟目录（:find/:grep；沿 :tree 同构——静态
     /// 条目 + 只读守卫，items/entries 平行表）。
     pub results: Option<crate::search::SearchResults>,
-    /// M18-1：运行时排序状态（`S` 对话框 / `:sort`；None = 默认顺序）。
-    pub sort: Option<SortSpec>,
+    /// M18-1/M18-2：运行时排序状态（`S` 对话框 / `:sort`；None = 默认顺序；
+    /// 多字段经 :sort，对话框写单元素）。
+    pub sort: Option<Vec<SortSpec>>,
     /// M17 VIEW-1：交互式查看器状态（view_mode 激活时右 pane）。
     pub viewer: Option<ViewerState>,
 }
@@ -516,12 +517,20 @@ impl Tab {
         (cur, total)
     }
 
-    /// M18-1：就地应用运行时排序（目录优先保持 + 字段 + 名称平手）；
-    /// 光标保持在同一文件上。
+    /// M18-1：就地应用单字段排序（对话框入口；光标保持在同一文件上）。
     pub fn apply_sort(&mut self, spec: SortSpec, config: Config) {
-        self.sort = Some(spec);
+        self.apply_sort_multi(vec![spec], config);
+    }
+
+    /// M18-2：就地应用多字段排序（按序比较；目录优先保持 + 名称平手）；
+    /// 光标保持在同一文件上。
+    pub fn apply_sort_multi(&mut self, specs: Vec<SortSpec>, config: Config) {
+        if specs.is_empty() {
+            return;
+        }
+        self.sort = Some(specs);
         let keep = self.entries.get(self.cursor).map(|i| i.name.clone());
-        self.sort_entries(spec, &config);
+        self.sort_entries(&config);
         if let Some(name) = keep
             && let Some(idx) = self.entries.iter().position(|i| i.name == name)
         {
@@ -529,8 +538,9 @@ impl Tab {
         }
     }
 
-    /// 排序比较器（目录优先 + 字段 + 名称平手，确定性）。
-    fn sort_entries(&mut self, spec: SortSpec, config: &Config) {
+    /// 排序比较器（目录优先 + 逐字段链 + 名称平手，确定性）。
+    fn sort_entries(&mut self, config: &Config) {
+        let specs = self.sort.clone().unwrap_or_default();
         let dirs_first = config.sort_dirs_first;
         self.entries.sort_by(|a, b| {
             let dir_cmp = if dirs_first {
@@ -539,14 +549,19 @@ impl Tab {
                 std::cmp::Ordering::Equal
             };
             dir_cmp.then_with(|| {
-                let base = match spec.field {
-                    SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                    SortField::Mtime => a.mtime.cmp(&b.mtime),
-                    SortField::Size => a.size.cmp(&b.size),
-                    SortField::Ext => SortField::ext_of(&a.name).cmp(&SortField::ext_of(&b.name)),
-                };
-                let ordered = if spec.desc { base.reverse() } else { base };
-                ordered.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                let mut ord = std::cmp::Ordering::Equal;
+                for spec in &specs {
+                    let base = match spec.field {
+                        SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                        SortField::Mtime => a.mtime.cmp(&b.mtime),
+                        SortField::Size => a.size.cmp(&b.size),
+                        SortField::Ext => {
+                            SortField::ext_of(&a.name).cmp(&SortField::ext_of(&b.name))
+                        }
+                    };
+                    ord = ord.then_with(|| if spec.desc { base.reverse() } else { base });
+                }
+                ord.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
             })
         });
     }
@@ -564,8 +579,8 @@ impl Tab {
         }
         self.entries = entries;
         let keep_name = self.entries.get(self.cursor).map(|i| i.name.clone());
-        if let Some(spec) = self.sort {
-            self.sort_entries(spec, &config);
+        if self.sort.is_some() {
+            self.sort_entries(&config);
         }
         if let Some(name) = keep_name
             && let Some(idx) = self.entries.iter().position(|i| i.name == name)

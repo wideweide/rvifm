@@ -285,6 +285,45 @@ enum ContextMenuOutcome {
     RenamePrefill { line: String },
 }
 
+/// M18-2：解析 `:sort` 参数——逗号分隔字段，字段后可跟 asc/desc。
+/// 例：`name,size desc`。空参数/未知字段/坏方向返回可读错误。
+fn parse_sort_spec(args: &str) -> Result<Vec<crate::tab::SortSpec>, String> {
+    let mut specs = Vec::new();
+    for token in args.split(',') {
+        let token = token.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let mut parts = token.split_whitespace();
+        let field_name = parts.next().unwrap_or_default();
+        let field = match field_name {
+            "name" => crate::tab::SortField::Name,
+            "mtime" | "time" => crate::tab::SortField::Mtime,
+            "size" => crate::tab::SortField::Size,
+            "ext" | "extension" => crate::tab::SortField::Ext,
+            other => {
+                return Err(format!(
+                    "sort: 未知字段 `{other}`（可用 name/mtime/size/ext）"
+                ));
+            }
+        };
+        let desc = match parts.next() {
+            None => false,
+            Some("asc") => false,
+            Some("desc") => true,
+            Some(other) => return Err(format!("sort: 未知方向 `{other}`（可用 asc/desc）")),
+        };
+        if parts.next().is_some() {
+            return Err("sort: 字段后只能跟 asc/desc".to_owned());
+        }
+        specs.push(crate::tab::SortSpec { field, desc });
+    }
+    if specs.is_empty() {
+        return Err("sort: 缺少字段（如 name,size desc）".to_owned());
+    }
+    Ok(specs)
+}
+
 /// M18-1：排序对话框按键结果。
 #[derive(Debug)]
 enum SortDialogOutcome {
@@ -749,7 +788,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // M17 SRCH：结果视图只读——find/grep 重执行与退出类命令豁免。
     if state.active_tab().in_results() {
         match cmd_head {
-            Some("find" | "grep" | "q" | "quit" | "help") => {}
+            Some("find" | "grep" | "sort" | "q" | "quit" | "help") => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
             }
@@ -768,6 +807,32 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("sort") => {
+            // M18-2：多字段排序（:sort name,size desc）。
+            let args = parts.collect::<Vec<&str>>().join(" ");
+            let specs = parse_sort_spec(&args)?;
+            let cfg = state.config;
+            state.active_tab_mut().apply_sort_multi(specs.clone(), cfg);
+            let text = specs
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{} {}",
+                        match s.field {
+                            crate::tab::SortField::Name => "name",
+                            crate::tab::SortField::Mtime => "mtime",
+                            crate::tab::SortField::Size => "size",
+                            crate::tab::SortField::Ext => "ext",
+                        },
+                        if s.desc { "desc" } else { "asc" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("已排序: {text}")),
+            })
+        }
         Some("find" | "grep") => {
             // M17 SRCH-1/2：递归搜索 → 结果虚拟目录（重执行 = 替换）。
             let is_grep = cmd_head == Some("grep");
@@ -2792,10 +2857,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             let cur = state
                                 .active_tab()
                                 .sort
-                                .map(|s| s.field)
+                                .clone()
+                                .and_then(|v| v.first().map(|s| s.field))
                                 .unwrap_or(crate::tab::SortField::Name);
                             let cursor = SORT_FIELDS.iter().position(|f| f.3 == cur).unwrap_or(0);
-                            let desc = state.active_tab().sort.map(|s| s.desc).unwrap_or(false);
+                            let desc = state
+                                .active_tab()
+                                .sort
+                                .clone()
+                                .and_then(|v| v.first().map(|s| s.desc))
+                                .unwrap_or(false);
                             mode = InputMode::SortDialog { cursor, desc };
                         }
                         Outcome::ConfirmDelete(path, permanent) => {
@@ -3323,12 +3394,14 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             area,
         );
         let popup = context_menu_rect(area);
-        let cur_sort = state.active_tab().sort;
+        let cur_sort = state.active_tab().sort.clone();
         let lines: Vec<Line> = SORT_FIELDS
             .iter()
             .enumerate()
             .map(|(idx, (_lo, _hi, label, field))| {
                 let current = cur_sort
+                    .as_ref()
+                    .and_then(|v| v.first())
                     .filter(|s| s.field == *field)
                     .map(|s| if s.desc { "desc" } else { "asc" });
                 let pending = if idx == *cursor {
@@ -3583,13 +3656,25 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                     if r.truncated { " 已截断" } else { "" }
                 )));
             }
-            if let Some(spec) = &tab.sort {
-                // M18-1：排序指示。
-                spans.push(Span::from(format!(
-                    "  [sort: {} {}]",
-                    spec.field.label(),
-                    if spec.desc { "desc" } else { "asc" }
-                )));
+            if let Some(specs) = &tab.sort {
+                // M18-1/M18-2：排序指示（多字段 join）。
+                let text = specs
+                    .iter()
+                    .map(|s| {
+                        format!(
+                            "{} {}",
+                            match s.field {
+                                crate::tab::SortField::Name => "name",
+                                crate::tab::SortField::Mtime => "mtime",
+                                crate::tab::SortField::Size => "size",
+                                crate::tab::SortField::Ext => "ext",
+                            },
+                            if s.desc { "desc" } else { "asc" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                spans.push(Span::from(format!("  [sort: {text}]")));
             }
             if let Some(s) = &tab.search {
                 if s.query.is_empty() {
@@ -7873,11 +7958,9 @@ mod tests {
         }
         // 应用后排序生效（mtime 平手回退名称：a.doc 在前）。
         assert_eq!(state.active_tab().entries[0].name, "a.doc");
-        // 状态栏指示数据源。
-        assert_eq!(
-            state.active_tab().sort.unwrap().field,
-            crate::tab::SortField::Mtime
-        );
+        // 状态栏指示数据源（首字段）。
+        let sort = state.active_tab().sort.clone().unwrap();
+        assert_eq!(sort[0].field, crate::tab::SortField::Mtime);
 
         // 空格换向（不应用）→ 回车应用降序。
         handle_sort_dialog_key(
@@ -7910,7 +7993,7 @@ mod tests {
         );
 
         // Esc 取消：不改排序。
-        let before = state.active_tab().sort;
+        let before = state.active_tab().sort.clone();
         match handle_sort_dialog_key(
             &mut state,
             KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
@@ -7943,10 +8026,10 @@ mod tests {
             Outcome::EnterSortDialog
         );
         // 预置一个排序状态供对话框显示"当前"。
-        state.active_tab_mut().sort = Some(crate::tab::SortSpec {
+        state.active_tab_mut().sort = Some(vec![crate::tab::SortSpec {
             field: crate::tab::SortField::Size,
             desc: true,
-        });
+        }]);
         let mode = InputMode::SortDialog {
             cursor: 2,
             desc: false,
@@ -7967,6 +8050,52 @@ mod tests {
             "当前排序状态（合并格式 [desc → asc]）: {all}"
         );
         assert!(buffer[(0, 1)].symbol().trim().is_empty(), "遮罩生效");
+    }
+
+    #[test]
+    fn m18_2_parse_sort_spec_and_multi_exec() {
+        // 解析：多字段 + 方向。
+        let specs = parse_sort_spec("name,size desc").unwrap();
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].field, crate::tab::SortField::Name);
+        assert!(!specs[0].desc);
+        assert_eq!(specs[1].field, crate::tab::SortField::Size);
+        assert!(specs[1].desc);
+        // 错误路径。
+        assert!(parse_sort_spec("badfield").is_err());
+        assert!(parse_sort_spec("name up").is_err());
+        assert!(parse_sort_spec("  ").is_err());
+
+        // exec：多字段生效（ext asc + size desc）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "xxxx").unwrap();
+        fs::write(tmp.path().join("b.md"), "").unwrap();
+        fs::write(tmp.path().join("c.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        match exec_command_impl(&mut state, "sort ext,size desc") {
+            Ok(ExecOutcome::Done { msg }) => {
+                assert!(msg.as_deref().unwrap().contains("ext asc"), "m: {msg:?}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        let names: Vec<&str> = state
+            .active_tab()
+            .entries
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["b.md", "a.txt", "c.txt"],
+            "ext asc：md 组在前，txt 组 size 降序"
+        );
+        // 状态栏指示数据源。
+        let sort = state.active_tab().sort.clone().unwrap();
+        assert_eq!(sort.len(), 2);
+
+        // exec 错误路径。
+        assert!(exec_command_impl(&mut state, "sort badfield").is_err());
+        assert!(exec_command_impl(&mut state, "sort").is_err());
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
