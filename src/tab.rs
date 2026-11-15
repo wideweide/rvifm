@@ -252,6 +252,19 @@ impl Tab {
         Ok(())
     }
 
+    /// M16 NAV-2：从历史移除第 idx 条（菜单内 dd）。当前视图不可移除；
+    /// 移除游标之前的条目时 hist_pos 前移。返回是否移除。
+    pub fn history_remove(&mut self, idx: usize) -> bool {
+        if idx >= self.history.len() || idx == self.hist_pos {
+            return false;
+        }
+        self.history.remove(idx);
+        if idx < self.hist_pos {
+            self.hist_pos -= 1;
+        }
+        true
+    }
+
     /// M16 NAV-3：`histprev`/`histnext`——沿当前 tab 的视图历史后退/前进。
     /// 返回是否移动；边界（无更早/更新）返回 false 且不产生副作用。
     pub fn hist_jump(&mut self, forward: bool, config: Config) -> std::io::Result<bool> {
@@ -1282,6 +1295,29 @@ mod tests {
         assert!(tab.hist_jump(false, Config::default()).unwrap());
         assert!(matches!(tab.location, Location::Archive { .. }));
         assert!(!tab.entries.is_empty(), "归档条目已恢复");
+    }
+
+    #[test]
+    fn nav2_history_remove_adjusts_cursor() {
+        // M16 NAV-2：dd 移除历史条目——当前视图不可删；删游标前条目时 pos 前移。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("a").join("b")).unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.cursor = 0;
+        tab.enter_selected(Config::default()).unwrap(); // → a（pos 1）
+        tab.cursor = 0;
+        tab.enter_selected(Config::default()).unwrap(); // → b（pos 2）
+        assert_eq!(tab.hist_pos, 2);
+        // 当前视图（idx 2）不可删。
+        assert!(!tab.history_remove(2));
+        // 删 idx 0（tmp）→ pos 前移到 1。
+        assert!(tab.history_remove(0));
+        assert_eq!(tab.hist_pos, 1);
+        assert_eq!(tab.history.len(), 2);
+        assert_eq!(
+            tab.history[1],
+            Location::Physical(tmp.path().join("a").join("b"))
+        );
     }
 
     #[test]

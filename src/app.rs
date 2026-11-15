@@ -130,6 +130,9 @@ enum InputMode {
     /// 右键上下文菜单（FEAT-3）：`cursor` = 菜单内选中项；Enter 执行，
     /// Esc/点击外部关闭。
     ContextMenu { cursor: usize },
+    /// 目录历史菜单（M16 NAV-2）：`cursor` = 历史条目下标（live 渲染
+    /// `history[..=hist_pos]`）；Enter/l 导航、dd 移除、Esc/q 关闭。
+    HistoryMenu { cursor: usize },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`）。
@@ -233,6 +236,8 @@ enum ExecOutcome {
     ShowTrash { items: Vec<crate::ops::TrashEntry> },
     /// 打开文件详情对话框（FEAT-3：`:file`，与 Ctrl-G 同源）。
     ShowInfo { path: PathBuf, text: String },
+    /// 打开目录历史菜单（M16 NAV-2：`:history`）。
+    ShowHistory,
 }
 
 /// FEAT-3：右键上下文菜单（单级、内建动作，作用于右键聚焦的条目）。
@@ -303,6 +308,29 @@ fn current_item_info(state: &AppState) -> Option<(PathBuf, String)> {
             Some((host.clone(), text))
         }
     }
+}
+
+/// M16 NAV-2：历史菜单导航——落到历史第 idx 条（作为新导航，截断
+/// forward）；当前位置提示。
+fn history_menu_nav(state: &mut AppState, idx: usize, msg: &mut Option<String>) {
+    let cfg = state.config;
+    let (target, cur) = {
+        let tab = state.active_tab();
+        (tab.history.get(idx).cloned(), tab.hist_pos)
+    };
+    let Some(target) = target else {
+        *msg = Some("无效的历史条目".to_owned());
+        return;
+    };
+    if idx == cur {
+        *msg = Some("已在当前位置".to_owned());
+        return;
+    }
+    if let Err(e) = state.active_tab_mut().navigate_to(target, cfg) {
+        *msg = Some(format!("导航失败: {e}"));
+        return;
+    }
+    *msg = None;
 }
 
 /// FEAT-3：执行菜单动作（作用于当前光标条目 = 右键聚焦项）。
@@ -579,7 +607,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // FEAT-2：`..` 行仅导航——写操作与详情命令拒绝（cd/q/help/tree 例外）。
     if state.active_tab().on_parent_row {
         match cmd_head {
-            Some("cd" | "q" | "quit" | "help" | "histprev" | "histnext") => {}
+            Some("cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his") => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
@@ -846,6 +874,10 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M13-10：暂存区菜单（staged 仍存在的条目）。
             let items = crate::ops::read_trash_index();
             Ok(ExecOutcome::ShowTrash { items })
+        }
+        Some("history" | "his") => {
+            // M16 NAV-2：目录历史菜单（当前 tab back 栈，live 渲染）。
+            Ok(ExecOutcome::ShowHistory)
         }
         Some("histprev" | "histnext") => {
             // M16 NAV-3：当前 tab 视图历史后退/前进（无默认键位）。
@@ -2078,6 +2110,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 // FEAT-3：`:file` → 详情对话框（任意键关闭）。
                                 mode = InputMode::FileInfo { path, text };
                             }
+                            Ok(ExecOutcome::ShowHistory) => {
+                                // M16 NAV-2：:history → 历史菜单（游标落在当前视图）。
+                                let cur = state.active_tab().hist_pos;
+                                mode = InputMode::HistoryMenu { cursor: cur };
+                            }
                             Err(m) => msg = Some(m),
                         }
                     }
@@ -2309,6 +2346,35 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Jobs => {
                     // M13-8：作业菜单——任意键关闭。
                     mode = InputMode::Normal;
+                }
+                InputMode::HistoryMenu { cursor } => {
+                    // M16 NAV-2：历史菜单——j/k 移动、Enter/l 导航、dd 移除。
+                    if key.kind == KeyEventKind::Press {
+                        let max_idx = state.active_tab().hist_pos;
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                *cursor = (*cursor + 1).min(max_idx);
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                *cursor = cursor.saturating_sub(1);
+                            }
+                            KeyCode::Enter | KeyCode::Char('l') => {
+                                let idx = *cursor;
+                                mode = InputMode::Normal;
+                                history_menu_nav(&mut state, idx, &mut msg);
+                            }
+                            KeyCode::Char('d') => {
+                                let idx = *cursor;
+                                if state.active_tab_mut().history_remove(idx) {
+                                    *cursor = (*cursor).min(state.active_tab().hist_pos);
+                                } else {
+                                    msg = Some("当前视图不可移除".to_owned());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 InputMode::ContextMenu { cursor } => {
                     // FEAT-3：右键菜单——j/k 移动、Enter 执行、Esc/q 关闭。
@@ -2727,6 +2793,42 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::HistoryMenu { cursor } = mode {
+        // M16 NAV-2：历史菜单浮窗（居中遮罩；条目 live 取自 history[..=hist_pos]）。
+        let area = frame.area();
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(
+            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
+            area,
+        );
+        let popup = centered_rect(area);
+        let tab_hist = state.active_tab();
+        let lines: Vec<Line> = tab_hist
+            .history
+            .iter()
+            .take(tab_hist.hist_pos + 1)
+            .enumerate()
+            .map(|(idx, loc)| {
+                let mut text = loc.display_path();
+                if idx == tab_hist.hist_pos {
+                    text.push_str("  ● 当前");
+                }
+                if idx == *cursor {
+                    Line::from(text).style(Style::new().add_modifier(Modifier::REVERSED))
+                } else {
+                    Line::from(text)
+                }
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered()
+                    .title("目录历史（Enter=导航 dd=移除 Esc=关闭）"),
+            ),
+            popup,
+        );
+        return;
+    }
     if let InputMode::ContextMenu { cursor } = mode {
         // FEAT-3：右键菜单浮窗（固定尺寸居中，遮罩背景）。
         let area = frame.area();
@@ -2826,6 +2928,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
+        InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
         InputMode::Command { input } => Line::from(format!(":{input}")),
         InputMode::Search { input, .. } => {
             // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
@@ -6506,6 +6609,82 @@ mod tests {
             k.lookup(&[crate::keymap::Key::ctrl(KeyCode::Char('i'))]),
             None
         );
+    }
+
+    #[test]
+    fn nav2_history_menu_nav_truncates_forward() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("a").join("b").join("c")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        for _ in 0..3 {
+            state.active_tab_mut().cursor = 0;
+            let cfg = state.config;
+            let _ = state.active_tab_mut().enter_selected(cfg);
+        }
+        assert_eq!(state.active_tab().hist_pos, 3);
+        let mut msg = None;
+        // 菜单导航到 idx 1（a）：新导航追加（[tmp,a,b,c,a]，b/c 在 back 栈
+        // 内不截断——navigate_to 只截断 pos 之后）。
+        history_menu_nav(&mut state, 1, &mut msg);
+        assert!(msg.is_none());
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("a"))
+        );
+        assert_eq!(state.active_tab().history.len(), 5);
+        assert_eq!(state.active_tab().hist_pos, 4);
+        // 后退两步（pos 2，在 b）后从菜单跳到 idx 4（尾部的 a）→
+        // pos 之后的 b、c 被截断。
+        let cfg = state.config;
+        assert!(state.active_tab_mut().hist_jump(false, cfg).unwrap());
+        assert!(state.active_tab_mut().hist_jump(false, cfg).unwrap());
+        history_menu_nav(&mut state, 4, &mut msg);
+        assert!(msg.is_none());
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("a"))
+        );
+        assert_eq!(state.active_tab().history.len(), 4, "forward（c）已截断");
+        assert!(!state.active_tab_mut().hist_jump(true, cfg).unwrap());
+        // 当前位置（pos 3）导航 → 提示。
+        history_menu_nav(&mut state, 3, &mut msg);
+        assert_eq!(msg.as_deref(), Some("已在当前位置"));
+    }
+
+    #[test]
+    fn nav2_exec_showhistory_and_render() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().cursor = 0;
+        let cfg = state.config;
+        let _ = state.active_tab_mut().enter_selected(cfg);
+        // exec :history → ShowHistory。
+        assert_eq!(
+            exec_command_impl(&mut state, "history"),
+            Ok(ExecOutcome::ShowHistory)
+        );
+        assert_eq!(
+            exec_command_impl(&mut state, "his"),
+            Ok(ExecOutcome::ShowHistory)
+        );
+        // 渲染：popup 内含路径与"当前"标记，菜单外遮罩。
+        let mode = InputMode::HistoryMenu { cursor: 1 };
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &mode, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let all: String = (0..24u16)
+            .flat_map(|y| (0..80u16).map(move |x| (x, y)))
+            .map(|(x, y)| buffer[(x, y)].symbol())
+            .collect();
+        assert!(
+            all.contains('●'),
+            "应含当前标记（CJK 全角拆字，取单字符号）"
+        );
+        assert!(buffer[(0, 1)].symbol().trim().is_empty(), "遮罩生效");
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──
