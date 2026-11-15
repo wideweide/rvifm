@@ -827,9 +827,11 @@ impl Tab {
         self.entries = items
             .iter()
             .map(|item| {
+                // 显示层统一 /（AGENTS §7；Windows display 为反斜杠）。
+                let shown = item.path.display().to_string().replace('\\', "/");
                 let name = match item.line {
-                    Some(line) => format!("{}:{}: {}", item.path.display(), line, item.text),
-                    None => item.path.display().to_string(),
+                    Some(line) => format!("{}:{}: {}", shown, line, item.text),
+                    None => shown,
                 };
                 FileItem {
                     icon: crate::icons::icon_for(&item.path, crate::icons::IconTheme::Dark),
