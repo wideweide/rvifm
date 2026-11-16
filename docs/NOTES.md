@@ -497,3 +497,17 @@ rvifm record  → 静默记录访问
 - **DD 远端分流**：DD（永久删除）在远端视图绕过 trash，直接 remove_permanent/remove_dir；dd 走 move_to_trash 可恢复。execute_delete 内按 permanent 标志分流。
 - **跨 VFS 移动语义**：paste_yanked_remote/paste_remote_to_local 在成功复制后从来源删除——远端来源 remove_permanent、本地来源 fs::remove_file。移动语义与本地 copy+delete 原语一致。
 - **进度提示**：状态栏 "Moved/Copied N item(s) to remote:path" 已覆盖；细粒度进度条后续增强（SIMPLIFIED）。
+
+### 2026-11-17 — M21 立项：编号映射 + 现状核对
+
+- **编号冲突**：讨论稿 FIX-1..9 与 M15 已用 FIX-1..4 冲突 → 批次 M21，任务 ID 映射 FIX-n→M21-Fn、ENH-n→M21-En（ENH 前缀无冲突但统一映射保持批次一致性）。
+- **现状核对（避免重复实现）**：
+  - ENH-2（w 预览/焦点不变/跟随）已实现于 M13-9 view_mode + M14-1 + VIEW-1 交互查看器 → 登记为验证补缺。
+  - ENH-6（.tar.xz/.tar.bz2）已实现于 M7-8（archive.rs 五压缩形态）→ 验证补缺。
+  - ENH-4 的 R/:rename $EDITOR 多选已实现于 M13-6 cw → R 复用 cw 管线，I/cc/A 为新增光标定位变体。
+  - FIX-6：directory_preview 已存在（M11-2），但用户实测报"无法读取"——缺陷在视图层分流（view_mode 或右 pane 路径），登记为修复。
+  - FIX-7：preview_kind 有 Office/Pdf 分流，但实测仍报错——同上，视图层分流缺陷。
+  - FIX-8 根因：`system_open` 用 `Command::status()` 继承 GUI 程序 stderr（winit_wayland 警告直漏终端）→ 修复 Stdio::null。
+  - FIX-9/ENH-8 记录补全与 GAP-2（退出批量刷写）互补：F9/E8 是实时 record 调用点。
+- **降级规则**（用户指定）：F5 超 5 轮缩到"仅当前目录刷新"；F9/记录补全缩到"仅目录进入记录"。
+- **影响文件**：SPEC M21、TASKS M21、ACCEPTANCE §20、PLAN M21 行、STATE、本节。
