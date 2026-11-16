@@ -1,4 +1,5 @@
 # STATE —
+- `M21-E4`（2026-11-17）：灵活重命名——`I`/`A` 保留原名光标首/尾、`cc` 清空归零（InputMode::Rename{path,input,pos}，Vec<char> 字符编辑保多字节边界；Enter 应用经 rename_apply 抽取体：空名/未改动无操作、成功入撤销栈、失败可读）；`R` 单键与 `:rename` 无参路由 $EDITOR 批量（复用 cw 管线，M2-3 带参直改保留，存量"缺少新名字"断言按新语义更新）；键位：I/cc/A/R 入默认表 + from_name 别名。268 单测全绿（+1）。语义口径：批量撤销沿用 M13-6 逐项入栈（连续 u 全批可逆），无成组撤销机制（见 NOTES）。
 - `M21-E3`（2026-11-17）：语法高亮——syntect 5.3（default-fancy 纯 Rust fancy-regex 后端，无 onig C 依赖）+ 新模块 src/highlight.rs（OnceLock 静态 SyntaxSet/ThemeSet；shebang 首行优先→扩展名兜底对齐 syntect find_syntax_for_file；主题随 opaline 明暗 base16-ocean）；viewer 文本分支按可见行逐行解析着色（搜索模式互斥跳过，解析失败降级纯文本行）；截断提示前置标题（ViewerState 增 total_lines，viewer_lines 返回 (capped, total)）。267 单测全绿（+4：rs 着色/shebang 推断/降级/截断）。踩坑：标题行尾 CJK 提示会被 pane 宽度裁掉——前置；CJK 正向断言需去空格。
 - `M21-E2`（2026-11-17）：w 预览模式验证补缺——现状核对：M13-9/M14-1/VIEW-1 已实现"焦点不离开左 pane + 查看器滚动 + w toggle"，无缺口需修；补全程验证测试（w 开启预览内容可见 → j 滚动视口、首行移出 → 再按 w 恢复目录列表且内容不再显示）。263 单测全绿（+1，零代码改动）。
 - `M21-E1`（2026-11-17）：列表属性列——左右 pane 条目行追加大小（目录 `<DIR>`/文件 format_size）+ 修改时间（format_mtime `yyyy-mm-dd HH:mm:ss`，DIM 弱化）；自适应：内区宽 < 55 或树视图隐藏属性列（文件名优先），显示名按预算字符截断（搜索/定位用全名不受影响）；配置开关 `[ui] attrs_column` 默认开。262 单测全绿（+1：宽显示/窄隐藏/开关三态）。
@@ -108,8 +109,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-E4 灵活重命名（I/cc/A/R；R=$EDITOR 多选，复用 cw 管线；整批 u）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1–E3 完成，下一任务 E4）
+- **当前任务**：M21-E5 `:mkdir` 定位 / `:mk` 进入
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1–E4 完成，下一任务 E5）
 
 ## 已完成
 

@@ -41,8 +41,14 @@ pub enum Action {
     Yank,
     /// 永久删除（M13-3：DD——跳过应用内暂存，不可逆强提示）。
     DeletePermanent,
-    /// 批量重命名（M13-6：cw——多选名单交 $EDITOR 编辑）。
+    /// 批量重命名（M13-6：cw——多选名单交 $EDITOR 编辑；M21-E4：R 同此）。
     RenameBatch,
+    /// 内联重命名（M21-E4：I——光标在名首，保留原名）。
+    RenameStart,
+    /// 内联重命名（M21-E4：cc——清空原名）。
+    RenameClear,
+    /// 内联重命名（M21-E4：A——光标在名尾，保留原名）。
+    RenameAppend,
     /// 切换 view 模式（M13-9：w——预览窗格完整文件视图）。
     ToggleView,
     PutCopy,
@@ -86,6 +92,9 @@ impl Action {
             "yank" => Yank,
             "delete_permanent" | "delete_hard" => DeletePermanent,
             "rename_batch" | "batch_rename" | "rename" => RenameBatch,
+            "rename_start" | "rename_here" => RenameStart,
+            "rename_clear" => RenameClear,
+            "rename_append" => RenameAppend,
             "toggle_view" | "view" => ToggleView,
             "put_copy" | "paste_copy" => PutCopy,
             "put_move" | "paste_move" => PutMove,
@@ -214,6 +223,10 @@ impl Keymap {
             (vec![k(Char('y')), k(Char('y'))], Yank),
             (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
             (vec![k(Char('c')), k(Char('w'))], RenameBatch),
+            (vec![k(Char('c')), k(Char('c'))], RenameClear),
+            (vec![k(Char('I'))], RenameStart),
+            (vec![k(Char('A'))], RenameAppend),
+            (vec![k(Char('R'))], RenameBatch),
             (vec![k(Char('w'))], ToggleView),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),

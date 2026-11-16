@@ -89,6 +89,12 @@ enum Outcome {
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
     BatchRename { base: PathBuf, names: Vec<String> },
+    /// 打开内联重命名（M21-E4：I/cc/A——光标语义由 input/pos 预填表达）。
+    EnterRename {
+        path: PathBuf,
+        input: String,
+        pos: usize,
+    },
 }
 
 /// 跳转选择器视角（M8-12）：Unified = 合一表 + 全局统一时钟；Dir/File =
@@ -169,6 +175,13 @@ enum InputMode {
     TrashMenu {
         cursor: usize,
         items: Vec<crate::ops::TrashEntry>,
+    },
+    /// 内联重命名（M21-E4：I/cc/A）——`pos` 为插入光标位置（字符序号），
+    /// Enter 应用（入撤销栈），Esc 取消无副作用。
+    Rename {
+        path: PathBuf,
+        input: String,
+        pos: usize,
     },
 }
 
@@ -266,6 +279,8 @@ enum ExecOutcome {
     ShowInfo { path: PathBuf, text: String },
     /// 打开目录历史菜单（M16 NAV-2：`:history`）。
     ShowHistory,
+    /// 批量重命名（M21-E4：`:rename` 无参——与 cw/R 同管线）。
+    BatchRename { base: PathBuf, names: Vec<String> },
     /// 当前 pane 执行外部命令（M18-4：`:!`；run 循环挂起 TUI 后执行）。
     RunExternal { cmd: String },
 }
@@ -1407,10 +1422,36 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("rename") => {
+            // M21-E4：无参 `:rename` → $EDITOR 批量（与 cw/R 同管线）；
+            // 带参保持 M2-3 单项直改。
+            let Some(new_name) = parts.next() else {
+                if state.active_tab().in_results() {
+                    return Err("搜索结果视图只读".to_owned());
+                }
+                if state.active_tab().on_parent_row {
+                    return Err("`..` 行仅导航".to_owned());
+                }
+                let base = physical_base(state)?;
+                let tab = state.active_tab();
+                let names: Vec<String> = if tab.tags.is_empty() {
+                    tab.entries
+                        .get(tab.cursor)
+                        .map(|i| i.name.clone())
+                        .into_iter()
+                        .collect()
+                } else {
+                    tab.entries
+                        .iter()
+                        .filter(|i| tab.tags.contains(&i.name))
+                        .map(|i| i.name.clone())
+                        .collect()
+                };
+                if names.is_empty() {
+                    return Err("rename: 无选中条目".to_owned());
+                }
+                return Ok(ExecOutcome::BatchRename { base, names });
+            };
             // M2-3：重命名选中条目（新名字不含空白；含空格的名字在 M5-4 统一解析）。
-            let new_name = parts
-                .next()
-                .ok_or_else(|| "rename: 缺少新名字".to_owned())?;
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
@@ -1980,6 +2021,35 @@ fn handle_key(
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
                     return Some(Outcome::ConfirmDelete(base.join(&item.name), false, None));
+                }
+            }
+            Some(Action::RenameStart) | Some(Action::RenameClear) | Some(Action::RenameAppend) => {
+                // M21-E4：I/A 保留原名（光标首/尾），cc 清空（光标归零）。
+                if state.active_tab().in_results() {
+                    *msg = Some("搜索结果视图只读".to_owned());
+                    return None;
+                }
+                if state.active_tab().on_parent_row {
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return None;
+                }
+                let tab = state.active_tab();
+                if let (Location::Physical(base), Some(item)) =
+                    (&tab.location, tab.entries.get(tab.cursor))
+                {
+                    let name = item.name.clone();
+                    let (input, pos) = if matches!(action, Some(Action::RenameClear)) {
+                        (String::new(), 0)
+                    } else if matches!(action, Some(Action::RenameAppend)) {
+                        (name.clone(), name.chars().count())
+                    } else {
+                        (name.clone(), 0)
+                    };
+                    return Some(Outcome::EnterRename {
+                        path: base.join(&name),
+                        input,
+                        pos,
+                    });
                 }
             }
             Some(Action::RenameBatch) => {
@@ -3180,6 +3250,27 @@ fn apply_rename_lines(
     Ok(format!("批量重命名: {updated} 项更新, {skipped} 项跳过"))
 }
 
+/// M21-E4：内联重命名应用（Rename 模式 Enter）——空名/未改动无操作；
+/// 成功入撤销栈并刷新，失败返回可读错误（模式已退出，可重新进入修正）。
+fn rename_apply(state: &mut AppState, path: &std::path::Path, new_name: &str) -> Option<String> {
+    let tab_id = state.active;
+    let old = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if new_name.is_empty() || new_name == old {
+        return None; // 未改动：无操作
+    }
+    match crate::ops::rename_to(tab_id, path, new_name) {
+        Ok(op) => {
+            state.undo_stack.push(op);
+            refresh_tab_panes(state, tab_id);
+            Some(format!("重命名: {old} → {new_name}"))
+        }
+        Err(e) => Some(format!("重命名失败: {e}")),
+    }
+}
+
 /// `cw` 全流程（M13-6）：名单临时文件 → 挂起 TUI 后由调用方运行 `$EDITOR` →
 /// 读回按行对齐 → 逐项 `rename_to`（入撤销栈，`u` 逐项可逆）。
 /// 编辑器选择：`EDITOR` → `VISUAL` → 平台缺省（Windows notepad / Unix vi）。
@@ -3752,6 +3843,20 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 let cur = state.active_tab().hist_pos;
                                 mode = InputMode::HistoryMenu { cursor: cur };
                             }
+                            Ok(ExecOutcome::BatchRename { base, names }) => {
+                                // M21-E4：:rename 无参 → 与 cw/R 同管线。
+                                ratatui::restore();
+                                let result = batch_rename_flow(&mut state, &base, &names);
+                                terminal = ratatui::init();
+                                let _ = ratatui::crossterm::execute!(
+                                    std::io::stdout(),
+                                    event::EnableMouseCapture
+                                );
+                                msg = match result {
+                                    Ok(m) => Some(m),
+                                    Err(e) => Some(e),
+                                };
+                            }
                             Ok(ExecOutcome::RunExternal { cmd }) => {
                                 // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
                                 ratatui::restore();
@@ -3804,6 +3909,52 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         msg = None;
                     }
                 },
+                InputMode::Rename { path, input, pos } => {
+                    // M21-E4：内联重命名——插入/退格/删除/左右移动/Enter 应用
+                    // /Esc 取消。字符编辑经 Vec<char> 保证多字节边界安全。
+                    if key.kind == KeyEventKind::Press {
+                        let mut chars: Vec<char> = input.chars().collect();
+                        match key.code {
+                            KeyCode::Enter => {
+                                let path = std::mem::take(path);
+                                let new_name: String = chars.into_iter().collect();
+                                *pos = 0;
+                                mode = InputMode::Normal;
+                                msg = rename_apply(&mut state, &path, &new_name);
+                            }
+                            KeyCode::Esc => {
+                                mode = InputMode::Normal;
+                                msg = None;
+                            }
+                            KeyCode::Backspace => {
+                                if *pos > 0 {
+                                    chars.remove(*pos - 1);
+                                    *pos -= 1;
+                                    *input = chars.into_iter().collect();
+                                }
+                            }
+                            KeyCode::Delete => {
+                                if *pos < chars.len() {
+                                    chars.remove(*pos);
+                                    *input = chars.into_iter().collect();
+                                }
+                            }
+                            KeyCode::Left => *pos = pos.saturating_sub(1),
+                            KeyCode::Right => *pos = (*pos + 1).min(chars.len()),
+                            KeyCode::Home => *pos = 0,
+                            KeyCode::End => *pos = chars.len(),
+                            KeyCode::Char(c)
+                                if key.modifiers.is_empty()
+                                    || key.modifiers == KeyModifiers::SHIFT =>
+                            {
+                                chars.insert(*pos, c);
+                                *pos += 1;
+                                *input = chars.into_iter().collect();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 InputMode::Confirm {
                     path,
                     permanent,
@@ -4053,6 +4204,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Ok(m) => Some(m),
                                 Err(e) => Some(e),
                             };
+                        }
+                        Outcome::EnterRename { path, input, pos } => {
+                            // M21-E4：I/cc/A → 内联重命名模式。
+                            mode = InputMode::Rename { path, input, pos };
                         }
                     }
                 }
@@ -4763,6 +4918,21 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
+        InputMode::Rename { input, pos, .. } => {
+            // M21-E4：插入光标可视化（'▏' 标记当前插入位）。
+            let chars: Vec<char> = input.chars().collect();
+            let mut s = String::new();
+            for (i, c) in chars.iter().enumerate() {
+                if i == *pos {
+                    s.push('▏');
+                }
+                s.push(*c);
+            }
+            if *pos >= chars.len() {
+                s.push('▏');
+            }
+            Line::from(format!("重命名: {s} [Enter=应用 Esc=取消]"))
+        }
         InputMode::SortDialog { .. } => Line::from(String::new()), // 排序对话框提前 return，不可达
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
@@ -6353,10 +6523,12 @@ mod tests {
         assert!(tmp.path().join("old.txt").exists());
         assert!(!tmp.path().join("new.txt").exists());
 
-        // 错误路径：缺参数、目标已存在（均有提示，不 panic）。
-        assert_eq!(
-            exec_command(&mut state, "rename"),
-            Err("rename: 缺少新名字".to_owned())
+        // 错误路径：目标已存在（有提示，不 panic）；无参 :rename 现为
+        // 批量管线（M21-E4：与 cw/R 同语义，不再报"缺少新名字"）。
+        let r = exec_command_impl(&mut state, "rename").unwrap();
+        assert!(
+            matches!(r, ExecOutcome::BatchRename { .. }),
+            "无参 :rename 走批量管线: {r:?}"
         );
         let err = exec_command(&mut state, "rename old.txt").unwrap_err();
         assert!(err.starts_with("rename: 目标已存在"), "err: {err}");
@@ -11047,6 +11219,122 @@ terminal_in_new_window = false
         assert!(
             pane_text(&buf).replace(' ', "").contains("已截断"),
             "截断提示可见"
+        );
+    }
+
+    #[test]
+    fn m21e4_inline_rename_cursor_semantics_apply_and_undo() {
+        // ACCEPTANCE §20 M21-E4：I/cc/A 光标位置符合预期；编辑应用生效且
+        // u 可逆；R 与 :rename（无参）路由到 $EDITOR 批量管线（Outcome 断言）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("alpha.txt"), "").unwrap();
+        fs::write(tmp.path().join("beta.txt"), "").unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // I：光标在名首（input 保留原名）。
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('I'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(outcome, Outcome::EnterRename { ref pos, ref input, .. } if *pos == 0 && input == "alpha.txt"),
+            "I 应在名首打开内联重命名: {outcome:?}"
+        );
+
+        // A：光标在名尾。
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('A'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(outcome, Outcome::EnterRename { ref pos, ref input, .. }
+                if *pos == input.chars().count() && input == "alpha.txt"),
+            "A 应在名尾打开内联重命名: {outcome:?}"
+        );
+
+        // cc：清空输入、光标归零。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        );
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(outcome, Outcome::EnterRename { ref pos, ref input, .. } if *pos == 0 && input.is_empty()),
+            "cc 应清空: {outcome:?}"
+        );
+
+        // Esc 取消无副作用（alpha.txt 仍在）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        );
+        assert!(tmp.path().join("alpha.txt").exists(), "Esc 取消不改动");
+
+        // 应用 + 撤销：rename_apply（Rename 模式 Enter 共用体）改名生效、
+        // 入撤销栈、u 恢复。
+        let path = tmp.path().join("alpha.txt");
+        let m = rename_apply(&mut state, &path, "renamed.txt");
+        assert!(m.as_deref().unwrap().contains("renamed.txt"));
+        assert!(tmp.path().join("renamed.txt").exists());
+        assert!(!path.exists());
+        assert_eq!(state.undo_stack.len(), 1, "入撤销栈");
+        // u 撤销恢复原名（与按键 u 同一函数）。
+        let mut umsg = None;
+        undo_last(&mut state, &mut umsg);
+        assert!(tmp.path().join("alpha.txt").exists(), "u 撤销恢复原名");
+        assert!(!tmp.path().join("renamed.txt").exists(), "撤销移除新名");
+
+        // 多选批量（编辑器管线共用体）：两行名单经 apply_rename_lines 生效，
+        // 逐项入撤销栈可逆。
+        fs::write(tmp.path().join("b1.txt"), "").unwrap();
+        fs::write(tmp.path().join("b2.txt"), "").unwrap();
+        let base = tmp.path().to_path_buf();
+        let old_names = vec!["b1.txt".to_owned(), "b2.txt".to_owned()];
+        let result = apply_rename_lines(&mut state, &base, &old_names, "c1.txt\nc2.txt\n");
+        assert!(result.is_ok(), "批量应用: {result:?}");
+        assert!(tmp.path().join("c1.txt").exists());
+        assert!(tmp.path().join("c2.txt").exists());
+        let undo_count = state.undo_stack.len();
+        assert!(undo_count >= 2, "批量各项入撤销栈");
+        // R 单键与 :rename 无参均路由到批量管线。
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('R'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(outcome, Outcome::BatchRename { ref names, .. } if !names.is_empty()),
+            "R 路由到批量重命名: {outcome:?}"
+        );
+        let r = exec_command_impl(&mut state, "rename").unwrap();
+        assert!(
+            matches!(r, ExecOutcome::BatchRename { .. }),
+            ":rename 无参走批量"
         );
     }
 
