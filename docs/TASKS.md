@@ -3,6 +3,7 @@
 **本文件是唯一任务来源。** 每轮只取第一个未勾选任务，完成后勾选并更新 [STATE.md](STATE.md)。
 
 - 任务粒度：一次提交能完成。
+- **条目 = 一行摘要 + 状态标记 + SPEC 章节引用；不放完整需求原文**（见 AGENTS.md §8）。
 - 提交信息：`<task-id>: <summary>`，例如 `M0-1: bootstrap cargo project`。
 - 同一任务 3 轮不过验收：缩小范围，在 [NOTES.md](NOTES.md) 记录，标记 `deferred`，继续下一个。
 - 任务对应的验收标准见 [ACCEPTANCE.md](ACCEPTANCE.md)。
