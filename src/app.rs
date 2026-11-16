@@ -150,11 +150,14 @@ enum InputMode {
     },
     /// 跳转选择器模式（M8-12）：`o` 合一 / `:j` / `:J` 分型。
     /// 数据打开时一次性读入（纯只读），按键期内存筛选。
+    /// M21-E8：默认搜索态；Esc→Normal（Vim 操作），再 Esc 关闭。
     JumpSelect {
         input: String,
         cursor: usize,
         entries: Vec<crate::frecency::ScoredEntry>,
         kind: JumpKind,
+        normal: bool,
+        g_pending: bool,
     },
     /// 右键上下文菜单（FEAT-3）：`cursor` = 菜单内选中项；Enter 执行，
     /// Esc/点击外部关闭。
@@ -1383,6 +1386,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
         Some("q" | "quit") => Ok(ExecOutcome::Quit),
         Some("cd") => {
             // M5-3：切换当前 tab 到目标目录（保留原名导航语义）。
+            // M21-E8：进入成功实时记录（记录补全：目录 :cd 调用点）。
             let dir_arg = parts.next().ok_or_else(|| "cd: 缺少目录".to_owned())?;
             let target = PathBuf::from(dir_arg);
             if !target.is_dir() {
@@ -1392,6 +1396,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let tab = state.active_tab_mut();
             tab.navigate_to(Location::Physical(target), cfg)
                 .map_err(|e| format!("cd: {e}"))?;
+            let tab_id = state.active;
+            record_live_visit(state, tab_id, 'L');
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("help") => Ok(ExecOutcome::EnterHelp),
@@ -2749,7 +2755,12 @@ fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         }
         let path = tab.location.base_dir().join(&name);
         match crate::opener::system_open(&path) {
-            Ok(()) => *msg = None,
+            Ok(()) => {
+                // M21-E8：打开成功记录文件访问（o/:J 可见）。
+                let tab_id = state.active;
+                record_file_open(state, tab_id, &path);
+                *msg = None;
+            }
             Err(e) => *msg = Some(format!("打开失败: {e}")),
         }
         return;
@@ -3756,6 +3767,36 @@ fn record_live_visit(state: &mut AppState, tab_id: usize, side: char) {
     let _ = &record;
 }
 
+/// M21-E8：打开文件成功后的实时 frecency 记录（topic=file，kind=Open）——
+/// 文件访问不在退出刷写范围（collect_session_records 仅目录历史），无需
+/// 对账；'F' 侧别仅作测试观察态（collect 只消费 'L'）。测试构建跳过真实
+/// 写入（同 record_live_visit 理由）。
+fn record_file_open(state: &mut AppState, tab_id: usize, path: &std::path::Path) {
+    let path_s = path.to_string_lossy().replace('\\', "/");
+    state
+        .live_recorded
+        .entry((tab_id, 'F', path_s.clone()))
+        .and_modify(|c| *c += 1)
+        .or_insert(1);
+    let record = crate::frecency::EntryRecord {
+        path: path_s,
+        topic: "file".to_owned(),
+        kind: crate::frecency::EntryKind::Open,
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        clock: 0,
+        keyword: String::new(),
+    };
+    #[cfg(not(test))]
+    if let Err(e) = crate::frecency::flush_visits(std::slice::from_ref(&record)) {
+        eprintln!("rvifm: 实时访问记录写入失败: {e}");
+    }
+    #[cfg(test)]
+    let _ = &record;
+}
+
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
@@ -3847,6 +3888,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     cursor: 0,
                                     entries,
                                     kind,
+                                    normal: false,
+                                    g_pending: false,
                                 };
                             }
                             Ok(ExecOutcome::SpawnJob {
@@ -4208,6 +4251,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 cursor: 0,
                                 entries,
                                 kind,
+                                normal: false,
+                                g_pending: false,
                             };
                         }
                         Outcome::EnterShell => {
@@ -4410,38 +4455,31 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     cursor,
                     entries,
                     kind: _,
+                    normal,
+                    g_pending,
                 } => {
                     // M8-12：选择器按键——输入筛选、j/k 移动、Enter 选定、Esc 取消。
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Esc => {
-                                mode = InputMode::Normal;
-                                msg = None;
+                    // M21-E8：双段（搜索/Normal）+ Vim 操作（j/k/gg/G/l），经
+                    // jump_key 可测抽取；Select/Close 由 run 循环消费。
+                    let visible_len = filter_jump(entries, input).len();
+                    match jump_key(normal, g_pending, input, cursor, visible_len, &key) {
+                        JumpKey::Continue => {}
+                        JumpKey::Close => {
+                            mode = InputMode::Normal;
+                            msg = None;
+                        }
+                        JumpKey::Select => {
+                            let query = std::mem::take(input);
+                            let visible = filter_jump(entries, &query);
+                            let picked = visible.get(*cursor).cloned();
+                            mode = InputMode::Normal;
+                            match picked {
+                                Some(entry) => match jump_to(&mut state, &entry) {
+                                    Ok(m) => msg = Some(m),
+                                    Err(e) => msg = Some(e),
+                                },
+                                None => msg = Some("跳转: 无选定条目".to_owned()),
                             }
-                            KeyCode::Enter => {
-                                let query = std::mem::take(input);
-                                let visible = filter_jump(entries, &query);
-                                let picked = visible.get(*cursor).cloned();
-                                mode = InputMode::Normal;
-                                match picked {
-                                    Some(entry) => match jump_to(&mut state, &entry) {
-                                        Ok(m) => msg = Some(m),
-                                        Err(e) => msg = Some(e),
-                                    },
-                                    None => msg = Some("跳转: 无选定条目".to_owned()),
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                input.pop();
-                                *cursor = 0;
-                            }
-                            KeyCode::Down => *cursor = cursor.saturating_add(1),
-                            KeyCode::Up => *cursor = cursor.saturating_sub(1),
-                            KeyCode::Char(c) => {
-                                input.push(c);
-                                *cursor = 0;
-                            }
-                            _ => {}
                         }
                     }
                 }
@@ -4511,6 +4549,108 @@ fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
         y: area.y + area.height.saturating_sub(h) / 2,
         width: w,
         height: h,
+    }
+}
+
+/// M21-E8：跳转选择器区域——80%×80% 居中（无全屏遮罩，双 pane 可见）。
+fn jump_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    let w = (area.width * 80 / 100).max(1);
+    let h = (area.height * 80 / 100).max(1);
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
+/// M21-E8：跳转选择器按键结果。
+enum JumpKey {
+    Continue,
+    Select,
+    Close,
+}
+
+/// M21-E8：选择器按键处理（可测抽取；run 循环消费 Select/Close）。
+/// 搜索态：输入即搜（Char 入筛选），方向键移动，Esc→Normal；
+/// Normal 态：j/k/gg/G 移动、l/Enter 选定、可打印字符回搜索态、Esc 关闭。
+fn jump_key(
+    normal: &mut bool,
+    g_pending: &mut bool,
+    input: &mut String,
+    cursor: &mut usize,
+    visible_len: usize,
+    key: &KeyEvent,
+) -> JumpKey {
+    if key.kind != KeyEventKind::Press {
+        return JumpKey::Continue;
+    }
+    let bottom = visible_len.saturating_sub(1);
+    match key.code {
+        KeyCode::Esc => {
+            if *normal {
+                JumpKey::Close
+            } else {
+                *normal = true;
+                input.clear();
+                *g_pending = false;
+                *cursor = (*cursor).min(bottom);
+                JumpKey::Continue
+            }
+        }
+        KeyCode::Enter => JumpKey::Select,
+        KeyCode::Char('l') if *normal => JumpKey::Select,
+        KeyCode::Down => {
+            *cursor = (*cursor).saturating_add(1).min(bottom);
+            JumpKey::Continue
+        }
+        KeyCode::Up => {
+            *cursor = (*cursor).saturating_sub(1);
+            JumpKey::Continue
+        }
+        KeyCode::Char('j') if *normal => {
+            *cursor = (*cursor).saturating_add(1).min(bottom);
+            JumpKey::Continue
+        }
+        KeyCode::Char('k') if *normal => {
+            *cursor = (*cursor).saturating_sub(1);
+            JumpKey::Continue
+        }
+        KeyCode::Char('g') if *normal => {
+            // gg 顶：'g' 待决，第二键 'g' 落顶（单按不动作）。
+            if *g_pending {
+                *cursor = 0;
+                *g_pending = false;
+            } else {
+                *g_pending = true;
+            }
+            JumpKey::Continue
+        }
+        KeyCode::Char('G') if *normal => {
+            *cursor = bottom;
+            *g_pending = false;
+            JumpKey::Continue
+        }
+        KeyCode::Backspace if !*normal => {
+            input.pop();
+            *cursor = 0;
+            JumpKey::Continue
+        }
+        KeyCode::Char(c) => {
+            if *normal {
+                // 可打印字符回搜索态（携带该字符重新筛选）。
+                *normal = false;
+                input.clear();
+                input.push(c);
+            } else {
+                input.push(c);
+            }
+            *cursor = 0;
+            *g_pending = false;
+            JumpKey::Continue
+        }
+        _ => JumpKey::Continue,
     }
 }
 
@@ -4897,25 +5037,28 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         cursor,
         entries,
         kind,
+        normal,
+        g_pending: _,
     } = mode
     {
         // M8-12：跳转选择器覆盖层（纯只读；分级与 pick 一致）。
-        // FIX-4：全屏遮罩清除列表残影 + 居中浮窗（自适应 + 上限）。
-        // 先 Clear 抹掉符号，再铺遮罩底色。
+        // M21-E8：80%×80% 居中、无全屏遮罩（双 pane 可见）；标题标示
+        // 搜索/Normal 子态。
         let area = frame.area();
-        frame.render_widget(ratatui::widgets::Clear, area);
-        frame.render_widget(
-            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
-            area,
-        );
-        let title = match kind {
+        let popup = jump_rect(area);
+        let base = match kind {
             JumpKind::Unified => "跳转（合一 · 全局时钟）",
             JumpKind::Dir => "跳转（仅目录 · dir 时钟）",
             JumpKind::File => "跳转（仅文件 · file 时钟）",
             JumpKind::Recent => "跳转（近期 · 时间倒序）",
         };
+        let mode_mark = if *normal {
+            " · Normal（j/k/gg/G/l）"
+        } else {
+            " · /搜索"
+        };
+        let title = format!("{base}{mode_mark}");
         let visible = filter_jump(entries, input);
-        let popup = centered_rect(area);
         let items: Vec<ListItem> = visible
             .iter()
             .enumerate()
@@ -4946,7 +5089,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         ])
         .areas(
             ratatui::widgets::Block::bordered()
-                .title(title)
+                .title(title.clone())
                 .inner(popup),
         );
         frame.render_widget(ratatui::widgets::Block::bordered().title(title), popup);
@@ -4956,7 +5099,11 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
         frame.render_stateful_widget(list, inner[1], &mut list_state);
         frame.render_widget(
-            Paragraph::new("Enter=选定  Esc=取消  输入模糊筛选"),
+            Paragraph::new(if *normal {
+                "j/k=移动 gg/G=顶尾 l/Enter=选定 输入字符=搜索 Esc=关闭"
+            } else {
+                "输入=筛选 方向键=移动 Enter=选定 Esc=Normal"
+            }),
             inner[2],
         );
         return;
@@ -8222,6 +8369,8 @@ mod tests {
             cursor: 0,
             entries: entries.clone(),
             kind: JumpKind::Unified,
+            normal: false,
+            g_pending: false,
         };
         let backend = ratatui::backend::TestBackend::new(80, 12);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -8237,11 +8386,11 @@ mod tests {
         let all: String = (0..12u16).map(row).collect();
         assert!(all.contains("/w/proj"), "条目渲染: {all}");
         assert!(all.contains("/f/a.txt"), "条目渲染: {all}");
-        // FIX-4 居中浮窗：80×12 终端 → 48×8 popup 于 (16,2)；边框 y=2、
-        // 输入行 y=3、首条目行 y=4（x=17 为 popup 左边界内第一列）。
-        assert_eq!(buffer[(16, 2)].symbol(), "┌", "popup 左上角");
-        assert_eq!(buffer[(63, 2)].symbol(), "┐", "popup 右上角");
-        let diag: String = [(17u16, 4u16), (17, 5), (18, 4)]
+        // M21-E8：80×12 终端 → 80% popup 64×9 @ (8,1)；标题 y=1、输入行
+        // y=2、首条目行 y=3（x=9 为 popup 左边界内第一列）。
+        assert_eq!(buffer[(8, 1)].symbol(), "┌", "popup 左上角");
+        assert_eq!(buffer[(71, 1)].symbol(), "┐", "popup 右上角");
+        let diag: String = [(9u16, 3u16), (9, 4), (10, 3)]
             .iter()
             .map(|(x, y)| {
                 format!(
@@ -8252,7 +8401,7 @@ mod tests {
             })
             .collect();
         assert!(
-            buffer[(17, 4)].modifier.contains(Modifier::REVERSED),
+            buffer[(9, 3)].modifier.contains(Modifier::REVERSED),
             "首条目应高亮: {diag}"
         );
     }
@@ -8281,8 +8430,9 @@ mod tests {
     }
 
     #[test]
-    fn fix4_jump_selector_centered_and_masked_at_two_sizes() {
-        // FIX-4：80×24 与 160×48 两档——居中浮窗 + 全屏遮罩（列表无残影）。
+    fn m21e8_jump_selector_80_percent_rect_panes_visible() {
+        // M21-E8（取代 FIX-4 全屏遮罩语义）：`o` 打开后选择器区域 80%×80%
+        // 居中，双 pane 列表在 popup 外仍可见（无遮罩）。
         let entries = vec![scored("/w/proj", "dir", 9.0)];
         let (_tmp, state) = make_state(3);
         let mode = InputMode::JumpSelect {
@@ -8290,36 +8440,34 @@ mod tests {
             cursor: 0,
             entries,
             kind: JumpKind::Unified,
+            normal: false,
+            g_pending: false,
         };
 
-        // 80×24：popup = 48×12 @ (16,6)。
+        // 80×24：popup = 64×19 @ (8,2)；popup 外 (0,1) 是左 pane 边框（可见）。
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| render(frame, &state, &mode, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        assert_eq!(buffer[(16, 6)].symbol(), "┌", "popup 左上角应居中");
-        assert_eq!(buffer[(63, 6)].symbol(), "┐");
-        assert_eq!(buffer[(16, 17)].symbol(), "└");
-        // 遮罩：popup 外（列表首行 (0,1)）无目录列表内容。
-        assert!(
-            buffer[(0, 1)].symbol().trim().is_empty(),
-            "popup 外应被遮罩，got {:?}",
-            buffer[(0, 1)].symbol()
-        );
-        assert_eq!(buffer[(0, 1)].bg, Color::Black, "遮罩底色");
+        assert_eq!(buffer[(8, 2)].symbol(), "┌", "popup 左上角应居中");
+        assert_eq!(buffer[(71, 2)].symbol(), "┐");
+        assert_eq!(buffer[(8, 20)].symbol(), "└");
+        // 双 pane 不被遮罩：(0,1) 左 pane 顶边框、(79,1) 右 pane 顶边框可见。
+        assert_eq!(buffer[(0, 1)].symbol(), "┌", "左 pane 边框可见（无遮罩）");
+        assert_eq!(buffer[(79, 1)].symbol(), "┐", "右 pane 边框可见");
 
-        // 160×48：popup = 80×20 @ (40,14)（触上限仍居中）。
+        // 160×48：popup = 128×38 @ (16,5)。
         let backend2 = ratatui::backend::TestBackend::new(160, 48);
         let mut terminal2 = ratatui::Terminal::new(backend2).unwrap();
         terminal2
             .draw(|frame| render(frame, &state, &mode, None))
             .unwrap();
         let buffer2 = terminal2.backend().buffer().clone();
-        assert_eq!(buffer2[(40, 14)].symbol(), "┌", "160×48 下 popup 左上角");
-        assert_eq!(buffer2[(119, 14)].symbol(), "┐");
-        assert!(buffer2[(0, 1)].symbol().trim().is_empty(), "大终端同样遮罩");
+        assert_eq!(buffer2[(16, 5)].symbol(), "┌", "160×48 下 popup 左上角");
+        assert_eq!(buffer2[(143, 5)].symbol(), "┐");
+        assert_eq!(buffer2[(0, 1)].symbol(), "┌", "大终端 pane 同样可见");
     }
 
     #[test]
@@ -8333,6 +8481,8 @@ mod tests {
             cursor: 0,
             entries,
             kind: JumpKind::Unified,
+            normal: false,
+            g_pending: false,
         };
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -11476,6 +11626,158 @@ terminal_in_new_window = false
         // Esc → 恢复。
         state.active_tab_mut().apply_filter("", cfg);
         assert_eq!(names(&state).len(), 3, "Esc 再次恢复");
+    }
+
+    #[test]
+    fn m21e8_jump_key_two_stage_esc_and_vim_ops() {
+        // ACCEPTANCE §20 M21-E8：输入即搜索（默认搜索态）；Esc→Normal（清
+        // 输入，j/k/gg/G/l Vim 操作），再 Esc 关闭；Normal 态可打印字符回
+        // 搜索态。jump_key 为 run 循环同一处理函数（可测抽取）。
+        let key = |code: KeyCode| KeyEvent::new(code, KeyModifiers::NONE);
+        let mut normal = false;
+        let mut g_pending = false;
+        let mut input = String::new();
+        let mut cursor = 0usize;
+        let visible = 3usize;
+
+        // 搜索态：输入 "p" → input 累积、cursor 归零。
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('p')),
+        );
+        assert_eq!(input, "p");
+        assert!(!normal);
+
+        // Esc → Normal（清输入），再 Esc → 关闭。
+        assert!(matches!(
+            jump_key(
+                &mut normal,
+                &mut g_pending,
+                &mut input,
+                &mut cursor,
+                visible,
+                &key(KeyCode::Esc)
+            ),
+            JumpKey::Continue
+        ));
+        assert!(normal, "Esc 进入 Normal 态");
+        assert!(input.is_empty(), "Esc 清除筛选");
+        assert!(matches!(
+            jump_key(
+                &mut normal,
+                &mut g_pending,
+                &mut input,
+                &mut cursor,
+                visible,
+                &key(KeyCode::Esc)
+            ),
+            JumpKey::Close
+        ));
+        // Close 后 run 循环丢弃模式；继续用同一 Normal 态验证 Vim 操作。
+
+        // Normal 态：gg 落顶（先待决后落）、G 落尾、j/k 移动、l 选定。
+        cursor = 1;
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('g')),
+        );
+        assert!(g_pending, "首按 g 待决");
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('g')),
+        );
+        assert_eq!(cursor, 0, "gg 落顶");
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('G')),
+        );
+        assert_eq!(cursor, 2, "G 落尾");
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('k')),
+        );
+        assert_eq!(cursor, 1, "k 上移");
+        assert!(matches!(
+            jump_key(
+                &mut normal,
+                &mut g_pending,
+                &mut input,
+                &mut cursor,
+                visible,
+                &key(KeyCode::Char('l'))
+            ),
+            JumpKey::Select
+        ));
+
+        // Normal 态可打印字符 → 回搜索态（携带字符）。
+        jump_key(
+            &mut normal,
+            &mut g_pending,
+            &mut input,
+            &mut cursor,
+            visible,
+            &key(KeyCode::Char('x')),
+        );
+        assert!(!normal, "字符回搜索态");
+        assert_eq!(input, "x");
+    }
+
+    #[test]
+    fn m21e8_cd_and_file_open_record_visits() {
+        // 记录补全（M21-E8）：:cd 进入目录 → ('L',dir) 登记；打开文件 →
+        // ('F',file) 登记；collect_session_records 只对 'L' 去重（文件不进
+        // 目录历史，登记仅为测试观察态）。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("doc.txt"), "x").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // :cd sub → 目录实时记录（:cd 相对路径相对进程 CWD，用绝对路径）。
+        let cd_target = format!("cd {}", tmp.path().join("sub").display());
+        exec_command_impl(&mut state, &cd_target).unwrap();
+        let sub = tmp.path().join("sub").to_string_lossy().replace('\\', "/");
+        assert!(
+            state.live_recorded.contains_key(&(0, 'L', sub.clone())),
+            ":cd 进入应记录目录: {:?}",
+            state.live_recorded
+        );
+
+        // 打开文件（record_file_open 为 opener Ok 路径共用体）→ 文件记录。
+        let doc = tmp.path().join("doc.txt");
+        record_file_open(&mut state, 0, &doc);
+        let doc_s = doc.to_string_lossy().replace('\\', "/");
+        assert!(
+            state.live_recorded.contains_key(&(0, 'F', doc_s)),
+            "打开文件应记录 file 访问: {:?}",
+            state.live_recorded
+        );
+        // 文件记录不参与目录历史去重（collect 仍含 sub?——sub 已实时记录，
+        // 去重后不在；此处验证 collect 不因 'F' 键误删目录条目）。
+        let records = collect_session_records(&state);
+        assert!(
+            !records.iter().any(|r| r.path.ends_with("doc.txt")),
+            "文件不在目录历史刷写中"
+        );
     }
 
     #[test]
