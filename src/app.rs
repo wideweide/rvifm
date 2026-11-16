@@ -1709,6 +1709,14 @@ fn run_search(state: &mut AppState, msg: &mut Option<String>, forward: bool) {
     }
 }
 
+/// M21-F3：搜索 Esc 取消——光标回 origin、清除已提交搜索状态
+/// （状态栏与列表高亮随之消失）；run 循环与测试共用。
+fn search_cancel(state: &mut AppState, origin: usize) {
+    let tab = state.active_tab_mut();
+    tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
+    tab.search = None;
+}
+
 /// 提交搜索词（M1-7）：设置搜索状态并移动到首个匹配（从光标下一位环绕）。
 /// FIX-1：实时跳转已把光标停在匹配项上时不重复前跳；空查询清除搜索状态
 /// （高亮与计数随之消失）。
@@ -3606,9 +3614,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // FIX-1：输入变化即实时跳转到第一个匹配项（incsearch）。
                     CmdInput::Continue => live_search_jump(&mut state, *origin, input, &mut msg),
                     CmdInput::Cancel => {
-                        // 取消输入：光标回到进入搜索前的位置，清除瞬时提示。
-                        let tab = state.active_tab_mut();
-                        tab.cursor = (*origin).min(tab.entries.len().saturating_sub(1));
+                        // M21-F3：Esc 清理——连同上次提交的搜索一并清除
+                        // （状态栏与列表高亮不残留），再次 `/` 干净进入；
+                        // 光标回到进入搜索前的位置。
+                        search_cancel(&mut state, *origin);
                         msg = None;
                         mode = InputMode::Normal;
                     }
@@ -9893,6 +9902,68 @@ terminal_in_new_window = false
         assert!(
             buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),
             "焦点右：右当前行反显"
+        );
+    }
+
+    #[test]
+    fn m21f3_search_esc_clears_committed_state_and_reentry_clean() {
+        // ACCEPTANCE §20 M21-F3：Esc 退出搜索后状态栏与高亮全部清除；
+        // 再次 `/` 干净进入（EnterSearch 构造全新空输入），不残留上次匹配。
+        // （Search-mode Esc 分支在 run 循环内，取消逻辑抽为 search_cancel 直测。）
+        let tmp = TempDir::new().unwrap();
+        for name in ["alpha", "src.txt"] {
+            fs::write(tmp.path().join(name), "").unwrap();
+        }
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut msg = None;
+
+        let draw = |state: &AppState, mode: &InputMode| {
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal.draw(|f| render(f, state, mode, None)).unwrap();
+            terminal.backend().buffer().clone()
+        };
+        let has_highlight = |buf: &ratatui::buffer::Buffer| {
+            (0..24u16).any(|y| (0..120u16).any(|x| buf[(x, y)].bg == Color::LightYellow))
+        };
+        let status = |buf: &ratatui::buffer::Buffer| {
+            (0..120u16)
+                .map(|x| buf[(x, 23)].symbol())
+                .collect::<String>()
+        };
+
+        // 提交搜索 "src" → 高亮与状态栏搜索指示存在。
+        submit_search(&mut state, "src", &mut msg);
+        assert!(state.active_tab().search.is_some());
+        let normal = InputMode::Normal;
+        let buf = draw(&state, &normal);
+        assert!(has_highlight(&buf), "提交后存在高亮");
+        assert!(status(&buf).contains("/src"), "状态栏含搜索指示");
+
+        // `/` 进入搜索输入后 Esc 取消 → 上次提交的搜索一并清除。
+        search_cancel(&mut state, 0);
+        assert!(state.active_tab().search.is_none(), "Esc 清除已提交搜索");
+        let buf = draw(&state, &normal);
+        assert!(!has_highlight(&buf), "Esc 后无高亮残留");
+        assert!(
+            !status(&buf).contains("/src"),
+            "状态栏无搜索残留: {}",
+            status(&buf)
+        );
+
+        // 再次 `/`：run 循环 EnterSearch 构造全新空输入（origin=当前光标），
+        // 无上次匹配痕迹——incsearch 从空输入起。
+        let (_, mut input) = ((), InputState::default());
+        let outcome = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('/'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(outcome, Outcome::EnterSearch),
+            "再次 / 应进入全新搜索: {outcome:?}"
         );
     }
 
