@@ -202,6 +202,10 @@ pub struct AppState {
     pub yank: Option<YankBuffer>,
     /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
+    /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
+    /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
+    pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
+    pub watch_rx: Option<std::sync::mpsc::Receiver<notify::Event>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -226,6 +230,8 @@ impl AppState {
             jobs: Vec::new(),
             yank: None,
             remote_sessions: std::collections::BTreeMap::new(),
+            watcher: None,
+            watch_rx: None,
         }
     }
 

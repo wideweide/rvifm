@@ -1,4 +1,5 @@
 # STATE —
+- `M21-F5`（2026-11-17）：外部变更自动刷新——notify 8.2.2（--no-default-features，去 crossbeam-channel）监听活动 tab 物理目录（NonRecursive）；run 循环每轮 sync_watcher（导航/切 tab 重挂或卸载）+ 抽干事件（Create/Modify(含 Rename)/Remove 相关，Access 忽略）→ refresh_on_fs_change（双 pane 刷新 + 光标跟随原条目名、被删则钳制）；归档/远端不监听；挂载失败静默降级（TUI 照常）。256 单测全绿（+4：目标规则/事件过滤/光标跟随/归档卸载 + 真实 watcher 端到端 10s 超时窗口）。踩坑：notify 6+ 的 watch 是 Watcher trait 方法需 `use notify::Watcher as _`。
 - `M21-F4`（2026-11-17）：h 返回定位——Tab/Pane 两个 return_parent 返回后经 locate_entry 把光标定位在来源条目（物理子目录/归档内虚拟目录/归档根→归档文件条目；条目被隐藏/过滤时回落 0）；on_parent_row=false（h 不落 `..` 行）。252 单测全绿（+1）。
 - `M21-F3`（2026-11-17）：搜索 Esc 清理——Search-mode 取消分支抽为 search_cancel 直测（Esc 连同上次提交的 tab.search 一并清除，状态栏/高亮不残留；光标回 origin）；再次 `/` 走 EnterSearch 构造全新空输入。251 单测全绿（+1）。
 - `M21-F2`（2026-11-17）：焦点视觉——左 pane 光标行/`..` 行与右 pane 光标行按焦点分流（焦点侧 REVERSED、非焦点侧 DIM，vifm TopLineSel/TopLine 语义）；Tab/Space 切换焦点不再产生状态栏提示文字（焦点经边框+当前行样式呈现）。250 单测全绿（+2 验收测试）。踩坑：120 宽下 cassowary 把 pane 切在 59/1/60，测试断言坐标必须经 pane_layout 推导（与渲染同源），不可硬编码列号。
@@ -100,8 +101,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-F5 外部变更自动刷新（notify crate；归档不监听；失败静默）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F4 完成，下一任务 F5）
+- **当前任务**：M21-F6 目录 tree 预览（浅层只读，不走文本读取路径）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F5 完成，下一任务 F6）
 
 ## 已完成
 

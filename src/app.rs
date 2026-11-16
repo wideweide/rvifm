@@ -2538,6 +2538,72 @@ fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
     }
 }
 
+/// M21-F5：监听目标——活动 tab 的物理目录；归档/远端视图不监听（None）。
+fn watch_target(tab: &Tab) -> Option<std::path::PathBuf> {
+    match &tab.location {
+        Location::Physical(p) => Some(p.clone()),
+        _ => None,
+    }
+}
+
+/// M21-F5：事件相关性——创建/删除/重命名/修改触发刷新；访问类忽略。
+/// （notify 将重命名归入 Modify(ModifyKind::Name)，含在 Modify 内。）
+fn fs_event_relevant(kind: &notify::EventKind) -> bool {
+    matches!(
+        kind,
+        notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Remove(_)
+    )
+}
+
+/// M21-F5：同步监听目标——活动 tab 物理目录变化时重挂 watcher
+/// （NonRecursive）；归档/远端卸载监听；创建/挂载失败静默降级（无监听，
+/// TUI 照常工作）。
+fn sync_watcher(state: &mut AppState) {
+    use notify::Watcher as _;
+    let target = watch_target(state.active_tab());
+    if state.watcher.as_ref().map(|(p, _)| p.as_path()) == target.as_deref() {
+        return;
+    }
+    state.watcher = None;
+    state.watch_rx = None;
+    let Some(dir) = target else {
+        return;
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let Ok(mut watcher) = notify::recommended_watcher(move |res| {
+        if let Ok(ev) = res {
+            let _ = tx.send(ev);
+        }
+    }) else {
+        return;
+    };
+    if watcher
+        .watch(&dir, notify::RecursiveMode::NonRecursive)
+        .is_err()
+    {
+        return;
+    }
+    state.watcher = Some((dir, watcher));
+    state.watch_rx = Some(rx);
+}
+
+/// M21-F5：外部变更后刷新活动 tab 双 pane——光标跟随原条目名（仍在时），
+/// 否则钳制在列表内。
+fn refresh_on_fs_change(state: &mut AppState) {
+    let active = state.active;
+    let cur_name = state.tabs[active]
+        .entries
+        .get(state.tabs[active].cursor)
+        .map(|i| i.name.clone());
+    refresh_tab_panes(state, active);
+    let tab = &state.tabs[active];
+    let new_cursor = cur_name
+        .as_deref()
+        .and_then(|n| tab.entries.iter().position(|i| i.name == n))
+        .unwrap_or_else(|| tab.cursor.min(tab.entries.len().saturating_sub(1)));
+    state.tabs[active].cursor = new_cursor;
+}
+
 /// `l`/Enter 与鼠标再击共用的打开逻辑（FEAT-1）：目录/归档 → enter_selected
 /// 导航（FIX-3：归档文件优先于 opener）；普通文件 → 系统 opener（M11-7）。
 fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
@@ -3514,6 +3580,18 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             } else {
                 format!("后台作业 {id} 完成")
             });
+        }
+        // M21-F5：外部变更监听——先同步监听目标（导航/切 tab 后重挂或卸载），
+        // 再抽干事件；创建/删除/重命名/修改触发刷新（光标跟随原条目）。
+        sync_watcher(&mut state);
+        let mut fs_dirty = false;
+        if let Some(rx) = &state.watch_rx {
+            while let Ok(ev) = rx.try_recv() {
+                fs_dirty |= fs_event_relevant(&ev.kind);
+            }
+        }
+        if fs_dirty {
+            refresh_on_fs_change(&mut state);
         }
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞。
         let polled = event::poll(std::time::Duration::from_millis(100))?;
@@ -10037,6 +10115,123 @@ terminal_in_new_window = false
         );
         assert_eq!(cursor_name(&state), "t.zip", "光标落在归档文件条目");
         assert!(!state.active_tab().on_parent_row);
+    }
+
+    #[test]
+    fn m21f5_watch_target_and_event_relevance_rules() {
+        // 监听目标：物理目录 Some；归档/远端 None（不监听）。
+        // 事件相关性：创建/修改/删除相关，访问类忽略（notify 重命名归 Modify）。
+        let tmp = TempDir::new().unwrap();
+        let tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        assert_eq!(watch_target(&tab), Some(tmp.path().to_path_buf()));
+
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut atab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        atab.location = Location::Archive {
+            host: zip_path,
+            inner: PathBuf::new(),
+        };
+        assert_eq!(watch_target(&atab), None);
+
+        let mut rtab = tab_at("/x");
+        rtab.location = Location::Remote {
+            remote: "r".to_owned(),
+            path: PathBuf::from("/"),
+        };
+        assert_eq!(watch_target(&rtab), None);
+
+        // 事件类别过滤。
+        use notify::event::*;
+        assert!(fs_event_relevant(&EventKind::Create(CreateKind::File)));
+        assert!(fs_event_relevant(&EventKind::Modify(ModifyKind::Name(
+            RenameMode::Any
+        ))));
+        assert!(fs_event_relevant(&EventKind::Remove(RemoveKind::File)));
+        assert!(!fs_event_relevant(&EventKind::Access(AccessKind::Read)));
+    }
+
+    #[test]
+    fn m21f5_refresh_follows_cursor_name_and_clamps_on_delete() {
+        // 刷新保持光标：原条目仍在 → 光标跟随；原条目被删 → 钳制在列表内。
+        let (tmp, mut state) = make_state(3); // f00 f01 f02
+        state.active_tab_mut().cursor = 2; // f02
+        fs::write(tmp.path().join("zz_new"), "").unwrap();
+        refresh_on_fs_change(&mut state);
+        let tab = state.active_tab();
+        assert_eq!(tab.entries.len(), 4, "新文件进入列表");
+        assert_eq!(
+            tab.entries.get(tab.cursor).map(|i| i.name.as_str()),
+            Some("f02"),
+            "光标跟随原条目"
+        );
+
+        // 删除光标条目：钳制到列表尾。
+        state.active_tab_mut().cursor = 3; // zz_new
+        fs::remove_file(tmp.path().join("zz_new")).unwrap();
+        refresh_on_fs_change(&mut state);
+        let tab = state.active_tab();
+        assert_eq!(tab.entries.len(), 3);
+        assert!(tab.cursor < tab.entries.len(), "光标钳制在列表内");
+        assert_eq!(
+            tab.entries.get(tab.cursor).map(|i| i.name.as_str()),
+            Some("f02")
+        );
+    }
+
+    #[test]
+    fn m21f5_watcher_receives_create_event_and_refresh_picks_it_up() {
+        // 端到端：物理目录挂监听 → 外部创建文件 → 事件到达 → 刷新可见。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        sync_watcher(&mut state);
+        assert!(state.watcher.is_some(), "物理目录应挂上监听");
+        assert!(state.watch_rx.is_some());
+
+        fs::write(tmp.path().join("newfile"), "").unwrap();
+        let rx = state.watch_rx.as_ref().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut relevant = false;
+        while std::time::Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(ev) => {
+                    if fs_event_relevant(&ev.kind) {
+                        relevant = true;
+                        break;
+                    }
+                }
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            }
+        }
+        assert!(relevant, "10s 内未收到创建事件（平台事件推送应远快于此）");
+
+        refresh_on_fs_change(&mut state);
+        assert!(
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .any(|i| i.name == "newfile"),
+            "刷新后新文件可见"
+        );
+    }
+
+    #[test]
+    fn m21f5_archive_view_unwatches_without_error() {
+        // 归档视图不监听：从物理目录切换到归档后 sync 卸载（None，无 panic）。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("t.zip");
+        crate::archive::make_test_zip(&zip_path);
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        sync_watcher(&mut state);
+        assert!(state.watcher.is_some());
+        state.active_tab_mut().location = Location::Archive {
+            host: zip_path,
+            inner: PathBuf::new(),
+        };
+        sync_watcher(&mut state);
+        assert!(state.watcher.is_none(), "归档视图卸载监听");
+        assert!(state.watch_rx.is_none());
     }
 
     #[test]
