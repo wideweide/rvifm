@@ -97,6 +97,7 @@ pub trait RemoteFs {
     }
 }
 
+pub mod config;
 pub mod sftp;
 
 #[cfg(test)]

@@ -648,14 +648,17 @@ pub(crate) fn register_remote_session(
 
 /// 进入远端会话根目录（`:remote <name>`）：list 根目录 → 条目列表；
 /// 记录 pre_remote（h 在远端根返回本地）。会话不存在 → 可读错误。
-pub(crate) fn remote_enter(state: &mut AppState, name: &str) -> Result<(), String> {
+pub(crate) fn remote_enter(
+    state: &mut AppState,
+    name: &str,
+    root: &std::path::Path,
+) -> Result<(), String> {
     let Some(backend) = state.remote_sessions.get(name) else {
         return Err(format!(
             "remote: 未找到会话 `{name}`（:remote 无参列出已配置项）"
         ));
     };
-    let root = PathBuf::from("/");
-    let items = backend.list(&root).map_err(|e| format!("remote: {e}"))?;
+    let items = backend.list(root).map_err(|e| format!("remote: {e}"))?;
     let cfg = state.config;
     let tab = state.active_tab_mut();
     if tab.pre_remote.is_none() {
@@ -665,12 +668,12 @@ pub(crate) fn remote_enter(state: &mut AppState, name: &str) -> Result<(), Strin
     tab.history.truncate(tab.hist_pos + 1);
     tab.history.push(Location::Remote {
         remote: name.to_owned(),
-        path: root.clone(),
+        path: root.to_path_buf(),
     });
     tab.hist_pos = tab.history.len() - 1;
     tab.location = Location::Remote {
         remote: name.to_owned(),
-        path: root,
+        path: root.to_path_buf(),
     };
     tab.entries = items
         .into_iter()
@@ -1207,24 +1210,50 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             })
         }
         Some("remote") => {
-            // M19-2/M19-4：进入远端会话；无参列出（配置来源 M19-4 补全）。
+            // M19-4：进入远端（remotes.toml 覆盖 ssh config 别名）；无参列出。
             match parts.next() {
                 None => {
-                    let names: Vec<String> = state.remote_sessions.keys().cloned().collect();
-                    if names.is_empty() {
+                    let all = crate::remote::config::resolve_all(
+                        &config::data_dir().join("remotes.toml"),
+                        &config::ssh_config_path(),
+                    );
+                    if all.is_empty() {
                         Ok(ExecOutcome::Done {
-                            msg: Some("remote: 无活动会话（配置来源在 M19-4 接入）".to_owned()),
+                            msg: Some(
+                                "remote: 无已配置远端（remotes.toml / ~/.ssh/config）".to_owned(),
+                            ),
                         })
                     } else {
+                        let names: Vec<String> = all.keys().cloned().collect();
                         Ok(ExecOutcome::Done {
-                            msg: Some(format!("remote: {}", names.join(", "))),
+                            msg: Some(format!("remote: {}（:remote <名> 进入）", names.join(", "))),
                         })
                     }
                 }
                 Some(name) => {
-                    remote_enter(state, name)?;
+                    // 已有活动会话直接进入（避免重复连接）。
+                    if !state.remote_sessions.contains_key(name) {
+                        let all = crate::remote::config::resolve_all(
+                            &config::data_dir().join("remotes.toml"),
+                            &config::ssh_config_path(),
+                        );
+                        let entry = all.get(name).ok_or_else(|| {
+                            format!("remote: 未配置 `{name}`（:remote 无参查看）")
+                        })?;
+                        let params = entry.to_params(name);
+                        let backend = crate::remote::sftp::SftpBackend::connect(&params)
+                            .map_err(|e| format!("remote: {e}"))?;
+                        register_remote_session(state, name, Box::new(backend));
+                    }
+                    let root = crate::remote::config::load_remotes_toml(
+                        &config::data_dir().join("remotes.toml"),
+                    )
+                    .get(name)
+                    .and_then(|e| e.root.clone())
+                    .unwrap_or_else(|| PathBuf::from("/"));
+                    remote_enter(state, name, &root)?;
                     Ok(ExecOutcome::Done {
-                        msg: Some(format!("remote: 已进入 {}（Esc 不可用，h 返回本地）", name)),
+                        msg: Some(format!("remote: 已进入 {name}（h 返回本地目录）")),
                     })
                 }
             }
@@ -8690,7 +8719,7 @@ terminal_in_new_window = false
         let mut msg = None;
 
         // :remote dev → 根目录列表 + 面包屑 dev:/。
-        remote_enter(&mut state, "dev").unwrap();
+        remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
         assert!(matches!(
             state.active_tab().location,
             Location::Remote { .. }
@@ -8758,12 +8787,12 @@ terminal_in_new_window = false
         let (_tmp, mut state) = mock_remote_state();
         // 未知会话。
         assert!(
-            remote_enter(&mut state, "nope")
+            remote_enter(&mut state, "nope", std::path::Path::new("/"))
                 .unwrap_err()
                 .contains("未找到会话")
         );
         // 进入后写命令被拒（M20 前占位）。
-        remote_enter(&mut state, "dev").unwrap();
+        remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
         assert!(exec_command_impl(&mut state, "rename x").is_err());
         assert!(exec_command_impl(&mut state, "mkdir d").is_err());
         // 导航类豁免。

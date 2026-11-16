@@ -25,13 +25,26 @@ const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_PORT: u16 = 22;
 
 /// 连接参数（M19-4：来源 remotes.toml / ssh config / 默认推断）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SftpParams {
     pub host: String,
     pub port: u16,
     pub user: String,
     /// 密钥路径；None 时按 id_ed25519 → id_rsa 顺序探测 ~/.ssh/。
     pub key_path: Option<PathBuf>,
+    /// 密钥路径原始串（供 :file 展示；不影响连接）。
+    pub key_path_raw: Option<String>,
+    /// 会话名（:file 展示 remote:/path 用）。
+    pub name: String,
+    /// 连接后的初始路径（remotes.toml root；缺省 /）。
+    pub root: Option<PathBuf>,
+}
+
+/// 缺省用户名（USER/USERNAME/root）。
+pub fn default_user() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "root".to_owned())
 }
 
 impl SftpParams {
@@ -40,16 +53,13 @@ impl SftpParams {
         Self {
             host: host.into(),
             port: DEFAULT_PORT,
-            user: whoami(),
+            user: default_user(),
             key_path: None,
+            key_path_raw: None,
+            name: String::new(),
+            root: None,
         }
     }
-}
-
-fn whoami() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "root".to_owned())
 }
 
 /// actor 命令（回复通道随命令携带）。
@@ -372,7 +382,9 @@ mod tests {
     }
 
     fn backend() -> SftpBackend {
-        SftpBackend::connect(&SftpParams::new("127.0.0.1")).unwrap()
+        let mut p = SftpParams::new("127.0.0.1");
+        p.user = crate::remote::sftp::default_user();
+        SftpBackend::connect(&p).unwrap()
     }
 
     #[test]
@@ -434,8 +446,8 @@ mod tests {
         let params = SftpParams {
             host: "127.0.0.1".to_owned(),
             port: 1, // 不可达端口
-            user: whoami(),
-            key_path: None,
+            user: default_user(),
+            ..SftpParams::new("127.0.0.1")
         };
         match SftpBackend::connect(&params) {
             Err(RemoteError::Connect(_) | RemoteError::Timeout(_)) => {}

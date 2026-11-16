@@ -87,6 +87,14 @@ pub fn frecency_db_path() -> PathBuf {
     data_dir().join("frecency.redb")
 }
 
+/// M19-4：`~/.ssh/config` 路径（远端别名来源）。
+pub fn ssh_config_path() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(".ssh").join("config")
+}
+
 /// 从路径加载配置：缺失 → 默认值；读取/解析失败 → 可理解的错误信息。
 pub fn load_from(path: &std::path::Path) -> Result<Config, String> {
     match std::fs::read_to_string(path) {

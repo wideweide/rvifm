@@ -495,3 +495,10 @@ rvifm record  → 静默记录访问
 **结论（待用户确认后执行 M19-3b）**：采用候选 A russh + russh-sftp；同步适配层放 `src/remote/sftp.rs`（tokio runtime 于后台线程常驻，RemoteFs 同步方法 block_on 桥接）；密钥路径默认 ~/.ssh/id_ed25519/id_rsa，密钥口令交互 M19 不做。
 - **dev 依赖现状**：russh/russh-sftp/tokio/tokio-stream 已入 dev-dependencies（spike 运行依赖）；M19-3b 集成时迁移至 [dependencies]。
 - **影响文件**：examples/sftp_spike.rs（候选 A 实测代码，保留作回归参考）、Cargo.toml/lock、本节。
+
+### 2026-11-16 — M19-4 实现说明
+
+- **配置合并**：resolve_all = remotes.toml（优先，可覆盖同名）+ ~/.ssh/config 别名兜底（host=别名本身，HostName 指令未解析——SIMPLIFIED：连接走别名 host 由 sshd 端配置；后续可接 HostName）。
+- **ssh config 解析**：裸 Host 行收集别名；通配 `*`/`?` 跳过；Match 块内的 Host 跳过（简化：Match 状态到下一个指令重置）。
+- **toml::Value::as_u64 不存在**（toml 1.x）——整数用 `as_integer()`。
+- **[ui] 嵌套教训复用**：remotes.toml 用嵌套表解析（每 [name] 一节），与 M18-4 的 UiConfig 同套路。
