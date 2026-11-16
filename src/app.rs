@@ -10852,6 +10852,86 @@ terminal_in_new_window = false
     }
 
     #[test]
+    fn m21e2_w_preview_cycle_follows_and_restores() {
+        // ACCEPTANCE §20 M21-E2：w 右 pane 预览左 pane 当前文件；j/k 滚动
+        // 跟随；再按 w 恢复右 pane 目录列表（M13-9/M14-1/VIEW-1 现状验证）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "line-01\nline-02\nline-03\n").unwrap();
+        fs::write(tmp.path().join("b.txt"), "").unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        let draw = |state: &AppState| {
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, state, &InputMode::Normal, None))
+                .unwrap();
+            terminal.backend().buffer().clone()
+        };
+        let right_text = |buf: &ratatui::buffer::Buffer| -> String {
+            let [_, left, right, _] = pane_layout(ratatui::layout::Rect::new(0, 0, 120, 24));
+            let _ = left;
+            (0..24u16)
+                .map(|y| {
+                    (right.x..right.x + right.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect()
+        };
+
+        // w → view_mode：右 pane 显示左光标文件（a.txt）内容。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('w'),
+            KeyModifiers::NONE,
+        );
+        assert!(state.active_tab().view_mode, "w 开启视图模式");
+        let buf = draw(&state);
+        assert!(right_text(&buf).contains("line-01"), "右 pane 预览文件内容");
+
+        // j/k：查看器滚动跟随（列表光标不动，VIEW-1 语义）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('j'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.active_tab().viewer.as_ref().unwrap().scroll,
+            1,
+            "j 滚动查看器视口"
+        );
+        let buf = draw(&state);
+        assert!(!right_text(&buf).contains("line-01"), "滚动后首行移出视口");
+
+        // 再按 w → 恢复右 pane 目录列表。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('w'),
+            KeyModifiers::NONE,
+        );
+        assert!(!state.active_tab().view_mode, "再按 w 恢复");
+        let buf = draw(&state);
+        let restored = right_text(&buf);
+        assert!(
+            restored.contains("a.txt") && restored.contains("b.txt"),
+            "右 pane 恢复目录列表: {restored}"
+        );
+        assert!(!restored.contains("line-01"), "不再显示文件内容");
+    }
+
+    #[test]
     fn m21f2_focus_switch_sets_no_status_message() {
         // ACCEPTANCE §20 M21-F2：状态栏无焦点相关文字——Tab/Space 切换
         // 不再产生提示消息（焦点经边框/当前行样式呈现）。

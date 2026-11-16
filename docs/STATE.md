@@ -1,4 +1,5 @@
 # STATE —
+- `M21-E2`（2026-11-17）：w 预览模式验证补缺——现状核对：M13-9/M14-1/VIEW-1 已实现"焦点不离开左 pane + 查看器滚动 + w toggle"，无缺口需修；补全程验证测试（w 开启预览内容可见 → j 滚动视口、首行移出 → 再按 w 恢复目录列表且内容不再显示）。263 单测全绿（+1，零代码改动）。
 - `M21-E1`（2026-11-17）：列表属性列——左右 pane 条目行追加大小（目录 `<DIR>`/文件 format_size）+ 修改时间（format_mtime `yyyy-mm-dd HH:mm:ss`，DIM 弱化）；自适应：内区宽 < 55 或树视图隐藏属性列（文件名优先），显示名按预算字符截断（搜索/定位用全名不受影响）；配置开关 `[ui] attrs_column` 默认开。262 单测全绿（+1：宽显示/窄隐藏/开关三态）。
 - `M21-F9`（2026-11-17）：进入目录 record——l/Enter（左 `..` 行返回/进入、右 pane）成功后 record_live_visit 实时记录（flush_visits：redb 短事务 + pending 降级；归档/远端跳过；失败不记）；`live_recorded` 按 (tab,'L'/'R',路径) 记**次数**，GAP-2 退出刷写按次数对齐去重（重复进入各计一次、:cd 导航保留刷写）。261 单测全绿（+2）。决策：测试构建跳过真实写入（防全局 store 污染与并行锁竞争），可观察态为 live_recorded（见 NOTES）。
 - `M21-F8`（2026-11-17）：opener stderr 抑制——opener.rs 增 silent()（stdin/stdout/stderr = Stdio::null）应用于 system_open 全部四平台分支（gio/xdg-open/open/cmd start）；失败 Err 由调用方既有 "打开失败: {e}" 进状态栏。259 单测全绿（+1 cfg(unix) 失败路径）。踩坑：Windows `cmd /c start` 对不存在文件弹 GUI 对话框阻塞 status()（测试套件卡 600s 实录）——真实 opener 失败路径测试仅 cfg(unix)；stable Rust 无法内省 Command stdio，静默化实现为直读。
@@ -106,8 +107,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-E2 `w` 预览模式验证补缺（已实现于 view_mode，验证+补缺）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1 完成，下一任务 E2）
+- **当前任务**：M21-E3 语法高亮（tree-sitter/syntect 复用；.txt 推断；截断提示）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1/E2 完成，下一任务 E3）
 
 ## 已完成
 
