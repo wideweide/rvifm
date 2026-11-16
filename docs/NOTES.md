@@ -531,3 +531,13 @@ rvifm record  → 静默记录访问
 - **踩坑（跨平台门禁降级）**：同因 russh 依赖链含 C 代码，AGENTS §6 的 `cargo check --target x86_64-unknown-linux-gnu --all-targets` 在本机无法编译（缺 x86_64-linux-gnu-gcc）。cfg(unix) 代码的 Linux 侧验证自 M19 起实际由 CI ubuntu job 承担；本地门禁保留为"逐行自查 cfg 镜像 + CI 兜底"。
 - **踩坑（存量偶发）**：`nav4_recent`/`exec_j_and_big_j` 并行下 redb `Database already open`（原始 pull 代码 3/3 复现，非本任务引入）。按 M13-10 trash 串行锁先例加 `STORE_TEST_LOCK` 串行化全部打开全局 store 的测试。
 - **渲染几何教训复用**：TestBackend 渲染 CJK 全角为"字+空格"（FEAT-4 已知）——"[文件]" 断言去空格比对；长 temp 路径在 80 宽 pane 内必然截断——验收测试注入短路径 Location 而非依赖真实 tempdir 路径。
+
+### 2026-11-17 — M22 立项：SFTP 安全与远端体验补全
+
+- **known_hosts（M22-2，安全动机）**：M19-3b 起 check_server_key 为"首连接受任意密钥"（TODO 遗留）——TOFU 但无固定，存在中间人风险。实现选型：**自实现 OpenSSH known_hosts 解析**（明文 hostname + `|1|` hashed 两种，base64+sha256 可算；`@revoked`/`@cert-authority` 标记行跳过），不引第三方 crate——供应链原则与 M10-2（自写 Trie）一致。指纹变更拒绝为安全默认，跳过需用户在 `[remotes.toml]` 显式 `known_hosts = false`（错误信息含指引）。首连追加写入保持 0600。
+- **口令认证（M22-3）**：复用 M12-3 AskPass 通道（已有安全输入路径 + masked 渲染 + 取消干净中止语义）；口令不写配置/日志。触发条件：密钥探测与认证均失败后回退。
+- **`:cd` 锚定（M22-1）**：现状相对路径相对**进程 CWD** 解析（M21-E5 CI 实测踩中：`cd ..` 后 `mk` 把目录建到仓库根）。语义决策：相对路径相对**当前 tab 目录**（用户预期 + vifm 行为一致），解析后 Location 恒绝对路径。`cd -` 不做（histprev/:history 已覆盖）。
+- **远端文件打开（M22-6）**：FUSE 与流式均在边界外（AGENTS §5.1 / 无断点能力）——临时副本方案；副本保留至进程退出统一清理（Windows opener 可能锁定文件，即时删除会打断打开），不入撤销栈（只读用途）。
+- **远端 `:find`/:grep（M22-5）**：无 gitignore 语义（远端不读 ignore 文件，行为差异记录在 SPEC 硬约束）；单文件 1 MiB read 上限 + 1 万条目上限复用，防大文件/深树拖垮事件循环。
+- **README 里程碑表**：0.7.0 发布时仅同步状态行，表体停在 M11（M6 仍标"进行中"）——M22-7 补齐为文档维护项。
+- **编号检查**：M22 未被占用（TASKS 最高 M21）✓。目标版本 0.8.0（minor：known_hosts + 口令认证为行为新增）。
