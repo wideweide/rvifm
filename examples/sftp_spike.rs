@@ -2,11 +2,8 @@
 //! 连接 127.0.0.1（密钥认证），list /，并在 /tmp/rvifm-spike 验证
 //! write/remove/rename/create_dir。仅 spike，不进主程序。
 
-use std::path::PathBuf;
-use tokio_stream::StreamExt;
-
 use russh::client::{self, Handle};
-use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
+use russh::keys::{PrivateKeyWithHashAlg, load_secret_key};
 
 /// spike：接受任意服务端主机密钥（正式实现需 known_hosts 校验）。
 struct ClientHandler;
@@ -49,7 +46,7 @@ async fn connect_sftp() -> Result<Handle<ClientHandler>, Box<dyn std::error::Err
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t0 = std::time::Instant::now();
-    let mut handle = connect_sftp().await?;
+    let handle = connect_sftp().await?;
     eprintln!("[A] connect+auth: {:?}", t0.elapsed());
 
     // SFTP 子通道。

@@ -97,6 +97,8 @@ pub trait RemoteFs {
     }
 }
 
+pub mod sftp;
+
 #[cfg(test)]
 mod tests {
     use super::*;
