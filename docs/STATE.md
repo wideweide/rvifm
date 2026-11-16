@@ -1,4 +1,5 @@
 # STATE —
+- `release 0.7.0`（2026-11-17）：版本 bump 0.6.0→0.7.0（M21 UI/UX 打磨批次 17 项，minor bump）——README 状态行同步；tag `v0.7.0` → CI release job 产 GitHub Release；crates.io 发布（持久授权）。
 - `M21 批次关闭`（2026-11-17）：F1–F9 + E1–E8 全部 17 项完成（PLAN 状态同步，ACCEPTANCE §20 全勾）。批次验收：273 单测 + 3 冒烟全绿；`--version`/`--help` 冒烟通过；批次内发现并修复 2 个存量缺陷（open_dispatch 漏接 tar.bz2/xz/zst 路由、redb 全局 store 测试并行锁竞争）。批次新增依赖：jiff 0.2.43 / notify 8.2.2 / syntect 5.3（均纯 Rust，无 C 编译期依赖）。下一批次待用户指令。
 - `M21-E8`（2026-11-17）：跳转选择器增强——80%×80% 居中无全屏遮罩（双 pane 可见，jump_rect 取代 FIX-4 遮罩语义）；双段子态（默认搜索：输入即搜；Esc→Normal 清输入；再 Esc 关闭；Normal 可打印字符回搜索）；Vim 操作 j/k/gg/G/l（jump_key 可测抽取，g 待决两段）；记录补全：`:cd` 成功 record_live_visit('L')、打开文件成功 record_file_open（topic=file/kind=Open，'F' 侧别仅观察态）；`:j`/:J topic 过滤现状已有（既有测试覆盖）。273 单测全绿（+2 +2 存量选择器测试按新语义更新）。
 - `M21-E7`（2026-11-17）：`=` 过滤增强——`filter_matches`（tab.rs）：含 `*`/`?` 走 glob，无通配符隐式 `*模式*`（vifm 语义，大小写不敏感）；Filter 模式 Continue 实时过滤（逐键生效，与提交/Esc 共用 apply_filter）；Esc 清除恢复完整列表。:select 的 glob 语义不变（M13-2）。271 单测全绿（+1：glob/隐式/实时/Esc 恢复）。

@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.6.0——核心浏览/撤销/批量 + 归档浏览 + frecency（pick/record/`o`/`:recent`）+ 图标主题 + 键位 TOML 定制 + 双栏/标签栏 + 预览查看器 + 递归搜索（`:find`/`:grep`）+ 鼠标 + 提权；双平台 CI 绿。** 执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)。
+**当前状态：v0.7.0——核心浏览/撤销/批量 + 归档浏览（五压缩形态）+ frecency（pick/record/`o`/`:recent`）+ 图标主题 + 键位 TOML 定制 + 双栏/标签栏 + 预览查看器 + 递归搜索（`:find`/`:grep`）+ 鼠标 + 提权 + SFTP 远端浏览/写 + UI/UX 打磨（pane 边框/类型着色/属性列/自动刷新/语法高亮/灵活重命名/过滤增强）；双平台 CI 绿。** 执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)。
 
 ## 文档导航
 
