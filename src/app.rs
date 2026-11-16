@@ -1780,8 +1780,8 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
     let half = 8isize; // 右 pane 半页步进（固定近似值，视口高度不可得）
     match key.code {
         KeyCode::Tab | KeyCode::Char(' ') => {
+            // M21-F2：焦点经边框/当前行样式呈现，状态栏不再提示焦点文字。
             tab.focus = crate::tab::Focus::Left;
-            *msg = Some("焦点: 左 pane".to_owned());
         }
         KeyCode::Char('j') if !ctrl => tab.right.move_cursor(1),
         KeyCode::Char('k') if !ctrl => tab.right.move_cursor(-1),
@@ -2286,13 +2286,12 @@ fn handle_key(
     }
 
     // M14-1/M18-4：Tab 或 Space 切换焦点 pane（左 → 右；vifm 语义）。
+    // M21-F2：焦点经边框/当前行样式呈现，状态栏不再提示焦点文字。
     if (key.code == KeyCode::Tab || key.code == KeyCode::Char(' '))
         && key.kind == KeyEventKind::Press
     {
         input.count = None;
-        let tab = state.active_tab_mut();
-        tab.focus = crate::tab::Focus::Right;
-        *msg = Some("焦点: 右 pane（Tab/Space 切回）".to_owned());
+        state.active_tab_mut().focus = crate::tab::Focus::Right;
         return Outcome::Continue;
     }
 
@@ -4178,11 +4177,12 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
 
     // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
     // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
+    // M21-F2：非焦点侧的 `..` 行置灰（vifm TopLine 语义——光标行 DIM）。
     let parent_available = tab.has_parent_row() && !tab.in_results();
     let parent_area = if parent_available {
         let [p, rest] =
             Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_inner);
-        let parent_style = if tab.on_parent_row {
+        let parent_style = if tab.on_parent_row && left_focused {
             Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
             // 视觉上与普通目录项区分（置灰）。
@@ -4284,7 +4284,15 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         list_state = list_state.with_selected(Some(tab.cursor));
     }
     frame.render_stateful_widget(
-        List::new(list_items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        List::new(list_items).highlight_style(
+            // M21-F2：焦点 pane 当前行反显，非焦点侧当前行 DIM 灰化
+            // （vifm TopLineSel/TopLine 语义）。
+            if left_focused {
+                Style::new().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::new().add_modifier(Modifier::DIM)
+            },
+        ),
         parent_area,
         &mut list_state,
     );
@@ -4836,8 +4844,13 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
                 Span::styled(label, filetype_style(item.filetype_class())),
             ];
             let mut li = ListItem::new(Line::from(spans));
-            if idx == tab.right.cursor && focused {
-                li = li.style(Style::new().add_modifier(Modifier::REVERSED));
+            if idx == tab.right.cursor {
+                // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
+                li = li.style(if focused {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new().add_modifier(Modifier::DIM)
+                });
             }
             li
         })
@@ -9827,5 +9840,88 @@ terminal_in_new_window = false
             .to_string_lossy()
             .into_owned();
         assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
+    }
+
+    #[test]
+    fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
+        // ACCEPTANCE §20 M21-F2：焦点切换时焦点侧当前行高亮（REVERSED）、
+        // 非焦点侧当前行 DIM；状态栏无焦点文字（切换不再产生提示消息）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        let draw = |state: &AppState| {
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, state, &InputMode::Normal, None))
+                .unwrap();
+            terminal.backend().buffer().clone()
+        };
+
+        // 几何与渲染同源：右 pane 条目首行 = 边框内区首行（无 `..` 行）。
+        let area = ratatui::layout::Rect::new(0, 0, 120, 24);
+        let [_, left, right, _] = pane_layout(area);
+        let l_inner = ratatui::widgets::Block::bordered().inner(left);
+        let r_inner = ratatui::widgets::Block::bordered().inner(right);
+        // 左 pane 条目 0 在 `..` 行之后（行 = inner.y + 1）；右 pane 无 `..` 行。
+        let l_row = l_inner.y + 1;
+        let r_row = r_inner.y;
+        let lx = l_inner.x;
+        let rx = r_inner.x;
+
+        // 焦点左：左当前行 REVERSED；右当前行 DIM 且非 REVERSED。
+        let buf = draw(&state);
+        assert!(
+            buf[(lx, l_row)].modifier.contains(Modifier::REVERSED),
+            "焦点左：左当前行反显"
+        );
+        assert!(
+            buf[(rx, r_row)].modifier.contains(Modifier::DIM)
+                && !buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),
+            "焦点左：右当前行 DIM"
+        );
+
+        // 焦点右：两侧互换。
+        state.active_tab_mut().focus = crate::tab::Focus::Right;
+        let buf = draw(&state);
+        assert!(
+            buf[(lx, l_row)].modifier.contains(Modifier::DIM)
+                && !buf[(lx, l_row)].modifier.contains(Modifier::REVERSED),
+            "焦点右：左当前行 DIM"
+        );
+        assert!(
+            buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),
+            "焦点右：右当前行反显"
+        );
+    }
+
+    #[test]
+    fn m21f2_focus_switch_sets_no_status_message() {
+        // ACCEPTANCE §20 M21-F2：状态栏无焦点相关文字——Tab/Space 切换
+        // 不再产生提示消息（焦点经边框/当前行样式呈现）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut input = InputState::default();
+        let mut msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
+        assert!(msg.is_none(), "切换焦点不应有状态栏提示: {msg:?}");
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+        assert!(msg.is_none(), "切回焦点不应有状态栏提示: {msg:?}");
     }
 }
