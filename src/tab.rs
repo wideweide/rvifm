@@ -742,7 +742,7 @@ impl Tab {
         };
         let mut entries = load_entries(dir, &config)?;
         if let Some(pat) = &self.filter {
-            entries.retain(|item| glob_match(pat, &item.name));
+            entries.retain(|item| filter_matches(pat, &item.name));
         }
         self.entries = entries;
         let keep_name = self.entries.get(self.cursor).map(|i| i.name.clone());
@@ -1409,6 +1409,18 @@ pub(crate) fn glob_match(pattern: &str, name: &str) -> bool {
         }
     }
     m(&p, &s)
+}
+
+/// `=` 过滤匹配（M21-E7）：含通配符（`*`/`?`）按 glob；无通配符时隐式
+/// `*模式*`（vifm 语义：`src` 等效 `*src*`）。大小写不敏感。
+pub fn filter_matches(pattern: &str, name: &str) -> bool {
+    if pattern.contains('*') || pattern.contains('?') {
+        glob_match(pattern, name)
+    } else {
+        let p: String = pattern.chars().flat_map(char::to_lowercase).collect();
+        let s: String = name.chars().flat_map(char::to_lowercase).collect();
+        s.contains(&p)
+    }
 }
 
 /// 读取并排序目录条目：按配置决定隐藏文件与排序（M5-2）。

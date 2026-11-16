@@ -3934,8 +3934,18 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     }
                 },
                 InputMode::Filter { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
+                    CmdInput::Continue => {
+                        // M21-E7：实时过滤——输入即生效（含隐式 *模式* 语义）。
+                        let cfg = state.config;
+                        state.active_tab_mut().apply_filter(input, cfg);
+                    }
+                    CmdInput::Cancel => {
+                        // M21-E7：Esc 清除过滤，恢复完整列表。
+                        let cfg = state.config;
+                        state.active_tab_mut().apply_filter("", cfg);
+                        msg = None;
+                        mode = InputMode::Normal;
+                    }
                     CmdInput::Submit => {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
@@ -11415,6 +11425,57 @@ terminal_in_new_window = false
         assert_eq!(state.active_tab().location, before, "失败不改变位置");
         // 撤销链：mkdir/mk 各入撤销栈（可逆）。
         assert_eq!(state.undo_stack.len(), 2, "两次创建均入撤销栈");
+    }
+
+    #[test]
+    fn m21e7_filter_glob_implicit_wildcard_and_esc_restore() {
+        // ACCEPTANCE §20 M21-E7：`*.rs` 过滤 Rust 文件；`src` 等效 `*src*`；
+        // Esc 恢复完整列表。实时链路（run 循环 Continue → apply_filter）
+        // 与提交/Esc 共用同一函数，按输入态逐步驱动同链验证。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("main.rs"), "").unwrap();
+        fs::write(tmp.path().join("readme.txt"), "").unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let cfg = Config::default();
+        let names = |state: &AppState| -> Vec<String> {
+            state
+                .active_tab()
+                .entries
+                .iter()
+                .map(|i| i.name.clone())
+                .collect()
+        };
+
+        // 匹配语义单元：通配符 glob 与隐式 *pat*。
+        assert!(crate::tab::filter_matches("*.rs", "main.rs"));
+        assert!(!crate::tab::filter_matches("*.rs", "readme.txt"));
+        assert!(
+            crate::tab::filter_matches("src", "src"),
+            "隐式 *src* 命中自身"
+        );
+        assert!(crate::tab::filter_matches("src", "my_src_dir"), "隐式子串");
+        assert!(!crate::tab::filter_matches("src", "readme.txt"));
+
+        // 实时输入 "*.rs"（逐键 = Continue 链路）→ 只剩 main.rs。
+        for input in ["*", "*.", "*.r", "*.rs"] {
+            state.active_tab_mut().apply_filter(input, cfg);
+        }
+        assert_eq!(names(&state), ["main.rs"], "*.rs 通配过滤");
+
+        // Esc 清除 → 恢复完整列表。
+        state.active_tab_mut().apply_filter("", cfg);
+        assert_eq!(names(&state).len(), 3, "Esc 恢复完整列表");
+
+        // 隐式 *src*：输入 "src"（逐键）→ 只剩 src 目录。
+        for input in ["s", "sr", "src"] {
+            state.active_tab_mut().apply_filter(input, cfg);
+        }
+        assert_eq!(names(&state), ["src"], "src 隐式 *src* 过滤");
+
+        // Esc → 恢复。
+        state.active_tab_mut().apply_filter("", cfg);
+        assert_eq!(names(&state).len(), 3, "Esc 再次恢复");
     }
 
     #[test]
