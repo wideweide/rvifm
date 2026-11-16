@@ -628,3 +628,29 @@
 
 ### M22-7 README
 - [ ] 里程碑表含 M12–M21 行，状态与 PLAN 一致。
+
+## 22. M23 — Frecency 对齐增强与 Pane 模式（M23-1～8，见 SPEC M23 节）
+
+### M23-1 多词搜索与匹配分级
+- [ ] keyword 精确命中排在最后段命中之前、子串命中之前（三级顺序）；多词 ordered/any-order 均可命中；o 与 pick 同源。
+
+### M23-2 unbook 保留历史
+- [ ] `:keyword <chars>` 后 `:keyword -`：keyword 清除且分数/排名不变（对照清除前后 replay 分数全等）。
+
+### M23-3 容量清理
+- [ ] 超过 max_entries 后写入触发清理：最低分未书签条目被删、条目数降至 90%；带 keyword 条目存活。
+
+### M23-4 IGNORE_PATTERNS
+- [ ] 配置命中模式（如 `*/node_modules/*`）的路径 record 后不出现在 pick/o；未命中照常记录。
+
+### M23-5 per-topic 配置
+- [ ] TOML 配置 dir lambda 后：dir 条目衰减速率变化可见（对照测试）；file/unified 不受影响；缺省配置行为与现状一致。
+
+### M23-6 Frecency Pane 模式
+- [ ] `o` 后焦点 pane 显示搜索+结果，对侧 pane 列表仍可见；光标移动时对侧预览当前条目（文本截断 100–200 行含截断标记）；Esc 三级退出（Search→Normal→Directory）。
+
+### M23-7 c/v/e 重映射
+- [ ] Frecency 模式 `c` 状态栏出现 copied 且不退出；`v` 对侧进入 View 全文并聚焦，Tab 切回搜索区；`e` 编辑器打开并退出模式；退出 Frecency 后 c/v/e 恢复原语义（v 仍为 Visual）。
+
+### M23-8 删除撤销
+- [ ] `o` 结果项 `d` 删除条目（从选择器消失）；`u` 恢复条目；带 keyword 条目可删除但优先级低（清理保护不影响手动删除）。

@@ -285,6 +285,25 @@ redb 三表，无后台守护进程：
 **OUT_OF_SCOPE**
 - `cd -` 前目录跳转（histprev/:history 已覆盖）；known_hosts 的 `@cert-authority` 证书校验；SFTP 主机口令改存配置；远端流式/断点打开大文件；远端自动刷新（M21-F5 同界）。
 
+#### M23 — Frecency 对齐增强与 Pane 模式（2026-11-17 增补；来源：DeepSeek 分享讨论蒸馏）
+
+**硬约束**：不动已对齐的评分核心（events+snapshot+meta 三表、write-time 记录 + read-time 重放、dir/file 独立时钟、EMS 数学形式）；`pick` 保持纯只读；`c`/`v`/`e` 仅在 Frecency 模式下重映射，退出后恢复原语义（`v` 不得侵入 Visual、`e` 不与其他绑定冲突）；keyword 事件仍是元数据事件（不推进时钟、不加分）；容量清理永不删除带 keyword 的条目；IGNORE_PATTERNS 在 record 入口静默跳过（不追加事件）；Frecency 模式不新建独立预览渲染路径（复用 PreviewRenderer）。
+
+**MUST**
+- **M23-1 多词搜索与匹配分级**：`o`/`pick` 筛选升级——`MatchGrade`（Keyword > LastSegment > Substring）分级排序（grade 升序、score 降序）；多词查询 `split_whitespace`：ordered（按序命中路径）与 any-order（全词命中）两种模式；无命中降级现状子串过滤。
+- **M23-2 keyword unbook 保留历史**：取消书签（`:keyword -`）只移除 keyword 元数据，**保留累积分数与历史**（现状核对：若已满足则登记验证）。
+- **M23-3 容量清理与书签保护**：record 写事务/compaction 时检查 per-topic `max_entries`（默认 1500）；超限删除最低分的**未书签**条目至 90%；带 keyword 条目永不删除。
+- **M23-4 IGNORE_PATTERNS**：record 入口 glob 匹配配置模式（如 `*/.git`、`*/node_modules/*`），命中静默跳过不追加事件；模式列表来自 TOML 配置（复用既有 glob 匹配能力，不引新 crate）。
+- **M23-5 per-topic LAMBDA / MAX_ENTRIES 配置**：`[frecency]` TOML 段按 topic（dir/file/unified）各自配置 `lambda` 与 `max_entries`；默认值 unified 0.005、dir/file 0.01（与参考项目一致）；旧配置缺省兼容。
+- **M23-6 Frecency Pane 模式**：`o` 让**焦点 pane** 进入 Frecency 内嵌搜索（非浮层），对侧 pane 保持可见；结果光标移动时对侧自动预览当前条目（PreviewRenderer 分派：目录浅层 tree、图片、Office/PDF、文本截断 100–200 行 + 末尾"…已截断，按 v 查看全文"标记）；Esc 逐级退出（Search → Normal → Directory）。
+- **M23-7 `c`/`v`/`e` 模式内重映射**：`c` 复制选中路径到剪贴板（状态栏 `copied <path>`，不退出）；`v` 对侧进入 View 全文模式并聚焦（j/k/gg/G、`/` 搜索、n/N；Tab 切回 Frecency 搜索区）；`e` `$EDITOR` 打开选中文件并退出 Frecency（不自动跳转）；View 超大文件上限 10 万行（超出提示"文件过大，仅显示前 N 行"）。
+
+**SIMPLIFIED**
+- **M23-8 选择器内删除 + 撤销**：`o` 结果项 `d` 删除条目 → redb `trash` 表，`u` 可撤销移回；设合理上限（如 200 条）；实现超 3 轮不过验收即 deferred（讨论稿标注中优先级）。
+
+**OUT_OF_SCOPE**
+- SQL/SQLite 技巧与 bash 实现（以 redb + Rust 内存排序等价表达）；修改 EMS 数学形式；keyword 事件推进时钟或加分；删除带 keyword 条目；`d` 物理删除文件（仅删除 frecency 条目记录）。
+
 #### M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐）
 
 **硬约束**：`s` 保持 shell 入口；`S` 为排序唯一入口（对话框内字母直接触发，无快速排序前缀）；空格=切换活动窗格（vifm 语义，与 Tab 并存），仅对话框内用于升降切换；排序快捷键成对（小写升/大写降）；多字段仅经 :sort 参数，无 TUI 字段栈。

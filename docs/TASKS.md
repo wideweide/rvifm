@@ -209,6 +209,19 @@
 - [ ] M22-6 远端文件打开（临时副本→opener；进程退出清理；不入撤销栈）
 - [ ] M22-7 README 里程碑表补齐至 M21（状态与 PLAN 一致）
 
+## M23 — Frecency 对齐增强与 Pane 模式（2026-11-17 增补；见 SPEC M23 节）
+
+> 来源：DeepSeek 分享讨论蒸馏（对照 wideweide/frecency 差距分析 + Frecency Pane 模式设计）。讨论稿建议编号 M19 已被 SFTP 批次占用，按下一空闲号 M23 登记（见 NOTES）。顺序：1–5（评分外语义）→ 6/7（Pane 模式）→ 8（可 defer）。
+
+- [ ] M23-1 多词搜索与匹配分级（Keyword/LastSegment/Substring 三级排序；ordered/any-order 多词；o/pick 共用）
+- [ ] M23-2 keyword unbook 保留累积历史（`:keyword -` 只清元数据；现状核对登记）
+- [ ] M23-3 容量清理与书签保护（per-topic max_entries 默认 1500；超限删最低分未书签项至 90%）
+- [ ] M23-4 IGNORE_PATTERNS（record 入口 glob 静默跳过；TOML 配置；不引新 crate）
+- [ ] M23-5 per-topic LAMBDA / MAX_ENTRIES 配置（[frecency] 段；unified 0.005 / dir-file 0.01；缺省兼容）
+- [ ] M23-6 Frecency Pane 模式（o 进入焦点 pane 内嵌搜索；对侧 PreviewRenderer 预览 100–200 行+截断标记；Esc 三级退出）
+- [ ] M23-7 c/v/e 模式内重映射（c 复制路径；v 对侧 View 全文聚焦+Tab 切回；e 编辑器打开退出；View 10 万行上限）
+- [ ] M23-8 选择器内 d 删除 + trash 表 + u 撤销（中优先级；超 3 轮即 deferred）
+
 ## M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐，见 SPEC M18 节）
 
 > 来源：用户设计。编号说明：原提案 M16/M17 与已完成批次冲突，按下一空闲号重编（内容不变，见 NOTES）。

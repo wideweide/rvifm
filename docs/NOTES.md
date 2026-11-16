@@ -541,3 +541,16 @@ rvifm record  → 静默记录访问
 - **远端 `:find`/:grep（M22-5）**：无 gitignore 语义（远端不读 ignore 文件，行为差异记录在 SPEC 硬约束）；单文件 1 MiB read 上限 + 1 万条目上限复用，防大文件/深树拖垮事件循环。
 - **README 里程碑表**：0.7.0 发布时仅同步状态行，表体停在 M11（M6 仍标"进行中"）——M22-7 补齐为文档维护项。
 - **编号检查**：M22 未被占用（TASKS 最高 M21）✓。目标版本 0.8.0（minor：known_hosts + 口令认证为行为新增）。
+
+### 2026-11-17 — M23 立项：Frecency 对齐增强与 Pane 模式
+
+- **来源**：DeepSeek 分享讨论 `https://chat.deepseek.com/share/blcqlg4gg0qq7l209c`（浏览器渲染提取；页面正文仅渲染提问，回答经 `/api/v0/share/content` 端点取回）。两段讨论：① 对照 `wideweide/frecency`（用户参考项目，SQLite+bash+fzf）的差距分析；② Frecency Pane 模式设计。
+- **编号映射**：讨论稿建议编号 "M19" 已被 SFTP 批次占用 → 按 §8.3 取下一空闲号 **M23**。
+- **已对齐不动**（讨论稿明确）：events+snapshot+meta 三表、write-time+read-time 重放、dir/file 独立时钟、EMS 数学形式、pick 纯只读、keyword 元数据事件——全部维持现状，仅补"评分之外的工程语义"。
+- **M23-2 现状核对口径**：NAV-1 的 keyword 事件是元数据事件（重放只应用 keyword 字段、不加分）——`:keyword -` 清除大概率已保留分数，M23-2 执行时先写对照测试验证，若已满足则登记验证后勾选（同 M21-E2 模式）。
+- **per-topic lambda 默认值**（讨论稿）：unified 0.005（时钟混合计数 dir+file 事件）、dir/file 0.01——与参考项目默认一致；rvifm 现状 lambda 为全局常量，M23-5 落地 per-topic 配置时保持旧配置缺省兼容。
+- **容量清理触发点**：record 写事务末尾（讨论稿语义"每次写入后检查"）；清理对象 = 非书签条目按 score 排序删除至 90%；带 keyword 永不删。
+- **IGNORE_PATTERNS 用既有 glob 能力**：M21-E7 的 glob 匹配已在依赖树（自写 glob_match）；ignore crate 依赖的 globset 不直接引入——用自写 glob（模式语义 `*/.git` 需要 `*` 跨段？——实现时核对 glob_match 的 `*` 是否跨 `/`，不跨则需扩展，登记实现注意）。
+- **Frecency Pane 模式（M23-6/7）**：讨论稿核心判断——frecency 从"浮层"改为"焦点 pane 的一种模式"，比 fzf popup 更贴合 rvifm 双 pane 架构；预览/主题/键位全部复用现有能力。c/v/e 仅模式内重映射（v 不得侵入 Visual）。View 全文上限 10 万行（对齐 VIEW-1/查看器语义）。
+- **M23-8 可 defer**：讨论稿标注"中等优先级，视预算决定"——登记但标注 3 轮迭代上限即 deferred（AGENTS §3）。
+- **执行顺序**：M22（已确认）先行 → M23 接续；两批完成后发布 **0.8.0**（用户指示"全部完成后发布新版本"）。
