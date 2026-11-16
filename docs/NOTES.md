@@ -512,6 +512,12 @@ rvifm record  → 静默记录访问
 - **降级规则**（用户指定）：F5 超 5 轮缩到"仅当前目录刷新"；F9/记录补全缩到"仅目录进入记录"。
 - **影响文件**：SPEC M21、TASKS M21、ACCEPTANCE §20、PLAN M21 行、STATE、本节。
 
+### 2026-11-17 — M21-F9 实时记录与 GAP-2 的去重设计
+
+- **计数而非有无**：`live_recorded` 记 (tab, 'L'/'R', 路径) → 次数——同一目录多次进入各计一次（vifm frecency 按访问次数评分）；退出刷写对左 pane 历史按 min(已刷写条目序, live 次数) 跳过。侧别隔离：右 pane 记录无退出对账面（exit flush 只走 tab.history），独立 'R' 键防跨污染。
+- **测试环境跳过真实写入**（cfg(not(test))）：任何调用 open_selected/enter_selected 的测试若触发 flush_visits 会 (a) 写入开发者真实 frecency 库（污染用户数据），(b) 并行下 redb 锁竞争复现（nav4 前车之鉴）。可观察态改为 `live_recorded`；flush_visits 本身由 frecency 模块测试覆盖，验收"退出后 o 出现该目录"由生产路径（GAP-2 已验证的退出刷写 + 实时写入同链路）保证。
+- **调用点**：仅 l/Enter 成功路径（open_selected 的 `..` 行返回/进入、右 pane 臂）；`h`/`:cd`/histprev 不实时记录（exit flush 兜底）——与 SPEC F9 字面边界一致。
+
 ### 2026-11-17 — M21-F1 实现说明与踩坑
 
 - **类型着色方案**：`FileTypeClass` 8 类 + 主题命名样式（`ft_dir` 等）优先、缺失回落 16 色近似——内置 opaline 主题均无 ft_* 样式，回落保证零配置即有不同的颜色；用户主题可通过同名样式覆盖（与 §5.6 主题机制同构）。可执行判定：unix 按执行位，Windows/远端/归档按扩展名近似（无执行位可用来源共用 `is_exec_name`）。

@@ -206,6 +206,9 @@ pub struct AppState {
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
     pub watch_rx: Option<std::sync::mpsc::Receiver<notify::Event>>,
+    /// M21-F9：l/Enter 已实时记录的访问次数（tab 序号 + 侧别 L/R + 归一化
+    /// 路径）——退出批量刷写（GAP-2）据此按次数去重，同一访问不重复计分。
+    pub live_recorded: std::collections::HashMap<(usize, char, String), usize>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -232,6 +235,7 @@ impl AppState {
             remote_sessions: std::collections::BTreeMap::new(),
             watcher: None,
             watch_rx: None,
+            live_recorded: std::collections::HashMap::new(),
         }
     }
 

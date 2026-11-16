@@ -1803,6 +1803,10 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
         KeyCode::Enter | KeyCode::Char('l') if !ctrl => {
             if let Err(e) = tab.right.enter_selected(cfg) {
                 *msg = Some(format!("进入失败: {e}"));
+            } else {
+                // M21-F9：右 pane 进入成功同样实时记录（侧别 'R'）。
+                let tab_id = state.active;
+                record_live_visit(state, tab_id, 'R');
             }
         }
         KeyCode::Char('h') if !ctrl => {
@@ -2612,7 +2616,11 @@ fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         let cfg = state.config;
         if let Err(e) = state.active_tab_mut().return_parent(cfg) {
             *msg = Some(format!("返回失败: {e}"));
+            return;
         }
+        // M21-F9：l/Enter 经 `..` 行返回上级也是一次目录进入，实时记录。
+        let tab_id = state.active;
+        record_live_visit(state, tab_id, 'L');
         return;
     }
     let cfg = state.config;
@@ -2643,7 +2651,11 @@ fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
     }
     if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
         *msg = Some(format!("进入失败: {e}"));
+        return;
     }
+    // M21-F9：进入成功（物理目录实时记录；归档位置 record 内部跳过）。
+    let tab_id = state.active;
+    record_live_visit(state, tab_id, 'L');
 }
 
 /// FEAT-1：列表视口偏移——保证光标可见（offset ≤ cursor < offset+height）。
@@ -3520,16 +3532,31 @@ fn flush_session_visits(state: &AppState) {
 
 /// M8 收尾（GAP-2）：会话轨迹 → Navigate 事件（history[1..]；可测试纯函数）。
 fn collect_session_records(state: &AppState) -> Vec<crate::frecency::EntryRecord> {
+    use std::collections::HashMap as Map;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let mut records = Vec::new();
-    for tab in &state.tabs {
+    // M21-F9：同一 (tab, 'L', 路径) 的历史条目按已实时记录的次数对齐跳过
+    // （live_recorded 记次数而非有无，重复进入各计一次）。
+    let mut seen: Map<(usize, String), usize> = Map::new();
+    for (idx, tab) in state.tabs.iter().enumerate() {
         for loc in tab.history.iter().skip(1) {
             if let Location::Physical(p) = loc {
+                let path = p.to_string_lossy().replace('\\', "/");
+                let key = (idx, path.clone());
+                let live = state
+                    .live_recorded
+                    .get(&(idx, 'L', path.clone()))
+                    .copied()
+                    .unwrap_or(0);
+                let seen_n = seen.entry(key).and_modify(|c| *c += 1).or_insert(1);
+                if *seen_n <= live {
+                    continue;
+                }
                 records.push(crate::frecency::EntryRecord {
-                    path: p.to_string_lossy().replace('\\', "/"),
+                    path,
                     topic: "dir".to_owned(),
                     kind: crate::frecency::EntryKind::Navigate,
                     ts: now,
@@ -3540,6 +3567,52 @@ fn collect_session_records(state: &AppState) -> Vec<crate::frecency::EntryRecord
         }
     }
     records
+}
+
+/// M21-F9：l/Enter 成功进入物理目录后的实时 frecency 记录——与 shell hook
+/// 语义一致（record 为唯一写入入口，导航成功才记）。写入经 flush_visits
+/// （redb 短事务 + events.pending 降级）；已记录次数登记 `live_recorded`
+/// （侧别 'L'/'R'），退出批量刷写（GAP-2 collect_session_records）对左 pane
+/// 历史按次数去重，同一访问不重复计分。归档/远端位置不计（与退出刷写跳过
+/// 归档一致）。测试构建跳过真实写入（避免污染全局 store + 并行锁竞争），
+/// 可观察态为 `live_recorded`；flush_visits 本身由 frecency 模块测试覆盖。
+fn record_live_visit(state: &mut AppState, tab_id: usize, side: char) {
+    let Some(loc) = state.tabs.get(tab_id).map(|t| {
+        if side == 'R' {
+            t.right.location.clone()
+        } else {
+            t.location.clone()
+        }
+    }) else {
+        return;
+    };
+    let Location::Physical(p) = loc else {
+        return;
+    };
+    let path = p.to_string_lossy().replace('\\', "/");
+    let key = (tab_id, side, path.clone());
+    state
+        .live_recorded
+        .entry(key)
+        .and_modify(|c| *c += 1)
+        .or_insert(1);
+    let record = crate::frecency::EntryRecord {
+        path,
+        topic: "dir".to_owned(),
+        kind: crate::frecency::EntryKind::Navigate,
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        clock: 0,
+        keyword: String::new(),
+    };
+    #[cfg(not(test))]
+    if let Err(e) = crate::frecency::flush_visits(std::slice::from_ref(&record)) {
+        eprintln!("rvifm: 实时访问记录写入失败: {e}");
+    }
+    #[cfg(test)]
+    let _ = &record;
 }
 
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
@@ -10524,6 +10597,153 @@ terminal_in_new_window = false
                 "{name} 提取内容应可见 [{expect}]: {pane_text}"
             );
         }
+    }
+
+    #[test]
+    fn m21f9_enter_records_live_visit_and_failure_does_not() {
+        // ACCEPTANCE §20 M21-F9：l/Enter 进入目录 → 实时记录登记
+        // （live_recorded，退出刷写据此去重）；进入失败（损坏归档）不记录。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("bad.zip"), b"PK junk bytes").unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // 左 pane：光标在 sub（目录优先，索引 0），l 进入 → 记录 sub。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        let sub_path = tmp.path().join("sub").to_string_lossy().replace('\\', "/");
+        assert!(
+            state
+                .live_recorded
+                .contains_key(&(0, 'L', sub_path.clone())),
+            "进入目录应实时记录: {:?}",
+            state.live_recorded
+        );
+        // 退出刷写去重：collect_session_records 不含 sub。
+        let records = collect_session_records(&state);
+        assert!(
+            !records.iter().any(|r| r.path == sub_path),
+            "已实时记录的访问不应在退出刷写中重复: {records:?}"
+        );
+
+        // 进入失败（损坏归档）→ 不产生记录。
+        state.active_tab_mut().cursor = 0; // sub 内为空？——先返回上级再选 bad.zip
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        let bad_idx = state
+            .active_tab()
+            .entries
+            .iter()
+            .position(|i| i.name == "bad.zip")
+            .unwrap();
+        state.active_tab_mut().cursor = bad_idx;
+        let before = state.live_recorded.len();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(state.active_tab().location, Location::Physical(_)),
+            "损坏归档进入失败留在原目录"
+        );
+        assert_eq!(
+            state.live_recorded.len(),
+            before,
+            "进入失败不产生记录（bad.zip 是归档位置，不入记录）"
+        );
+
+        // 右 pane：焦点切右后 l 进入 → 记录侧别 'R'。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            state
+                .live_recorded
+                .keys()
+                .any(|(t, s, p)| *t == 0 && *s == 'R' && p.ends_with("sub")),
+            "右 pane 进入应记录 'R' 侧别: {:?}",
+            state.live_recorded
+        );
+    }
+
+    #[test]
+    fn m21f9_repeat_visits_count_each_and_exit_flush_dedups_by_count() {
+        // 重复进入各计一次：live 计数随次数累加；退出刷写按次数对齐去重，
+        // 非实时记录的导航（:cd 语义，经 navigate_to 模拟）保留刷写。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let cfg = Config::default();
+        let sub_path = tmp.path().join("sub").to_string_lossy().replace('\\', "/");
+        let tmp_path = tmp.path().to_string_lossy().replace('\\', "/");
+
+        // 第一次进入 sub（实时记录 1）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        // :cd 语义回上级（navigate_to 直调，不实时记录）。
+        state
+            .active_tab_mut()
+            .navigate_to(Location::Physical(tmp.path().to_path_buf()), cfg)
+            .unwrap();
+        // 第二次进入 sub（实时记录 2）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.live_recorded.get(&(0, 'L', sub_path.clone())),
+            Some(&2),
+            "重复进入各计一次"
+        );
+
+        // 历史轨迹 [tmp, sub, tmp, sub]：sub 两条全部去重，tmp 保留一条刷写。
+        let records = collect_session_records(&state);
+        let sub_records = records.iter().filter(|r| r.path == sub_path).count();
+        let tmp_records = records.iter().filter(|r| r.path == tmp_path).count();
+        assert_eq!(sub_records, 0, "两次实时记录 → 退出刷写 0 条");
+        assert_eq!(tmp_records, 1, ":cd 导航 → 退出刷写保留");
     }
 
     #[test]

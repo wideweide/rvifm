@@ -187,7 +187,7 @@
 - [x] M21-F6 目录 tree 预览（浅层只读，不走文本读取路径）
 - [x] M21-F7 PDF/Office 预览分流核实（不落文本通用路径；类型化错误）
 - [x] M21-F8 opener stderr 抑制（Stdio::null；失败进状态栏）
-- [ ] M21-F9 进入目录 record（l/Enter 成功后调用；失败不记）
+- [x] M21-F9 进入目录 record（l/Enter 成功后调用；失败不记）
 - [ ] M21-E1 列表属性列（大小+日期 yyyy-mm-dd HH:mm:ss；自适应；配置开关）
 - [ ] M21-E2 `w` 预览模式验证补缺（已实现于 view_mode，验证+补缺）
 - [ ] M21-E3 语法高亮（tree-sitter/syntect 复用；.txt 推断；截断提示）
