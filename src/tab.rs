@@ -280,15 +280,21 @@ impl Pane {
         Ok(())
     }
 
-    /// 返回父目录（M14-1，h）。
+    /// 返回父目录（M14-1，h；M21-F4 返回后光标定位在来源目录条目上）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
         if let Location::Physical(base) = &self.location
             && let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty())
         {
+            let leaf = base.file_name().map(|n| n.to_string_lossy().into_owned());
             self.location = Location::Physical(parent.to_path_buf());
             self.cursor = 0;
             self.scroll = 0;
-            return self.refresh(config);
+            self.refresh(config)?;
+            if let Some(name) = leaf
+                && let Some(idx) = locate_entry(&self.entries, &name)
+            {
+                self.cursor = idx;
+            }
         }
         Ok(())
     }
@@ -1252,21 +1258,32 @@ impl Tab {
     /// 归档内（M7-4）：上一层虚拟目录；归档根处返回宿主目录。
     /// M19-2：远端视图的 h 由 app 层 remote_up 驱动，此处 no-op。
     /// 读取失败时返回 Err 且不产生副作用（提示经 M6-1 进状态栏）。
+    /// 返回父目录（h；M21-F4 返回后光标定位在来源条目上——子目录返回落在
+    /// 该目录条目，归档根返回物理目录落在归档文件条目）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
         match self.location.clone() {
             Location::Remote { .. } => Ok(()),
             Location::Archive { host, inner } => {
                 let inner_str = inner.to_string_lossy().into_owned();
                 if inner_str.is_empty() {
-                    // 归档根：`h` 返回归档文件所在的物理目录（host 的父目录）。
+                    // 归档根：`h` 返回归档文件所在的物理目录（host 的父目录），
+                    // 光标落在归档文件条目上（M21-F4）。
+                    let leaf = host.file_name().map(|n| n.to_string_lossy().into_owned());
                     let host_dir = host.parent().unwrap_or(host.as_path()).to_path_buf();
                     self.navigate_to(Location::Physical(host_dir), config)?;
+                    if let Some(name) = leaf
+                        && let Some(idx) = locate_entry(&self.entries, &name)
+                    {
+                        self.cursor = idx;
+                    }
                     return Ok(());
                 }
-                // 归档内：上一层虚拟目录（parent 为空串 = 归档根，仍留在归档内）。
-                let parent = crate::archive::normalize_inner(
-                    inner_str.rsplit_once('/').map(|(p, _)| p).unwrap_or(""),
-                );
+                // 归档内：上一层虚拟目录（parent 为空串 = 归档根，仍留在归档内），
+                // 光标落在来源虚拟目录条目上（M21-F4）。
+                let (parent, leaf) = match inner_str.rsplit_once('/') {
+                    Some((p, leaf)) => (crate::archive::normalize_inner(p), leaf.to_owned()),
+                    None => (String::new(), inner_str.clone()),
+                };
                 self.navigate_to(
                     Location::Archive {
                         host,
@@ -1274,6 +1291,9 @@ impl Tab {
                     },
                     config,
                 )?;
+                if let Some(idx) = locate_entry(&self.entries, &leaf) {
+                    self.cursor = idx;
+                }
                 Ok(())
             }
             Location::Physical(base) => {
@@ -1283,11 +1303,24 @@ impl Tab {
                 if parent == base {
                     return Ok(());
                 }
+                // M21-F4：返回后光标落在来源目录条目上。
+                let leaf = base.file_name().map(|n| n.to_string_lossy().into_owned());
                 self.navigate_to(Location::Physical(parent.to_path_buf()), config)?;
+                if let Some(name) = leaf
+                    && let Some(idx) = locate_entry(&self.entries, &name)
+                {
+                    self.cursor = idx;
+                }
                 Ok(())
             }
         }
     }
+}
+
+/// M21-F4：在条目列表中定位名称对应的索引（渲染层的 `/` 后缀不进 name，
+/// 直接按原名匹配；条目被隐藏/过滤时返回 None，调用方回落 cursor 0）。
+fn locate_entry(entries: &[FileItem], name: &str) -> Option<usize> {
+    entries.iter().position(|i| i.name == name)
 }
 
 /// 列出归档虚拟目录条目（M7-4）：`ArchiveEntry` → `FileItem`

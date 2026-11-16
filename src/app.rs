@@ -9968,6 +9968,78 @@ terminal_in_new_window = false
     }
 
     #[test]
+    fn m21f4_h_returns_cursor_to_origin_entry() {
+        // ACCEPTANCE §20 M21-F4：进子目录再 h 返回，光标在该目录条目上；
+        // 归档根 h 返回物理目录，光标在归档文件条目上。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("t.zip"), "not-a-real-zip").unwrap();
+        crate::archive::make_test_zip(&tmp.path().join("t.zip"));
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+        let cursor_name = |state: &AppState| -> String {
+            state
+                .active_tab()
+                .entries
+                .get(state.active_tab().cursor)
+                .map(|i| i.name.clone())
+                .unwrap_or_default()
+        };
+
+        // 物理目录：从 sub 返回 tmp → 光标落在 "sub" 条目，且不在 `..` 行。
+        let mut state =
+            AppState::new(Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap());
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(cursor_name(&state), "sub", "光标落在来源目录条目");
+        assert!(!state.active_tab().on_parent_row, "h 返回不在 .. 行");
+
+        // 归档：进入归档根（落在 .. 行）→ h 返回物理目录 → 光标在 "t.zip"。
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 排序：目录优先 → sub(0)；t.zip 是文件，定位到它。
+        let zip_idx = state
+            .active_tab()
+            .entries
+            .iter()
+            .position(|i| i.name == "t.zip")
+            .unwrap();
+        state.active_tab_mut().cursor = zip_idx;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(state.active_tab().location, Location::Archive { .. }),
+            "进入归档"
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().to_path_buf()),
+            "归档根 h 回物理目录"
+        );
+        assert_eq!(cursor_name(&state), "t.zip", "光标落在归档文件条目");
+        assert!(!state.active_tab().on_parent_row);
+    }
+
+    #[test]
     fn m21f2_focus_switch_sets_no_status_message() {
         // ACCEPTANCE §20 M21-F2：状态栏无焦点相关文字——Tab/Space 切换
         // 不再产生提示消息（焦点经边框/当前行样式呈现）。
