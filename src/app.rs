@@ -11418,6 +11418,83 @@ terminal_in_new_window = false
     }
 
     #[test]
+    fn m21e6_tar_xz_bz2_navigate_like_zip() {
+        // ACCEPTANCE §20 M21-E6：.tar.xz/.tar.bz2 l/Enter 进入只读虚拟目录，
+        // h 返回物理父目录（M7-8 现状 TUI 导航级验证；M21-F4 定位语义顺带覆盖）。
+        let tmp = TempDir::new().unwrap();
+        // .tar.xz：tar fixture 现场压缩（lzma-rs 带编码器）。
+        let plain = tmp.path().join("plain.tar");
+        crate::archive::make_test_tar(&plain, false);
+        let mut raw = std::io::BufReader::new(std::fs::File::open(&plain).unwrap());
+        let mut out = Vec::new();
+        lzma_rs::xz_compress(&mut raw, &mut out).unwrap();
+        fs::write(tmp.path().join("t.tar.xz"), out).unwrap();
+        // .tar.bz2：解码器无编码器，复用提交的 fixture（M7-8 同款）。
+        fs::copy("tests/fixtures/t.tar.bz2", tmp.path().join("t.tar.bz2")).unwrap();
+        fs::write(tmp.path().join("host.txt"), "H").unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+
+        for name in ["t.tar.xz", "t.tar.bz2"] {
+            let mut state =
+                AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.name == name)
+                .unwrap_or_else(|| panic!("{name} 在列表中"));
+            state.active_tab_mut().cursor = idx;
+            // l → 只读虚拟目录（条目与 zip/tar 同构）。
+            press_msg(
+                &mut state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('l'),
+                KeyModifiers::NONE,
+            );
+            assert!(
+                matches!(state.active_tab().location, Location::Archive { .. }),
+                "{name} 进入虚拟目录（loc={:?} msg={msg:?}）",
+                state.active_tab().location
+            );
+            assert!(
+                state
+                    .active_tab()
+                    .entries
+                    .iter()
+                    .any(|i| i.name == "src" && i.is_dir),
+                "{name} 列表含 src 目录"
+            );
+            // h → 返回物理父目录，光标落在归档文件条目（M21-F4）。
+            press_msg(
+                &mut state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('h'),
+                KeyModifiers::NONE,
+            );
+            assert_eq!(
+                state.active_tab().location,
+                Location::Physical(tmp.path().to_path_buf()),
+                "{name} h 返回物理目录"
+            );
+            assert_eq!(
+                state
+                    .active_tab()
+                    .entries
+                    .get(state.active_tab().cursor)
+                    .map(|i| i.name.clone()),
+                Some(name.to_owned()),
+                "{name} h 后光标定位归档文件"
+            );
+        }
+    }
+
+    #[test]
     fn m21f2_focus_switch_sets_no_status_message() {
         // ACCEPTANCE §20 M21-F2：状态栏无焦点相关文字——Tab/Space 切换
         // 不再产生提示消息（焦点经边框/当前行样式呈现）。

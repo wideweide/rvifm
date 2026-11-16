@@ -454,7 +454,14 @@ pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
     let n = name.to_lowercase();
     if n.ends_with(".zip") {
         Ok(Box::new(ZipFs::open(host)?))
-    } else if n.ends_with(".tar") || n.ends_with(".tar.gz") || n.ends_with(".tgz") {
+    } else if n.ends_with(".tar")
+        || n.ends_with(".tar.gz")
+        || n.ends_with(".tgz")
+        // M7-8 三形态（M21-E6 补缺：TarFs 支持但分发层漏接，导航不可达）。
+        || n.ends_with(".tar.bz2")
+        || n.ends_with(".tar.xz")
+        || n.ends_with(".tar.zst")
+    {
         Ok(Box::new(TarFs::open(host)?))
     } else {
         Err(std::io::Error::new(
@@ -481,11 +488,57 @@ pub(crate) fn make_test_zip(path: &Path) {
     w.finish().unwrap();
 }
 
+/// 测试 fixture：与 zip 测试同构的 tar（显式目录、嵌套文件、隐式父目录）。
+/// app.rs M21-E6 导航验证复用（lzma_rs 现场压缩出 .tar.xz）。
+#[cfg(test)]
+pub(crate) fn make_test_tar(path: &Path, gz: bool) {
+    // M7-3：构造与 zip 测试同构的 tar（显式目录、嵌套文件、隐式父目录）。
+    let file = std::fs::File::create(path).unwrap();
+    let enc: Box<dyn std::io::Write> = if gz {
+        Box::new(flate2::write::GzEncoder::new(
+            file,
+            flate2::Compression::default(),
+        ))
+    } else {
+        Box::new(file)
+    };
+    let mut b = tar::Builder::new(enc);
+
+    let mut hdr = tar::Header::new_gnu();
+    hdr.set_entry_type(tar::EntryType::Directory);
+    hdr.set_path("src/").unwrap();
+    hdr.set_size(0);
+    hdr.set_cksum();
+    b.append(&hdr, std::io::empty()).unwrap();
+
+    let data = b"fn main() {}".to_vec();
+    let mut hdr = tar::Header::new_gnu();
+    hdr.set_path("src/main.rs").unwrap();
+    hdr.set_size(data.len() as u64);
+    hdr.set_cksum();
+    b.append(&hdr, data.as_slice()).unwrap();
+
+    let data = b"hi".to_vec();
+    let mut hdr = tar::Header::new_gnu();
+    hdr.set_path("readme.md").unwrap();
+    hdr.set_size(data.len() as u64);
+    hdr.set_cksum();
+    b.append(&hdr, data.as_slice()).unwrap();
+
+    let data = b"ABC".to_vec();
+    let mut hdr = tar::Header::new_gnu();
+    hdr.set_path("deep/nested/blob.bin").unwrap();
+    hdr.set_size(data.len() as u64);
+    hdr.set_cksum();
+    b.append(&hdr, data.as_slice()).unwrap();
+
+    b.into_inner().unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::io::Write;
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -633,49 +686,7 @@ mod tests {
         assert!(fs.metadata("anything").is_err());
     }
 
-    fn make_test_tar(path: &Path, gz: bool) {
-        // M7-3：构造与 zip 测试同构的 tar（显式目录、嵌套文件、隐式父目录）。
-        let file = std::fs::File::create(path).unwrap();
-        let enc: Box<dyn Write> = if gz {
-            Box::new(flate2::write::GzEncoder::new(
-                file,
-                flate2::Compression::default(),
-            ))
-        } else {
-            Box::new(file)
-        };
-        let mut b = tar::Builder::new(enc);
-
-        let mut hdr = tar::Header::new_gnu();
-        hdr.set_entry_type(tar::EntryType::Directory);
-        hdr.set_path("src/").unwrap();
-        hdr.set_size(0);
-        hdr.set_cksum();
-        b.append(&hdr, std::io::empty()).unwrap();
-
-        let data = b"fn main() {}".to_vec();
-        let mut hdr = tar::Header::new_gnu();
-        hdr.set_path("src/main.rs").unwrap();
-        hdr.set_size(data.len() as u64);
-        hdr.set_cksum();
-        b.append(&hdr, data.as_slice()).unwrap();
-
-        let data = b"hi".to_vec();
-        let mut hdr = tar::Header::new_gnu();
-        hdr.set_path("readme.md").unwrap();
-        hdr.set_size(data.len() as u64);
-        hdr.set_cksum();
-        b.append(&hdr, data.as_slice()).unwrap();
-
-        let data = b"ABC".to_vec();
-        let mut hdr = tar::Header::new_gnu();
-        hdr.set_path("deep/nested/blob.bin").unwrap();
-        hdr.set_size(data.len() as u64);
-        hdr.set_cksum();
-        b.append(&hdr, data.as_slice()).unwrap();
-
-        b.into_inner().unwrap();
-    }
+    // make_test_tar 已提升到模块级（M21-E6：app.rs 导航验证复用）。
 
     #[test]
     fn tar_fs_plain_and_gz_roundtrip() {

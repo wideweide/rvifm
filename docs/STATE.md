@@ -1,4 +1,5 @@
 # STATE —
+- `M21-E6`（2026-11-17）：归档 .tar.xz/.tar.bz2 验证补缺——**发现真实缺陷**：M7-8 的 TarFs 支持三压缩形态但 `open_dispatch` 分发层漏接（导航不可达，M7-8 测试直调 TarFs::open 绕过分发故未暴露）；修复：分发层补 .tar.bz2/.tar.xz/.tar.zst → TarFs；make_test_tar 提升 pub(crate) cfg(test)；补 TUI 导航级验证测试（l 进入虚拟目录 + h 返回物理目录 + F4 光标定位归档文件，xz 现场压缩/bz2 用提交 fixture）。270 单测全绿（+1）。
 - `M21-E5`（2026-11-17）：`:mkdir` 定位 / `:mk` 进入——mkdir 成功后光标定位新目录条目（隐藏过滤时保持原位，失败路径 Err 先返回光标不动）；新增 `:mk <名>` 创建并进入（navigate_to 成功才变更，提权链同 mkdir）；help.txt 补条目。269 单测全绿（+1：定位/失败光标不动/进入/失败位置不动/撤销链）。测试踩坑：`cd ..` 产生相对路径 Location——失败断言用位置快照比较而非绝对路径期望。
 - `M21-E4`（2026-11-17）：灵活重命名——`I`/`A` 保留原名光标首/尾、`cc` 清空归零（InputMode::Rename{path,input,pos}，Vec<char> 字符编辑保多字节边界；Enter 应用经 rename_apply 抽取体：空名/未改动无操作、成功入撤销栈、失败可读）；`R` 单键与 `:rename` 无参路由 $EDITOR 批量（复用 cw 管线，M2-3 带参直改保留，存量"缺少新名字"断言按新语义更新）；键位：I/cc/A/R 入默认表 + from_name 别名。268 单测全绿（+1）。语义口径：批量撤销沿用 M13-6 逐项入栈（连续 u 全批可逆），无成组撤销机制（见 NOTES）。
 - `M21-E3`（2026-11-17）：语法高亮——syntect 5.3（default-fancy 纯 Rust fancy-regex 后端，无 onig C 依赖）+ 新模块 src/highlight.rs（OnceLock 静态 SyntaxSet/ThemeSet；shebang 首行优先→扩展名兜底对齐 syntect find_syntax_for_file；主题随 opaline 明暗 base16-ocean）；viewer 文本分支按可见行逐行解析着色（搜索模式互斥跳过，解析失败降级纯文本行）；截断提示前置标题（ViewerState 增 total_lines，viewer_lines 返回 (capped, total)）。267 单测全绿（+4：rs 着色/shebang 推断/降级/截断）。踩坑：标题行尾 CJK 提示会被 pane 宽度裁掉——前置；CJK 正向断言需去空格。
@@ -110,8 +111,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-E6 归档 `.tar.xz`/`.tar.bz2` 验证（已实现于 M7-8，验证+补缺）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1–E5 完成，下一任务 E6）
+- **当前任务**：M21-E7 `=` 过滤增强（实时+通配符+隐式 *模式*）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F9 + E1–E6 完成，下一任务 E7）
 
 ## 已完成
 
