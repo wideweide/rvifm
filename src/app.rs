@@ -4842,6 +4842,51 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             }
             return;
         }
+        // M21-F6：光标在目录上 → 浅层 tree（复用 M13-7 构建器，深度 2、
+        // 只读快照）——不走文本读取路径，杜绝"无法读取/非 UTF-8"误报。
+        if path.is_dir() {
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!(
+                    "{} · 目录",
+                    path.display().to_string().replace('\\', "/")
+                ))
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            let items = match crate::tab::Tab::build_tree_entries(&path, 2) {
+                Ok(items) => items,
+                Err(e) => {
+                    frame.render_widget(Paragraph::new(format!("目录读取失败: {e}")), inner);
+                    return;
+                }
+            };
+            let height = inner.height as usize;
+            let mut lines: Vec<Line> = Vec::with_capacity(height);
+            if items.is_empty() {
+                lines.push(Line::from("（空目录）"));
+            }
+            for item in items.iter().take(height) {
+                let depth = item.name.matches('/').count();
+                let leaf = item
+                    .name
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&item.name)
+                    .to_owned();
+                let label = if item.is_dir {
+                    format!("{}{}/", "  ".repeat(depth), leaf)
+                } else {
+                    format!("{}{}", "  ".repeat(depth), leaf)
+                };
+                let spans = vec![
+                    Span::from(format!("{} ", item.icon.glyph)),
+                    Span::styled(label, filetype_style(item.filetype_class())),
+                ];
+                lines.push(Line::from(spans));
+            }
+            frame.render_widget(Paragraph::new(lines), inner);
+            return;
+        }
         let viewer = tab.viewer.clone().unwrap_or_default();
         let shown = path.display().to_string().replace('\\', "/");
         let title = match &viewer.query {
@@ -10232,6 +10277,118 @@ terminal_in_new_window = false
         sync_watcher(&mut state);
         assert!(state.watcher.is_none(), "归档视图卸载监听");
         assert!(state.watch_rx.is_none());
+    }
+
+    #[test]
+    fn m21f6_dir_cursor_shows_shallow_tree_in_view_mode() {
+        // ACCEPTANCE §20 M21-F6：光标在普通目录 → 右 pane 浅层 tree（深度 2），
+        // 不报"无法读取（非 UTF-8 或已删除）"。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("sub/a.txt"), "hello").unwrap();
+        fs::create_dir(tmp.path().join("sub/deep")).unwrap();
+        fs::write(tmp.path().join("sub/deep/b.txt"), "x").unwrap();
+        fs::write(tmp.path().join("top.txt"), "root file").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 光标定位到 sub（目录），开启 view_mode。
+        let sub_idx = state
+            .active_tab()
+            .entries
+            .iter()
+            .position(|i| i.name == "sub")
+            .unwrap();
+        state.active_tab_mut().cursor = sub_idx;
+        state.active_tab_mut().view_mode = true;
+
+        let backend = ratatui::backend::TestBackend::new(120, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let pane_text: String = (0..24u16)
+            .map(|y| {
+                (60..120u16)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(pane_text.contains("sub ·"), "标题含路径: {pane_text}");
+        assert!(pane_text.contains("a.txt"), "树含一级条目: {pane_text}");
+        assert!(pane_text.contains("deep/"), "树含子目录: {pane_text}");
+        assert!(pane_text.contains("b.txt"), "树含二级条目: {pane_text}");
+        assert!(
+            !pane_text.contains("无法读取"),
+            "目录不走文本读取路径: {pane_text}"
+        );
+    }
+
+    #[test]
+    fn m21f6_dir_preview_empty_and_non_utf8_names_no_panic() {
+        // 空目录占位提示；非 UTF-8 文件名（unix 可构造）lossy 渲染不 panic。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("empty")).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let idx = state
+            .active_tab()
+            .entries
+            .iter()
+            .position(|i| i.name == "empty")
+            .unwrap();
+        state.active_tab_mut().cursor = idx;
+        state.active_tab_mut().view_mode = true;
+        let backend = ratatui::backend::TestBackend::new(120, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let pane_text: String = (0..24u16)
+            .map(|y| {
+                (60..120u16)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        // CJK 全角在 TestBackend 渲染为"字+空格"（FEAT-4 教训）：去空格比对。
+        assert!(
+            pane_text.replace(' ', "").contains("（空目录）"),
+            "空目录占位: {pane_text}"
+        );
+
+        // 非 UTF-8 名（unix；Windows 文件名为 WTF-16 无法构造非法 UTF-8 名，
+        // lossy 转换路径由 build_tree_entries 内 to_string_lossy 覆盖）。
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let bad = tmp.path().join(std::ffi::OsStr::from_bytes(b"bad\xff\xff"));
+            fs::create_dir(&bad).unwrap();
+            fs::write(bad.join("inner.txt"), "").unwrap();
+            state.active_tab_mut().view_mode = false;
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.is_dir && i.name.contains("bad"))
+                .unwrap();
+            state.active_tab_mut().cursor = idx;
+            state.active_tab_mut().view_mode = true;
+            terminal
+                .draw(|f| render(f, &state, &InputMode::Normal, None))
+                .unwrap();
+            let buf = terminal.backend().buffer().clone();
+            let pane_text: String = (0..24u16)
+                .map(|y| {
+                    (60..120u16)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            assert!(
+                pane_text.contains("inner.txt"),
+                "lossy 目录名下子条目正常渲染: {pane_text}"
+            );
+        }
     }
 
     #[test]
