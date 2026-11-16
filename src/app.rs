@@ -5000,15 +5000,22 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         }
         let viewer = tab.viewer.clone().unwrap_or_default();
         let shown = path.display().to_string().replace('\\', "/");
+        // M21-E3：大文件截断提示前置（路径长会被 pane 宽度裁掉，放行尾不可见）。
+        const VIEWER_MAX_LINES: usize = 100_000;
+        let trunc_hint = if viewer.total_lines > viewer.line_count {
+            format!("〔已截断 共 {} 行〕", viewer.total_lines)
+        } else {
+            String::new()
+        };
         let title = match &viewer.query {
             Some(q) => format!(
-                "{shown} · 行 {}/{}  /{}（n/N 跳转）",
+                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
                 viewer.scroll + 1,
                 viewer.line_count,
                 q
             ),
             None => format!(
-                "{shown} · 行 {}/{}（w/Esc 退出 / 搜索）",
+                "{trunc_hint}{shown} · 行 {}/{}（w/Esc 退出 / 搜索）",
                 viewer.scroll + 1,
                 viewer.line_count
             ),
@@ -5049,7 +5056,19 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         };
         let height = inner.height as usize;
         let width = inner.width as usize;
-        let lines: Vec<&str> = text.lines().take(100_000).collect();
+        let lines: Vec<&str> = text.lines().take(VIEWER_MAX_LINES).collect();
+        // M21-E3：语法高亮——扩展名/shebang 推断，未命中或搜索模式下
+        // 降级纯文本（查询黄底叠加与语法着色互斥，SIMPLIFIED）。
+        let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
+        let mut highlighter = if viewer.query.is_none() {
+            crate::highlight::Highlighter::for_path(
+                &path,
+                lines.first().copied().unwrap_or(""),
+                dark,
+            )
+        } else {
+            None
+        };
         let mut out: Vec<Line> = Vec::new();
         for (i, line) in lines.iter().skip(viewer.scroll).take(height).enumerate() {
             let lineno = viewer.scroll + i + 1;
@@ -5080,7 +5099,21 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
                     ));
                     spans.push(Span::from(display[end..].to_owned()));
                 }
-                None => spans.push(Span::from(display)),
+                None => {
+                    if let Some(h) = highlighter.as_mut() {
+                        // 语法着色片段（宽超界由渲染器裁剪；解析失败降级纯文本）。
+                        let toks = h.highlight_line(line);
+                        if toks.is_empty() {
+                            spans.push(Span::from(display));
+                        } else {
+                            for (tok, st) in toks {
+                                spans.push(Span::styled(tok, st));
+                            }
+                        }
+                    } else {
+                        spans.push(Span::from(display));
+                    }
+                }
             }
             out.push(Line::from(spans));
         }
@@ -10929,6 +10962,92 @@ terminal_in_new_window = false
             "右 pane 恢复目录列表: {restored}"
         );
         assert!(!restored.contains("line-01"), "不再显示文件内容");
+    }
+
+    #[test]
+    fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
+        // ACCEPTANCE §20 M21-E3：.rs/.py/.json 预览有高亮；.txt shebang 推断
+        // 或安全降级；大文件截断提示。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("m.rs"), "fn main() { let x = 1; }\n").unwrap();
+        fs::write(tmp.path().join("s.txt"), "#!/bin/sh\necho hello\n").unwrap();
+        fs::write(tmp.path().join("data.bincode"), "randombytes payload\n").unwrap();
+        let mut big = String::new();
+        for i in 0..100_001 {
+            big.push_str(&format!("line {i}\n"));
+        }
+        fs::write(tmp.path().join("big.txt"), &big).unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap);
+        let mut msg = None;
+
+        let mut draw_with = |state: &mut AppState, name: &str| {
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.name == name)
+                .unwrap_or_else(|| panic!("{name} 在列表中"));
+            state.active_tab_mut().cursor = idx;
+            // 经 w 开启（toggle_view 统计行数，截断提示依赖 viewer 状态）。
+            state.active_tab_mut().view_mode = false;
+            state.active_tab_mut().viewer = None;
+            press_msg(
+                state,
+                &mut input,
+                &mut msg,
+                KeyCode::Char('w'),
+                KeyModifiers::NONE,
+            );
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, state, &InputMode::Normal, None))
+                .unwrap();
+            terminal.backend().buffer().clone()
+        };
+        let [_, left, right, _] = pane_layout(ratatui::layout::Rect::new(0, 0, 120, 24));
+        let _ = left;
+        let rgb_cells = |buf: &ratatui::buffer::Buffer| {
+            (right.x..right.x + right.width)
+                .flat_map(|x| (0..24u16).map(move |y| (x, y)))
+                .filter(|(x, y)| matches!(buf[(*x, *y)].fg, ratatui::style::Color::Rgb(..)))
+                .count()
+        };
+        let pane_text = |buf: &ratatui::buffer::Buffer| -> String {
+            (0..24u16)
+                .map(|y| {
+                    (right.x..right.x + right.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect()
+        };
+
+        // .rs：语法着色（RGB 前景单元格存在），内容可见。
+        let buf = draw_with(&mut state, "m.rs");
+        assert!(rgb_cells(&buf) > 0, "rs 预览存在语法着色");
+        assert!(pane_text(&buf).contains("fn main()"), "rs 内容可见");
+        // .txt shebang 推断：渲染不 panic 且内容可见（推断正确性由
+        // highlight.rs 单测覆盖）。
+        let buf = draw_with(&mut state, "s.txt");
+        assert!(
+            pane_text(&buf).contains("echo hello"),
+            "txt shebang 内容可见"
+        );
+        // 未知扩展名：无着色（安全降级纯文本），内容可见不 panic。
+        let buf = draw_with(&mut state, "data.bincode");
+        assert_eq!(rgb_cells(&buf), 0, "无语法应降级纯文本");
+        assert!(pane_text(&buf).contains("randombytes"), "降级内容可见");
+        // 大文件：标题截断提示（CJK 全角"字+空格"渲染，去空格比对）。
+        let buf = draw_with(&mut state, "big.txt");
+        assert!(
+            pane_text(&buf).replace(' ', "").contains("已截断"),
+            "截断提示可见"
+        );
     }
 
     #[test]

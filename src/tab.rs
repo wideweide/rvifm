@@ -410,8 +410,11 @@ impl SortField {
 pub struct ViewerState {
     /// 视口首行（0-based）。
     pub scroll: usize,
-    /// 文件总行数（激活时一次性读取，滚动钳制用）。
+    /// 文件总行数（激活时一次性读取，滚动钳制用；超过 100,000 行封顶，
+    /// 完整行数在 `total_lines`）。
     pub line_count: usize,
+    /// 完整行数（M21-E3 截断提示用；未截断时与 `line_count` 相等）。
+    pub total_lines: usize,
     /// `/` 搜索词（None = 未搜索）。
     pub query: Option<String>,
     /// 当前匹配行（0-based）。
@@ -947,14 +950,18 @@ impl Tab {
                 .as_ref()
                 .and_then(|r| r.items.get(self.cursor))
                 .and_then(|i| i.line);
-            let line_count = self.viewer_lines().map(|l| l.len()).unwrap_or(0);
+            let (capped, total) = self
+                .viewer_lines()
+                .map(|(lines, total)| (lines.len(), total))
+                .unwrap_or((0, 0));
             let scroll = hit_line
                 .map(|l| l.saturating_sub(2))
                 .unwrap_or(0)
-                .min(line_count.saturating_sub(1));
+                .min(capped.saturating_sub(1));
             self.viewer = Some(ViewerState {
                 scroll,
-                line_count,
+                line_count: capped,
+                total_lines: total,
                 query: None,
                 match_line: 0,
             });
@@ -965,10 +972,13 @@ impl Tab {
     }
 
     /// M17 VIEW-1：查看器内容行（激活时一次性读取；上限 10 万行）。
-    pub fn viewer_lines(&self) -> Option<Vec<String>> {
+    /// 查看器内容行（封顶 100,000 行）与完整行数（M21-E3 截断提示）。
+    pub fn viewer_lines(&self) -> Option<(Vec<String>, usize)> {
         let path = self.preview_path()?;
         let text = std::fs::read_to_string(path).ok()?;
-        Some(text.lines().take(100_000).map(|l| l.to_owned()).collect())
+        let total = text.lines().count();
+        let lines = text.lines().take(100_000).map(|l| l.to_owned()).collect();
+        Some((lines, total))
     }
 
     /// M17 VIEW-1：查看器滚动（delta 行，钳制到内容范围）。
@@ -1009,7 +1019,7 @@ impl Tab {
             }
             return;
         }
-        let Some(lines) = self.viewer_lines() else {
+        let Some((lines, _total)) = self.viewer_lines() else {
             return;
         };
         let Some(v) = self.viewer.as_mut() else {
@@ -1039,7 +1049,7 @@ impl Tab {
             return false;
         };
         let Some(query) = &v.query else { return false };
-        let Some(lines) = self.viewer_lines() else {
+        let Some((lines, _total)) = self.viewer_lines() else {
             return false;
         };
         if lines.is_empty() {

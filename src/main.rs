@@ -9,6 +9,7 @@ mod app;
 mod archive;
 mod config;
 mod frecency;
+mod highlight;
 mod icons;
 mod image;
 mod keymap;
