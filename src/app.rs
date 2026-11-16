@@ -2710,6 +2710,21 @@ fn pane_border_style(focused: bool) -> Style {
     }
 }
 
+/// M21-E1：属性列布局——大小列 10 列右对齐 + 分隔 2 列 + 时间列 19 列
+/// （`yyyy-mm-dd HH:mm:ss`）。
+const ATTRS_WIDTH: usize = 10 + 2 + 19;
+/// 属性列显示所需的最小 pane 内区宽度（窄终端隐藏属性列，文件名优先）。
+const MIN_ATTRS_INNER_WIDTH: usize = 55;
+
+/// M21-E1：按显示预算截断名称（字符数近似；CJK 全角按 1 计——与查看器
+/// 显示口径一致，SIMPLIFIED）。搜索/定位逻辑不受影响（仅显示层裁剪）。
+fn clip_name(name: &str, budget: usize) -> String {
+    if budget == 0 {
+        return String::new();
+    }
+    name.chars().take(budget).collect()
+}
+
 /// M21-F1：类型着色——主题命名样式（`ft_dir` 等）优先，缺失时回落 16 色
 /// 近似（yazi filetype + vifm 配色语义：目录青/可执行绿/链接紫/归档红/
 /// 图片亮蓝/视频黄/代码蓝；Other 不着色）。
@@ -4368,6 +4383,15 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             .map(|s| s.query.clone())
             .filter(|query| !query.is_empty()),
     };
+    // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
+    let show_attrs = state.config.ui.attrs_column
+        && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
+        && !tab.tree.is_some(); // 树视图相对路径较长，不挤属性列
+    let name_budget = if show_attrs {
+        (left_inner.width as usize).saturating_sub(2 + ATTRS_WIDTH + 2)
+    } else {
+        (left_inner.width as usize).saturating_sub(4)
+    };
     let list_items: Vec<ListItem> = tab
         .entries
         .iter()
@@ -4378,19 +4402,23 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
             // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
             let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
+            let mut budget = name_budget;
             if tab.tree.is_some() {
                 let depth = item.name.matches('/').count();
                 spans.push(Span::from("  ".repeat(depth)));
+                budget = budget.saturating_sub(2 * depth);
             }
+            // M21-E1：显示名按预算截断（搜索/定位仍用全名，仅显示层裁剪）。
+            let display_name = clip_name(&item.name, budget);
             match active_query
                 .as_deref()
-                .and_then(|query| crate::tab::match_range(&item.name, query))
+                .and_then(|query| crate::tab::match_range(&display_name, query))
             {
                 Some((start, end)) => {
                     let (before, mid, after) = (
-                        &item.name[..start],
-                        &item.name[start..end],
-                        &item.name[end..],
+                        &display_name[..start],
+                        &display_name[start..end],
+                        &display_name[end..],
                     );
                     if !before.is_empty() {
                         spans.push(Span::styled(before.to_owned(), ft));
@@ -4410,12 +4438,22 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 }
                 None => {
                     let label = if item.is_dir {
-                        format!("{}/", item.name)
+                        format!("{display_name}/")
                     } else {
-                        item.name.clone()
+                        display_name.clone()
                     };
                     spans.push(Span::styled(label, ft));
                 }
+            }
+            // M21-E1：属性列——大小（目录 <DIR>）+ 修改时间，DIM 弱化。
+            if show_attrs {
+                let size = if item.is_dir {
+                    "<DIR>".to_owned()
+                } else {
+                    crate::tab::format_size(item.size)
+                };
+                let attr = format!("  {:>10}  {}", size, crate::tab::format_mtime(item.mtime));
+                spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
             let base_style = crate::theme::style("file_icon");
@@ -5063,15 +5101,33 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         .iter()
         .enumerate()
         .map(|(idx, item)| {
-            let label = if item.is_dir {
-                format!("{}/", item.name)
+            // M21-E1：属性列自适应（与左 pane 同口径）。
+            let show_attrs =
+                state.config.ui.attrs_column && inner.width as usize >= MIN_ATTRS_INNER_WIDTH;
+            let name_budget = if show_attrs {
+                (inner.width as usize).saturating_sub(2 + ATTRS_WIDTH + 2)
             } else {
-                item.name.clone()
+                (inner.width as usize).saturating_sub(4)
             };
-            let spans = vec![
+            let display_name = clip_name(&item.name, name_budget);
+            let label = if item.is_dir {
+                format!("{display_name}/")
+            } else {
+                display_name.clone()
+            };
+            let mut spans = vec![
                 Span::from(format!("{} ", item.icon.glyph)),
                 Span::styled(label, filetype_style(item.filetype_class())),
             ];
+            if show_attrs {
+                let size = if item.is_dir {
+                    "<DIR>".to_owned()
+                } else {
+                    crate::tab::format_size(item.size)
+                };
+                let attr = format!("  {:>10}  {}", size, crate::tab::format_mtime(item.mtime));
+                spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
+            }
             let mut li = ListItem::new(Line::from(spans));
             if idx == tab.right.cursor {
                 // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
@@ -10744,6 +10800,55 @@ terminal_in_new_window = false
         let tmp_records = records.iter().filter(|r| r.path == tmp_path).count();
         assert_eq!(sub_records, 0, "两次实时记录 → 退出刷写 0 条");
         assert_eq!(tmp_records, 1, ":cd 导航 → 退出刷写保留");
+    }
+
+    #[test]
+    fn m21e1_attrs_column_adaptive_and_config_switch() {
+        // ACCEPTANCE §20 M21-E1：列表可见大小与 yyyy-mm-dd HH:mm:ss 日期；
+        // 窄终端属性列隐藏（文件名不挤爆）；配置开关生效。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("doc.txt"), "12345").unwrap(); // 5 B
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().entries[0].mtime = 1_700_000_000;
+        let stamp = crate::tab::format_mtime(1_700_000_000);
+
+        let draw_at = |state: &AppState, w: u16, h: u16| {
+            let backend = ratatui::backend::TestBackend::new(w, h);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, state, &InputMode::Normal, None))
+                .unwrap();
+            terminal.backend().buffer().clone()
+        };
+        // 条目行文本（跳过标题行 1 与状态栏 h-1）。
+        let entry_rows = |buf: &ratatui::buffer::Buffer, w: u16, h: u16| -> Vec<String> {
+            // 左 pane 列范围（右 pane 同目录列表会拼接进同一行字符串）。
+            (2..h.saturating_sub(1))
+                .map(|y| (0..w / 2).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect()
+        };
+
+        // 宽终端 160：doc.txt 行同时可见大小与日期。
+        let buf = draw_at(&state, 160, 24);
+        let rows = entry_rows(&buf, 160, 24);
+        let row = rows.iter().find(|r| r.contains("doc.txt")).unwrap();
+        assert!(row.contains("5 B"), "大小列可见: {row}");
+        assert!(row.contains(&stamp), "日期列可见: {row}");
+
+        // 窄终端 80：属性列隐藏，文件名完整。
+        let buf = draw_at(&state, 80, 24);
+        let rows = entry_rows(&buf, 80, 24);
+        let row = rows.iter().find(|r| r.contains("doc.txt")).unwrap();
+        assert!(row.contains("doc.txt"), "文件名优先: {row}");
+        assert!(!row.contains(&stamp), "窄终端隐藏日期列: {row}");
+        assert!(!row.contains("5 B"), "窄终端隐藏大小列: {row}");
+
+        // 配置开关：attrs_column = false → 宽终端也不显示。
+        state.config.ui.attrs_column = false;
+        let buf = draw_at(&state, 160, 24);
+        let rows = entry_rows(&buf, 160, 24);
+        let row = rows.iter().find(|r| r.contains("doc.txt")).unwrap();
+        assert!(!row.contains(&stamp), "配置关闭属性列: {row}");
     }
 
     #[test]

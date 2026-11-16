@@ -23,16 +23,20 @@ pub struct Config {
 
 /// M18-4：[ui] 表——外部命令/shell 在新终端窗口执行（检测 $TMUX/$STY；
 /// 默认开；false = 始终当前 pane）。
+/// `attrs_column`（M21-E1）：文件列表显示大小/修改时间列，默认开；
+/// 窄终端自动隐藏（文件名优先）。
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
     pub terminal_in_new_window: bool,
+    pub attrs_column: bool,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             terminal_in_new_window: true,
+            attrs_column: true,
         }
     }
 }

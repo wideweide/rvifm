@@ -188,7 +188,7 @@
 - [x] M21-F7 PDF/Office 预览分流核实（不落文本通用路径；类型化错误）
 - [x] M21-F8 opener stderr 抑制（Stdio::null；失败进状态栏）
 - [x] M21-F9 进入目录 record（l/Enter 成功后调用；失败不记）
-- [ ] M21-E1 列表属性列（大小+日期 yyyy-mm-dd HH:mm:ss；自适应；配置开关）
+- [x] M21-E1 列表属性列（大小+日期 yyyy-mm-dd HH:mm:ss；自适应；配置开关）
 - [ ] M21-E2 `w` 预览模式验证补缺（已实现于 view_mode，验证+补缺）
 - [ ] M21-E3 语法高亮（tree-sitter/syntect 复用；.txt 推断；截断提示）
 - [ ] M21-E4 灵活重命名（I/cc/A/R；R=$EDITOR 多选，复用 cw 管线；整批 u）
