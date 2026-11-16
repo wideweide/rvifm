@@ -1,4 +1,5 @@
 # STATE —
+- `M21-F8`（2026-11-17）：opener stderr 抑制——opener.rs 增 silent()（stdin/stdout/stderr = Stdio::null）应用于 system_open 全部四平台分支（gio/xdg-open/open/cmd start）；失败 Err 由调用方既有 "打开失败: {e}" 进状态栏。259 单测全绿（+1 cfg(unix) 失败路径）。踩坑：Windows `cmd /c start` 对不存在文件弹 GUI 对话框阻塞 status()（测试套件卡 600s 实录）——真实 opener 失败路径测试仅 cfg(unix)；stable Rust 无法内省 Command stdio，静默化实现为直读。
 - `M21-F7`（2026-11-17）：PDF/Office 预览分流核实——根因确认为 view_mode 查看器绕过 preview_kind 直落 read_to_string（"无法读取（非 UTF-8 或已删除）"误报）；修复：viewer 内 Pdf/Office 分流走共享 PreviewRenderer（TUI/pick 同源）；提示措辞对齐 SPEC（"[PDF 文本提取失败]"/"[Office 文档解析失败]"，NeedsVisual 保留"文本层不足"提示）；make_pdf/make_doc fixture 提升为 pub(crate) cfg(test) 供验收测试复用。259 单测全绿（+1：正常/损坏 × pdf/docx 四路径不落文本路径 + 类型化错误 + 内容可见）。
 - `M21-F6`（2026-11-17）：目录 tree 预览——view_mode 右 pane 光标在目录上时走浅层 tree（复用 M13-7 build_tree_entries 深度 2 只读快照 + 图标/类型着色；空目录占位；错误可读提示），不走文本读取路径（杜绝"无法读取/非 UTF-8"误报）。258 单测全绿（+2，含 cfg(unix) 非 UTF-8 目录名 lossy 渲染）。
 - `M21-F5`（2026-11-17）：外部变更自动刷新——notify 8.2.2（--no-default-features，去 crossbeam-channel）监听活动 tab 物理目录（NonRecursive）；run 循环每轮 sync_watcher（导航/切 tab 重挂或卸载）+ 抽干事件（Create/Modify(含 Rename)/Remove 相关，Access 忽略）→ refresh_on_fs_change（双 pane 刷新 + 光标跟随原条目名、被删则钳制）；归档/远端不监听；挂载失败静默降级（TUI 照常）。256 单测全绿（+4：目标规则/事件过滤/光标跟随/归档卸载 + 真实 watcher 端到端 10s 超时窗口）。踩坑：notify 6+ 的 watch 是 Watcher trait 方法需 `use notify::Watcher as _`。
@@ -103,8 +104,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-F8 opener stderr 抑制（Stdio::null；失败进状态栏）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F7 完成，下一任务 F8）
+- **当前任务**：M21-F9 进入目录 record（l/Enter 成功后调用；失败不记）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1–F8 完成，下一任务 F9）
 
 ## 已完成
 
