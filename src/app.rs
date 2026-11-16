@@ -1387,11 +1387,18 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
         Some("cd") => {
             // M5-3：切换当前 tab 到目标目录（保留原名导航语义）。
             // M21-E8：进入成功实时记录（记录补全：目录 :cd 调用点）。
+            // M22-1：相对路径相对**当前 tab 目录**解析（原为进程 CWD，
+            // M21-E5 CI 实测漂移）；解析后恒为绝对路径。
             let dir_arg = parts.next().ok_or_else(|| "cd: 缺少目录".to_owned())?;
-            let target = PathBuf::from(dir_arg);
+            let target = {
+                let cur = state.active_tab().location.base_dir().to_path_buf();
+                let p = PathBuf::from(dir_arg);
+                if p.is_absolute() { p } else { cur.join(p) }
+            };
             if !target.is_dir() {
                 return Err(format!("cd: 目录不存在: {dir_arg}"));
             }
+            let target = normalize_lexical(&target);
             let cfg = state.config;
             let tab = state.active_tab_mut();
             tab.navigate_to(Location::Physical(target), cfg)
@@ -3719,6 +3726,27 @@ fn collect_session_records(state: &AppState) -> Vec<crate::frecency::EntryRecord
         }
     }
     records
+}
+
+/// M22-1：词法归一化——解析 `.`/`..` 段（不触文件系统、不解析符号链接，
+/// 保持逻辑路径与 vifm 一致）；输入需为绝对路径。
+fn normalize_lexical(p: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out: Vec<Component> = Vec::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => match out.last() {
+                Some(Component::RootDir) => {}
+                Some(_) => {
+                    out.pop();
+                }
+                None => out.push(Component::ParentDir),
+            },
+            other => out.push(other),
+        }
+    }
+    out.iter().collect()
 }
 
 /// M21-F9：l/Enter 成功进入物理目录后的实时 frecency 记录——与 shell hook
@@ -11588,6 +11616,53 @@ terminal_in_new_window = false
         assert_eq!(state.active_tab().location, before, "失败不改变位置");
         // 撤销链：mkdir/mk 各入撤销栈（可逆）。
         assert_eq!(state.undo_stack.len(), 2, "两次创建均入撤销栈");
+    }
+
+    #[test]
+    fn m22_1_cd_relative_resolves_against_tab_dir() {
+        // ACCEPTANCE §21 M22-1：`:cd ..` 落到真实父目录（绝对路径，非 ".."）；
+        // 随后 :mkdir 落点在 tab 目录（非进程 CWD）。M21-E5 CI 实测的漂移回归测试。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        let mut state =
+            AppState::new(Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap());
+
+        // cd .. → 当前 tab 目录的父目录（词法归一化绝对路径，起点在 sub）。
+        exec_command_impl(&mut state, "cd ..").unwrap();
+        let expected = normalize_lexical(tmp.path());
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(expected.clone()),
+            "cd .. 落父目录绝对路径"
+        );
+
+        // 相对路径 cd sub → 相对当前 tab 目录（此时在 tmp）。
+        exec_command_impl(&mut state, "cd sub").unwrap();
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(normalize_lexical(&tmp.path().join("sub"))),
+            "cd sub 相对 tab 目录解析"
+        );
+
+        // 回父目录后 :mkdir 落点在 tab 目录（非 CWD）——漂移回归核心断言。
+        exec_command_impl(&mut state, "cd ..").unwrap();
+        exec_command_impl(&mut state, "mkdir escape_check").unwrap();
+        assert!(
+            tmp.path().join("escape_check").exists(),
+            "mkdir 落在 tab 目录"
+        );
+        assert!(
+            !std::env::current_dir()
+                .unwrap()
+                .join("escape_check")
+                .exists(),
+            "mkdir 不得落到进程 CWD"
+        );
+
+        // 失败：目录不存在 → Err 且位置不变。
+        let before = state.active_tab().location.clone();
+        assert!(exec_command_impl(&mut state, "cd no_such_dir_xyz").is_err());
+        assert_eq!(state.active_tab().location, before, "失败不改位置");
     }
 
     #[test]
