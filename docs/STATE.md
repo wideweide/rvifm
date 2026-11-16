@@ -1,4 +1,5 @@
 # STATE —
+- `M21 批次关闭`（2026-11-17）：F1–F9 + E1–E8 全部 17 项完成（PLAN 状态同步，ACCEPTANCE §20 全勾）。批次验收：273 单测 + 3 冒烟全绿；`--version`/`--help` 冒烟通过；批次内发现并修复 2 个存量缺陷（open_dispatch 漏接 tar.bz2/xz/zst 路由、redb 全局 store 测试并行锁竞争）。批次新增依赖：jiff 0.2.43 / notify 8.2.2 / syntect 5.3（均纯 Rust，无 C 编译期依赖）。下一批次待用户指令。
 - `M21-E8`（2026-11-17）：跳转选择器增强——80%×80% 居中无全屏遮罩（双 pane 可见，jump_rect 取代 FIX-4 遮罩语义）；双段子态（默认搜索：输入即搜；Esc→Normal 清输入；再 Esc 关闭；Normal 可打印字符回搜索）；Vim 操作 j/k/gg/G/l（jump_key 可测抽取，g 待决两段）；记录补全：`:cd` 成功 record_live_visit('L')、打开文件成功 record_file_open（topic=file/kind=Open，'F' 侧别仅观察态）；`:j`/:J topic 过滤现状已有（既有测试覆盖）。273 单测全绿（+2 +2 存量选择器测试按新语义更新）。
 - `M21-E7`（2026-11-17）：`=` 过滤增强——`filter_matches`（tab.rs）：含 `*`/`?` 走 glob，无通配符隐式 `*模式*`（vifm 语义，大小写不敏感）；Filter 模式 Continue 实时过滤（逐键生效，与提交/Esc 共用 apply_filter）；Esc 清除恢复完整列表。:select 的 glob 语义不变（M13-2）。271 单测全绿（+1：glob/隐式/实时/Esc 恢复）。
 - `M21-E6`（2026-11-17）：归档 .tar.xz/.tar.bz2 验证补缺——**发现真实缺陷**：M7-8 的 TarFs 支持三压缩形态但 `open_dispatch` 分发层漏接（导航不可达，M7-8 测试直调 TarFs::open 绕过分发故未暴露）；修复：分发层补 .tar.bz2/.tar.xz/.tar.zst → TarFs；make_test_tar 提升 pub(crate) cfg(test)；补 TUI 导航级验证测试（l 进入虚拟目录 + h 返回物理目录 + F4 光标定位归档文件，xz 现场压缩/bz2 用提交 fixture）。270 单测全绿（+1）。
@@ -112,9 +113,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-17
-- **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21 批次验收（17 项全部完成，PLAN 状态同步）
-- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 F1–F9 + E1–E8 全部完成，跑批次验收
+- **当前阶段**：M21 已关闭（M22 及后续批次待用户指令）
+- **当前任务**：无（等待下一批次指令或版本发布）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 全部关闭（17 项，273 单测 + 3 冒烟）
 
 ## 已完成
 
