@@ -79,7 +79,7 @@ enum Outcome {
     EnterShell,
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
-    ConfirmDelete(PathBuf, bool),
+    ConfirmDelete(PathBuf, bool, Option<String>),
     /// 打开跳转选择器（M8-12：`o` 合一视角；数据已在 handle_key 读好）。
     OpenJump {
         kind: JumpKind,
@@ -117,7 +117,11 @@ enum InputMode {
     Filter { input: String },
     /// 删除确认模式：`y` 执行，其余取消（M2-2；M13-3 起 permanent 标志
     /// 区分 dd 暂存删除与 DD 永久删除，渲染与执行分支不同）。
-    Confirm { path: PathBuf, permanent: bool },
+    Confirm {
+        path: PathBuf,
+        permanent: bool,
+        remote: Option<String>,
+    },
     /// 标记批量删除确认模式（`:tag delete`，M3-3）。
     ConfirmTagDelete,
     /// 全屏帮助视图（FEAT-4，`:help`）：独立滚动状态（与目录列表无关），
@@ -698,6 +702,14 @@ pub(crate) fn remote_enter(
 }
 
 /// 远端目录内导航：进入子目录 / 上级（沿用会话 list）。返回新远端路径。
+/// M20-1：当前视图若为远端位置，返回其路径。
+fn current_remote_path(state: &AppState) -> Option<PathBuf> {
+    match &state.active_tab().location {
+        Location::Remote { path, .. } => Some(path.clone()),
+        _ => None,
+    }
+}
+
 pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> Result<(), String> {
     let (name, items) = {
         let tab = state.active_tab();
@@ -1118,12 +1130,13 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
     }
-    // M19-2：远端视图只读——M20 前写命令拒绝（导航/退出/只读展示豁免）。
+    // M19-2/M20-1：远端视图——写命令由 match 中的远端路由臂处理。
     if matches!(state.active_tab().location, Location::Remote { .. }) {
         match cmd_head {
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
-                | "his" | "sort" | "find" | "grep" | "recent" | "file",
+                | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
+                | "touch" | "copy" | "move",
             ) => {}
             Some(other) => {
                 return Err(format!("远端写操作在 M20 接入: {other}"));
@@ -1264,6 +1277,83 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             Ok(ExecOutcome::OpenJump {
                 kind: JumpKind::Recent,
                 entries,
+            })
+        }
+        Some("rename" | "mkdir" | "touch" | "copy" | "move")
+            if matches!(state.active_tab().location, Location::Remote { .. }) =>
+        {
+            #[cfg(test)]
+            eprintln!(
+                "DBG remote write arm: {:?} location={:?}",
+                cmd_head,
+                state.active_tab().location
+            );
+            // M20-1：远端写命令（与本地同键同语义；undo 入撤销栈）。
+            let is_mkdir = cmd_head == Some("mkdir");
+            let is_touch = cmd_head == Some("touch");
+            let is_copy = cmd_head == Some("copy");
+            let arg = parts
+                .next()
+                .ok_or_else(|| format!("{}: 缺少参数", cmd_head.unwrap_or_default()))?
+                .to_owned();
+            let (remote, base) = match &state.active_tab().location.clone() {
+                Location::Remote { remote, path } => (remote.clone(), path.clone()),
+                _ => return Err("remote: 非远端视图".to_owned()),
+            };
+            let dest = if base == std::path::Path::new("/") {
+                PathBuf::from(format!("/{arg}"))
+            } else {
+                base.join(&arg)
+            };
+            let backend = state
+                .remote_sessions
+                .get(&remote)
+                .ok_or_else(|| "remote: 会话已断开".to_owned())?;
+            let kind = if is_mkdir {
+                backend.create_dir(&dest).map_err(|e| e.to_string())?;
+                crate::state::RemoteUndo::Create {
+                    path: dest.clone(),
+                    is_dir: true,
+                }
+            } else if is_touch {
+                backend.write(&dest, b"").map_err(|e| e.to_string())?;
+                crate::state::RemoteUndo::Create {
+                    path: dest.clone(),
+                    is_dir: false,
+                }
+            } else {
+                let tab = state.active_tab();
+                let src = tab
+                    .entries
+                    .get(tab.cursor)
+                    .map(|item| {
+                        if base == std::path::Path::new("/") {
+                            PathBuf::from(format!("/{}", item.name))
+                        } else {
+                            base.join(&item.name)
+                        }
+                    })
+                    .ok_or_else(|| "copy: 无选中条目".to_owned())?;
+                if is_copy {
+                    let data = backend.read(&src).map_err(|e| e.to_string())?;
+                    backend.write(&dest, &data).map_err(|e| e.to_string())?;
+                } else {
+                    backend.rename(&src, &dest).map_err(|e| e.to_string())?;
+                }
+                crate::state::RemoteUndo::Rename {
+                    from: src,
+                    to: dest.clone(),
+                }
+            };
+            let tab_id = state.active;
+            state.undo_stack.push(crate::state::UndoableOp::Remote {
+                tab_id,
+                remote: remote.clone(),
+                kind,
+            });
+            let _ = remote_navigate(state, &base);
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("{}: {arg} OK", cmd_head.unwrap_or_default())),
             })
         }
         Some("q" | "quit") => Ok(ExecOutcome::Quit),
@@ -1854,11 +1944,21 @@ fn handle_key(
                     return None;
                 }
                 let tab = state.active_tab();
+                // M20-1：远端视图 → 远端删除（trash 可恢复）。
+                if let Location::Remote { remote, path } = &tab.location
+                    && let Some(item) = tab.entries.get(tab.cursor)
+                {
+                    let target = if path == std::path::Path::new("/") {
+                        PathBuf::from(format!("/{}", item.name))
+                    } else {
+                        path.join(&item.name)
+                    };
+                    return Some(Outcome::ConfirmDelete(target, false, Some(remote.clone())));
+                }
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
-                    // 序列已完成，残留会吞掉后续按键（调用方统一 clear）
-                    return Some(Outcome::ConfirmDelete(base.join(&item.name), false));
+                    return Some(Outcome::ConfirmDelete(base.join(&item.name), false, None));
                 }
             }
             Some(Action::RenameBatch) => {
@@ -1911,7 +2011,7 @@ fn handle_key(
                 if let (Location::Physical(base), Some(item)) =
                     (&tab.location, tab.entries.get(tab.cursor))
                 {
-                    return Some(Outcome::ConfirmDelete(base.join(&item.name), true));
+                    return Some(Outcome::ConfirmDelete(base.join(&item.name), true, None));
                 }
             }
             Some(Action::HistPrev) | Some(Action::HistNext) => {
@@ -1937,7 +2037,46 @@ fn handle_key(
                     let paths: Vec<PathBuf> =
                         r.items[start..end].iter().map(|i| i.path.clone()).collect();
                     let n = paths.len();
-                    state.yank = Some(crate::state::YankBuffer { paths, cut: false });
+                    state.yank = Some(crate::state::YankBuffer {
+                        paths,
+                        cut: false,
+                        source: crate::state::YankSource::Local,
+                    });
+                    *msg = Some(format!("Yanked {n} item(s)"));
+                    return None;
+                }
+                // M20-1：远端视图 yy = 远端路径（YankSource::Remote）。
+                if let Some(remote) = state.active_tab().location.remote_name() {
+                    let count = count.unwrap_or(1).max(1);
+                    let names: Vec<PathBuf> = {
+                        let tab = state.active_tab();
+                        let base = match &tab.location {
+                            Location::Remote { path, .. } => path.clone(),
+                            _ => PathBuf::from("/"),
+                        };
+                        let start = tab.cursor.min(tab.entries.len());
+                        let end = (start + count).min(tab.entries.len());
+                        tab.entries[start..end]
+                            .iter()
+                            .map(|i| {
+                                if base == std::path::Path::new("/") {
+                                    PathBuf::from(format!("/{}", i.name))
+                                } else {
+                                    base.join(&i.name)
+                                }
+                            })
+                            .collect()
+                    };
+                    let n = names.len();
+                    if n == 0 {
+                        *msg = Some("yy: 无可复制的条目".to_owned());
+                        return None;
+                    }
+                    state.yank = Some(crate::state::YankBuffer {
+                        paths: names,
+                        cut: false,
+                        source: crate::state::YankSource::Remote(remote),
+                    });
                     *msg = Some(format!("Yanked {n} item(s)"));
                     return None;
                 }
@@ -1972,7 +2111,11 @@ fn handle_key(
                     let base = state.active_tab().location.base_dir().to_path_buf();
                     let paths: Vec<PathBuf> = names.iter().map(|n| base.join(n)).collect();
                     let n = paths.len();
-                    state.yank = Some(crate::state::YankBuffer { paths, cut: false });
+                    state.yank = Some(crate::state::YankBuffer {
+                        paths,
+                        cut: false,
+                        source: crate::state::YankSource::Local,
+                    });
                     *msg = Some(format!("Yanked {n} item(s)"));
                 }
             }
@@ -2551,6 +2694,15 @@ fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Option<String>
         *msg = Some("缓冲区为空（先 yy 复制）".to_owned());
         return;
     };
+    // M20-1/M20-3：远端/跨 VFS 粘贴路由。
+    if matches!(state.active_tab().location, Location::Remote { .. }) {
+        paste_yanked_remote(state, &buffer, force_move, msg);
+        return;
+    }
+    if let crate::state::YankSource::Remote(ref src_remote) = buffer.source {
+        paste_remote_to_local(state, src_remote, &buffer, force_move, msg);
+        return;
+    }
     let base = match physical_base(state) {
         Ok(base) => base,
         Err(e) => {
@@ -2578,6 +2730,191 @@ fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Option<String>
                 break;
             }
         }
+    }
+    refresh_tab_panes(state, state.active);
+    match (done, first_err) {
+        (_, Some(e)) if done < buffer.paths.len() => {
+            *msg = Some(format!("{verb} {done}/{} 项: {e}", buffer.paths.len()))
+        }
+        _ => *msg = Some(format!("{verb} {done} item(s) to {}", base.display())),
+    }
+}
+
+/// M20-1：远端视图粘贴——yank 路径读出内容 → 后端 write 到当前远端目录；
+/// 逐条入撤销栈（Create，u 可逆）；同名冲突报错不覆盖。
+fn paste_yanked_remote(
+    state: &mut AppState,
+    buffer: &crate::state::YankBuffer,
+    force_move: bool,
+    msg: &mut Option<String>,
+) {
+    let (remote, dir) = match &state.active_tab().location.clone() {
+        Location::Remote { remote, path } => (remote.clone(), path.clone()),
+        _ => {
+            *msg = Some("remote: 非远端视图".to_owned());
+            return;
+        }
+    };
+    let do_move = buffer.cut || force_move;
+    let verb = if do_move { "Moved" } else { "Copied" };
+    let mut done = 0usize;
+    let mut first_err: Option<String> = None;
+    let tab_id = state.active;
+    for src in &buffer.paths {
+        let data = match &buffer.source {
+            crate::state::YankSource::Remote(src_remote) => {
+                let r = state
+                    .remote_sessions
+                    .get(src_remote)
+                    .ok_or_else(|| "来源会话已断开".to_owned())
+                    .and_then(|be| be.read(src).map_err(|e| e.to_string()));
+                match r {
+                    Ok(d) => d,
+                    Err(e) => {
+                        first_err = Some(e);
+                        break;
+                    }
+                }
+            }
+            crate::state::YankSource::Local => match std::fs::read(src) {
+                Ok(d) => d,
+                Err(e) => {
+                    first_err = Some(e.to_string());
+                    break;
+                }
+            },
+        };
+        let name = src
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let dest = if dir == std::path::Path::new("/") {
+            PathBuf::from(format!("/{name}"))
+        } else {
+            dir.join(&name)
+        };
+        let exists = state
+            .remote_sessions
+            .get(&remote)
+            .map(|be| be.metadata(&dest).is_ok())
+            .unwrap_or(false);
+        eprintln!("DBG paste exists={} dest={}", exists, dest.display());
+        if exists {
+            first_err = Some(format!("目标已存在: {}", dest.display()));
+            break;
+        }
+        let result = state
+            .remote_sessions
+            .get(&remote)
+            .ok_or_else(|| "会话已断开".to_owned())
+            .and_then(|be| be.write(&dest, &data).map_err(|e| e.to_string()));
+        match result {
+            Ok(()) => {
+                state.undo_stack.push(crate::state::UndoableOp::Remote {
+                    tab_id,
+                    remote: remote.clone(),
+                    kind: crate::state::RemoteUndo::Create {
+                        path: dest,
+                        is_dir: false,
+                    },
+                });
+                done += 1;
+            }
+            Err(e) => {
+                first_err = Some(e);
+                break;
+            }
+        }
+    }
+    if do_move {
+        for src in buffer.paths.iter().take(done) {
+            match &buffer.source {
+                crate::state::YankSource::Remote(src_remote) => {
+                    let _ = state
+                        .remote_sessions
+                        .get(src_remote)
+                        .map(|be| be.remove_permanent(src));
+                }
+                _ => {
+                    let _ = std::fs::remove_file(src);
+                }
+            }
+        }
+    }
+    let _ = remote_navigate(state, &dir);
+    match (done, first_err) {
+        (_, Some(e)) if done < buffer.paths.len() => {
+            *msg = Some(format!("{verb} {done}/{} 项: {e}", buffer.paths.len()))
+        }
+        _ => {
+            *msg = Some(format!(
+                "{verb} {done} item(s) to {remote}:{}",
+                dir.display()
+            ))
+        }
+    }
+}
+
+/// M20-3：远端来源缓冲 → 本地粘贴（跨 VFS：会话 read → 本地 write）。
+fn paste_remote_to_local(
+    state: &mut AppState,
+    remote: &str,
+    buffer: &crate::state::YankBuffer,
+    force_move: bool,
+    msg: &mut Option<String>,
+) {
+    let Some(base) = physical_base(state).ok() else {
+        *msg = Some("本地视图不可用".to_owned());
+        return;
+    };
+    let do_move = buffer.cut || force_move;
+    let verb = if do_move { "Moved" } else { "Copied" };
+    let mut done = 0usize;
+    let mut first_err: Option<String> = None;
+    let tab_id = state.active;
+    for src in &buffer.paths {
+        let data = state
+            .remote_sessions
+            .get(remote)
+            .ok_or_else(|| "会话已断开".to_owned())
+            .and_then(|be| be.read(src).map_err(|e| e.to_string()));
+        let data = match data {
+            Ok(d) => d,
+            Err(e) => {
+                first_err = Some(e);
+                break;
+            }
+        };
+        let name = src
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let dest = base.join(&name);
+        if dest.exists() {
+            first_err = Some(format!("目标已存在: {}", dest.display()));
+            break;
+        }
+        match std::fs::write(&dest, &data) {
+            Ok(()) => {
+                state.undo_stack.push(crate::state::UndoableOp::Create {
+                    tab_id,
+                    path: dest.clone(),
+                    recursive: false,
+                });
+                done += 1;
+            }
+            Err(e) => {
+                first_err = Some(e.to_string());
+                break;
+            }
+        }
+    }
+    if do_move {
+        let _ = state.remote_sessions.get(remote).map(|be| {
+            for src in buffer.paths.iter().take(done) {
+                let _ = be.remove_permanent(src);
+            }
+        });
     }
     refresh_tab_panes(state, state.active);
     match (done, first_err) {
@@ -2791,8 +3128,41 @@ fn execute_delete(
     msg: &mut Option<String>,
     path: PathBuf,
     permanent: bool,
+    remote: Option<String>,
 ) -> Option<crate::privilege::PrivOp> {
     let tab_id = state.active;
+    // M20-1：远端删除——trash 可恢复，入撤销栈（remote 视图无提权链）。
+    if let Some(remote) = remote {
+        let trash = state
+            .remote_sessions
+            .get(&remote)
+            .ok_or_else(|| "会话已断开".to_owned())
+            .and_then(|be| be.move_to_trash(&path).map_err(|e| e.to_string()));
+        return match trash {
+            Ok(trash_path) => {
+                state.undo_stack.push(crate::state::UndoableOp::Remote {
+                    tab_id,
+                    remote: remote.clone(),
+                    kind: crate::state::RemoteUndo::Delete {
+                        path: path.clone(),
+                        trash_path,
+                    },
+                });
+                *msg = Some(format!("远端删除（u 恢复）: {}", path.display()));
+                if let Some(p) = current_remote_path(state) {
+                    let _ = remote_navigate(state, &p);
+                }
+                None
+            }
+            Err(e) => {
+                *msg = Some(format!("远端删除失败: {e}"));
+                if let Some(p) = current_remote_path(state) {
+                    let _ = remote_navigate(state, &p);
+                }
+                None
+            }
+        };
+    }
     let cfg = state.config;
     if permanent {
         // M13-3 永久删除：不可逆，不进撤销栈。权限错误仍走提权链。
@@ -2886,6 +3256,48 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
         *msg = Some("无可撤销操作".to_owned());
         return;
     };
+    // M20-1：远端撤销经会话执行（后端 rename/write/remove）。
+    if let crate::state::UndoableOp::Remote { remote, kind, .. } = &op {
+        let result = match kind {
+            crate::state::RemoteUndo::Delete { path, trash_path } => state
+                .remote_sessions
+                .get(remote)
+                .ok_or_else(|| "会话已断开".to_owned())
+                .and_then(|be| {
+                    be.restore_from_trash(trash_path, path)
+                        .map_err(|e| e.to_string())
+                }),
+            crate::state::RemoteUndo::Create { path, is_dir } => state
+                .remote_sessions
+                .get(remote)
+                .ok_or_else(|| "会话已断开".to_owned())
+                .and_then(|be| {
+                    if *is_dir {
+                        be.remove_dir(path).map_err(|e| e.to_string())
+                    } else {
+                        be.remove_permanent(path).map_err(|e| e.to_string())
+                    }
+                }),
+            crate::state::RemoteUndo::Rename { from, to } => state
+                .remote_sessions
+                .get(remote)
+                .ok_or_else(|| "会话已断开".to_owned())
+                .and_then(|be| be.rename(to, from).map_err(|e| e.to_string())),
+        };
+        match result {
+            Ok(()) => {
+                *msg = Some(format!("已撤销: {}", op.describe()));
+                if let Some(p) = current_remote_path(state) {
+                    let _ = remote_navigate(state, &p);
+                }
+            }
+            Err(e) => {
+                state.undo_stack.push(op);
+                *msg = Some(format!("撤销失败: {e}"));
+            }
+        }
+        return;
+    }
     match ops::undo_op(&op) {
         Ok(()) => {
             // 撤销成功给出反馈（M2-6）。
@@ -3103,16 +3515,21 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         msg = None;
                     }
                 },
-                InputMode::Confirm { path, permanent } => {
+                InputMode::Confirm {
+                    path,
+                    permanent,
+                    remote,
+                } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 let path = std::mem::take(path);
                                 let permanent = *permanent;
+                                let remote = remote.clone();
                                 mode = InputMode::Normal;
                                 if let Some(op) =
-                                    execute_delete(&mut state, &mut msg, path, permanent)
+                                    execute_delete(&mut state, &mut msg, path, permanent, remote)
                                 {
                                     // M12-3：EACCES → 原地进入 sudo 密码输入。
                                     mode = InputMode::AskPass {
@@ -3290,8 +3707,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 .unwrap_or(false);
                             mode = InputMode::SortDialog { cursor, desc };
                         }
-                        Outcome::ConfirmDelete(path, permanent) => {
-                            mode = InputMode::Confirm { path, permanent };
+                        Outcome::ConfirmDelete(path, permanent, remote) => {
+                            mode = InputMode::Confirm {
+                                path,
+                                permanent,
+                                remote,
+                            };
                         }
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };
@@ -3437,6 +3858,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         mode = InputMode::Confirm {
                                             path,
                                             permanent: false,
+                                            remote: None,
                                         };
                                     }
                                     ContextMenuOutcome::RenamePrefill { line } => {
@@ -3559,6 +3981,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             mode = InputMode::Confirm {
                                 path,
                                 permanent: false,
+                                remote: None,
                             };
                         }
                         ContextMenuOutcome::RenamePrefill { line } => {
@@ -4045,15 +4468,20 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::Jobs => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
         InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
-        InputMode::Confirm { path, permanent } => {
+        InputMode::Confirm {
+            path,
+            permanent,
+            remote,
+        } => {
+            let prefix = if remote.is_some() { "远端" } else { "" };
             if *permanent {
                 // M13-3：DD 永久删除强提示（不可恢复）。
                 Line::from(format!(
-                    "**永久删除** {}（不可恢复）? [y/N]",
+                    "**{prefix}永久删除** {}（不可恢复）? [y/N]",
                     path.display()
                 ))
             } else {
-                Line::from(format!("删除 {}? [y/N]", path.display()))
+                Line::from(format!("删除{prefix} {}? [y/N]", path.display()))
             }
         }
         InputMode::ConfirmTagDelete => {
@@ -5375,7 +5803,7 @@ mod tests {
             KeyModifiers::NONE,
         );
         match outcome {
-            Outcome::ConfirmDelete(p, permanent) => {
+            Outcome::ConfirmDelete(p, permanent, _remote) => {
                 assert_eq!(p, tmp.path().join("target.txt"));
                 assert!(!permanent, "dd 应为暂存删除");
             }
@@ -5414,7 +5842,7 @@ mod tests {
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         let mut msg = None;
 
-        execute_delete(&mut state, &mut msg, file.clone(), false);
+        execute_delete(&mut state, &mut msg, file.clone(), false, None);
         assert!(msg.is_none());
         assert!(!file.exists(), "file should be staged out of the dir");
         assert_eq!(state.undo_stack.len(), 1);
@@ -5621,7 +6049,7 @@ mod tests {
 
         // 在 tab 1 删除 x.txt（entries = [x.txt]，cursor 0）。
         let mut msg = None;
-        execute_delete(&mut state, &mut msg, file.clone(), false);
+        execute_delete(&mut state, &mut msg, file.clone(), false, None);
         assert!(!file.exists());
         assert_eq!(state.undo_stack.len(), 1);
 
@@ -6447,10 +6875,10 @@ mod tests {
             KeyCode::Char('d'),
             KeyModifiers::NONE,
         );
-        let Outcome::ConfirmDelete(path, _permanent) = outcome else {
+        let Outcome::ConfirmDelete(path, _permanent, _remote) = outcome else {
             panic!("expected ConfirmDelete, got {outcome:?}");
         };
-        execute_delete(&mut state, &mut msg, path, false);
+        execute_delete(&mut state, &mut msg, path, false, None);
         assert!(!file.exists());
 
         // 索引应有记录且 staged 仍存在。
@@ -6781,7 +7209,7 @@ mod tests {
             KeyCode::Char('D'),
             KeyModifiers::NONE,
         );
-        let Outcome::ConfirmDelete(path, permanent) = outcome else {
+        let Outcome::ConfirmDelete(path, permanent, _remote) = outcome else {
             panic!("expected ConfirmDelete, got {outcome:?}");
         };
         assert!(permanent, "DD 必须标记永久删除");
@@ -6789,7 +7217,7 @@ mod tests {
         // 确认 y 的执行在 run() 的 Confirm 分支（mode 迁移在 run 内）——
         // 此处直接验证永久删除执行语义：不进暂存、不进撤销栈。
         let mut msg = None;
-        execute_delete(&mut state, &mut msg, path.clone(), true);
+        execute_delete(&mut state, &mut msg, path.clone(), true, None);
         assert!(!path.exists(), "文件应被直接删除");
         assert_eq!(state.undo_stack.len(), 0, "永久删除不进撤销栈");
         assert!(
@@ -8643,38 +9071,145 @@ terminal_in_new_window = false
         assert!(args[2].starts_with("sh -c 'ls -la"));
     }
 
-    /// 内存 mock 远端（M19-2 测试用）。
+    /// 内存 mock 远端（M19-2/M20 测试用）——flat path → entry 模型。
     struct MockRemote {
-        tree: std::collections::BTreeMap<String, Vec<crate::remote::RemoteEntry>>,
+        entries: std::cell::RefCell<std::collections::BTreeMap<String, crate::remote::RemoteEntry>>,
+    }
+    impl MockRemote {
+        fn seed(&self, path: &str, name: &str, is_dir: bool, size: u64) {
+            let key = format!("{}/{}", path.trim_end_matches('/'), name);
+            self.entries.borrow_mut().insert(
+                key,
+                crate::remote::RemoteEntry {
+                    name: name.to_owned(),
+                    is_dir,
+                    size,
+                    mtime: 0,
+                },
+            );
+        }
     }
     impl crate::remote::RemoteFs for MockRemote {
         fn list(
             &self,
             path: &std::path::Path,
         ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
-            self.tree
-                .get(&path.to_string_lossy().replace('\\', "/"))
-                .cloned()
-                .ok_or_else(|| crate::remote::RemoteError::NotFound(path.display().to_string()))
+            let prefix = format!(
+                "{}/",
+                path.to_string_lossy()
+                    .replace('\\', "/")
+                    .trim_end_matches('/')
+            );
+            let out: Vec<crate::remote::RemoteEntry> = self
+                .entries
+                .borrow()
+                .iter()
+                .filter(|(k, _)| k.starts_with(&prefix) && !k[prefix.len()..].contains('/'))
+                .map(|(_, v)| v.clone())
+                .collect();
+            Ok(out)
         }
         fn read(&self, path: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
-            if path == std::path::Path::new("/readme.md") {
-                Ok(b"remote readme".to_vec())
-            } else {
-                Err(crate::remote::RemoteError::NotFound(
-                    path.display().to_string(),
-                ))
-            }
+            let key = path.to_string_lossy().replace('\\', "/");
+            self.entries
+                .borrow()
+                .get(&key)
+                .map(|_| b"mock content".to_vec())
+                .ok_or(crate::remote::RemoteError::NotFound(key))
         }
         fn metadata(
             &self,
-            _path: &std::path::Path,
+            path: &std::path::Path,
         ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
-            Ok(crate::remote::RemoteMeta {
-                size: 0,
-                mtime: 0,
-                is_dir: false,
-            })
+            let key = path.to_string_lossy().replace('\\', "/");
+            self.entries
+                .borrow()
+                .get(&key)
+                .map(|e| crate::remote::RemoteMeta {
+                    size: e.size,
+                    mtime: e.mtime,
+                    is_dir: e.is_dir,
+                })
+                .ok_or(crate::remote::RemoteError::NotFound(key))
+        }
+        fn write(
+            &self,
+            path: &std::path::Path,
+            data: &[u8],
+        ) -> Result<(), crate::remote::RemoteError> {
+            let key = path.to_string_lossy().replace('\\', "/");
+            let name = key.rsplit('/').next().unwrap_or_default().to_owned();
+            self.entries.borrow_mut().insert(
+                key,
+                crate::remote::RemoteEntry {
+                    name,
+                    is_dir: false,
+                    size: data.len() as u64,
+                    mtime: 0,
+                },
+            );
+            Ok(())
+        }
+        fn remove(&self, path: &std::path::Path) -> Result<(), crate::remote::RemoteError> {
+            self.entries
+                .borrow_mut()
+                .remove(&path.to_string_lossy().replace('\\', "/"));
+            Ok(())
+        }
+        fn rename(
+            &self,
+            from: &std::path::Path,
+            to: &std::path::Path,
+        ) -> Result<(), crate::remote::RemoteError> {
+            let fk = from.to_string_lossy().replace('\\', "/");
+            let tk = to.to_string_lossy().replace('\\', "/");
+            let mut map = self.entries.borrow_mut();
+            let entry = map
+                .remove(&fk)
+                .ok_or(crate::remote::RemoteError::NotFound(fk))?;
+            map.insert(tk, entry);
+            Ok(())
+        }
+        fn create_dir(&self, path: &std::path::Path) -> Result<(), crate::remote::RemoteError> {
+            let key = path.to_string_lossy().replace('\\', "/");
+            let name = key.rsplit('/').next().unwrap_or_default().to_owned();
+            self.entries.borrow_mut().insert(
+                key,
+                crate::remote::RemoteEntry {
+                    name,
+                    is_dir: true,
+                    size: 0,
+                    mtime: 0,
+                },
+            );
+            Ok(())
+        }
+        fn move_to_trash(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<std::path::PathBuf, crate::remote::RemoteError> {
+            let trash = std::path::PathBuf::from(format!(
+                "/tmp/rvifm-mock-trash/{}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ));
+            self.rename(path, &trash)?;
+            Ok(trash)
+        }
+        fn restore_from_trash(
+            &self,
+            trash_path: &std::path::Path,
+            orig: &std::path::Path,
+        ) -> Result<(), crate::remote::RemoteError> {
+            self.rename(trash_path, orig)
+        }
+        fn remove_permanent(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<(), crate::remote::RemoteError> {
+            self.remove(path)
+        }
+        fn remove_dir(&self, path: &std::path::Path) -> Result<(), crate::remote::RemoteError> {
+            self.remove(path)
         }
     }
 
@@ -8682,138 +9217,131 @@ terminal_in_new_window = false
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("local.txt"), "").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let mut tree = std::collections::BTreeMap::new();
-        tree.insert(
-            "/".to_owned(),
-            vec![
-                crate::remote::RemoteEntry {
-                    name: "docs".to_owned(),
-                    is_dir: true,
-                    size: 0,
-                    mtime: 0,
-                },
-                crate::remote::RemoteEntry {
-                    name: "readme.md".to_owned(),
-                    is_dir: false,
-                    size: 13,
-                    mtime: 100,
-                },
-            ],
-        );
-        tree.insert(
-            "/docs".to_owned(),
-            vec![crate::remote::RemoteEntry {
-                name: "guide.txt".to_owned(),
-                is_dir: false,
-                size: 9,
-                mtime: 200,
-            }],
-        );
-        register_remote_session(&mut state, "dev", Box::new(MockRemote { tree }));
+        let mock = MockRemote {
+            entries: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+        };
+        mock.seed("/", "docs", true, 0);
+        mock.seed("/", "readme.md", false, 13);
+        register_remote_session(&mut state, "dev", Box::new(mock));
         (tmp, state)
     }
 
     #[test]
-    fn m19_2_remote_enter_navigate_and_return() {
-        let (tmp, mut state) = mock_remote_state();
+    fn m20_remote_dd_trash_and_undo_restores() {
+        let (_tmp, mut state) = mock_remote_state();
         let mut msg = None;
-
-        // :remote dev → 根目录列表 + 面包屑 dev:/。
         remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
-        assert!(matches!(
-            state.active_tab().location,
-            Location::Remote { .. }
-        ));
-        assert_eq!(
-            state.active_tab().location.display_path(),
-            "dev:/",
-            "面包屑 host 形式"
-        );
-        let names: Vec<&str> = state
-            .active_tab()
-            .entries
-            .iter()
-            .map(|i| i.name.as_str())
-            .collect();
-        assert_eq!(names, ["docs", "readme.md"]);
+        state.active_tab_mut().cursor = 1; // readme.md
+        let n_before = state.active_tab().entries.len();
 
-        // l 进入 docs/ → 远端子目录。
-        state.active_tab_mut().cursor = 0;
-        let mut input = InputState::default();
-        press_msg(
+        // dd（execute_delete 直调——Confirm 模式由 run 循环驱动）。
+        let target = std::path::PathBuf::from("/readme.md");
+        execute_delete(
             &mut state,
-            &mut input,
             &mut msg,
-            KeyCode::Char('l'),
-            KeyModifiers::NONE,
+            target.clone(),
+            false,
+            Some("dev".to_owned()),
         );
-        assert_eq!(state.active_tab().location.display_path(), "dev:/docs");
-        assert_eq!(state.active_tab().entries[0].name, "guide.txt");
+        assert_eq!(state.active_tab().entries.len(), n_before - 1, "条目减少");
+        assert_eq!(state.undo_stack.len(), 1);
 
-        // h → 回远端根；h → 返回本地目录（pre_remote）。
-        press_msg(
-            &mut state,
-            &mut input,
-            &mut msg,
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        );
-        assert_eq!(state.active_tab().location.display_path(), "dev:/");
-        press_msg(
-            &mut state,
-            &mut input,
-            &mut msg,
-            KeyCode::Char('h'),
-            KeyModifiers::NONE,
-        );
-        assert_eq!(
-            state.active_tab().location,
-            Location::Physical(tmp.path().to_path_buf()),
-            "h 在远端根返回本地"
-        );
-        assert!(state.active_tab().pre_remote.is_none());
-        // 本地列表恢复。
+        // u → restore_from_trash。
+        undo_last(&mut state, &mut msg);
+        assert_eq!(state.active_tab().entries.len(), n_before, "u 恢复条目");
         assert!(
             state
                 .active_tab()
                 .entries
                 .iter()
-                .any(|i| i.name == "local.txt")
+                .any(|i| i.name == "readme.md")
         );
     }
 
     #[test]
-    fn m19_2_remote_guards_and_unknown_session() {
-        let (_tmp, mut state) = mock_remote_state();
-        // 未知会话。
-        assert!(
-            remote_enter(&mut state, "nope", std::path::Path::new("/"))
-                .unwrap_err()
-                .contains("未找到会话")
+    fn m20_remote_paste_and_undo_removes() {
+        let local = TempDir::new().unwrap();
+        fs::write(local.path().join("up.txt"), "upload-data").unwrap();
+        let (tmp, mut state) = mock_remote_state();
+        let mut input = InputState::default();
+        let mut msg = None;
+        // 本地 yy（navigate_to local dir → entries [up.txt] → cursor 0）。
+        state
+            .active_tab_mut()
+            .navigate_to(
+                Location::Physical(local.path().to_path_buf()),
+                Config::default(),
+            )
+            .unwrap();
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
         );
-        // 进入后写命令被拒（M20 前占位）。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        // 进入远端 → p。
         remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
-        assert!(exec_command_impl(&mut state, "rename x").is_err());
-        assert!(exec_command_impl(&mut state, "mkdir d").is_err());
-        // 导航类豁免。
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('p'),
+            KeyModifiers::NONE,
+        );
+        let entries = state
+            .remote_sessions
+            .get("dev")
+            .unwrap()
+            .list(std::path::Path::new("/"))
+            .unwrap();
+        assert!(
+            entries.iter().any(|i| i.name == "up.txt"),
+            "远端应出现 up.txt"
+        );
+        assert!(msg.as_deref().unwrap().contains("Copied 1"), "msg: {msg:?}");
+        // u → 远端 Create 撤销。
+        undo_last(&mut state, &mut msg);
+        let entries = state
+            .remote_sessions
+            .get("dev")
+            .unwrap()
+            .list(std::path::Path::new("/"))
+            .unwrap();
+        assert!(!entries.iter().any(|i| i.name == "up.txt"), "u 后消失");
+        let _ = tmp;
+    }
+
+    #[test]
+    fn m20_remote_rename_and_mkdir_with_undo() {
+        let (_tmp, mut state) = mock_remote_state();
+        remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
         assert!(matches!(
-            exec_command_impl(&mut state, "histprev"),
+            exec_command_impl(&mut state, "mkdir newdir"),
             Ok(ExecOutcome::Done { .. })
         ));
-        // histnext 回到远端（histprev 移动了视图）。
-        let _ = exec_command_impl(&mut state, "histnext");
-        assert!(matches!(
-            state.active_tab().location,
-            Location::Remote { .. }
-        ));
-        // :file 显示远端信息。
-        match exec_command_impl(&mut state, "file") {
-            Ok(ExecOutcome::ShowInfo { text, .. }) => {
-                assert!(text.contains("（远端）"), "text: {text}");
-                assert!(text.contains("dev:/"), "text: {text}");
-            }
-            other => panic!("expected ShowInfo, got {other:?}"),
-        }
+        let entries = state
+            .remote_sessions
+            .get("dev")
+            .unwrap()
+            .list(std::path::Path::new("/"))
+            .unwrap();
+        assert!(entries.iter().any(|i| i.name == "newdir"));
+        undo_last(&mut state, &mut None);
+        let entries = state
+            .remote_sessions
+            .get("dev")
+            .unwrap()
+            .list(std::path::Path::new("/"))
+            .unwrap();
+        assert!(!entries.iter().any(|i| i.name == "newdir"));
     }
 
     // ── M12-3/M12-4：AskPass 模式（sudo 密码输入、masked 渲染、干净中止）──

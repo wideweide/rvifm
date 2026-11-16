@@ -55,6 +55,14 @@ impl Location {
             Location::Remote { path, .. } => path,
         }
     }
+
+    /// M20-1：远端会话名（非远端位置返回 None）。
+    pub fn remote_name(&self) -> Option<String> {
+        match self {
+            Location::Remote { remote, .. } => Some(remote.clone()),
+            _ => None,
+        }
+    }
 }
 
 /// 单个目录项。M1-4 起携带大小与权限摘要。

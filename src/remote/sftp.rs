@@ -76,6 +76,37 @@ enum SftpCmd {
         path: String,
         resp: std_mpsc::Sender<Result<RemoteMeta, RemoteError>>,
     },
+    Write {
+        path: String,
+        data: Vec<u8>,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
+    RemoveFile {
+        path: String,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
+    RemoveDir {
+        path: String,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
+    Rename {
+        from: String,
+        to: String,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
+    CreateDir {
+        path: String,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
+    MoveToTrash {
+        path: String,
+        resp: std_mpsc::Sender<Result<String, RemoteError>>,
+    },
+    RestoreFromTrash {
+        trash_path: String,
+        orig: String,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
 }
 
 /// SFTP 后端（实现 [`RemoteFs`]）。Clone 安全（内部为 mpsc Sender）。
@@ -150,6 +181,54 @@ impl RemoteFs for SftpBackend {
     fn metadata(&self, path: &Path) -> Result<RemoteMeta, RemoteError> {
         let path = path_to_string(path);
         self.call(|resp| SftpCmd::Metadata { path, resp })
+    }
+
+    fn write(&self, path: &Path, data: &[u8]) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        let data = data.to_vec();
+        self.call(|resp| SftpCmd::Write { path, data, resp })
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::RemoveFile { path, resp })
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), RemoteError> {
+        let from = path_to_string(from);
+        let to = path_to_string(to);
+        self.call(|resp| SftpCmd::Rename { from, to, resp })
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::CreateDir { path, resp })
+    }
+
+    fn move_to_trash(&self, path: &Path) -> Result<PathBuf, RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::MoveToTrash { path, resp })
+            .map(PathBuf::from)
+    }
+
+    fn restore_from_trash(&self, trash_path: &Path, orig: &Path) -> Result<(), RemoteError> {
+        let trash_path = path_to_string(trash_path);
+        let orig = path_to_string(orig);
+        self.call(|resp| SftpCmd::RestoreFromTrash {
+            trash_path,
+            orig,
+            resp,
+        })
+    }
+
+    fn remove_permanent(&self, path: &Path) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::RemoveFile { path, resp })
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::RemoveDir { path, resp })
     }
 }
 
@@ -246,6 +325,110 @@ async fn handle_cmd(session: &SshSession, cmd: SftpCmd) {
                         is_dir: m.is_dir(),
                     })
                 });
+            let _ = resp.send(r);
+        }
+        SftpCmd::Write { path, data, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, async {
+                let mut file = session.sftp.create(&path).await.map_err(sftp_err)?;
+                use tokio::io::AsyncWriteExt;
+                file.write_all(&data)
+                    .await
+                    .map_err(|e| RemoteError::Other(format!("write io: {}", e)))?;
+                file.shutdown()
+                    .await
+                    .map_err(|e| RemoteError::Other(format!("close io: {}", e)))?;
+                Ok::<(), RemoteError>(())
+            })
+            .await
+            .map_err(|_| RemoteError::Timeout("write timeout".to_owned()))
+            .and_then(|r| r);
+            let _ = resp.send(r);
+        }
+        SftpCmd::RemoveFile { path, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, session.sftp.remove_file(&path))
+                .await
+                .map_err(|_| RemoteError::Timeout("remove timeout".to_owned()))
+                .and_then(|r| r.map_err(sftp_err));
+            let _ = resp.send(r);
+        }
+        SftpCmd::RemoveDir { path, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, session.sftp.remove_dir(&path))
+                .await
+                .map_err(|_| RemoteError::Timeout("remove_dir timeout".to_owned()))
+                .and_then(|r| r.map_err(sftp_err));
+            let _ = resp.send(r);
+        }
+        SftpCmd::Rename { from, to, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, session.sftp.rename(&from, &to))
+                .await
+                .map_err(|_| RemoteError::Timeout("rename timeout".to_owned()))
+                .and_then(|r| r.map_err(sftp_err));
+            let _ = resp.send(r);
+        }
+        SftpCmd::CreateDir { path, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, session.sftp.create_dir(&path))
+                .await
+                .map_err(|_| RemoteError::Timeout("mkdir timeout".to_owned()))
+                .and_then(|r| r.map_err(sftp_err));
+            let _ = resp.send(r);
+        }
+        SftpCmd::MoveToTrash { path, resp } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, async {
+                const TRASH_DIR: &str = "/tmp/rvifm-trash";
+                let _ = session.sftp.create_dir(TRASH_DIR.to_owned()).await;
+                let base = path.rsplit('/').next().unwrap_or("file");
+                for i in 0..1000u32 {
+                    let name = if i == 0 {
+                        format!("{}/{}", TRASH_DIR, base)
+                    } else {
+                        format!("{}/{}.rvt{}", TRASH_DIR, base, i)
+                    };
+                    if session
+                        .sftp
+                        .try_exists(name.clone())
+                        .await
+                        .map_err(sftp_err)?
+                    {
+                        continue;
+                    }
+                    session
+                        .sftp
+                        .rename(path.clone(), name.clone())
+                        .await
+                        .map_err(sftp_err)?;
+                    return Ok(name);
+                }
+                Err(RemoteError::Other("trash name collision".to_owned()))
+            })
+            .await
+            .map_err(|_| RemoteError::Timeout("trash timeout".to_owned()))
+            .and_then(|r| r);
+            let _ = resp.send(r);
+        }
+        SftpCmd::RestoreFromTrash {
+            trash_path,
+            orig,
+            resp,
+        } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, async {
+                if session
+                    .sftp
+                    .try_exists(orig.to_owned())
+                    .await
+                    .map_err(sftp_err)?
+                {
+                    return Err(RemoteError::Other(format!("undo target exists: {}", orig)));
+                }
+                session
+                    .sftp
+                    .rename(trash_path, orig)
+                    .await
+                    .map_err(sftp_err)?;
+                Ok(())
+            })
+            .await
+            .map_err(|_| RemoteError::Timeout("restore timeout".to_owned()))
+            .and_then(|r| r);
             let _ = resp.send(r);
         }
     }
@@ -422,23 +605,6 @@ mod tests {
             }
             other => panic!("expected classified error, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn write_ops_unimplemented_until_m20() {
-        if !sshd_available() {
-            eprintln!("skip: 127.0.0.1:22 不可达");
-            return;
-        }
-        let be = backend();
-        assert_eq!(
-            be.write(Path::new("/tmp/rvifm-m19"), b"x"),
-            Err(RemoteError::Unimplemented("write"))
-        );
-        assert_eq!(
-            be.remove(Path::new("/tmp/rvifm-m19")),
-            Err(RemoteError::Unimplemented("remove"))
-        );
     }
 
     #[test]

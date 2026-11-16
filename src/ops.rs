@@ -337,6 +337,9 @@ pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<Un
 /// 逆操作源已不存在时按成功处理（幂等，避免过期操作卡住撤销栈）。
 pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
     match op {
+        // M20-1：远端撤销由 app 层经会话执行（undo_last 分派），不经此函数。
+        UndoableOp::Remote { .. } => Ok(()),
+
         UndoableOp::Delete { path, staged, .. } => {
             // 防覆盖：原位已被占用时拒绝恢复（ACCEPTANCE §4“目标已存在有错误提示”）。
             if path.exists() {

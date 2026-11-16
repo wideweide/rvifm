@@ -36,6 +36,23 @@ pub enum UndoableOp {
         path: PathBuf,
         recursive: bool,
     },
+    /// M20-1：远端写操作（`remote` 为会话名；undo 经远端会话执行）。
+    Remote {
+        tab_id: usize,
+        remote: String,
+        kind: RemoteUndo,
+    },
+}
+
+/// M20-1：远端撤销的种类（路径均为远端绝对路径）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteUndo {
+    /// dd 可恢复删除：undo = trash 路径移回原位。
+    Delete { path: PathBuf, trash_path: PathBuf },
+    /// 新建（p 粘贴/:mkdir/:touch/:copy）：undo = 远端永久删除。
+    Create { path: PathBuf, is_dir: bool },
+    /// 重命名/移动：undo = 反向 rename。
+    Rename { from: PathBuf, to: PathBuf },
 }
 
 #[allow(dead_code)] // 消费方：M2-2 起的撤销执行路径
@@ -46,7 +63,8 @@ impl UndoableOp {
             UndoableOp::Delete { tab_id, .. }
             | UndoableOp::Rename { tab_id, .. }
             | UndoableOp::Move { tab_id, .. }
-            | UndoableOp::Create { tab_id, .. } => *tab_id,
+            | UndoableOp::Create { tab_id, .. }
+            | UndoableOp::Remote { tab_id, .. } => *tab_id,
         }
     }
 
@@ -55,6 +73,10 @@ impl UndoableOp {
         match self {
             UndoableOp::Delete { path, .. } | UndoableOp::Create { path, .. } => path,
             UndoableOp::Rename { from, .. } | UndoableOp::Move { from, .. } => from,
+            UndoableOp::Remote { kind, .. } => match kind {
+                RemoteUndo::Delete { path, .. } | RemoteUndo::Create { path, .. } => path,
+                RemoteUndo::Rename { from, .. } => from,
+            },
         }
     }
 
@@ -69,6 +91,21 @@ impl UndoableOp {
                 format!("移动 {} -> {}", from.display(), to.display())
             }
             UndoableOp::Create { path, .. } => format!("新建 {}", path.display()),
+            UndoableOp::Remote { remote, kind, .. } => match kind {
+                RemoteUndo::Delete { path, .. } => {
+                    format!("远端删除 [{remote}] {}", path.display())
+                }
+                RemoteUndo::Create { path, .. } => {
+                    format!("远端新建 [{remote}] {}", path.display())
+                }
+                RemoteUndo::Rename { from, to } => {
+                    format!(
+                        "远端重命名 [{remote}] {} -> {}",
+                        from.display(),
+                        to.display()
+                    )
+                }
+            },
         }
     }
 }
@@ -135,6 +172,15 @@ pub struct JobUpdate {
 pub struct YankBuffer {
     pub paths: Vec<PathBuf>,
     pub cut: bool,
+    /// M20-3：来源（Local = 本地路径；Remote(会话名) = 远端路径）。
+    pub source: YankSource,
+}
+
+/// M20-3：yank 来源（跨 VFS 粘贴方向选择）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum YankSource {
+    Local,
+    Remote(String),
 }
 
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。

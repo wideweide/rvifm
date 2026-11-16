@@ -4,7 +4,7 @@
 //! 结论实现（M19-3b），写操作由 M20 填充（本阶段默认"未实现"）。
 //! 不引入具体协议依赖。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 远端操作错误（M19-1：可分类，UI 据此给出针对性提示）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +94,30 @@ pub trait RemoteFs {
     fn create_dir(&self, path: &Path) -> Result<(), RemoteError> {
         let _ = path;
         Err(RemoteError::Unimplemented("create_dir"))
+    }
+
+    /// M20-1：可恢复删除——rename 至后端 trash 目录，返回 trash 路径。
+    fn move_to_trash(&self, path: &Path) -> Result<PathBuf, RemoteError> {
+        let _ = path;
+        Err(RemoteError::Unimplemented("move_to_trash"))
+    }
+
+    /// M20-1：从 trash 恢复（撤销删除）。
+    fn restore_from_trash(&self, trash_path: &Path, orig: &Path) -> Result<(), RemoteError> {
+        let _ = (trash_path, orig);
+        Err(RemoteError::Unimplemented("restore_from_trash"))
+    }
+
+    /// M20-1：永久删除（Create 撤销用；绕过 trash）。
+    fn remove_permanent(&self, path: &Path) -> Result<(), RemoteError> {
+        let _ = path;
+        Err(RemoteError::Unimplemented("remove_permanent"))
+    }
+
+    /// M20-1：删除空目录（Create 目录撤销用；绕过 trash）。
+    fn remove_dir(&self, path: &Path) -> Result<(), RemoteError> {
+        let _ = path;
+        Err(RemoteError::Unimplemented("remove_dir"))
     }
 }
 
