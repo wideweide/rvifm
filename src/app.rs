@@ -10909,14 +10909,20 @@ terminal_in_new_window = false
             "空目录占位: {pane_text}"
         );
 
-        // 非 UTF-8 名（unix；Windows 文件名为 WTF-16 无法构造非法 UTF-8 名，
-        // lossy 转换路径由 build_tree_entries 内 to_string_lossy 覆盖）。
+        // 非 UTF-8 文件名目录（unix；Windows 文件名为 WTF-16 无法构造非法
+        // UTF-8 名）——SPEC 语义：目录**内含**非 UTF-8 名文件时 tree 正常
+        // 渲染不 panic（lossy 显示替换符）。光标进入非 UTF-8 名目录不可达
+        // （FileItem.name 为 lossy 字符串，无法还原原始字节路径）。
         #[cfg(unix)]
         {
             use std::os::unix::ffi::OsStrExt;
-            let bad = tmp.path().join(std::ffi::OsStr::from_bytes(b"bad\xff\xff"));
-            fs::create_dir(&bad).unwrap();
-            fs::write(bad.join("inner.txt"), "").unwrap();
+            let misc = tmp.path().join("misc");
+            fs::create_dir(&misc).unwrap();
+            fs::write(
+                misc.join(std::ffi::OsStr::from_bytes(b"n\xff\xff.txt")),
+                "x",
+            )
+            .unwrap();
             // fixture 在 state 创建后生成：先刷新条目再定位（M12-2 教训：
             // 此路径仅 CI Linux 执行，Windows 编译不到）。
             state.active_tab_mut().refresh(Config::default()).unwrap();
@@ -10925,7 +10931,7 @@ terminal_in_new_window = false
                 .active_tab()
                 .entries
                 .iter()
-                .position(|i| i.is_dir && i.name.contains("bad"))
+                .position(|i| i.is_dir && i.name == "misc")
                 .unwrap();
             state.active_tab_mut().cursor = idx;
             state.active_tab_mut().view_mode = true;
@@ -10940,9 +10946,10 @@ terminal_in_new_window = false
                         .collect::<String>()
                 })
                 .collect();
+            assert!(pane_text.contains("misc"), "目录 tree 标题可见");
             assert!(
-                pane_text.contains("inner.txt"),
-                "lossy 目录名下子条目正常渲染: {pane_text}"
+                pane_text.contains('\u{FFFD}'),
+                "非 UTF-8 名 lossy 渲染（替换符）: {pane_text}"
             );
         }
     }
