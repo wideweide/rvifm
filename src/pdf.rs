@@ -207,49 +207,51 @@ pub mod visual {
     }
 }
 
+/// 程序化生成最小有效 PDF（含文本层），xref 偏移精确计算（M11-10）。
+/// 测试 fixture（app.rs M21-F7 验收测试复用）。
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write as _;
-    use tempfile::TempDir;
-
-    /// 程序化生成最小有效 PDF（含文本层），xref 偏移精确计算。
-    fn make_pdf(dir: &Path, name: &str, text: &str) -> std::path::PathBuf {
-        let objects = [
+pub(crate) fn make_pdf(dir: &Path, name: &str, text: &str) -> std::path::PathBuf {
+    let objects = [
             b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_vec(),
             format!("<< /Length {} >>\nstream\nBT /F1 24 Tf 72 700 Td ({text}) Tj ET\nendstream", format!("BT /F1 24 Tf 72 700 Td ({text}) Tj ET\n").len()).into_bytes(),
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
         ];
-        let mut buf: Vec<u8> = b"%PDF-1.4\n".to_vec();
-        let mut offsets = Vec::new();
-        for (i, body) in objects.iter().enumerate() {
-            offsets.push(buf.len());
-            buf.extend(format!("{} 0 obj\n", i + 1).bytes());
-            buf.extend_from_slice(body);
-            buf.extend_from_slice(b"\nendobj\n");
-        }
-        let xref_at = buf.len();
-        buf.extend(format!("xref\n0 {}\n", objects.len() + 1).bytes());
-        buf.extend_from_slice(b"0000000000 65535 f \n");
-        for off in &offsets {
-            buf.extend(format!("{off:010} 00000 n \n").bytes());
-        }
-        buf.extend(
-            format!(
-                "trailer\n<< /Root 1 0 R /Size {} >>\nstartxref\nSTARTXREF_AT\n%%%%EOF\n",
-                objects.len() + 1
-            )
-            .bytes(),
-        );
-        // startxref 偏移回填。
-        let content = String::from_utf8_lossy(&buf).into_owned();
-        let filled = content.replacen("STARTXREF_AT", &format!("{xref_at}"), 1);
-        let p = dir.join(name);
-        std::fs::write(&p, filled).unwrap();
-        p
+    let mut buf: Vec<u8> = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objects.iter().enumerate() {
+        offsets.push(buf.len());
+        buf.extend(format!("{} 0 obj\n", i + 1).bytes());
+        buf.extend_from_slice(body);
+        buf.extend_from_slice(b"\nendobj\n");
     }
+    let xref_at = buf.len();
+    buf.extend(format!("xref\n0 {}\n", objects.len() + 1).bytes());
+    buf.extend_from_slice(b"0000000000 65535 f \n");
+    for off in &offsets {
+        buf.extend(format!("{off:010} 00000 n \n").bytes());
+    }
+    buf.extend(
+        format!(
+            "trailer\n<< /Root 1 0 R /Size {} >>\nstartxref\nSTARTXREF_AT\n%%%%EOF\n",
+            objects.len() + 1
+        )
+        .bytes(),
+    );
+    // startxref 偏移回填。
+    let content = String::from_utf8_lossy(&buf).into_owned();
+    let filled = content.replacen("STARTXREF_AT", &format!("{xref_at}"), 1);
+    let p = dir.join(name);
+    std::fs::write(&p, filled).unwrap();
+    p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+    use tempfile::TempDir;
 
     #[test]
     fn is_pdf_file_matches_extension() {

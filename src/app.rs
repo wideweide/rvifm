@@ -4907,6 +4907,30 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             .border_style(pane_border_style(true));
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
+        // M21-F7：PDF/Office 分流——走共享 PreviewRenderer（pdf-inspector
+        // 文本提取先行 / office_oxide 提取），失败按类型提示；不落文本读取
+        // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。
+        match crate::preview::preview_kind(&path) {
+            crate::preview::PreviewKind::Pdf | crate::preview::PreviewKind::Office => {
+                let label = if matches!(
+                    crate::preview::preview_kind(&path),
+                    crate::preview::PreviewKind::Pdf
+                ) {
+                    "PDF 预览"
+                } else {
+                    "Office 预览"
+                };
+                let pane = ratatui::widgets::Block::bordered()
+                    .title(format!("{shown} · {label}"))
+                    .border_style(pane_border_style(true));
+                let inner = pane.inner(area);
+                frame.render_widget(pane, area);
+                let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                frame.render_widget(preview.into_paragraph(), inner);
+                return;
+            }
+            _ => {}
+        }
         // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
         let Ok(text) = std::fs::read_to_string(&path) else {
             frame.render_widget(Paragraph::new("无法读取（非 UTF-8 或已删除）"), inner);
@@ -10387,6 +10411,117 @@ terminal_in_new_window = false
             assert!(
                 pane_text.contains("inner.txt"),
                 "lossy 目录名下子条目正常渲染: {pane_text}"
+            );
+        }
+    }
+
+    #[test]
+    fn m21f7_pdf_office_preview_routed_not_text_path() {
+        // ACCEPTANCE §20 M21-F7：普通 pdf/docx 预览不出现"非UTF-8或已删除"；
+        // 损坏 pdf/docx 给出类型化错误提示（PDF 文本提取失败 / Office 文档
+        // 解析失败），不 panic（M21-F7 走共享 PreviewRenderer 分流）。
+        let tmp = TempDir::new().unwrap();
+        let good_pdf = crate::pdf::make_pdf(tmp.path(), "doc.pdf", "HELLO");
+        let _ = good_pdf;
+        fs::write(tmp.path().join("bad.pdf"), b"%PDF-1.4 junk not a pdf").unwrap();
+        crate::office::make_doc(tmp.path(), "ok.docx", "# 标题\n\n正文内容。");
+        fs::write(tmp.path().join("bad.docx"), b"PK junk corrupt zip").unwrap();
+
+        let names = ["doc.pdf", "bad.pdf", "ok.docx", "bad.docx"];
+        for name in names {
+            let mut state =
+                AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.name == name)
+                .unwrap_or_else(|| panic!("{name} 在列表中"));
+            state.active_tab_mut().cursor = idx;
+            state.active_tab_mut().view_mode = true;
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, &state, &InputMode::Normal, None))
+                .unwrap();
+            let buf = terminal.backend().buffer().clone();
+            let pane_text: String = (0..24u16)
+                .map(|y| {
+                    (60..120u16)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            assert!(
+                !pane_text.contains("无法读取"),
+                "{name} 不应落文本读取路径: {pane_text}"
+            );
+        }
+
+        // 损坏文件：类型化错误提示（正常文件：提取成功渲染内容）。
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        for (name, expect) in [
+            ("bad.pdf", "PDF 文本提取失败"),
+            ("bad.docx", "Office 文档解析失败"),
+        ] {
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.name == name)
+                .unwrap();
+            state.active_tab_mut().cursor = idx;
+            state.active_tab_mut().view_mode = true;
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, &state, &InputMode::Normal, None))
+                .unwrap();
+            let buf = terminal.backend().buffer().clone();
+            let pane_text: String = (0..24u16)
+                .map(|y| {
+                    (60..120u16)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            assert!(
+                pane_text
+                    .replace(' ', "")
+                    .contains(&expect.replace(' ', "")),
+                "{name} 应提示类型化错误 [{expect}]: {pane_text}"
+            );
+        }
+
+        // 正常 pdf/office：提取成功（含正文/文本层内容），无错误提示。
+        state.active_tab_mut().cursor = 0; // 排序后 doc.pdf/bad.pdf/ok.docx/bad.docx 顺序不定——按名定位
+        for (name, expect) in [("doc.pdf", "HELLO"), ("ok.docx", "正文内容")] {
+            let idx = state
+                .active_tab()
+                .entries
+                .iter()
+                .position(|i| i.name == name)
+                .unwrap();
+            state.active_tab_mut().cursor = idx;
+            state.active_tab_mut().view_mode = true;
+            let backend = ratatui::backend::TestBackend::new(120, 24);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, &state, &InputMode::Normal, None))
+                .unwrap();
+            let buf = terminal.backend().buffer().clone();
+            let pane_text: String = (0..24u16)
+                .map(|y| {
+                    (60..120u16)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            assert!(
+                pane_text
+                    .replace(' ', "")
+                    .contains(&expect.replace(' ', "")),
+                "{name} 提取内容应可见 [{expect}]: {pane_text}"
             );
         }
     }

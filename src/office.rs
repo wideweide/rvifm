@@ -40,21 +40,23 @@ pub fn extract_preview_text(path: &Path, max_lines: usize) -> std::io::Result<St
     Ok(kept.join("\n"))
 }
 
+/// 程序化生成最小 Office fixture（office_oxide 自身 API，无二进制 fixture）。
+/// 测试专用（app.rs M21-F7 验收测试复用）。
+#[cfg(test)]
+pub(crate) fn make_doc(dir: &Path, name: &str, md: &str) -> std::path::PathBuf {
+    let fmt = match name.rsplit('.').next().unwrap() {
+        "xlsx" => office_oxide::format::DocumentFormat::Xlsx,
+        "pptx" => office_oxide::format::DocumentFormat::Pptx,
+        _ => office_oxide::format::DocumentFormat::Docx,
+    };
+    office_oxide::create::create_from_markdown(md, fmt, dir.join(name)).unwrap();
+    dir.join(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    /// 程序化生成最小 Office fixture（office_oxide 自身 API，无二进制 fixture）。
-    fn make_doc(dir: &Path, name: &str, md: &str) -> std::path::PathBuf {
-        let fmt = match name.rsplit('.').next().unwrap() {
-            "xlsx" => office_oxide::format::DocumentFormat::Xlsx,
-            "pptx" => office_oxide::format::DocumentFormat::Pptx,
-            _ => office_oxide::format::DocumentFormat::Docx,
-        };
-        office_oxide::create::create_from_markdown(md, fmt, dir.join(name)).unwrap();
-        dir.join(name)
-    }
 
     #[test]
     fn is_office_file_matches_extension_case_insensitive() {

@@ -87,7 +87,7 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
         return match crate::office::extract_preview_text(path, max_lines) {
             Ok(body) => text_preview(&body),
             Err(e) => text_preview(&format!(
-                "[Office 预览失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+                "[Office 文档解析失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
                 path.display()
             )),
         };
@@ -106,7 +106,7 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
                 path.display()
             )),
             crate::pdf::PdfPreview::Unavailable(e) => text_preview(&format!(
-                "[PDF 预览失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+                "[PDF 文本提取失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
                 path.display()
             )),
         };
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(preview_kind(&p), PreviewKind::Office);
         let preview = render_preview(&p, 10);
         let texts = preview.line_texts();
-        assert!(texts.iter().any(|t| t.contains("Office 预览失败")));
+        assert!(texts.iter().any(|t| t.contains("Office 文档解析失败")));
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod tests {
         fs::write(&p, b"junk bytes").unwrap();
         let preview = render_preview(&p, 10);
         let texts = preview.line_texts();
-        assert!(texts.iter().any(|t| t.contains("PDF 预览失败")));
+        assert!(texts.iter().any(|t| t.contains("PDF 文本提取失败")));
         // 不 panic 且提示系统 opener 回退。
         assert!(texts.iter().any(|t| t.contains("系统默认程序")));
     }
