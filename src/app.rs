@@ -10917,6 +10917,9 @@ terminal_in_new_window = false
             let bad = tmp.path().join(std::ffi::OsStr::from_bytes(b"bad\xff\xff"));
             fs::create_dir(&bad).unwrap();
             fs::write(bad.join("inner.txt"), "").unwrap();
+            // fixture 在 state 创建后生成：先刷新条目再定位（M12-2 教训：
+            // 此路径仅 CI Linux 执行，Windows 编译不到）。
+            state.active_tab_mut().refresh(Config::default()).unwrap();
             state.active_tab_mut().view_mode = false;
             let idx = state
                 .active_tab()
@@ -11565,8 +11568,11 @@ terminal_in_new_window = false
             Location::Physical(tmp.path().join("sub")),
             ":mk 进入新目录"
         );
-        // 回上级再试已存在目录：Err 且位置不动（快照比较，路径形式无关）。
-        exec_command_impl(&mut state, "cd ..").unwrap();
+        // 回上级再试已存在目录：Err 且位置不动。:cd 相对路径相对进程 CWD
+        // （M12-2 教训：Linux CI 上此断言路径才执行）——用绝对路径避免
+        // base 漂移到 CWD 导致 mk 落到仓库根。
+        let up = format!("cd {}", tmp.path().display());
+        exec_command_impl(&mut state, &up).unwrap();
         let before = state.active_tab().location.clone();
         assert!(
             exec_command_impl(&mut state, "mk sub").is_err(),
