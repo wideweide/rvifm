@@ -502,3 +502,9 @@ rvifm record  → 静默记录访问
 - **ssh config 解析**：裸 Host 行收集别名；通配 `*`/`?` 跳过；Match 块内的 Host 跳过（简化：Match 状态到下一个指令重置）。
 - **toml::Value::as_u64 不存在**（toml 1.x）——整数用 `as_integer()`。
 - **[ui] 嵌套教训复用**：remotes.toml 用嵌套表解析（每 [name] 一节），与 M18-4 的 UiConfig 同套路。
+
+### 2026-11-17 — M20-2/3/4 实现说明
+
+- **DD 远端分流**：DD（永久删除）在远端视图绕过 trash，直接 remove_permanent/remove_dir；dd 走 move_to_trash 可恢复。execute_delete 内按 permanent 标志分流。
+- **跨 VFS 移动语义**：paste_yanked_remote/paste_remote_to_local 在成功复制后从来源删除——远端来源 remove_permanent、本地来源 fs::remove_file。移动语义与本地 copy+delete 原语一致。
+- **进度提示**：状态栏 "Moved/Copied N item(s) to remote:path" 已覆盖；细粒度进度条后续增强（SIMPLIFIED）。

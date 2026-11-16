@@ -3131,8 +3131,44 @@ fn execute_delete(
     remote: Option<String>,
 ) -> Option<crate::privilege::PrivOp> {
     let tab_id = state.active;
-    // M20-1：远端删除——trash 可恢复，入撤销栈（remote 视图无提权链）。
+    // M20-1：远端删除——dd 走 trash 可恢复，DD 走永久删除（不可逆）。
     if let Some(remote) = remote {
+        // DD 永久删除：不进撤销栈，不进 trash。
+        if permanent {
+            let is_dir = state
+                .remote_sessions
+                .get(&remote)
+                .and_then(|be| be.metadata(&path).ok())
+                .map(|m| m.is_dir)
+                .unwrap_or(false);
+            let result = state
+                .remote_sessions
+                .get(&remote)
+                .ok_or_else(|| "会话已断开".to_owned())
+                .and_then(|be| {
+                    if is_dir {
+                        be.remove_dir(&path).map_err(|e| e.to_string())
+                    } else {
+                        be.remove_permanent(&path).map_err(|e| e.to_string())
+                    }
+                });
+            return match result {
+                Ok(()) => {
+                    *msg = Some("远端永久删除（不可恢复）".to_owned());
+                    if let Some(p) = current_remote_path(state) {
+                        let _ = remote_navigate(state, &p);
+                    }
+                    None
+                }
+                Err(e) => {
+                    *msg = Some(format!("远端永久删除失败: {e}"));
+                    if let Some(p) = current_remote_path(state) {
+                        let _ = remote_navigate(state, &p);
+                    }
+                    None
+                }
+            };
+        }
         let trash = state
             .remote_sessions
             .get(&remote)
