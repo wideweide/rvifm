@@ -1,4 +1,5 @@
 # STATE —
+- `M21-F1`（2026-11-17）：界面风格——pane_layout 共享几何（标签栏 1 行 + 双 pane Ratio(1,2) 居中分开间隔 1 列 + 状态栏 1 行，渲染与鼠标命中同源）；左右 pane `Block::bordered()` 顶部标题=各自路径（反斜杠归一化），边框焦点态走主题 focused_border/unfocused_border（缺省回落 BOLD/DIM）；类型着色 FileTypeClass 8 类（目录/可执行/链接/归档/图片/视频/代码/其他，扩展名表 + 归档复用 M7 探测），样式走主题 ft_* 命名样式缺失回落 16 色（青/绿/紫/红/亮蓝/黄/蓝）；FileItem 增 is_link/is_exec（unix 执行位、Windows/远端/归档按扩展名近似）；状态栏去路径，底部详情=名称 [类型] 大小 权限 时间（format_mtime jiff 本地时区 yyyy-mm-dd HH:mm:ss，0→"-"）；view_mode 右 pane 标题带预览文件路径。新增依赖 jiff 0.2.43（已在依赖树，零新增传递依赖）；.cargo/config.toml 持久化 AWS_LC_SYS_PREBUILT_NASM=1（本机无 NASM，见 NOTES）。248 单测全绿（+3 M21-F1 验收测试）；存量偶发修复：STORE_TEST_LOCK 串行化全局 store 测试（3/3 复现的 redb 锁竞争，同 M13-10 先例）。
 - `M20 批次关闭`（2026-11-17）：M20-1～4 全部完成（PLAN 状态同步）。M19/M20 全部关闭——SFTP 远端浏览（M19）+ 写操作与本地体验对齐（M20）就绪。下一批次待用户指令。
 - `M20-2/3/4`（2026-11-17）：远端确认边界与跨 VFS 完善——M20-1 已实现核心（Confirm 带远端标记/trash 可恢复/paste 防覆盖/跨 VFS 管线）；本轮补 DD 远端永久删除分流（绕过 trash，remove_permanent/remove_dir 按 is_dir 分流）；M20-3 跨 VFS 移动语义（成功粘贴后从来源删除——远端 remove_permanent/本地 fs remove_file）；M20-4 测试已随 M20-1 添加（dd trash+undo、paste+undo、rename+mkdir+undo、冲突报错不覆盖）。M20 批次全部关闭。
 - `M20-1`（2026-11-17）：远端写操作——trait 增 move_to_trash/restore_from_trash/remove_permanent/remove_dir（默认 Unimplemented）；sftp.rs SftpCmd 扩展 Write/RemoveFile/RemoveDir/Rename/CreateDir/MoveToTrash/RestoreFromTrash（trash=/tmp/rvifm-trash + .rvtN 碰撞后缀）；UndoableOp::Remote{tab_id,remote,kind:RemoteUndo}（Delete/Create/Rename 三种）；undo_last 远端分支（会话 restore/remove/rename）；Confirm/Outcome/execute_delete 增 remote 参数；paste_yanked_remote + paste_remote_to_local（跨 VFS 粘贴管线；防覆盖 metadata exists 检查）；exec 远端写路由（rename/mkdir/touch/copy/move）；YankBuffer.source + YankSource（Local/Remote）；远端 yy 臂。252 单测全绿。M20-2（确认边界）与 M20-3（跨 VFS 已部分实现）后续完善。
@@ -94,11 +95,10 @@
 
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
-- **更新时间**：2026-11-15
+- **更新时间**：2026-11-17
 - **当前阶段**：M21 UI/UX 打磨批次（M21-F1→F9 → M21-E1→E8）
-- **当前任务**：M21-F1 界面风格
-- **阶段状态**：M0–M17 关闭 + v0.6.0 发布 + M18 关闭；M19 进行中（M19-1/2 完成，3a spike 结论待确认，3b blocked）
-（注：M12 提权特性已蒸馏入库排队实现——docs/TASKS.md M12-1～M12-5；按 PLAN 排在 M11 之后。）
+- **当前任务**：M21-F2 焦点视觉（非焦点 pane 当前行 DIM；状态栏去焦点文字）
+- **阶段状态**：M0–M20 关闭 + v0.6.0 发布；M21 进行中（F1 完成，下一任务 F2）
 
 ## 已完成
 

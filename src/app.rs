@@ -688,6 +688,9 @@ pub(crate) fn remote_enter(
             ),
             name: i.name.clone(),
             is_dir: i.is_dir,
+            // 远端元数据无链接/执行位：链接 false、可执行按扩展名近似（M21-F1）。
+            is_link: false,
+            is_exec: !i.is_dir && crate::tab::is_exec_name(&i.name),
             size: i.size,
             perm: String::new(),
             mtime: i.mtime,
@@ -746,6 +749,9 @@ pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> R
             ),
             name: i.name.clone(),
             is_dir: i.is_dir,
+            // 远端元数据无链接/执行位：链接 false、可执行按扩展名近似（M21-F1）。
+            is_link: false,
+            is_exec: !i.is_dir && crate::tab::is_exec_name(&i.name),
             size: i.size,
             perm: String::new(),
             mtime: i.mtime,
@@ -826,6 +832,9 @@ pub(crate) fn remote_jump(state: &mut AppState, pos: usize) -> Result<(), String
             ),
             name: i.name.clone(),
             is_dir: i.is_dir,
+            // 远端元数据无链接/执行位：链接 false、可执行按扩展名近似（M21-F1）。
+            is_link: false,
+            is_exec: !i.is_dir && crate::tab::is_exec_name(&i.name),
             size: i.size,
             perm: String::new(),
             mtime: i.mtime,
@@ -2575,6 +2584,70 @@ fn list_offset(cursor: usize, height: usize) -> usize {
     }
 }
 
+/// M21-F1：整体几何——标签栏 1 行 + 双 pane（居中分开，间隔 1 列）+ 状态栏 1 行。
+/// 渲染与鼠标命中测试共用同一推导，避免两处几何漂移。
+fn pane_layout(area: ratatui::layout::Rect) -> [ratatui::layout::Rect; 4] {
+    let [tab_bar, main, status] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    let [left, _gap, right] = Layout::horizontal([
+        Constraint::Ratio(1, 2),
+        Constraint::Length(1),
+        Constraint::Ratio(1, 2),
+    ])
+    .areas(main);
+    [tab_bar, left, right, status]
+}
+
+/// M21-F1：左 pane 列表内容区（边框内减去 `..` 行）。
+/// 渲染与鼠标命中测试共用；`has_parent` 由调用方决定是否再减 1 行。
+fn left_list_area(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    ratatui::widgets::Block::bordered().inner(area)
+}
+
+/// M21-F1：pane 边框焦点态——主题命名样式（focused_border/unfocused_border）
+/// 优先，未激活主题或样式缺失时以 BOLD/DIM 区分（保证无边框主题下仍可见）。
+fn pane_border_style(focused: bool) -> Style {
+    let s = crate::theme::style(if focused {
+        "focused_border"
+    } else {
+        "unfocused_border"
+    });
+    if s.fg.is_some() {
+        s
+    } else if focused {
+        Style::new().add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().add_modifier(Modifier::DIM)
+    }
+}
+
+/// M21-F1：类型着色——主题命名样式（`ft_dir` 等）优先，缺失时回落 16 色
+/// 近似（yazi filetype + vifm 配色语义：目录青/可执行绿/链接紫/归档红/
+/// 图片亮蓝/视频黄/代码蓝；Other 不着色）。
+fn filetype_style(class: crate::tab::FileTypeClass) -> Style {
+    use crate::tab::FileTypeClass as C;
+    let (name, fallback) = match class {
+        C::Directory => ("ft_dir", Color::Cyan),
+        C::Executable => ("ft_exec", Color::Green),
+        C::Symlink => ("ft_link", Color::Magenta),
+        C::Archive => ("ft_archive", Color::Red),
+        C::Image => ("ft_image", Color::LightBlue),
+        C::Video => ("ft_video", Color::Yellow),
+        C::Code => ("ft_code", Color::Blue),
+        C::Other => return Style::new(),
+    };
+    let s = crate::theme::style(name);
+    if s.fg.is_some() {
+        s
+    } else {
+        Style::new().fg(fallback)
+    }
+}
+
 /// FEAT-4：帮助文本（内嵌单文件，`include_str!` 便于维护）。
 const HELP_TEXT: &str = include_str!("help.txt");
 
@@ -2604,25 +2677,28 @@ fn help_find_match(lines: &[&str], query: &str, start: usize, forward: bool) -> 
 }
 
 /// FEAT-1/FEAT-3：条目行命中测试——鼠标行 → 条目索引；不在条目区
-/// （`..` 行/右 pane/标签栏/状态栏/越界）返回 None。
+/// （边框/`..` 行/右 pane/标签栏/状态栏/越界）返回 None。
+/// 几何与 render 同源（M21-F1 pane_layout + 左 pane 边框内区）。
 fn hit_entry_index(
     state: &AppState,
     mouse: &MouseEvent,
     area: ratatui::layout::Rect,
 ) -> Option<usize> {
+    let [_, left, _, _] = pane_layout(area);
+    let inner = left_list_area(left);
     let has_parent = state.active_tab().has_parent_row() as usize;
-    let list_h = area.height.saturating_sub(2) as usize;
-    let view_h = list_h.saturating_sub(has_parent);
-    let list_w = area.width * 60 / 100;
-    if mouse.column >= list_w
-        || mouse.row < 1 + has_parent as u16
-        || mouse.row >= area.height.saturating_sub(1)
+    let view_h = inner.height.saturating_sub(has_parent as u16) as usize;
+    if mouse.column < inner.x
+        || mouse.column >= inner.x + inner.width
+        || mouse.row < inner.y + has_parent as u16
+        || mouse.row >= inner.y + inner.height
     {
         return None;
     }
     let tab = state.active_tab();
-    let offset = list_offset(tab.cursor, view_h);
-    let idx = (mouse.row as usize - 1 - has_parent).checked_add(offset)?;
+    let offset = list_offset(if tab.on_parent_row { 0 } else { tab.cursor }, view_h);
+    let idx = (mouse.row - inner.y - has_parent as u16) as usize;
+    idx.checked_add(offset)?;
     Some(idx.min(tab.entries.len().saturating_sub(1)))
 }
 
@@ -2640,14 +2716,17 @@ fn handle_mouse(
     if !matches!(mode, InputMode::Normal) {
         return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
     }
-    // 列表几何：与 render 相同——标签栏 1 行 + 主区（左 60%）+ 状态栏 1 行；
-    // FEAT-2：`..` 行占用条目视口首行（有父行时条目从第 2 行开始）。
+    // 列表几何：与 render 同源（M21-F1）——pane_layout 左 pane 的边框内区；
+    // FEAT-2：`..` 行占用内区首行（有父行时条目从第 2 行开始）。
+    let [_, left, _, _] = pane_layout(area);
+    let inner = left_list_area(left);
     let has_parent = state.active_tab().has_parent_row() as usize;
-    let list_w = area.width * 60 / 100;
-    let in_columns =
-        mouse.column < list_w && mouse.row >= 1 && mouse.row < area.height.saturating_sub(1);
-    let in_parent_row = has_parent > 0 && mouse.row == 1 && in_columns;
-    let in_entries = in_columns && mouse.row as usize > has_parent;
+    let in_columns = mouse.column >= inner.x
+        && mouse.column < inner.x + inner.width
+        && mouse.row >= inner.y
+        && mouse.row < inner.y + inner.height;
+    let in_parent_row = has_parent > 0 && mouse.row == inner.y && in_columns;
+    let in_entries = in_columns && mouse.row >= inner.y + has_parent as u16;
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) if in_parent_row => {
             if state.active_tab().on_parent_row {
@@ -4064,12 +4143,7 @@ fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
     // M14-2：标签栏（1 行）——每个 tab 的索引与目录名，当前 tab 高亮。
-    let [tab_bar_area, main_area, status_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .areas(frame.area());
+    let [tab_bar_area, left_area, right_area, status_area] = pane_layout(frame.area());
     let tab_spans: Vec<Span> = state
         .tabs
         .iter()
@@ -4093,18 +4167,21 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         })
         .collect();
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
-    // M11-2：vifm 式双栏——左列表、右预览（SPEC SIMPLIFIED 允许单栏，
-    // 统一预览窗格自 M11-2 起落地）。
-    let [list_area, preview_area] =
-        Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .areas(main_area);
+    // M21-F1：左右 pane 各带边框（焦点态高亮）、居中分开（间隔 1 列），
+    // pane 顶部显示各自路径——状态栏不再显示路径。
+    let left_focused = tab.focus == crate::tab::Focus::Left;
+    let left_pane = ratatui::widgets::Block::bordered()
+        .title(tab.location.display_path().replace('\\', "/"))
+        .border_style(pane_border_style(left_focused));
+    let left_inner = left_pane.inner(left_area);
+    frame.render_widget(left_pane, left_area);
 
     // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
     // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
     let parent_available = tab.has_parent_row() && !tab.in_results();
     let parent_area = if parent_available {
         let [p, rest] =
-            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_inner);
         let parent_style = if tab.on_parent_row {
             Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
@@ -4114,7 +4191,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         frame.render_widget(Paragraph::new(Line::from("../")).style(parent_style), p);
         rest
     } else {
-        list_area
+        left_inner
     };
 
     let visual_range = tab.visual_range();
@@ -4136,6 +4213,8 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         .iter()
         .enumerate()
         .map(|(idx, item)| {
+            // M21-F1：名称按文件类型着色（目录/可执行/链接/归档/图片/视频/代码）。
+            let ft = filetype_style(item.filetype_class());
             // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
             // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
             let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
@@ -4154,7 +4233,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                         &item.name[end..],
                     );
                     if !before.is_empty() {
-                        spans.push(Span::from(before.to_owned()));
+                        spans.push(Span::styled(before.to_owned(), ft));
                     }
                     spans.push(Span::styled(
                         mid.to_owned(),
@@ -4166,7 +4245,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                         after.to_owned()
                     };
                     if !suffix.is_empty() {
-                        spans.push(Span::from(suffix));
+                        spans.push(Span::styled(suffix, ft));
                     }
                 }
                 None => {
@@ -4175,7 +4254,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                     } else {
                         item.name.clone()
                     };
-                    spans.push(Span::from(label));
+                    spans.push(Span::styled(label, ft));
                 }
             }
             // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
@@ -4210,9 +4289,9 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         &mut list_state,
     );
 
-    // M11-2：预览窗格——光标项按 `preview_kind` 分流；图片走
-    // ImageEngine（解码失败降级为提示行），其余走共享 PreviewRenderer。
-    render_right_pane(frame, state, preview_area);
+    // M11-2→M14-1→M21-F1：右 pane——默认独立目录列表（带路径标题/焦点边框），
+    // `w` 视图模式显示查看器/图片预览。
+    render_right_pane(frame, state, right_area);
 
     if let InputMode::HelpView { scroll, search } = mode {
         // FEAT-4：全屏帮助视图（内容来自内嵌 help.txt，滚动状态独立）。
@@ -4533,23 +4612,29 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             ))
         }
         InputMode::Normal => {
+            // M21-F1：状态栏不再显示路径（路径移到 pane 顶部），底部显示
+            // 选中项详情——名称 [类型] 大小 权限 时间。
             let selected = match tab.entries.get(tab.cursor) {
                 Some(item) => {
+                    let class = item.filetype_class();
                     let size = if item.is_dir {
                         String::new()
                     } else {
                         format!(" {}", crate::tab::format_size(item.size))
                     };
-                    format!(" | {}{} {}", item.name, size, item.perm)
+                    format!(
+                        " {} [{}]{} {} {}",
+                        item.name,
+                        class.label(),
+                        size,
+                        item.perm,
+                        crate::tab::format_mtime(item.mtime)
+                    )
                 }
                 None => String::new(),
             };
             let mut spans = vec![
-                Span::styled(
-                    tab.location.display_path(),
-                    Style::new().add_modifier(Modifier::BOLD),
-                ),
-                Span::from(selected),
+                Span::styled(selected, Style::new().add_modifier(Modifier::BOLD)),
                 Span::from(format!(" | {} items", tab.entries.len())),
             ];
             if let Some(r) = &tab.results {
@@ -4624,10 +4709,8 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     frame.render_widget(Paragraph::new(status), status_area);
 }
 
-/// 预览窗格（M11-2）：与 `pick` 共用同一分流与渲染入口。
-/// 归档视图条目暂不预览（M7 只读 VFS 的文本读取未接入预览）。
-/// 右 pane 渲染（M14-1）：view 模式 = 活动 pane 光标文件的完整内容预览
-/// （跟随光标重置）；默认 = 右 pane 独立目录列表（可导航）。
+/// 右 pane 渲染（M14-1；M21-F1 带路径标题与焦点边框）：view 模式 = 活动
+/// pane 光标文件的查看器/图片预览；默认 = 右 pane 独立目录列表（可导航）。
 fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -4638,7 +4721,9 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
     if tab.view_mode {
         // M17 SRCH：预览源抽象——结果模式取命中文件，物理视图取 base.join。
         let Some(path) = tab.preview_path() else {
-            let pane = ratatui::widgets::Block::bordered().title("view · 预览");
+            let pane = ratatui::widgets::Block::bordered()
+                .title("view · 预览")
+                .border_style(pane_border_style(true));
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
@@ -4649,7 +4734,12 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             crate::preview::preview_kind(&path),
             crate::preview::PreviewKind::Image
         ) {
-            let pane = ratatui::widgets::Block::bordered().title("view · 图片预览");
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!(
+                    "{} · 图片预览",
+                    path.display().to_string().replace('\\', "/")
+                ))
+                .border_style(pane_border_style(true));
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             if state.image_engine.render_file(frame, inner, &path).is_err() {
@@ -4658,20 +4748,23 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             return;
         }
         let viewer = tab.viewer.clone().unwrap_or_default();
+        let shown = path.display().to_string().replace('\\', "/");
         let title = match &viewer.query {
             Some(q) => format!(
-                "查看器 行 {}/{}  /{}（n/N 跳转）",
+                "{shown} · 行 {}/{}  /{}（n/N 跳转）",
                 viewer.scroll + 1,
                 viewer.line_count,
                 q
             ),
             None => format!(
-                "查看器 行 {}/{}（w/Esc 退出 / 搜索）",
+                "{shown} · 行 {}/{}（w/Esc 退出 / 搜索）",
                 viewer.scroll + 1,
                 viewer.line_count
             ),
         };
-        let pane = ratatui::widgets::Block::bordered().title(title);
+        let pane = ratatui::widgets::Block::bordered()
+            .title(title)
+            .border_style(pane_border_style(true));
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
         // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
@@ -4719,13 +4812,12 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         frame.render_widget(Paragraph::new(out), inner);
         return;
     }
-    // 默认：右 pane 目录列表（独立导航）。
-    let title = if focused {
-        "右 pane（焦点 · Tab 切换）"
-    } else {
-        "右 pane（Tab 切换焦点）"
-    };
-    let pane = ratatui::widgets::Block::bordered().title(title);
+    // 默认：右 pane 目录列表（独立导航；M21-F1 路径标题 + 类型着色，
+    // 焦点经边框高亮呈现，标题不再重复"焦点"文字）。
+    let title = tab.right.location.display_path().replace('\\', "/");
+    let pane = ratatui::widgets::Block::bordered()
+        .title(title)
+        .border_style(pane_border_style(focused));
     let inner = pane.inner(area);
     frame.render_widget(pane, area);
     let items: Vec<ListItem> = tab
@@ -4739,12 +4831,15 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             } else {
                 item.name.clone()
             };
-            let label = format!("{} {label}", item.icon.glyph);
-            ListItem::new(Line::from(label)).style(if idx == tab.right.cursor && focused {
-                Style::new().add_modifier(Modifier::REVERSED)
-            } else {
-                Style::new()
-            })
+            let spans = vec![
+                Span::from(format!("{} ", item.icon.glyph)),
+                Span::styled(label, filetype_style(item.filetype_class())),
+            ];
+            let mut li = ListItem::new(Line::from(spans));
+            if idx == tab.right.cursor && focused {
+                li = li.style(Style::new().add_modifier(Modifier::REVERSED));
+            }
+            li
         })
         .collect();
     let mut list_state = ListState::default().with_selected(Some(tab.right.cursor));
@@ -6228,12 +6323,12 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 选区内反显（行 3、4），选区外不反显（行 2、5）——tab 栏占行 0、
-        // `..` 行占行 1（FEAT-2）。
-        assert!(buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
-        assert!(buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 5)].modifier.contains(Modifier::REVERSED));
+        // 选区内反显（行 4、5），选区外不反显（行 2、3）——M21-F1 后 tab 栏
+        // 占行 0、pane 边框行 1、`..` 行占行 2，条目行 3 起（条目文本列 1 起）。
+        assert!(buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
+        assert!(buffer[(1, 5)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
 
         // 状态栏 VISUAL 指示。
         let status = (0..120u16)
@@ -6329,10 +6424,10 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
 
-        // 标记行加粗，未标记行不加粗——tab 栏占行 0，`..` 行占行 1（FEAT-2），
-        // 条目行 2 起。
-        assert!(buffer[(0, 3)].modifier.contains(Modifier::BOLD));
-        assert!(!buffer[(0, 2)].modifier.contains(Modifier::BOLD));
+        // 标记行加粗，未标记行不加粗——M21-F1 后 tab 栏行 0、pane 边框行 1、
+        // `..` 行占行 2（FEAT-2），条目行 3 起（条目文本列 1 起）。
+        assert!(buffer[(1, 4)].modifier.contains(Modifier::BOLD));
+        assert!(!buffer[(1, 3)].modifier.contains(Modifier::BOLD));
 
         // 状态栏计数。
         let status = (0..120u16)
@@ -6611,8 +6706,9 @@ mod tests {
     }
 
     #[test]
-    fn archive_status_bar_shows_host_inner_breadcrumb() {
-        // M7-5：状态栏/面包屑显示 `host:/inner/path`。
+    fn archive_pane_title_shows_host_inner_breadcrumb() {
+        // M7-5：面包屑 `host:/inner/path`——M21-F1 起显示在 pane 顶部标题
+        // （状态栏不再显示路径）。
         let tmp = TempDir::new().unwrap();
         let zip_path = tmp.path().join("t.zip");
         crate::archive::make_test_zip(&zip_path);
@@ -6626,24 +6722,33 @@ mod tests {
             icon: crate::icons::icon_for(Path::new("main.rs"), crate::icons::IconTheme::Dark),
             name: "main.rs".into(),
             is_dir: false,
+            is_link: false,
+            is_exec: false,
             size: 12,
             perm: String::new(),
             mtime: 0,
         }];
 
-        let backend = ratatui::backend::TestBackend::new(120, 8);
+        let backend = ratatui::backend::TestBackend::new(160, 8);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        let status = (0..120u16)
+        let title = (0..160u16)
+            .map(|x| buffer[(x, 1)].symbol())
+            .collect::<String>();
+        let status = (0..160u16)
             .map(|x| buffer[(x, 7)].symbol())
             .collect::<String>();
         let leaf = zip_path.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
-            status.contains(&format!("{leaf}:/src")),
-            "breadcrumb missing: {status}"
+            title.contains(&format!("{leaf}:/src")),
+            "breadcrumb missing in pane title: {title}"
+        );
+        assert!(
+            !status.contains(&format!("{leaf}:/src")),
+            "状态栏不应再显示路径: {status}"
         );
     }
 
@@ -6663,6 +6768,8 @@ mod tests {
                 icon: crate::icons::icon_for(Path::new("deep/"), crate::icons::IconTheme::Dark),
                 name: "deep".into(),
                 is_dir: true,
+                is_link: false,
+                is_exec: false,
                 size: 0,
                 perm: String::new(),
                 mtime: 0,
@@ -6671,6 +6778,8 @@ mod tests {
                 icon: crate::icons::icon_for(Path::new("readme.md"), crate::icons::IconTheme::Dark),
                 name: "readme.md".into(),
                 is_dir: false,
+                is_link: false,
+                is_exec: false,
                 size: 2,
                 perm: String::new(),
                 mtime: 0,
@@ -6679,6 +6788,8 @@ mod tests {
                 icon: crate::icons::icon_for(Path::new("src/"), crate::icons::IconTheme::Dark),
                 name: "src".into(),
                 is_dir: true,
+                is_link: false,
+                is_exec: false,
                 size: 0,
                 perm: String::new(),
                 mtime: 0,
@@ -6746,11 +6857,11 @@ mod tests {
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
-        // tab 栏占行 0、`..` 行占行 1（FEAT-2），条目行 2 起；光标行 1
-        // （第二条目）→ y=3。
-        assert!(buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
-        assert!(!buffer[(0, 4)].modifier.contains(Modifier::REVERSED));
+        // M21-F1 几何（40x6）：tab 栏行 0、pane 边框行 1、`..` 行占行 2，
+        // 条目视口 1 行（内区高 2）→ 光标行 1 滚动显示在行 3；条目文本列 1 起。
+        assert!(buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
     }
 
     // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
@@ -7050,7 +7161,7 @@ mod tests {
                 all.push_str(buf[(x, y)].symbol());
             }
         }
-        assert!(all.contains("pane"), "右 pane 恢复目录列表: {all}");
+        assert!(all.contains("short.txt"), "右 pane 恢复目录列表: {all}");
 
         // :view toggle：关→开→关。
         let _ = exec_command_impl(&mut state, "view").unwrap();
@@ -7598,10 +7709,16 @@ mod tests {
         );
     }
 
+    /// 打开全局 frecency store 的测试须串行（M21-F1 踩坑，同 M13-10
+    /// trash 锁先例）：redb `Database already open` 无重试，并行下偶发
+    /// 互斥冲突（本机 3/3 复现）。
+    static STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn exec_j_and_big_j_open_jump_selectors() {
         // M8-12：:j → 仅目录；:J → 仅文件。open_store 读全局 config 路径
         //（测试机 DB 可能为空——entries 数量不参与断言，只验证 kind 与形态）。
+        let _guard = STORE_TEST_LOCK.lock().unwrap();
         let mut state = make_state(1).1;
         let r = exec_command_impl(&mut state, "j");
         match r {
@@ -7677,7 +7794,8 @@ mod tests {
         // 打开期间光标未被改动（选择器 cursor 是模式局部状态）。
         assert_eq!(state.active_tab().cursor, 2);
 
-        // 关闭（Normal）后列表完整重绘：首行 f00、光标行（第 3 行）f02 反显。
+        // 关闭（Normal）后列表完整重绘：首行 f00、光标行（第 3 条目）f02 反显
+        // （M21-F1 几何：pane 边框行 1、`..` 行 2、条目行 3 起，文本列 1 起）。
         terminal
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
@@ -7689,11 +7807,11 @@ mod tests {
                     .collect::<String>()
             })
             .collect();
-        assert!(row[0].contains("../"), "`..` 行在列表顶部: {}", row[0]);
-        assert!(row[1].contains("f00"), "关闭后列表恢复: {}", row[1]);
-        assert!(row[3].contains("f02"), "光标行内容: {}", row[3]);
+        assert!(row[1].contains("../"), "`..` 行在列表顶部: {}", row[1]);
+        assert!(row[2].contains("f00"), "关闭后列表恢复: {}", row[2]);
+        assert!(row[4].contains("f02"), "光标行内容: {}", row[4]);
         assert!(
-            buffer[(0, 4)].modifier.contains(Modifier::REVERSED),
+            buffer[(1, 5)].modifier.contains(Modifier::REVERSED),
             "光标行反显"
         );
         assert_eq!(state.active_tab().cursor, 2, "光标不变");
@@ -7716,11 +7834,12 @@ mod tests {
         let mut msg = None;
         let area = ratatui::layout::Rect::new(0, 0, 80, 24);
         let mode = InputMode::Normal;
-        // 排序：d1(0) d2(1)；row=3 → idx=1（d2，`..` 行占 row 1）。
+        // 排序：d1(0) d2(1)；M21-F1 几何 `..` 行占 row 2、条目 row 3 起，
+        // row=4 → idx=1（d2）。
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 3,
-            row: 3,
+            row: 4,
             modifiers: KeyModifiers::NONE,
         };
 
@@ -7797,7 +7916,7 @@ mod tests {
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 3,
-            row: 5, // idx 3（`..` 行占 row 1，条目行 2 起）
+            row: 6, // idx 3（M21-F1：`..` 行占 row 2，条目行 3 起）
             modifiers: KeyModifiers::NONE,
         };
         handle_mouse(&mut state, &InputMode::Normal, &ev, &mut msg, area);
@@ -7948,7 +8067,7 @@ mod tests {
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 2,
-            row: 1, // `..` 行
+            row: 2, // `..` 行（M21-F1：pane 边框行 1，内区行 2 起）
             modifiers: KeyModifiers::NONE,
         };
 
@@ -8239,7 +8358,7 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         let row1: String = (0..80u16)
-            .map(|x| buffer[(x, 2)].symbol())
+            .map(|x| buffer[(x, 3)].symbol())
             .collect::<String>();
         assert!(row1.contains("f00"), "列表恢复: {row1}");
         assert_eq!(state.active_tab().cursor, 2, "光标不变");
@@ -8495,6 +8614,7 @@ mod tests {
     #[test]
     fn nav4_recent_exec_opens_selector() {
         // :recent → OpenJump{Recent}（空 store 容忍，形态断言同 :j/:J）。
+        let _guard = STORE_TEST_LOCK.lock().unwrap();
         let mut state = make_state(1).1;
         match exec_command_impl(&mut state, "recent") {
             Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::Recent),
@@ -9470,34 +9590,33 @@ terminal_in_new_window = false
         fs::create_dir(tmp.path().join("sub")).unwrap();
         let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
 
-        let backend = ratatui::backend::TestBackend::new(80, 10);
+        let backend = ratatui::backend::TestBackend::new(160, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         let row = |y: u16| {
-            (0..80u16)
+            (0..160u16)
                 .map(|x| buffer[(x, y)].symbol())
                 .collect::<String>()
         };
 
-        // 目录在前并带 `/` 后缀（`..` 行占行 1，条目行 2 起）。
-        assert!(row(1).contains("../"));
-        assert!(row(2).contains("sub/"));
-        assert!(row(3).contains("hello.txt"));
-        // 状态栏显示当前位置与条目数。
+        // 目录在前并带 `/` 后缀（M21-F1：pane 边框行 1，`..` 行占行 2，条目行 3 起）。
+        assert!(row(1).contains("┌"), "左 pane 顶部边框: {}", row(1));
+        assert!(row(2).contains("../"));
+        assert!(row(3).contains("sub/"));
+        assert!(row(4).contains("hello.txt"));
+        // M21-F1：路径在 pane 顶部标题，状态栏不再显示路径；详情含条目数。
         let dir_name = tmp
             .path()
             .file_name()
             .unwrap()
             .to_string_lossy()
             .into_owned();
+        assert!(row(1).contains(&dir_name), "pane 顶部路径: {}", row(1));
         let status = row(9).trim().to_owned();
-        assert!(
-            status.contains(&dir_name),
-            "status bar missing cwd: {status}"
-        );
+        assert!(!status.contains(&dir_name), "状态栏不应显示路径: {status}");
         assert!(
             status.contains("2 items"),
             "status bar missing count: {status}"
@@ -9523,12 +9642,13 @@ terminal_in_new_window = false
             (x0..x1).map(|x| buf[(x, y)].symbol()).collect::<String>()
         };
 
-        // 默认态：右 pane = 目录列表（显示条目名，非预览内容）。
+        // 默认态：右 pane = 目录列表（显示条目名，非预览内容；M21-F1 右 pane
+        // 从列 40 起，边框列 40、条目文本自列 41）。
         terminal
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
-        let pane_list: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
+        let pane_list: String = (1..9).map(|y| row_text(&buf, y, 41, 80)).collect();
         assert!(pane_list.contains("notes.txt"), "列表渲染: {pane_list}");
         assert!(pane_list.contains("pic.png"), "列表渲染: {pane_list}");
 
@@ -9538,7 +9658,7 @@ terminal_in_new_window = false
             .draw(|frame| render(frame, &state, &InputMode::Normal, None))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
-        let pane_txt: String = (1..9).map(|y| row_text(&buf, y, 48, 80)).collect();
+        let pane_txt: String = (1..9).map(|y| row_text(&buf, y, 41, 80)).collect();
         assert!(
             pane_txt.contains("hello preview"),
             "text preview: {pane_txt}"
@@ -9551,7 +9671,7 @@ terminal_in_new_window = false
             .unwrap();
         let buf = terminal.backend().buffer().clone();
         let has_blocks = (1..9).any(|y| {
-            (48..80).any(|x| {
+            (41..80).any(|x| {
                 let c = &buf[(x, y)];
                 c.symbol() != " " || c.fg != ratatui::style::Color::Reset
             })
@@ -9577,5 +9697,135 @@ terminal_in_new_window = false
                 .collect::<String>()
         };
         assert!(row(9).contains(":tabne"), "command line: {}", row(9));
+    }
+
+    // ── M21-F1：界面风格（pane 边框/顶部路径/类型着色/底部详情） ─────────────
+
+    #[test]
+    fn m21f1_panes_bordered_and_path_in_title_at_two_sizes() {
+        // ACCEPTANCE §20 M21-F1：80x24 与 160x48 下左右 pane 有可见边框，
+        // 路径在 pane 顶部，状态栏无路径。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // 注入短路径：真实 tempdir 深层路径在 80 宽 pane 内必然截断，
+        // 无法断言"路径完整可见"；Location 直接构造与渲染无关。
+        state.active_tab_mut().location = Location::Physical(std::path::PathBuf::from("/w/proj"));
+        let dir_name = "proj".to_owned();
+        for (w, h) in [(80u16, 24u16), (160u16, 48u16)] {
+            let backend = ratatui::backend::TestBackend::new(w, h);
+            let mut terminal = ratatui::Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| render(f, &state, &InputMode::Normal, None))
+                .unwrap();
+            let buf = terminal.backend().buffer().clone();
+            let row = |y: u16| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>();
+            // 左右 pane 边框可见（两上角；居中分开的间隔列为空格）。
+            assert_eq!(buf[(0, 1)].symbol(), "┌", "左 pane 左上角 {w}x{h}");
+            assert_eq!(buf[(w - 1, 1)].symbol(), "┐", "右 pane 右上角 {w}x{h}");
+            assert!(row(1).contains(&dir_name), "路径在 pane 顶部: {}", row(1));
+            let status = row(h - 1);
+            assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
+            assert!(status.contains("1 items"), "状态栏保留条目数: {status}");
+        }
+    }
+
+    #[test]
+    fn m21f1_filetype_colors_differ_in_list() {
+        // ACCEPTANCE §20 M21-F1：目录/可执行/图片/归档在列表中颜色不同。
+        // 可执行：unix 按执行位（chmod 755），Windows 按扩展名近似（.exe）。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("img.png"), "x").unwrap();
+        fs::write(tmp.path().join("arch.zip"), "x").unwrap();
+        #[cfg(unix)]
+        {
+            fs::write(tmp.path().join("run.sh"), "#!/bin/sh").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                tmp.path().join("run.sh"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        #[cfg(not(unix))]
+        fs::write(tmp.path().join("run.exe"), "x").unwrap();
+
+        let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let backend = ratatui::backend::TestBackend::new(120, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        // 条目行 3 起（pane 边框 1、`..` 行 2），条目区在左 pane（列 1..59）；
+        // 找到条目名首字符所在单元格取前景色（图标为 Nerd Font 私有区字符，
+        // 不会与 ASCII 名首字符混淆）。
+        let fg_of = |name: &str| -> ratatui::style::Color {
+            let first = name.chars().next().unwrap();
+            for y in 3..22u16 {
+                let line: String = (0..59u16).map(|x| buf[(x, y)].symbol()).collect();
+                if line.contains(name)
+                    && let Some(x) = (0..59u16).find(|&x| buf[(x, y)].symbol() == first.to_string())
+                {
+                    return buf[(x, y)].fg;
+                }
+            }
+            panic!("条目未渲染: {name}");
+        };
+        let exe_name = if cfg!(unix) { "run.sh" } else { "run.exe" };
+        let colors = [
+            fg_of("sub/"),
+            fg_of(exe_name),
+            fg_of("img.png"),
+            fg_of("arch.zip"),
+        ];
+        for i in 0..colors.len() {
+            for j in (i + 1)..colors.len() {
+                assert_ne!(colors[i], colors[j], "类型着色应互异（{i} vs {j}）");
+            }
+        }
+    }
+
+    #[test]
+    fn m21f1_status_bar_shows_selected_details() {
+        // ACCEPTANCE §20 M21-F1：选中文件后底部显示大小/权限/时间（+类型）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("doc.txt"), "12345").unwrap(); // 5 B
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // mtime 手工固定，断言与 format_mtime 同源（跨时区可复现）。
+        let stamp = 1_700_000_000u64;
+        state.active_tab_mut().entries[0].mtime = stamp;
+        let perm = state.active_tab().entries[0].perm.clone();
+
+        let backend = ratatui::backend::TestBackend::new(160, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let status: String = (0..160u16).map(|x| buf[(x, 9)].symbol()).collect();
+
+        assert!(status.contains("doc.txt"), "详情含名称: {status}");
+        assert!(status.contains("5 B"), "详情含大小: {status}");
+        assert!(status.contains(&perm), "详情含权限: {status}");
+        assert!(
+            status.contains(&crate::tab::format_mtime(stamp)),
+            "详情含时间: {status}"
+        );
+        // TestBackend 渲染 CJK 全角为"字+空格"（FEAT-4 教训）：去空格后比对。
+        assert!(
+            status.replace(' ', "").contains("[文件]"),
+            "详情含类型标签: {status}"
+        );
+        // 状态栏不再显示路径（M21-F1）。
+        let dir_name = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
     }
 }

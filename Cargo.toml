@@ -17,6 +17,8 @@ devicons = "0.6.13"
 flate2 = "1.1.11"
 ignore = "0.4.34"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# M21-F1：底部详情/属性列的时间格式化（本地时区；已在依赖树中，零新增传递依赖）。
+jiff = "0.2.43"
 lzma-rs = "0.3.0"
 office_oxide = "~0.1.16"
 opaline = "0.4.2"

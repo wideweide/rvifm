@@ -511,3 +511,12 @@ rvifm record  → 静默记录访问
   - FIX-9/ENH-8 记录补全与 GAP-2（退出批量刷写）互补：F9/E8 是实时 record 调用点。
 - **降级规则**（用户指定）：F5 超 5 轮缩到"仅当前目录刷新"；F9/记录补全缩到"仅目录进入记录"。
 - **影响文件**：SPEC M21、TASKS M21、ACCEPTANCE §20、PLAN M21 行、STATE、本节。
+
+### 2026-11-17 — M21-F1 实现说明与踩坑
+
+- **类型着色方案**：`FileTypeClass` 8 类 + 主题命名样式（`ft_dir` 等）优先、缺失回落 16 色近似——内置 opaline 主题均无 ft_* 样式，回落保证零配置即有不同的颜色；用户主题可通过同名样式覆盖（与 §5.6 主题机制同构）。可执行判定：unix 按执行位，Windows/远端/归档按扩展名近似（无执行位可用来源共用 `is_exec_name`）。
+- **时间格式化**：新增直接依赖 `jiff 0.2.43`（此前仅 env_logger 传递引入，零新增传递依赖）——本地时区 `yyyy-mm-dd HH:mm:ss`；自写 civil-from-days 不支持时区且 Windows tz 读取麻烦，不值得。`format_mtime` 同时服务 F1 详情与后续 E1 属性列。
+- **踩坑（构建环境）**：M19-3b 引入 russh → `aws-lc-sys` 在无 NASM 的 Windows 上构建失败。解法：`AWS_LC_SYS_PREBUILT_NASM=1` 启用 crate 自带 prebuilt 对象，已固化到 `.cargo/config.toml [env]`（CI 有 NASM，变量自动不生效）。
+- **踩坑（跨平台门禁降级）**：同因 russh 依赖链含 C 代码，AGENTS §6 的 `cargo check --target x86_64-unknown-linux-gnu --all-targets` 在本机无法编译（缺 x86_64-linux-gnu-gcc）。cfg(unix) 代码的 Linux 侧验证自 M19 起实际由 CI ubuntu job 承担；本地门禁保留为"逐行自查 cfg 镜像 + CI 兜底"。
+- **踩坑（存量偶发）**：`nav4_recent`/`exec_j_and_big_j` 并行下 redb `Database already open`（原始 pull 代码 3/3 复现，非本任务引入）。按 M13-10 trash 串行锁先例加 `STORE_TEST_LOCK` 串行化全部打开全局 store 的测试。
+- **渲染几何教训复用**：TestBackend 渲染 CJK 全角为"字+空格"（FEAT-4 已知）——"[文件]" 断言去空格比对；长 temp 路径在 80 宽 pane 内必然截断——验收测试注入短路径 Location 而非依赖真实 tempdir 路径。

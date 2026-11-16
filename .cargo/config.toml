@@ -1,0 +1,6 @@
+# 本地构建环境（2026-11-17 M21-F1 增补，见 NOTES）。
+# M19-3b 引入 russh → aws-lc-sys 后，本机（Win2016）无 NASM；
+# aws-lc-sys 自带 prebuilt NASM 对象，此环境变量启用之。
+# CI（ubuntu/windows-latest）装有 NASM，此变量不生效（NASM 存在时优先真编译）。
+[env]
+AWS_LC_SYS_PREBUILT_NASM = "1"

@@ -72,12 +72,143 @@ pub struct FileItem {
     pub icon: crate::icons::IconInfo,
     pub name: String,
     pub is_dir: bool,
+    /// 是否符号链接（M21-F1 类型着色；unix/Windows 通用 `file_type().is_symlink()`）。
+    pub is_link: bool,
+    /// 是否可执行（M21-F1 类型着色；unix 按执行位，其余按扩展名近似）。
+    pub is_exec: bool,
     /// 文件字节数（目录同样记录底层值，状态栏对目录省略显示）。
     pub size: u64,
     /// 平台相关权限摘要：unix 为 3 位八进制（如 `644`），Windows 为 `ro`/`rw`。
     pub perm: String,
     /// 修改时间（Unix 秒；归档/结果条目可能为 0）。
     pub mtime: u64,
+}
+
+/// 文件类型分类（M21-F1；yazi filetype 语义 + vifm 配色参考）。
+/// 分类顺序即优先级：目录 > 符号链接 > 可执行 > 归档 > 图片 > 视频 > 代码。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileTypeClass {
+    Directory,
+    Executable,
+    Symlink,
+    Archive,
+    Image,
+    Video,
+    Code,
+    Other,
+}
+
+impl FileTypeClass {
+    /// 状态栏/详情的类型标签（M21-F1）。
+    pub fn label(self) -> &'static str {
+        match self {
+            FileTypeClass::Directory => "目录",
+            FileTypeClass::Executable => "可执行",
+            FileTypeClass::Symlink => "链接",
+            FileTypeClass::Archive => "归档",
+            FileTypeClass::Image => "图片",
+            FileTypeClass::Video => "视频",
+            FileTypeClass::Code => "代码",
+            FileTypeClass::Other => "文件",
+        }
+    }
+}
+
+// 扩展名表（M21-F1）：与 yazi filetype 对齐的常用集合，取小写后匹配。
+const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tif", "tiff", "svg", "avif", "heic",
+];
+const VIDEO_EXTS: &[&str] = &[
+    "mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "ts", "3gp",
+];
+const CODE_EXTS: &[&str] = &[
+    "rs", "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "c", "h", "cpp", "hpp", "cc", "go", "java",
+    "rb", "php", "sh", "bash", "zsh", "fish", "lua", "pl", "swift", "kt", "scala", "cs", "vb", "r",
+    "m", "sql", "html", "css", "scss", "less", "vue", "svelte", "astro", "dart", "ex", "exs", "hs",
+    "ml", "clj", "nim", "zig", "v", "gradle", "cmake", "make", "ps1", "bat", "cmd",
+];
+/// Windows 可执行扩展名（无执行位可用，按扩展名近似；含脚本类）。
+const EXEC_EXTS: &[&str] = &["exe", "bat", "cmd", "com", "scr", "msi", "ps1"];
+
+/// 取小写扩展名（无扩展名返回空串）。
+fn ext_lower(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default()
+}
+
+fn ext_in(name: &str, exts: &[&str]) -> bool {
+    let e = ext_lower(name);
+    !e.is_empty() && exts.contains(&e.as_str())
+}
+
+/// unix：按执行位（任一 x）判定；非 unix：按扩展名近似（M21-F1）。
+#[cfg(unix)]
+fn is_executable(meta: &std::fs::Metadata, name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o111 != 0 || ext_in(name, EXEC_EXTS)
+}
+
+/// 非 unix（Windows）：无执行位可用，按扩展名近似。
+#[cfg(not(unix))]
+fn is_executable(meta: &std::fs::Metadata, name: &str) -> bool {
+    let _ = meta;
+    ext_in(name, EXEC_EXTS)
+}
+
+/// 按扩展名近似可执行判定——无执行位信息的来源使用
+/// （远端 SFTP 元数据、归档内条目；M21-F1）。
+pub fn is_exec_name(name: &str) -> bool {
+    ext_in(name, EXEC_EXTS)
+}
+
+impl FileItem {
+    /// 文件类型分类（M21-F1）。归档判定复用 M7 的扩展名探测
+    /// （支持 + 不支持虚拟浏览的并集都算归档着色）。
+    pub fn filetype_class(&self) -> FileTypeClass {
+        if self.is_dir {
+            FileTypeClass::Directory
+        } else if self.is_link {
+            FileTypeClass::Symlink
+        } else if self.is_exec {
+            FileTypeClass::Executable
+        } else if crate::archive::is_archive_file(&self.name)
+            || crate::archive::is_unsupported_archive(&self.name)
+        {
+            FileTypeClass::Archive
+        } else if ext_in(&self.name, IMAGE_EXTS) {
+            FileTypeClass::Image
+        } else if ext_in(&self.name, VIDEO_EXTS) {
+            FileTypeClass::Video
+        } else if ext_in(&self.name, CODE_EXTS) {
+            FileTypeClass::Code
+        } else {
+            FileTypeClass::Other
+        }
+    }
+}
+
+/// Unix 秒 → `yyyy-mm-dd HH:mm:ss`（本地时区，jiff；M21-F1 底部详情）。
+/// 0（归档/结果条目无时间）或超范围显示 `-`。
+pub fn format_mtime(secs: u64) -> String {
+    if secs == 0 {
+        return "-".to_owned();
+    }
+    let Ok(ts) = jiff::Timestamp::from_second(secs as i64) else {
+        return "-".to_owned();
+    };
+    let z = ts.to_zoned(jiff::tz::TimeZone::system());
+    let d = z.date();
+    let t = z.time();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        d.year(),
+        d.month(),
+        d.day(),
+        t.hour(),
+        t.minute(),
+        t.second()
+    )
 }
 
 /// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
@@ -767,6 +898,11 @@ impl Tab {
                         icon: crate::icons::icon_for_active(&full),
                         name: rel.clone(),
                         is_dir,
+                        is_link: ft.is_symlink(),
+                        is_exec: !is_dir
+                            && std::fs::metadata(&full)
+                                .map(|m| is_executable(&m, &name))
+                                .unwrap_or(false),
                         size: if is_dir {
                             0
                         } else {
@@ -970,6 +1106,8 @@ impl Tab {
                     icon: crate::icons::icon_for(&item.path, crate::icons::IconTheme::Dark),
                     name,
                     is_dir: false,
+                    is_link: false,
+                    is_exec: false,
                     size: 0,
                     perm: String::new(),
                     mtime: 0,
@@ -1172,10 +1310,14 @@ fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileIte
                 format!("/{name}")
             };
             let icon = crate::icons::icon_for_active(Path::new(&icon_path));
+            // 归档内无执行位信息：按扩展名近似（M21-F1）。
+            let is_exec = !e.is_dir && is_exec_name(&name);
             FileItem {
                 icon,
                 name,
                 is_dir: e.is_dir,
+                is_link: false,
+                is_exec,
                 size: e.size,
                 perm: String::new(),
                 mtime: 0,
@@ -1246,11 +1388,16 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        let ft = entry.file_type()?;
+        let is_link = ft.is_symlink();
+        let is_exec = !is_dir && is_executable(&meta, &name);
         let icon = crate::icons::icon_for_active(&entry.path());
         items.push(FileItem {
             icon,
             name,
             is_dir,
+            is_link,
+            is_exec,
             size,
             perm,
             mtime,
@@ -1374,10 +1521,92 @@ mod tests {
             icon: crate::icons::icon_for(std::path::Path::new(name), crate::icons::IconTheme::Dark),
             name: name.to_owned(),
             is_dir,
+            is_link: false,
+            is_exec: false,
             size: 0,
             perm: String::new(),
             mtime: 0,
         }
+    }
+
+    #[test]
+    fn filetype_class_priority_and_extensions() {
+        // M21-F1：分类优先级 目录 > 链接 > 可执行 > 归档 > 图片 > 视频 > 代码。
+        assert_eq!(
+            make_item("d", true).filetype_class(),
+            FileTypeClass::Directory
+        );
+
+        let mut item = make_item("link", false);
+        item.is_link = true;
+        assert_eq!(item.filetype_class(), FileTypeClass::Symlink);
+
+        let mut item = make_item("tool", false);
+        item.is_exec = true;
+        assert_eq!(item.filetype_class(), FileTypeClass::Executable);
+
+        // 归档：支持虚拟浏览（zip/tar.gz）与不支持（7z）都按归档着色。
+        assert_eq!(
+            make_item("a.zip", false).filetype_class(),
+            FileTypeClass::Archive
+        );
+        assert_eq!(
+            make_item("a.tar.gz", false).filetype_class(),
+            FileTypeClass::Archive
+        );
+        assert_eq!(
+            make_item("a.7z", false).filetype_class(),
+            FileTypeClass::Archive
+        );
+        assert_eq!(
+            make_item("pic.PNG", false).filetype_class(),
+            FileTypeClass::Image
+        );
+        assert_eq!(
+            make_item("clip.mkv", false).filetype_class(),
+            FileTypeClass::Video
+        );
+        assert_eq!(
+            make_item("main.rs", false).filetype_class(),
+            FileTypeClass::Code
+        );
+        assert_eq!(
+            make_item("notes.txt", false).filetype_class(),
+            FileTypeClass::Other
+        );
+    }
+
+    #[test]
+    fn is_exec_name_by_extension() {
+        // M21-F1：扩展名近似可执行（Windows 本地/远端/归档内共用）。
+        assert!(is_exec_name("tool.EXE"));
+        assert!(is_exec_name("run.bat"));
+        assert!(!is_exec_name("readme.md"));
+        assert!(!is_exec_name("noext"));
+    }
+
+    #[test]
+    fn format_mtime_shapes_local_and_zero() {
+        // M21-F1：0 → "-"；正常值输出 `yyyy-mm-dd HH:mm:ss`（本地时区，
+        // 期望值用 jiff 同源计算，跨时区可复现）。
+        assert_eq!(format_mtime(0), "-");
+        let expected = {
+            let z = jiff::Timestamp::from_second(86_400)
+                .unwrap()
+                .to_zoned(jiff::tz::TimeZone::system());
+            let (d, t) = (z.date(), z.time());
+            format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                d.year(),
+                d.month(),
+                d.day(),
+                t.hour(),
+                t.minute(),
+                t.second()
+            )
+        };
+        assert_eq!(format_mtime(86_400), expected);
+        assert_eq!(format_mtime(86_400).len(), 19);
     }
 
     #[test]
@@ -1716,6 +1945,8 @@ mod tests {
             icon: crate::icons::icon_for(std::path::Path::new(name), crate::icons::IconTheme::Dark),
             name: name.to_owned(),
             is_dir,
+            is_link: false,
+            is_exec: false,
             size,
             perm: String::new(),
             mtime,
