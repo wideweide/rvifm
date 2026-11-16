@@ -564,10 +564,15 @@ mod tests {
         TcpStream::connect_timeout(&"127.0.0.1:22".parse().unwrap(), Duration::from_secs(1)).is_ok()
     }
 
-    fn backend() -> SftpBackend {
+    /// 连接本机 sshd；CI 无 authorized_keys → None（测试跳过）。
+    fn try_backend() -> Option<SftpBackend> {
         let mut p = SftpParams::new("127.0.0.1");
         p.user = crate::remote::sftp::default_user();
-        SftpBackend::connect(&p).unwrap()
+        SftpBackend::connect(&p).ok()
+    }
+
+    fn backend() -> SftpBackend {
+        try_backend().expect("127.0.0.1 sshd + 密钥认证不可用")
     }
 
     #[test]
@@ -576,7 +581,10 @@ mod tests {
             eprintln!("skip: 127.0.0.1:22 不可达");
             return;
         }
-        let be = backend();
+        let Some(be) = try_backend() else {
+            eprintln!("skip: sshd/认证不可用");
+            return;
+        };
         let entries = be.list(Path::new("/tmp")).unwrap();
         assert!(!entries.is_empty());
         let data = be.read(Path::new("/etc/hostname")).unwrap();
@@ -591,7 +599,10 @@ mod tests {
             eprintln!("skip: 127.0.0.1:22 不可达");
             return;
         }
-        let be = backend();
+        let Some(be) = try_backend() else {
+            eprintln!("skip: sshd/认证不可用");
+            return;
+        };
         match be.list(Path::new("/definitely-not-exist-rvifm")) {
             Err(RemoteError::NotFound(_)) => {}
             other => panic!("expected NotFound, got {other:?}"),
