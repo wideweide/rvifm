@@ -37,7 +37,8 @@ rvifm 帮助（vim 风格文件管理器）
   cw              批量重命名（$EDITOR 编辑名单）
   :rename 新名    重命名当前条目
   :copy / :move <目录>
-  :mkdir / :touch <名>
+  :mkdir / :touch <名>   （:mkdir 后光标定位新目录）
+  :mk <名>        创建并进入新目录
   :cd <目录>
   :file           显示当前条目详情（路径/大小/权限/修改时间/类型）
   :keyword <chars>  设置当前目录书签 keyword（`-` 清除；' 直达的锚点）

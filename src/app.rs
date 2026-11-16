@@ -1610,6 +1610,41 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             state.undo_stack.push(op);
             let _tid = state.active;
             refresh_tab_panes(state, _tid);
+            // M21-E5：mkdir 成功后光标定位到新目录条目（失败路径已在
+            // 上方 Err 返回，光标不动；条目被隐藏过滤时保持原位）。
+            if cmd == "mkdir" {
+                let tab = state.active_tab_mut();
+                if let Some(idx) = tab.entries.iter().position(|i| i.name == name) {
+                    tab.cursor = idx;
+                    tab.on_parent_row = false;
+                }
+            }
+            Ok(ExecOutcome::Done { msg: None })
+        }
+        Some("mk") => {
+            // M21-E5：`:mk <名>` 创建并进入新目录（失败不进入、光标不动）。
+            let name = parts.next().ok_or_else(|| "mk: 缺少名字".to_owned())?;
+            let base = physical_base(state)?;
+            let op = match ops::create_dir(state.active, &base, name) {
+                Ok(op) => op,
+                Err(e) if crate::ops::is_permission_denied(&e) && cfg!(unix) => {
+                    return Ok(ExecOutcome::Escalate {
+                        op: crate::privilege::PrivOp::CreateDir {
+                            path: base.join(name),
+                        },
+                    });
+                }
+                Err(e) => return Err(format!("mk: {e}")),
+            };
+            state.undo_stack.push(op);
+            let cfg = state.config;
+            let tab_id = state.active;
+            // navigate_to 先加载成功才变更状态（M16 语义；失败不改光标）。
+            if let Some(tab) = state.tabs.get_mut(tab_id) {
+                tab.navigate_to(Location::Physical(base.join(name)), cfg)
+                    .map_err(|e| format!("mk: {e}"))?;
+            }
+            refresh_tab_panes(state, tab_id);
             Ok(ExecOutcome::Done { msg: None })
         }
         Some(cmd @ ("j" | "J")) => {
@@ -11336,6 +11371,50 @@ terminal_in_new_window = false
             matches!(r, ExecOutcome::BatchRename { .. }),
             ":rename 无参走批量"
         );
+    }
+
+    #[test]
+    fn m21e5_mkdir_locates_cursor_and_mk_enters() {
+        // ACCEPTANCE §20 M21-E5：:mkdir test 光标定位 test；:mk test 进入
+        // test；失败不改光标/位置。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let cursor_name = |state: &AppState| -> String {
+            state
+                .active_tab()
+                .entries
+                .get(state.active_tab().cursor)
+                .map(|i| i.name.clone())
+                .unwrap_or_default()
+        };
+
+        // :mkdir test → 光标定位 test 条目，不在 `..` 行。
+        exec_command_impl(&mut state, "mkdir test").unwrap();
+        assert_eq!(cursor_name(&state), "test", "光标定位新目录");
+        assert!(!state.active_tab().on_parent_row);
+
+        // 失败（目录已存在）：Err 且光标不动。
+        assert!(exec_command_impl(&mut state, "mkdir test").is_err());
+        assert_eq!(cursor_name(&state), "test", "失败不改光标");
+
+        // :mk sub → 创建并进入；失败（已存在）位置不变。
+        exec_command_impl(&mut state, "mk sub").unwrap();
+        assert_eq!(
+            state.active_tab().location,
+            Location::Physical(tmp.path().join("sub")),
+            ":mk 进入新目录"
+        );
+        // 回上级再试已存在目录：Err 且位置不动（快照比较，路径形式无关）。
+        exec_command_impl(&mut state, "cd ..").unwrap();
+        let before = state.active_tab().location.clone();
+        assert!(
+            exec_command_impl(&mut state, "mk sub").is_err(),
+            "已存在返回 Err"
+        );
+        assert_eq!(state.active_tab().location, before, "失败不改变位置");
+        // 撤销链：mkdir/mk 各入撤销栈（可逆）。
+        assert_eq!(state.undo_stack.len(), 2, "两次创建均入撤销栈");
     }
 
     #[test]
