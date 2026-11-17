@@ -1078,6 +1078,40 @@ mod tests {
     }
 
     #[test]
+    fn m23_2_unbook_preserves_accumulated_score() {
+        // ACCEPTANCE §22 M23-2：unbook（`:keyword -`）只清 keyword 元数据，
+        // 累积分数/排名不变（对照：带 unbook 与不带的 replay 分数全等）。
+        let kw = |ts: u64, kw: &str| EntryRecord {
+            path: "/w/proj".to_owned(),
+            topic: "dir".to_owned(),
+            kind: EntryKind::Keyword,
+            ts,
+            clock: 0,
+            keyword: kw.to_owned(),
+        };
+        // 带书签生命周期：访问 → 设书签 → 访问 → unbook。
+        let events_with = [
+            (1u64, rec("/w/proj", 1)),
+            (2, kw(2, "proj")),
+            (3, rec("/w/proj", 3)),
+            (4, kw(4, "")),
+        ];
+        // 不设书签的同访问序列。
+        let events_without = [(1u64, rec("/w/proj", 1)), (3, rec("/w/proj", 3))];
+        let r_with = replay(&[], &events_with, 10, 10);
+        let r_without = replay(&[], &events_without, 10, 10);
+        let e_with = r_with.iter().find(|e| e.path == "/w/proj").unwrap();
+        let e_without = r_without.iter().find(|e| e.path == "/w/proj").unwrap();
+        assert_eq!(e_with.keyword, "", "unbook 后 keyword 清空");
+        assert!(
+            (e_with.score - e_without.score).abs() < 1e-9,
+            "unbook 保留累积分数: {} vs {}",
+            e_with.score,
+            e_without.score
+        );
+    }
+
+    #[test]
     fn store_type_clocks_advance_independently() {
         // M8-10：dir/file 时钟各自推进；global_tick 只作为全局序号。
         let tmp = TempDir::new().unwrap();
