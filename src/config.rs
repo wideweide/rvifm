@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 /// 用户配置。TOML 字段缺省时逐项回退默认值（`#[serde(default)]`）。
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Config {
     /// 显示以 `.` 开头的隐藏文件（默认不显示）。
@@ -19,6 +19,17 @@ pub struct Config {
     /// M18-4：界面行为选项（[ui] 表）。
     #[serde(default)]
     pub ui: UiConfig,
+    /// M23-4：frecency 选项（[frecency] 表）。
+    #[serde(default)]
+    pub frecency: FrecencyConfig,
+}
+
+/// M23-4：[frecency] 表——record 忽略模式（命中路径不写入事件）。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct FrecencyConfig {
+    /// glob 模式列表（如 `*/.git`、`*/node_modules/*`）；命中静默跳过。
+    pub ignore_patterns: Vec<String>,
 }
 
 /// M18-4：[ui] 表——外部命令/shell 在新终端窗口执行（检测 $TMUX/$STY；
@@ -48,6 +59,7 @@ impl Default for Config {
             sort_dirs_first: true,
             ignore_case_sort: true,
             ui: UiConfig::default(),
+            frecency: FrecencyConfig::default(),
         }
     }
 }

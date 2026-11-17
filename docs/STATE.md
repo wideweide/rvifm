@@ -1,4 +1,5 @@
 # STATE —
+- `M23-4`（2026-11-17）：IGNORE_PATTERNS——Config 增 `[frecency] ignore_patterns`（FrecencyConfig；Config 失去 Copy——32 处 `state.config` 调用点改 clone，Config 素质向非 Copy 演进）；frecency.rs 增 `ignored()`（glob `*` 跨 `/`，复用 tab::glob_match 零新依赖）；过滤点：record_live_visit/record_file_open/flush_session_visits（TUI）+ cmd_record（CLI，config::load）。288 单测全绿（+2：glob 语义/命中跳过+未命中记录）。踩坑：Config 失 Copy 级联 30+ 调用点（clone 修复）。
 - `M23-3`（2026-11-17）：容量清理与书签保护——EntryKind::Remove 墓碑事件（replay 删除条目，后续访问可重建）；`cleanup_capacity_with(store, topic, max_entries)`（默认 MAX_ENTRIES_DEFAULT=1500；超限删最低分**未书签**条目至 90%，keyword 永不删）挂 record_impl 写事务末尾（Navigate/Open 触发）；record 清理失败静默（degraded 语义）。286 单测全绿（+1：小上限 30 注入加速——1700 条直驱测试曾耗 99s，参数化后 3.4s）。
 - `M23-2`（2026-11-17）：unbook 保留历史——**现状核对已满足**（NAV-1 keyword 事件为纯元数据：replay 只应用 keyword 字段不推进时钟不加分，`:keyword -` 清空不动分数）；补对照验证测试（带 unbook 与不带序列 replay 分数全等）。285 单测全绿（+1）。同 M21-E2 验证补缺模式，零代码改动。
 - `M23-1`（2026-11-17）：多词搜索与匹配分级——frecency.rs 增 grade_for_multi（每词独立 grade_for 取最低档；ordered 按序命中保持档位、any-order 全命中降为 Substring 上限；单词/空退化 grade_for）；from_snapshot 经 multi 打分（pick/TUI 同源）；filter_jump 更新命中条目 grade（ranked 档位降序→同档保持传入序）。284 单测全绿（+1：ordered 优先/乱序降档/单词退化）。
@@ -126,8 +127,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23-4 IGNORE_PATTERNS
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1/2/3 完成）；两批完成后发布 0.8.0
+- **当前任务**：M23-5 per-topic LAMBDA / MAX_ENTRIES 配置
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1～4 完成）；两批完成后发布 0.8.0
 
 ## 已完成
 

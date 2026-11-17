@@ -566,7 +566,7 @@ fn current_item_info(state: &AppState) -> Option<(PathBuf, String)> {
 /// M16 NAV-2：历史菜单导航——落到历史第 idx 条（作为新导航，截断
 /// forward）；当前位置提示。
 fn history_menu_nav(state: &mut AppState, idx: usize, msg: &mut Option<String>) {
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let (target, cur) = {
         let tab = state.active_tab();
         (tab.history.get(idx).cloned(), tab.hist_pos)
@@ -799,7 +799,7 @@ pub(crate) fn remote_enter(
         ));
     };
     let items = backend.list(root).map_err(|e| format!("remote: {e}"))?;
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab_mut();
     if tab.pre_remote.is_none() {
         tab.pre_remote = Some(tab.location.clone());
@@ -864,7 +864,7 @@ pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> R
             backend.list(path).map_err(|e| format!("remote: {e}"))?,
         )
     };
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab_mut();
     tab.history.truncate(tab.hist_pos + 1);
     tab.history.push(Location::Remote {
@@ -925,7 +925,7 @@ pub(crate) fn remote_up(state: &mut AppState) -> Result<(), String> {
             .pre_remote
             .clone()
             .unwrap_or_else(|| Location::Physical(std::env::current_dir().unwrap_or_default()));
-        let cfg = state.config;
+        let cfg = state.config.clone();
         let tab = state.active_tab_mut();
         tab.pre_remote = None;
         tab.navigate_to(back, cfg)
@@ -952,7 +952,7 @@ pub(crate) fn remote_jump(state: &mut AppState, pos: usize) -> Result<(), String
         };
         backend.list(&path).map_err(|e| format!("remote: {e}"))?
     };
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab_mut();
     tab.hist_pos = pos;
     tab.location = Location::Remote {
@@ -996,7 +996,7 @@ fn hist_move(state: &mut AppState, forward: bool, msg: &mut Option<String>) -> R
     let moved = if target_is_remote {
         remote_jump(state, target_pos).map(|_| true)
     } else {
-        let cfg = state.config;
+        let cfg = state.config.clone();
         state
             .active_tab_mut()
             .hist_jump(forward, cfg)
@@ -1074,7 +1074,7 @@ fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
         ));
         return;
     };
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab_mut();
     if let Err(e) = tab.navigate_to(Location::Physical(PathBuf::from(&target)), cfg) {
         *msg = Some(format!("跳转失败: {e}"));
@@ -1223,7 +1223,7 @@ fn filter_jump(
 
 /// 选定执行（M8-12，纯导航语义）：目录 → cd；文件 → 切到父目录并定位光标。
 fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result<String, String> {
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let target = PathBuf::from(&entry.path);
     if entry.topic == "dir" {
         if !target.is_dir() {
@@ -1328,7 +1328,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M18-2：多字段排序（:sort name,size desc）。
             let args = parts.collect::<Vec<&str>>().join(" ");
             let specs = parse_sort_spec(&args)?;
-            let cfg = state.config;
+            let cfg = state.config.clone();
             state.active_tab_mut().apply_sort_multi(specs.clone(), cfg);
             let text = specs
                 .iter()
@@ -1579,7 +1579,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 return Err(format!("cd: 目录不存在: {dir_arg}"));
             }
             let target = normalize_lexical(&target);
-            let cfg = state.config;
+            let cfg = state.config.clone();
             let tab = state.active_tab_mut();
             tab.navigate_to(Location::Physical(target), cfg)
                 .map_err(|e| format!("cd: {e}"))?;
@@ -1830,7 +1830,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 Err(e) => return Err(format!("mk: {e}")),
             };
             state.undo_stack.push(op);
-            let cfg = state.config;
+            let cfg = state.config.clone();
             let tab_id = state.active;
             // navigate_to 先加载成功才变更状态（M16 语义；失败不改光标）。
             if let Some(tab) = state.tabs.get_mut(tab_id) {
@@ -2052,7 +2052,7 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
         return Outcome::Continue;
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab_mut();
     let half = 8isize; // 右 pane 半页步进（固定近似值，视口高度不可得）
     match key.code {
@@ -2585,7 +2585,7 @@ fn handle_key(
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') => {
                 input.count = None;
-                let cfg = state.config;
+                let cfg = state.config.clone();
                 state.active_tab_mut().exit_results(cfg);
                 *msg = Some("已退出搜索结果".to_owned());
                 return Outcome::Continue;
@@ -2601,7 +2601,7 @@ fn handle_key(
                     }
                     return Outcome::Continue;
                 }
-                let cfg = state.config;
+                let cfg = state.config.clone();
                 if let Err(e) = state.active_tab_mut().locate_result(cfg) {
                     *msg = Some(format!("定位失败: {e}"));
                 } else {
@@ -2717,7 +2717,7 @@ fn handle_key(
         }
         KeyCode::Char('h') => {
             input.count = None;
-            let cfg = state.config;
+            let cfg = state.config.clone();
             if let Err(e) = state.active_tab_mut().return_parent(cfg) {
                 *msg = Some(format!("返回失败: {e}"));
             }
@@ -2856,9 +2856,9 @@ fn handle_key(
 
 /// 刷新 tab 的双 pane（M14-1）：左 pane 走 Tab::refresh，右 pane 走 Pane::refresh。
 fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
-    let cfg = state.config;
+    let cfg = state.config.clone();
     if let Some(tab) = state.tabs.get_mut(tab_id) {
-        let _ = tab.refresh(cfg);
+        let _ = tab.refresh(cfg.clone());
         let _ = tab.right.refresh(cfg);
     }
 }
@@ -2934,7 +2934,7 @@ fn refresh_on_fs_change(state: &mut AppState) {
 fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
     // FEAT-2：焦点在 `..` 行 → 等价 `h`（返回上级；归档根回物理目录）。
     if state.active_tab().on_parent_row {
-        let cfg = state.config;
+        let cfg = state.config.clone();
         if let Err(e) = state.active_tab_mut().return_parent(cfg) {
             *msg = Some(format!("返回失败: {e}"));
             return;
@@ -2944,7 +2944,7 @@ fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         record_live_visit(state, tab_id, 'L');
         return;
     }
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let tab = state.active_tab();
     let is_file = tab
         .entries
@@ -3479,7 +3479,7 @@ fn apply_rename_lines(
         ));
     }
     let tab_id = state.active;
-    let cfg = state.config;
+    let cfg = state.config.clone();
     let mut updated = 0usize;
     let mut skipped = 0usize;
     for (old, line) in old_names.iter().zip(&lines) {
@@ -3725,7 +3725,7 @@ fn execute_delete(
             }
         };
     }
-    let cfg = state.config;
+    let cfg = state.config.clone();
     if permanent {
         // M13-3 永久删除：不可逆，不进撤销栈。权限错误仍走提权链。
         let is_dir = path.is_dir();
@@ -3799,7 +3799,7 @@ fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>) {
             }
         }
     }
-    let cfg = state.config;
+    let cfg = state.config.clone();
     if let Some(tab) = state.tabs.get_mut(state.active) {
         let _ = tab.refresh(cfg);
         // M3-4：批量删除完成后清空标记状态。
@@ -3866,7 +3866,7 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
             *msg = Some(format!("已撤销: {}", op.describe()));
             // 刷新受影响 tab（M2-7：跨 tab 撤销刷新原 tab；tab 已关闭则跳过，
             // 磁盘恢复不受影响；设计取向为"当前 tab 不变"，ACCEPTANCE §4）。
-            let cfg = state.config;
+            let cfg = state.config.clone();
             if let Some(tab) = state.tabs.get_mut(op.tab_id())
                 && let Err(e) = tab.refresh(cfg)
             {
@@ -3883,7 +3883,9 @@ fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
 /// 导航轨迹，history[0] 为启动落点不算导航）转为 Navigate 事件批量追加。
 /// 失败降级 pending（不阻塞退出、不 panic）。
 fn flush_session_visits(state: &AppState) {
-    let records = collect_session_records(state);
+    // M23-4：IGNORE_PATTERNS——命中路径不入库。
+    let mut records = collect_session_records(state);
+    records.retain(|r| !crate::frecency::ignored(&r.path, &state.config.frecency.ignore_patterns));
     if records.is_empty() {
         return;
     }
@@ -3973,6 +3975,10 @@ fn record_live_visit(state: &mut AppState, tab_id: usize, side: char) {
         return;
     };
     let path = p.to_string_lossy().replace('\\', "/");
+    // M23-4：IGNORE_PATTERNS——命中路径静默跳过（不登记不入库）。
+    if crate::frecency::ignored(&path, &state.config.frecency.ignore_patterns) {
+        return;
+    }
     let key = (tab_id, side, path.clone());
     state
         .live_recorded
@@ -4004,6 +4010,10 @@ fn record_live_visit(state: &mut AppState, tab_id: usize, side: char) {
 /// 写入（同 record_live_visit 理由）。
 fn record_file_open(state: &mut AppState, tab_id: usize, path: &std::path::Path) {
     let path_s = path.to_string_lossy().replace('\\', "/");
+    // M23-4：IGNORE_PATTERNS——命中路径静默跳过。
+    if crate::frecency::ignored(&path_s, &state.config.frecency.ignore_patterns) {
+        return;
+    }
     state
         .live_recorded
         .entry((tab_id, 'F', path_s.clone()))
@@ -4045,7 +4055,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     config::init_quickjump();
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
-    let mut state = AppState::new(Tab::from_physical(&std::env::current_dir()?, config)?);
+    let mut state = AppState::new(Tab::from_physical(
+        &std::env::current_dir()?,
+        config.clone(),
+    )?);
     state.config = config;
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
@@ -4219,20 +4232,20 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 InputMode::Filter { input } => match command_input(input, key) {
                     CmdInput::Continue => {
                         // M21-E7：实时过滤——输入即生效（含隐式 *模式* 语义）。
-                        let cfg = state.config;
-                        state.active_tab_mut().apply_filter(input, cfg);
+                        let cfg = state.config.clone();
+                        state.active_tab_mut().apply_filter(input, cfg.clone());
                     }
                     CmdInput::Cancel => {
                         // M21-E7：Esc 清除过滤，恢复完整列表。
-                        let cfg = state.config;
-                        state.active_tab_mut().apply_filter("", cfg);
+                        let cfg = state.config.clone();
+                        state.active_tab_mut().apply_filter("", cfg.clone());
                         msg = None;
                         mode = InputMode::Normal;
                     }
                     CmdInput::Submit => {
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
-                        let cfg = state.config;
+                        let cfg = state.config.clone();
                         state.active_tab_mut().apply_filter(&line, cfg);
                         msg = None;
                     }
@@ -4597,7 +4610,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             SortDialogOutcome::None => {}
                             SortDialogOutcome::Close => mode = InputMode::Normal,
                             SortDialogOutcome::Apply(spec) => {
-                                let cfg = state.config;
+                                let cfg = state.config.clone();
                                 state.active_tab_mut().apply_sort(spec, cfg);
                                 mode = InputMode::Normal;
                                 msg = Some(format!(
@@ -4705,7 +4718,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     Some(e) => match crate::ops::restore_from_trash(&e) {
                                         Ok(orig) => {
                                             msg = Some(format!("已恢复: {}", orig.display()));
-                                            let cfg = state.config;
+                                            let cfg = state.config.clone();
                                             if let Some(tab) = state.tabs.get_mut(state.active) {
                                                 let _ = tab.refresh(cfg);
                                             }
@@ -9528,7 +9541,7 @@ mod tests {
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         for _ in 0..3 {
             state.active_tab_mut().cursor = 0;
-            let cfg = state.config;
+            let cfg = state.config.clone();
             let _ = state.active_tab_mut().enter_selected(cfg);
         }
         assert_eq!(state.active_tab().hist_pos, 3);
@@ -9545,9 +9558,19 @@ mod tests {
         assert_eq!(state.active_tab().hist_pos, 4);
         // 后退两步（pos 2，在 b）后从菜单跳到 idx 4（尾部的 a）→
         // pos 之后的 b、c 被截断。
-        let cfg = state.config;
-        assert!(state.active_tab_mut().hist_jump(false, cfg).unwrap());
-        assert!(state.active_tab_mut().hist_jump(false, cfg).unwrap());
+        let cfg = state.config.clone();
+        assert!(
+            state
+                .active_tab_mut()
+                .hist_jump(false, cfg.clone())
+                .unwrap()
+        );
+        assert!(
+            state
+                .active_tab_mut()
+                .hist_jump(false, cfg.clone())
+                .unwrap()
+        );
         history_menu_nav(&mut state, 4, &mut msg);
         assert!(msg.is_none());
         assert_eq!(
@@ -9555,7 +9578,7 @@ mod tests {
             Location::Physical(tmp.path().join("a"))
         );
         assert_eq!(state.active_tab().history.len(), 4, "forward（c）已截断");
-        assert!(!state.active_tab_mut().hist_jump(true, cfg).unwrap());
+        assert!(!state.active_tab_mut().hist_jump(true, cfg.clone()).unwrap());
         // 当前位置（pos 3）导航 → 提示。
         history_menu_nav(&mut state, 3, &mut msg);
         assert_eq!(msg.as_deref(), Some("已在当前位置"));
@@ -9567,7 +9590,7 @@ mod tests {
         fs::create_dir(tmp.path().join("sub")).unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         state.active_tab_mut().cursor = 0;
-        let cfg = state.config;
+        let cfg = state.config.clone();
         let _ = state.active_tab_mut().enter_selected(cfg);
         // exec :history → ShowHistory。
         assert_eq!(
@@ -9876,7 +9899,7 @@ mod tests {
         fs::create_dir(tmp.path().join("sub")).unwrap();
         let mut state =
             AppState::new(Tab::from_physical(&tmp.path().join("sub"), Config::default()).unwrap());
-        let cfg = state.config;
+        let cfg = state.config.clone();
         // 历史 [sub, tmp]；pos 1。
         state
             .active_tab_mut()
@@ -9943,7 +9966,7 @@ mod tests {
         // collect：history[1..]（启动落点不算导航）→ Navigate 事件。
         let tmp = TempDir::new().unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let cfg = state.config;
+        let cfg = state.config.clone();
         let a = tmp.path().join("a");
         fs::create_dir(&a).unwrap();
         state
@@ -12108,22 +12131,22 @@ terminal_in_new_window = false
 
         // 实时输入 "*.rs"（逐键 = Continue 链路）→ 只剩 main.rs。
         for input in ["*", "*.", "*.r", "*.rs"] {
-            state.active_tab_mut().apply_filter(input, cfg);
+            state.active_tab_mut().apply_filter(input, cfg.clone());
         }
         assert_eq!(names(&state), ["main.rs"], "*.rs 通配过滤");
 
         // Esc 清除 → 恢复完整列表。
-        state.active_tab_mut().apply_filter("", cfg);
+        state.active_tab_mut().apply_filter("", cfg.clone());
         assert_eq!(names(&state).len(), 3, "Esc 恢复完整列表");
 
         // 隐式 *src*：输入 "src"（逐键）→ 只剩 src 目录。
         for input in ["s", "sr", "src"] {
-            state.active_tab_mut().apply_filter(input, cfg);
+            state.active_tab_mut().apply_filter(input, cfg.clone());
         }
         assert_eq!(names(&state), ["src"], "src 隐式 *src* 过滤");
 
         // Esc → 恢复。
-        state.active_tab_mut().apply_filter("", cfg);
+        state.active_tab_mut().apply_filter("", cfg.clone());
         assert_eq!(names(&state).len(), 3, "Esc 再次恢复");
     }
 
@@ -12269,6 +12292,38 @@ terminal_in_new_window = false
         let r = remote_pass_apply(&mut state2, "srv", &params, "pw");
         assert!(r.is_err(), "不可达主机应失败");
         assert!(r.unwrap_err().contains("口令认证失败"), "错误带统一前缀");
+    }
+
+    #[test]
+    fn m23_4_ignore_patterns_skip_record() {
+        // ACCEPTANCE §22 M23-4：IGNORE_PATTERNS 命中路径静默跳过
+        // （record_live_visit 不登记）；未命中照常记录。
+        let (_tmp, mut state) = make_state(1);
+        state.config.frecency.ignore_patterns = vec!["*/node_modules".to_owned()];
+
+        // 命中：node_modules 目录 → 不登记。
+        state.active_tab_mut().location = Location::Physical(PathBuf::from("C:/proj/node_modules"));
+        record_live_visit(&mut state, 0, 'L');
+        assert!(
+            state.live_recorded.is_empty(),
+            "忽略模式命中不记录: {:?}",
+            state.live_recorded
+        );
+
+        // 未命中：src 目录 → 登记在案。
+        state.active_tab_mut().location = Location::Physical(PathBuf::from("C:/proj/src"));
+        record_live_visit(&mut state, 0, 'L');
+        assert!(
+            state
+                .live_recorded
+                .contains_key(&(0, 'L', "C:/proj/src".to_owned())),
+            "未命中路径照常记录: {:?}",
+            state.live_recorded
+        );
+
+        // 退出刷写同样过滤（flush_session_visits 共用 ignored）。
+        let records = collect_session_records(&state);
+        assert!(records.iter().all(|r| !r.path.contains("node_modules")));
     }
 
     #[test]

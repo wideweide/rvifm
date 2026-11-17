@@ -487,6 +487,11 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
         .parent()
         .unwrap_or(Path::new("."))
         .join("events.pending");
+    // M23-4：IGNORE_PATTERNS——命中路径静默跳过（不追加事件）。
+    let cfg = crate::config::load().unwrap_or_default();
+    if crate::frecency::ignored(&record.path, &cfg.frecency.ignore_patterns) {
+        return Ok(());
+    }
     record_impl(&db_path, &pending, &record)
 }
 
@@ -596,6 +601,29 @@ fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io:
 
 /// M23-3：per-topic 容量上限（M23-5 起可配置；默认与参考项目一致）。
 pub const MAX_ENTRIES_DEFAULT: usize = 1500;
+
+/// M23-4：IGNORE_PATTERNS——路径命中任一 glob 模式则不记录（静默跳过）。
+/// glob `*` 跨 `/`（tab::glob_match 语义），`*/.git` 命中任意深度的 .git。
+pub fn ignored(path: &str, patterns: &[String]) -> bool {
+    patterns.iter().any(|p| crate::tab::glob_match(p, path))
+}
+
+#[cfg(test)]
+mod ignore_tests {
+    use super::*;
+
+    #[test]
+    fn m23_4_ignored_glob_semantics() {
+        // M23-4：glob `*` 跨 `/`——`*/.git` 命中任意深度的 .git；
+        // `*/node_modules/*` 命中子文件；未命中路径不拦。
+        let pats = vec!["*/.git".to_owned(), "*/node_modules/*".to_owned()];
+        assert!(ignored("/home/u/.git", &pats));
+        assert!(ignored("/a/b/c/.git", &pats));
+        assert!(ignored("/p/node_modules/x.js", &pats));
+        assert!(!ignored("/home/u/src", &pats));
+        assert!(!ignored("/p/node_modules", &pats), "尾段模式需子路径");
+    }
+}
 
 /// M23-3：容量清理——条目数超过 `MAX_ENTRIES_DEFAULT` 时删除最低分的
 /// **未书签**条目至 90%（带 keyword 条目永不清理）。返回删除数。

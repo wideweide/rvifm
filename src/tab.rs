@@ -2040,7 +2040,7 @@ mod tests {
                 field: SortField::Name,
                 desc: false,
             },
-            cfg,
+            cfg.clone(),
         );
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["a.doc", "b.txt", "c.md"]);
@@ -2052,7 +2052,7 @@ mod tests {
                 field: SortField::Name,
                 desc: true,
             },
-            cfg,
+            cfg.clone(),
         );
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["c.md", "b.txt", "a.doc"]);
@@ -2064,7 +2064,7 @@ mod tests {
                 field: SortField::Size,
                 desc: false,
             },
-            cfg,
+            cfg.clone(),
         );
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["a.doc", "b.txt", "c.md"]);
@@ -2075,7 +2075,7 @@ mod tests {
                 field: SortField::Mtime,
                 desc: true,
             },
-            cfg,
+            cfg.clone(),
         );
         assert_eq!(tab.entries[0].name, "c.md");
 
@@ -2085,7 +2085,7 @@ mod tests {
                 field: SortField::Ext,
                 desc: false,
             },
-            cfg,
+            cfg.clone(),
         );
         let names: Vec<&str> = tab.entries.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["a.doc", "c.md", "b.txt"]);
