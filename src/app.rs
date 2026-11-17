@@ -710,19 +710,91 @@ fn remote_locate_result(state: &mut AppState) -> Result<(), String> {
     Ok(())
 }
 
-/// M22-6：远端文件打开——RemoteFs read → 临时副本（`rvifm-open-` 前缀）
+/// M22-6/M23-9：远端文件打开——RemoteFs read → 临时副本（`rvifm-open-` 前缀）
 /// → system opener；副本路径登记 AppState.temp_opens，run 退出时统一清理
 /// （Windows opener 可能锁定文件，不做即时删除）。只读用途，不入撤销栈。
+/// M23-9：打开后挂常驻监听线程——修改停止 2s（防抖）自动上传回服务器，
+/// 失败状态栏提示。
 fn remote_open_file(
     state: &mut AppState,
     remote: &str,
     full: &std::path::Path,
 ) -> Result<Option<String>, String> {
     let tmp = remote_download_copy(state, remote, full)?;
+    spawn_upload_watcher(state, remote, &tmp, full);
     match crate::opener::system_open(&tmp) {
-        Ok(()) => Ok(Some(format!("打开远端文件（临时副本 {}）", tmp.display()))),
+        Ok(()) => Ok(Some(format!(
+            "打开远端文件（临时副本 {}，修改自动上传）",
+            tmp.display()
+        ))),
         Err(e) => Err(format!("打开失败: {e}")),
     }
+}
+
+/// M23-9：为副本挂常驻监听线程——修改停止 2s（防抖）后经通道回传上传
+/// 请求（run 循环消费：读副本最新内容 → RemoteFs write）；多次修改多次
+/// 上传（外层循环继续监听）。监听/通道失败静默降级（无自动上传）。
+/// watcher 由监听线程自持（线程存活即监听有效；进程退出随之消亡）。
+fn spawn_upload_watcher(
+    state: &mut AppState,
+    remote: &str,
+    temp: &std::path::Path,
+    remote_path: &std::path::Path,
+) {
+    use notify::Watcher as _;
+    let Some(tx) = state.upload_tx.clone() else {
+        return;
+    };
+    let remote = remote.to_owned();
+    let temp = temp.to_path_buf();
+    let remote_path = remote_path.to_path_buf();
+    std::thread::Builder::new()
+        .name("rvifm-upload-watch".to_owned())
+        .spawn(move || {
+            let (wx, wrx) = std::sync::mpsc::channel::<notify::Event>();
+            let Ok(mut watcher) =
+                notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+                    if let Ok(ev) = res
+                        && matches!(
+                            ev.kind,
+                            notify::EventKind::Create(_) | notify::EventKind::Modify(_)
+                        )
+                    {
+                        let _ = wx.send(ev);
+                    }
+                })
+            else {
+                return;
+            };
+            if watcher
+                .watch(&temp, notify::RecursiveMode::NonRecursive)
+                .is_err()
+            {
+                return;
+            }
+            std::mem::forget(watcher); // 线程常驻：watcher 与线程同生命周期
+            loop {
+                // 等待下一次修改事件（文件打开期间随时可改）。
+                let Ok(_ev) = wrx.recv() else {
+                    return;
+                };
+                // 防抖：2s 内无进一步修改 → 视为修改保持 → 上传。
+                loop {
+                    match wrx.recv_timeout(std::time::Duration::from_secs(2)) {
+                        Ok(_) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+                if tx
+                    .send((remote.clone(), temp.clone(), remote_path.clone()))
+                    .is_err()
+                {
+                    return; // run 已退出
+                }
+            }
+        })
+        .expect("rvifm-upload-watch 线程启动失败");
 }
 
 /// M22-6：下载远端文件到临时副本（可测抽取；登记 temp_opens）。
@@ -4068,6 +4140,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut mode = InputMode::default();
     // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
     let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
+    // M23-9：副本修改防抖后的上传请求通道（监听线程回传，run 循环消费）。
+    let (upload_tx, upload_rx) =
+        std::sync::mpsc::channel::<(String, std::path::PathBuf, std::path::PathBuf)>();
+    state.upload_tx = Some(upload_tx);
     loop {
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
@@ -4081,6 +4157,20 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             } else {
                 format!("后台作业 {id} 完成")
             });
+        }
+        // M23-9：消费副本修改上传请求（读最新内容 → RemoteFs write）。
+        while let Ok((remote, temp, rpath)) = upload_rx.try_recv() {
+            if let Some(backend) = state.remote_sessions.get(&remote) {
+                let result = std::fs::read(&temp).and_then(|bytes| {
+                    backend
+                        .write(&rpath, &bytes)
+                        .map_err(|e| std::io::Error::other(e.to_string()))
+                });
+                msg = Some(match result {
+                    Ok(_) => format!("已同步上传 {}", rpath.display()),
+                    Err(e) => format!("上传失败: {e}"),
+                });
+            }
         }
         // M21-F5：外部变更监听——先同步监听目标（导航/切 tab 后重挂或卸载），
         // 再抽干事件；创建/删除/重命名/修改触发刷新（光标跟随原条目）。

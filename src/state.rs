@@ -211,6 +211,9 @@ pub struct AppState {
     pub live_recorded: std::collections::HashMap<(usize, char, String), usize>,
     /// M22-6：远端文件打开的临时副本路径——run 退出时统一清理。
     pub temp_opens: Vec<std::path::PathBuf>,
+    /// M23-9：副本修改防抖后的上传请求通道（run 循环消费）。
+    pub upload_tx:
+        Option<std::sync::mpsc::Sender<(String, std::path::PathBuf, std::path::PathBuf)>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -239,6 +242,7 @@ impl AppState {
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),
             temp_opens: Vec::new(),
+            upload_tx: None,
         }
     }
 

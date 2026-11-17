@@ -1,4 +1,5 @@
 # STATE —
+- `M23-9`（2026-11-18）：远端文件跟踪上传——remote_open_file 挂常驻监听线程 spawn_upload_watcher（notify 自持于线程 + std::mem::forget；修改事件 → 2s 防抖静默 → 经 upload_tx 回传请求；多次修改多次上传）；run 循环消费 upload_rx（读副本最新内容 → backend.write；成功"已同步上传"/失败"上传失败"状态栏）；upload_tx 存 AppState（Option，run 初始化）；退出清理不变。290 单测全绿（结构性新增，watcher 行为随 M22-5 模式由真实环境覆盖——单测只覆盖编译形态）。踩坑：let-else 需尾分号；`if expr.expect(...);` 无效（去掉 if 前缀）；CRLF 文件下 node 多行替换全部失配——改用 Edit 工具。
 - `M23-5`（2026-11-18）：per-topic LAMBDA / MAX_ENTRIES——FrecencySettings（lambda_dir/file=0.01、lambda_unified=0.005、max_entries=1500 默认；SETTINGS 用 **Mutex** 而非 OnceLock——并行测试 get_or_init(DEFAULT) 会抢先占位致 init 静默失败）；replay_inner/rebuild_snapshot λ 按 topic 取；cleanup_capacity 读 settings().max_entries；init_settings 挂 run()/cmd_pick/cmd_record；FrecencyConfig 扩 lambda_dir/file/unified + max_entries（Option 缺省兼容），Config 失 Eq（f64）。290 单测全绿（+2：λ 对照衰减/max_entries 清理）。
 - `M23-4`（2026-11-17）：IGNORE_PATTERNS——Config 增 `[frecency] ignore_patterns`（FrecencyConfig；Config 失去 Copy——32 处 `state.config` 调用点改 clone，Config 素质向非 Copy 演进）；frecency.rs 增 `ignored()`（glob `*` 跨 `/`，复用 tab::glob_match 零新依赖）；过滤点：record_live_visit/record_file_open/flush_session_visits（TUI）+ cmd_record（CLI，config::load）。288 单测全绿（+2：glob 语义/命中跳过+未命中记录）。踩坑：Config 失 Copy 级联 30+ 调用点（clone 修复）。
 - `M23-3`（2026-11-17）：容量清理与书签保护——EntryKind::Remove 墓碑事件（replay 删除条目，后续访问可重建）；`cleanup_capacity_with(store, topic, max_entries)`（默认 MAX_ENTRIES_DEFAULT=1500；超限删最低分**未书签**条目至 90%，keyword 永不删）挂 record_impl 写事务末尾（Navigate/Open 触发）；record 清理失败静默（degraded 语义）。286 单测全绿（+1：小上限 30 注入加速——1700 条直驱测试曾耗 99s，参数化后 3.4s）。
@@ -128,8 +129,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23-9 远端文件跟踪上传（追加调整已蒸馏：M23-7 修订 cve 移除、新增 M23-9～12；执行序 9→10→11→12→6→8）
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1/2 完成，批次扩至 12 任务）；两批完成后发布 0.8.0
+- **当前任务**：M23-10 y 复制序列与 e 编辑器
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1～5、9 完成）；两批完成后发布 0.8.0
 
 ## 已完成
 
