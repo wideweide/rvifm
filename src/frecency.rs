@@ -258,6 +258,50 @@ pub fn ranked(entries: &mut [ScoredEntry]) {
 /// 500 个事件前的一次访问衰减为 exp(-5) ≈ 0.7%，实现"近期访问优先"。
 pub const AGING_LAMBDA: f64 = 0.01;
 
+/// M23-5：per-topic frecency 设置（OnceLock；run/pick/record 启动时初始化，
+/// 未初始化用默认值——旧配置缺省兼容）。
+#[derive(Debug, Clone, Copy)]
+pub struct FrecencySettings {
+    pub lambda_dir: f64,
+    pub lambda_file: f64,
+    pub lambda_unified: f64,
+    pub max_entries: usize,
+}
+
+impl Default for FrecencySettings {
+    fn default() -> Self {
+        Self {
+            lambda_dir: AGING_LAMBDA,
+            lambda_file: AGING_LAMBDA,
+            lambda_unified: 0.005, // unified 时钟混合计数 dir+file 事件
+            max_entries: MAX_ENTRIES_DEFAULT,
+        }
+    }
+}
+
+static SETTINGS: std::sync::Mutex<FrecencySettings> = std::sync::Mutex::new(FrecencySettings {
+    lambda_dir: AGING_LAMBDA,
+    lambda_file: AGING_LAMBDA,
+    lambda_unified: 0.005,
+    max_entries: MAX_ENTRIES_DEFAULT,
+});
+
+/// M23-5：初始化 per-topic 设置（TUI run / pick / record 启动时调用；
+/// None 字段取默认值，旧配置缺省兼容）。
+pub fn init_settings(cfg: &crate::config::FrecencyConfig) {
+    let d = FrecencySettings::default();
+    *SETTINGS.lock().unwrap() = FrecencySettings {
+        lambda_dir: cfg.lambda_dir.unwrap_or(d.lambda_dir),
+        lambda_file: cfg.lambda_file.unwrap_or(d.lambda_file),
+        lambda_unified: cfg.lambda_unified.unwrap_or(d.lambda_unified),
+        max_entries: cfg.max_entries.unwrap_or(d.max_entries),
+    };
+}
+
+fn settings() -> FrecencySettings {
+    *SETTINGS.lock().unwrap()
+}
+
 /// EMS 老化：`score * exp(-λ * Δtick)`。
 fn aged(score: f64, lambda: f64, delta_ticks: u64) -> f64 {
     score * (-lambda * delta_ticks as f64).exp()
@@ -307,7 +351,18 @@ fn replay_inner(
     events: &[(u64, EntryRecord)],
     clocks: ReplayClocks,
 ) -> Vec<ScoredEntry> {
-    let lambda = AGING_LAMBDA;
+    // M23-5：per-topic λ（PerType 按事件 topic 取；Unified 用统一 λ）。
+    let st = settings();
+    let unified = matches!(clocks, ReplayClocks::Unified(_));
+    let lambda_for_topic = |topic: &str| {
+        if unified {
+            st.lambda_unified
+        } else if topic == "file" {
+            st.lambda_file
+        } else {
+            st.lambda_dir
+        }
+    };
     let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
         std::collections::BTreeMap::new();
     for s in snapshot {
@@ -353,7 +408,7 @@ fn replay_inner(
             continue;
         }
         let delta = clock.saturating_sub(entry.clock);
-        entry.score = aged(entry.score, lambda, delta) + 1.0;
+        entry.score = aged(entry.score, lambda_for_topic(&ev.topic), delta) + 1.0;
         entry.tick = *seq;
         entry.clock = clock;
     }
@@ -374,7 +429,7 @@ fn replay_inner(
                 path: s.path.clone(),
                 topic: s.topic.clone(),
                 keyword: s.keyword.clone(),
-                score: aged(s.score, lambda, delta),
+                score: aged(s.score, lambda_for_topic(&s.topic), delta),
                 grade: grade_for(s, ""),
                 last_visit: last_visit
                     .get(&(s.topic.clone(), s.path.clone()))
@@ -435,6 +490,8 @@ fn merge_pending(store: &Store, path: &Path) -> std::io::Result<()> {
 /// 成功静默退出 0；数据库连续失败降级写 `events.pending`（下次启动合并）；
 /// 降级也失败才退出 1。
 pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
+    // M23-5：加载 [frecency] 设置（λ/容量上限）。
+    init_settings(&crate::config::load().unwrap_or_default().frecency);
     let mut topic = "dir".to_owned();
     let mut path: Option<String> = None;
     let mut keyword: Option<String> = None;
@@ -628,7 +685,7 @@ mod ignore_tests {
 /// M23-3：容量清理——条目数超过 `MAX_ENTRIES_DEFAULT` 时删除最低分的
 /// **未书签**条目至 90%（带 keyword 条目永不清理）。返回删除数。
 pub fn cleanup_capacity(store: &Store, topic: &str) -> std::io::Result<usize> {
-    cleanup_capacity_with(store, topic, MAX_ENTRIES_DEFAULT)
+    cleanup_capacity_with(store, topic, settings().max_entries)
 }
 
 /// M23-3：可注入上限的清理本体（测试用小上限加速）。
@@ -1167,6 +1224,71 @@ mod tests {
         let r3 = replay(&[], &events, 2, 1000);
         let s3 = r3.iter().find(|e| e.path == "/f/notes.txt").unwrap();
         assert!(s3.score < s1.score, "file 时钟推进应衰减 file 分数");
+    }
+
+    /// M23-5 测试互斥：SETTINGS 为进程级 OnceLock，并行测试会互相覆盖。
+    static SETTINGS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn m23_5_per_topic_lambda_dir_decays_faster_than_file() {
+        let _g = SETTINGS_TEST_LOCK.lock().unwrap();
+        // ACCEPTANCE §22 M23-5：lambda_dir=0.5 → dir 条目衰减显著快于
+        // file 条目（同 clock 推进量）；lambda_file 保持默认不互相影响。
+        init_settings(&crate::config::FrecencyConfig {
+            lambda_dir: Some(0.5),
+            lambda_file: Some(0.001),
+            lambda_unified: None,
+            max_entries: None,
+            ignore_patterns: Vec::new(),
+        });
+        let events = [
+            (1u64, rec("/d/x", 1)),
+            (2, {
+                let mut r = rec("/f/y", 2);
+                r.topic = "file".to_owned();
+                r
+            }),
+        ];
+        let r = replay(&[], &events, 100, 100);
+        let d = r.iter().find(|e| e.topic == "dir").unwrap();
+        let fl = r.iter().find(|e| e.topic == "file").unwrap();
+        assert!(
+            d.score < fl.score,
+            "λ=0.5 的 dir 衰减快于 λ=0.001 的 file: dir={} file={}",
+            d.score,
+            fl.score
+        );
+        // 恢复默认（后续测试不受污染）。
+        init_settings(&crate::config::FrecencyConfig::default());
+    }
+
+    #[test]
+    fn m23_5_max_entries_respected_by_cleanup() {
+        let _g = SETTINGS_TEST_LOCK.lock().unwrap();
+        // max_entries=10：15 条 dir 条目 → 清理至 9（90%）。
+        init_settings(&crate::config::FrecencyConfig {
+            lambda_dir: None,
+            lambda_file: None,
+            lambda_unified: None,
+            max_entries: Some(10),
+            ignore_patterns: Vec::new(),
+        });
+        let tmp = TempDir::new().unwrap();
+        let store = Store::open(&tmp.path().join("f.redb")).unwrap();
+        for i in 0..15u64 {
+            store.append_event(&rec(&format!("/d/{i}"), i + 1)).unwrap();
+        }
+        let removed = cleanup_capacity(&store, "dir").unwrap();
+        assert!(removed > 0, "清理触发: removed={removed}");
+        let entries = replay(
+            &[],
+            &store.events_since(0).unwrap(),
+            store.type_tick("dir").unwrap(),
+            store.type_tick("file").unwrap(),
+        );
+        let dir_n = entries.iter().filter(|e| e.topic == "dir").count();
+        assert_eq!(dir_n, 9, "清理至 90%（上限 10）");
+        init_settings(&crate::config::FrecencyConfig::default());
     }
 
     #[test]

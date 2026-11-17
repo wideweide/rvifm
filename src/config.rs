@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 /// 用户配置。TOML 字段缺省时逐项回退默认值（`#[serde(default)]`）。
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
     /// 显示以 `.` 开头的隐藏文件（默认不显示）。
@@ -25,11 +25,18 @@ pub struct Config {
 }
 
 /// M23-4：[frecency] 表——record 忽略模式（命中路径不写入事件）。
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+/// M23-5：per-topic λ 与容量上限（None = 默认 0.01/0.01/0.005 与 1500）。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct FrecencyConfig {
     /// glob 模式列表（如 `*/.git`、`*/node_modules/*`）；命中静默跳过。
     pub ignore_patterns: Vec<String>,
+    /// per-topic 衰减系数。
+    pub lambda_dir: Option<f64>,
+    pub lambda_file: Option<f64>,
+    pub lambda_unified: Option<f64>,
+    /// 容量上限（M23-3 清理阈值）。
+    pub max_entries: Option<usize>,
 }
 
 /// M18-4：[ui] 表——外部命令/shell 在新终端窗口执行（检测 $TMUX/$STY；

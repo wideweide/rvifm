@@ -4053,6 +4053,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     };
     // M16 NAV-1：加载 [quickjump] char→keyword 别名（一次）。
     config::init_quickjump();
+    // M23-5：加载 [frecency] per-topic 设置（λ/容量上限）。
+    crate::frecency::init_settings(&config.frecency);
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
     let mut state = AppState::new(Tab::from_physical(
