@@ -1,4 +1,5 @@
 # STATE —
+- `M22-6`（2026-11-17）：远端文件打开——remote_download_copy（RemoteFs read → `rvifm-open-{nanos}-{leaf}` 临时副本 → 登记 AppState.temp_opens）+ remote_open_file（副本 → system opener）；run 两处退出点 cleanup_temp_opens 统一清理（Windows 文件锁，不做即时删除）；不入撤销栈。opener 调用不可自动化测试（cmd start 阻塞——FEAT-3 教训），下载/清理直测。283 单测全绿（+1：副本内容/前缀/登记/清理/会话缺失错误）。
 - `M22-5`（2026-11-17）：远端 `:find`/`:grep`——search.rs 增 remote_find_files/remote_grep_files（RemoteFs 递归 BFS 收集 1 万条目上限；grep 单文件 1 MiB 上限 + lossy UTF-8；无 ignore 语义）；find/grep exec 臂远端分支（结果虚拟目录复用 enter_results，root=远端路径）；远端结果定位抽 remote_locate_result（退出结果视图 + remote_navigate 父目录 + 光标定位）。282 单测全绿（+1：find 命中/定位回父目录/grep 行命中）。已知边界：远端结果的 viewer 预览暂不可用（read_to_string 本地路径失败），M22-6 临时副本仅覆盖 opener。
 - `M22-4`（2026-11-17）：远端 `:mk` + 提示修正——远端白名单加 `mk`，远端写路由 mk 分支（create_dir + 进入 dest）；拒绝提示去"在 M20 接入"过时表述；MockRemote::create_dir 补存在检查（镜像 SFTP 语义，此前静默覆盖）——mock 保真度教训：mock 必须镜像真实后端的失败路径。281 单测全绿（+1）。
 - `M22-3`（2026-11-17）：SFTP 口令认证——connect_async(password: Option)（公钥优先，失败/无密钥回退 authenticate_password，口令仅内存传递不落盘）；`connect_with_password` 独立入口（actor_thread 带 password 参数）；`ExecOutcome::RemotePass`/`InputMode::RemotePass`（masked 状态栏渲染，Enter 连接失败留在模式内重试并清空口令，Esc 干净取消）；`:remote` 公钥认证失败自动进入口令模式（remote_pass_apply 抽取体）。280 单测全绿（+1：masked 渲染/失败路径）。
@@ -120,8 +121,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M22-6 远端文件打开（临时副本→opener）
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1～5 完成），M23 已登记排队；两批完成后发布 0.8.0
+- **当前任务**：M22-7 README 里程碑表补齐
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1～6 完成），M23 已登记排队；两批完成后发布 0.8.0
 
 ## 已完成
 

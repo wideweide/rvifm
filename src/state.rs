@@ -209,6 +209,8 @@ pub struct AppState {
     /// M21-F9：l/Enter 已实时记录的访问次数（tab 序号 + 侧别 L/R + 归一化
     /// 路径）——退出批量刷写（GAP-2）据此按次数去重，同一访问不重复计分。
     pub live_recorded: std::collections::HashMap<(usize, char, String), usize>,
+    /// M22-6：远端文件打开的临时副本路径——run 退出时统一清理。
+    pub temp_opens: Vec<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -236,6 +238,7 @@ impl AppState {
             watcher: None,
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),
+            temp_opens: Vec::new(),
         }
     }
 

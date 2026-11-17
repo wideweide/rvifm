@@ -710,6 +710,53 @@ fn remote_locate_result(state: &mut AppState) -> Result<(), String> {
     Ok(())
 }
 
+/// M22-6：远端文件打开——RemoteFs read → 临时副本（`rvifm-open-` 前缀）
+/// → system opener；副本路径登记 AppState.temp_opens，run 退出时统一清理
+/// （Windows opener 可能锁定文件，不做即时删除）。只读用途，不入撤销栈。
+fn remote_open_file(
+    state: &mut AppState,
+    remote: &str,
+    full: &std::path::Path,
+) -> Result<Option<String>, String> {
+    let tmp = remote_download_copy(state, remote, full)?;
+    match crate::opener::system_open(&tmp) {
+        Ok(()) => Ok(Some(format!("打开远端文件（临时副本 {}）", tmp.display()))),
+        Err(e) => Err(format!("打开失败: {e}")),
+    }
+}
+
+/// M22-6：下载远端文件到临时副本（可测抽取；登记 temp_opens）。
+fn remote_download_copy(
+    state: &mut AppState,
+    remote: &str,
+    full: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let backend = state
+        .remote_sessions
+        .get(remote)
+        .ok_or_else(|| "remote: 会话已断开".to_owned())?;
+    let bytes = backend.read(full).map_err(|e| format!("打开失败: {e}"))?;
+    let leaf = full
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_owned());
+    let rand = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let tmp = std::env::temp_dir().join(format!("rvifm-open-{rand}-{leaf}"));
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("临时副本写入失败: {e}"))?;
+    state.temp_opens.push(tmp.clone());
+    Ok(tmp)
+}
+
+/// M22-6：进程退出统一清理临时副本（失败静默——不影响退出）。
+fn cleanup_temp_opens(state: &mut AppState) {
+    for p in state.temp_opens.drain(..) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 /// M22-3：远端口令连接应用（RemotePass 模式 Enter 共用体）——连接成功
 /// 注册会话并进入；失败返回可读错误（重试经 :remote 重新发起）。
 fn remote_pass_apply(
@@ -2497,8 +2544,22 @@ fn handle_key(
                         *msg = None;
                     }
                 } else {
-                    // M19 SIMPLIFIED：远端文件打开/预览经 read 的链路后续接入。
-                    *msg = Some("远端文件打开暂不支持（M20 后接入）".to_owned());
+                    // M22-6：远端文件打开 = read → 临时副本 → system opener；
+                    // 副本保留至进程退出统一清理（Windows opener 可能锁定文件）。
+                    let full = if path == std::path::Path::new("/") {
+                        PathBuf::from(format!("/{name}"))
+                    } else {
+                        path.join(&name)
+                    };
+                    let remote = state
+                        .active_tab()
+                        .location
+                        .remote_name()
+                        .unwrap_or_default();
+                    match remote_open_file(state, &remote, &full) {
+                        Ok(m) => *msg = m,
+                        Err(e) => *msg = Some(e),
+                    }
                 }
                 return Outcome::Continue;
             }
@@ -4020,6 +4081,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         match exec_command_impl(&mut state, line.trim()) {
                             Ok(ExecOutcome::Quit) => {
                                 flush_session_visits(&state);
+                                cleanup_temp_opens(&mut state);
                                 return Ok(());
                             }
                             Ok(ExecOutcome::EnterHelp) => {
@@ -4401,6 +4463,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::Continue => {}
                         Outcome::Quit => {
                             flush_session_visits(&state);
+                            cleanup_temp_opens(&mut state);
                             return Ok(());
                         }
                         Outcome::EnterCommand => {
@@ -12169,6 +12232,35 @@ terminal_in_new_window = false
         let r = remote_pass_apply(&mut state2, "srv", &params, "pw");
         assert!(r.is_err(), "不可达主机应失败");
         assert!(r.unwrap_err().contains("口令认证失败"), "错误带统一前缀");
+    }
+
+    #[test]
+    fn m22_6_remote_open_downloads_temp_copy_and_cleanup() {
+        // ACCEPTANCE §21 M22-6：远端文件打开生成临时副本（read→write）并
+        // 登记清理；cleanup_temp_opens 删除副本。opener 调用本身不可测
+        // （Windows cmd start 阻塞——FEAT-3 教训），下载/清理直测。
+        let (_tmp, mut state) = mock_remote_state();
+        let copy =
+            remote_download_copy(&mut state, "dev", std::path::Path::new("/readme.md")).unwrap();
+        let bytes = fs::read(&copy).unwrap();
+        assert_eq!(bytes, b"mock content", "副本内容与远端一致");
+        assert!(
+            copy.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("rvifm-open-"),
+            "副本前缀: {}",
+            copy.display()
+        );
+        assert!(state.temp_opens.contains(&copy), "登记待清理");
+
+        cleanup_temp_opens(&mut state);
+        assert!(!copy.exists(), "退出清理删除副本");
+        assert!(state.temp_opens.is_empty(), "登记清空");
+
+        // 会话缺失：可读错误。
+        let r = remote_download_copy(&mut state, "nope", std::path::Path::new("/x"));
+        assert!(r.unwrap_err().contains("会话已断开"));
     }
 
     #[test]
