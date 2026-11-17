@@ -25,7 +25,7 @@ const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_PORT: u16 = 22;
 
 /// 连接参数（M19-4：来源 remotes.toml / ssh config / 默认推断）。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SftpParams {
     pub host: String,
     pub port: u16,
@@ -133,10 +133,34 @@ impl SftpBackend {
             .name("rvifm-sftp".to_owned())
             .spawn({
                 let params = params.clone();
-                move || actor_thread(params, cmd_rx, init_tx)
+                move || actor_thread(params, None, cmd_rx, init_tx)
             })
             .map_err(|e| RemoteError::Other(format!("线程启动失败: {e}")))?;
         // 连接结果（actor 侧已含 CONNECT_TIMEOUT）。
+        match init_rx.recv_timeout(CONNECT_TIMEOUT + OP_TIMEOUT) {
+            Ok(Ok(())) => Ok(Self { cmd_tx }),
+            Ok(Err(e)) => Err(e),
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                Err(RemoteError::Timeout("连接超时".to_owned()))
+            }
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => {
+                Err(RemoteError::Other("SFTP actor 提前退出".to_owned()))
+            }
+        }
+    }
+
+    /// M22-3：口令认证入口（公钥失败回退；口令仅内存传递不落盘）。
+    pub fn connect_with_password(params: &SftpParams, password: &str) -> Result<Self, RemoteError> {
+        let (cmd_tx, cmd_rx) = std_mpsc::channel::<SftpCmd>();
+        let (init_tx, init_rx) = std_mpsc::channel::<Result<(), RemoteError>>();
+        std::thread::Builder::new()
+            .name("rvifm-sftp".to_owned())
+            .spawn({
+                let params = params.clone();
+                let password = password.to_owned();
+                move || actor_thread(params, Some(password), cmd_rx, init_tx)
+            })
+            .map_err(|e| RemoteError::Other(format!("线程启动失败: {e}")))?;
         match init_rx.recv_timeout(CONNECT_TIMEOUT + OP_TIMEOUT) {
             Ok(Ok(())) => Ok(Self { cmd_tx }),
             Ok(Err(e)) => Err(e),
@@ -244,6 +268,7 @@ fn path_to_string(path: &Path) -> String {
 /// 后台线程主体：建 runtime → 连接 → 顺序执行命令（每命令独立超时）。
 fn actor_thread(
     params: SftpParams,
+    password: Option<String>,
     cmd_rx: std_mpsc::Receiver<SftpCmd>,
     init_tx: std_mpsc::Sender<Result<(), RemoteError>>,
 ) {
@@ -258,9 +283,9 @@ fn actor_thread(
         }
     };
     // 连接（含认证与 SFTP 握手，整体超时）。
-    let session = match rt
-        .block_on(async { tokio::time::timeout(CONNECT_TIMEOUT, connect_async(&params)).await })
-    {
+    let session = match rt.block_on(async {
+        tokio::time::timeout(CONNECT_TIMEOUT, connect_async(&params, password.as_deref())).await
+    }) {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
             let _ = init_tx.send(Err(e));
@@ -454,10 +479,13 @@ struct SshSession {
     sftp: SftpSession,
 }
 
-async fn connect_async(params: &SftpParams) -> Result<SshSession, RemoteError> {
+async fn connect_async(
+    params: &SftpParams,
+    password: Option<&str>,
+) -> Result<SshSession, RemoteError> {
     let config = client::Config::default();
-    let key = load_user_key(&params.key_path)?;
-    let key = PrivateKeyWithHashAlg::new(std::sync::Arc::new(key), None);
+    // M22-3：密钥加载失败不再直接报错——回退口令认证。
+    let key = load_user_key(&params.key_path).ok();
     // M22-2：known_hosts 校验——错误经共享槽带回（russh connect 失败时不
     // 归还 handler，用 Arc<Mutex> 跨越）。
     let key_error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
@@ -480,15 +508,33 @@ async fn connect_async(params: &SftpParams) -> Result<SshSession, RemoteError> {
     )
     .await
     .map_err(|e| map_connect_err(e, &key_error))?;
-    let auth = handle
-        .authenticate_publickey(&params.user, key)
-        .await
-        .map_err(map_russh_err)?;
-    if !auth.success() {
-        return Err(RemoteError::Auth(format!(
-            "公钥认证被拒（user={}）",
-            params.user
-        )));
+    // M22-3：公钥优先，失败回退口令（口令仅内存传递，不落盘）。
+    let mut authed = false;
+    if let Some(k) = key {
+        let key = PrivateKeyWithHashAlg::new(std::sync::Arc::new(k), None);
+        let auth = handle
+            .authenticate_publickey(&params.user, key)
+            .await
+            .map_err(map_russh_err)?;
+        authed = auth.success();
+    }
+    if !authed {
+        let Some(pw) = password else {
+            return Err(RemoteError::Auth(format!(
+                "公钥认证失败（user={}）；可用口令认证重试",
+                params.user
+            )));
+        };
+        let auth = handle
+            .authenticate_password(&params.user, pw)
+            .await
+            .map_err(map_russh_err)?;
+        if !auth.success() {
+            return Err(RemoteError::Auth(format!(
+                "口令认证被拒（user={}）",
+                params.user
+            )));
+        }
     }
     let channel = handle.channel_open_session().await.map_err(map_russh_err)?;
     // spike 教训：必须先请求 sftp 子系统，否则会话握手超时。

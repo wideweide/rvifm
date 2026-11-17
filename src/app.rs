@@ -186,6 +186,12 @@ enum InputMode {
         input: String,
         pos: usize,
     },
+    /// 远端口令输入（M22-3）：masked 渲染；Enter 连接，Esc 干净取消。
+    RemotePass {
+        name: String,
+        params: crate::remote::sftp::SftpParams,
+        input: String,
+    },
 }
 
 /// 命令行单键处理结果。
@@ -257,11 +263,15 @@ enum ExecOutcome {
     /// 打开帮助覆盖层（`:help`，M5-3；完整帮助页在 M6-2）。
     EnterHelp,
     /// 命令完成，可携带状态栏提示。
-    Done { msg: Option<String> },
+    Done {
+        msg: Option<String>,
+    },
     /// 请求确认批量删除标记文件（`:tag delete`，M3-3）。
     ConfirmTagDelete,
     /// 写操作 EACCES → 进入 sudo 密码输入（M12-3 操作级提权）。
-    Escalate { op: crate::privilege::PrivOp },
+    Escalate {
+        op: crate::privilege::PrivOp,
+    },
     /// 打开跳转选择器（M8-12：`:j` / `:J` 内部命令，数据已读好）。
     OpenJump {
         kind: JumpKind,
@@ -277,15 +287,30 @@ enum ExecOutcome {
     /// 打开后台作业菜单（M13-8：`:jobs`）。
     ShowJobs,
     /// 打开暂存区菜单（M13-10：`:trash`，条目已读好）。
-    ShowTrash { items: Vec<crate::ops::TrashEntry> },
+    ShowTrash {
+        items: Vec<crate::ops::TrashEntry>,
+    },
     /// 打开文件详情对话框（FEAT-3：`:file`，与 Ctrl-G 同源）。
-    ShowInfo { path: PathBuf, text: String },
+    ShowInfo {
+        path: PathBuf,
+        text: String,
+    },
     /// 打开目录历史菜单（M16 NAV-2：`:history`）。
     ShowHistory,
     /// 批量重命名（M21-E4：`:rename` 无参——与 cw/R 同管线）。
-    BatchRename { base: PathBuf, names: Vec<String> },
+    /// 远端口令输入（M22-3：公钥认证失败 → 口令回退；口令仅内存传递）。
+    RemotePass {
+        name: String,
+        params: crate::remote::sftp::SftpParams,
+    },
+    BatchRename {
+        base: PathBuf,
+        names: Vec<String>,
+    },
     /// 当前 pane 执行外部命令（M18-4：`:!`；run 循环挂起 TUI 后执行）。
-    RunExternal { cmd: String },
+    RunExternal {
+        cmd: String,
+    },
 }
 
 /// FEAT-3：右键上下文菜单（单级、内建动作，作用于右键聚焦的条目）。
@@ -657,6 +682,25 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
 }
 
 // ── M19-2：远端会话导航 ──────────────────────────────────────────────
+
+/// M22-3：远端口令连接应用（RemotePass 模式 Enter 共用体）——连接成功
+/// 注册会话并进入；失败返回可读错误（重试经 :remote 重新发起）。
+fn remote_pass_apply(
+    state: &mut AppState,
+    name: &str,
+    params: &crate::remote::sftp::SftpParams,
+    password: &str,
+) -> Result<String, String> {
+    let backend = crate::remote::sftp::SftpBackend::connect_with_password(params, password)
+        .map_err(|e| format!("口令认证失败: {e}"))?;
+    register_remote_session(state, name, Box::new(backend));
+    let root = crate::remote::config::load_remotes_toml(&config::data_dir().join("remotes.toml"))
+        .get(name)
+        .and_then(|e| e.root.clone())
+        .unwrap_or_else(|| PathBuf::from("/"));
+    remote_enter(state, name, &root)?;
+    Ok(format!("remote: 已进入 {name}（口令认证）"))
+}
 
 /// 注册远端会话（M19-2：测试/mock 注入；M19-4 由 :remote 配置构造真实后端）。
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1281,8 +1325,17 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                             format!("remote: 未配置 `{name}`（:remote 无参查看）")
                         })?;
                         let params = entry.to_params(name);
-                        let backend = crate::remote::sftp::SftpBackend::connect(&params)
-                            .map_err(|e| format!("remote: {e}"))?;
+                        let backend = match crate::remote::sftp::SftpBackend::connect(&params) {
+                            Ok(b) => b,
+                            // M22-3：公钥认证失败 → 口令输入（不落盘）。
+                            Err(crate::remote::RemoteError::Auth(_)) => {
+                                return Ok(ExecOutcome::RemotePass {
+                                    name: name.to_owned(),
+                                    params,
+                                });
+                            }
+                            Err(e) => return Err(format!("remote: {e}")),
+                        };
                         register_remote_session(state, name, Box::new(backend));
                     }
                     let root = crate::remote::config::load_remotes_toml(
@@ -3963,6 +4016,14 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     Err(e) => Some(e),
                                 };
                             }
+                            Ok(ExecOutcome::RemotePass { name, params }) => {
+                                // M22-3：公钥认证失败 → 口令输入模式（不落盘）。
+                                mode = InputMode::RemotePass {
+                                    name,
+                                    params,
+                                    input: String::new(),
+                                };
+                            }
                             Ok(ExecOutcome::RunExternal { cmd }) => {
                                 // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
                                 ratatui::restore();
@@ -4067,6 +4128,46 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 *pos += 1;
                                 *input = chars.into_iter().collect();
                             }
+                            _ => {}
+                        }
+                    }
+                }
+                InputMode::RemotePass {
+                    name,
+                    params,
+                    input,
+                } => {
+                    // M22-3：远端口令输入——Enter 连接（失败留在模式内重试，
+                    // 清空口令），Esc 干净取消（TUI 状态不变，SPEC M22-3）。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Enter => {
+                                let name = name.clone();
+                                let params = params.clone();
+                                let password = std::mem::take(input);
+                                match remote_pass_apply(&mut state, &name, &params, &password) {
+                                    Ok(m) => {
+                                        mode = InputMode::Normal;
+                                        msg = Some(m);
+                                    }
+                                    Err(e) => {
+                                        msg = Some(e);
+                                        mode = InputMode::RemotePass {
+                                            name,
+                                            params,
+                                            input: String::new(),
+                                        };
+                                    }
+                                }
+                            }
+                            KeyCode::Esc => {
+                                mode = InputMode::Normal;
+                                msg = None;
+                            }
+                            KeyCode::Backspace => {
+                                input.pop();
+                            }
+                            KeyCode::Char(c) => input.push(c),
                             _ => {}
                         }
                     }
@@ -5138,6 +5239,13 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
+        InputMode::RemotePass { name, input, .. } => {
+            // M22-3：masked 渲染（`*` 逐字符替换，同 AskPass）。
+            let masked = "*".repeat(input.chars().count());
+            Line::from(format!(
+                "远端口令（{name}）: {masked} [Enter=连接 Esc=取消]"
+            ))
+        }
         InputMode::Rename { input, pos, .. } => {
             // M21-E4：插入光标可视化（'▏' 标记当前插入位）。
             let chars: Vec<char> = input.chars().collect();
@@ -11828,6 +11936,36 @@ terminal_in_new_window = false
         );
         assert!(!normal, "字符回搜索态");
         assert_eq!(input, "x");
+    }
+
+    #[test]
+    fn m22_3_remote_pass_masked_render_and_apply_error() {
+        // ACCEPTANCE §21 M22-3：口令 masked 渲染不泄露；失败返回可读错误。
+        let (_tmp, state) = make_state(1);
+        let mode = InputMode::RemotePass {
+            name: "srv".to_owned(),
+            params: crate::remote::sftp::SftpParams::new("127.0.0.1"),
+            input: "sekret".to_owned(),
+        };
+        let backend = ratatui::backend::TestBackend::new(120, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let status: String = (0..120u16).map(|x| buf[(x, 11)].symbol()).collect();
+        assert!(
+            status.replace(' ', "").contains("远端口令（srv）"),
+            "状态栏含提示: {status}"
+        );
+        assert!(status.contains("******"), "口令 masked");
+        assert!(!status.contains("sekret"), "口令不得明文出现: {status}");
+
+        // 失败路径：不可达端口 → 可读错误（连接错误经 remote_pass_apply 包装）。
+        let (_tmp2, mut state2) = make_state(1);
+        let mut params = crate::remote::sftp::SftpParams::new("127.0.0.1");
+        params.port = 1; // 关闭端口 → 快速拒绝
+        let r = remote_pass_apply(&mut state2, "srv", &params, "pw");
+        assert!(r.is_err(), "不可达主机应失败");
+        assert!(r.unwrap_err().contains("口令认证失败"), "错误带统一前缀");
     }
 
     #[test]
