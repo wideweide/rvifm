@@ -128,7 +128,7 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23-6 Frecency Pane 模式
+- **当前任务**：M23-6 Frecency Pane 模式（设计定稿：o 进入焦点 pane 内嵌搜索 PaneMode::Frecency{entries,query,cursor,normal,g_pending}；对侧 PreviewRenderer 预览光标条目 100–200 行；Esc 三级 Search→Normal→Directory；M23-7 c=OSC52 复制不退出/v=对侧 View 全文聚焦复用 view_mode+Tab 切回/e=$EDITOR 退出）
 - **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1～5 完成）；两批完成后发布 0.8.0
 
 ## 已完成
