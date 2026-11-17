@@ -115,6 +115,105 @@ pub fn grep_files(
     Ok((items, false))
 }
 
+// ── M22-5：远端 :find/:grep（RemoteFs 驱动；无 ignore 语义） ───────────────
+
+/// 单文件 read 上限（SPEC M22-5 SIMPLIFIED：防大文件拖垮）。
+const REMOTE_GREP_MAX_BYTES: u64 = 1024 * 1024;
+
+/// 远端递归收集文件（BFS 队列；条目上限 MAX_RESULTS；list 失败静默跳过）。
+/// 返回 (文件路径, 大小, 是否截断)。路径恒为 `/` 分隔的远端绝对路径。
+fn remote_walk_files(
+    backend: &dyn crate::remote::RemoteFs,
+    root: &str,
+) -> (Vec<(String, u64)>, bool) {
+    let join =
+        |dir: &str, name: &str| -> String { format!("{}/{}", dir.trim_end_matches('/'), name) };
+    let mut files: Vec<(String, u64)> = Vec::new();
+    let mut queue = vec![root.to_owned()];
+    let mut visited = 0usize;
+    while let Some(dir) = queue.pop() {
+        let Ok(entries) = backend.list(Path::new(&dir)) else {
+            continue; // 无权限等：静默跳过
+        };
+        for e in entries {
+            visited += 1;
+            if visited > MAX_RESULTS {
+                return (files, true);
+            }
+            let child = join(&dir, &e.name);
+            if e.is_dir {
+                queue.push(child);
+            } else {
+                files.push((child, e.size));
+            }
+        }
+    }
+    (files, false)
+}
+
+/// 远端 `:find`——文件名子串匹配（大小写不敏感；query 空 = 全部文件）。
+pub fn remote_find_files(
+    backend: &dyn crate::remote::RemoteFs,
+    root: &str,
+    query: &str,
+) -> (Vec<ResultItem>, bool) {
+    let lower = query.to_lowercase();
+    let (files, truncated) = remote_walk_files(backend, root);
+    let items: Vec<ResultItem> = files
+        .into_iter()
+        .filter(|(p, _)| {
+            if lower.is_empty() {
+                return true;
+            }
+            let leaf = p.rsplit('/').next().unwrap_or_default().to_lowercase();
+            leaf.contains(&lower)
+        })
+        .map(|(p, _)| ResultItem {
+            path: PathBuf::from(p),
+            line: None,
+            text: String::new(),
+        })
+        .collect();
+    (items, truncated)
+}
+
+/// 远端 `:grep`——正则逐行匹配（单文件 ≤ 1 MiB；非 UTF-8 lossy）。
+pub fn remote_grep_files(
+    backend: &dyn crate::remote::RemoteFs,
+    root: &str,
+    pattern: &str,
+) -> Result<(Vec<ResultItem>, bool), String> {
+    let re = regex::Regex::new(pattern).map_err(|e| format!("正则无效: {e}"))?;
+    let (files, truncated_files) = remote_walk_files(backend, root);
+    let mut items = Vec::new();
+    let truncated = truncated_files;
+    for (path, size) in files {
+        if items.len() >= MAX_RESULTS {
+            return Ok((items, true));
+        }
+        if size > REMOTE_GREP_MAX_BYTES {
+            continue; // 大文件跳过（SPEC M22-5）
+        }
+        let Ok(bytes) = backend.read(Path::new(&path)) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        for (lineno, line) in text.lines().enumerate() {
+            if re.is_match(line) {
+                if items.len() >= MAX_RESULTS {
+                    return Ok((items, true));
+                }
+                items.push(ResultItem {
+                    path: PathBuf::from(path.clone()),
+                    line: Some(lineno + 1),
+                    text: line.to_owned(),
+                });
+            }
+        }
+    }
+    Ok((items, truncated))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

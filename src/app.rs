@@ -683,6 +683,33 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
 
 // ── M19-2：远端会话导航 ──────────────────────────────────────────────
 
+/// M22-5：远端结果定位（l/Enter，结果虚拟目录 + Remote 位置共用体）——
+/// 退出结果视图 + remote_navigate 命中文件父目录 + 光标停在该文件。
+fn remote_locate_result(state: &mut AppState) -> Result<(), String> {
+    let Some(path) = state.active_tab().result_path_at(state.active_tab().cursor) else {
+        return Ok(());
+    };
+    let parent = path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("/"));
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    state.active_tab_mut().results = None;
+    remote_navigate(state, &parent)?;
+    if let Some(idx) = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == name)
+    {
+        state.active_tab_mut().cursor = idx;
+    }
+    Ok(())
+}
+
 /// M22-3：远端口令连接应用（RemotePass 模式 Enter 共用体）——连接成功
 /// 注册会话并进入；失败返回可读错误（重试经 :remote 重新发起）。
 fn remote_pass_apply(
@@ -1266,8 +1293,46 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
         }
         Some("find" | "grep") => {
             // M17 SRCH-1/2：递归搜索 → 结果虚拟目录（重执行 = 替换）。
+            // M22-5：远端视图 → RemoteFs 驱动（无 ignore 语义；上限同源）。
             let is_grep = cmd_head == Some("grep");
             let pattern = parts.next().unwrap_or("").to_owned();
+            if let Location::Remote { remote, path } = state.active_tab().location.clone() {
+                let backend = state
+                    .remote_sessions
+                    .get(&remote)
+                    .ok_or_else(|| "remote: 会话已断开".to_owned())?;
+                let (items, truncated) = if is_grep {
+                    crate::search::remote_grep_files(
+                        backend.as_ref(),
+                        &path.to_string_lossy(),
+                        &pattern,
+                    )
+                    .map_err(|e| format!("grep: {e}"))?
+                } else {
+                    crate::search::remote_find_files(
+                        backend.as_ref(),
+                        &path.to_string_lossy(),
+                        &pattern,
+                    )
+                };
+                let n = items.len();
+                let kind = if is_grep {
+                    crate::search::SearchKind::Grep
+                } else {
+                    crate::search::SearchKind::Find
+                };
+                state
+                    .active_tab_mut()
+                    .enter_results(kind, pattern, path, items, truncated);
+                return Ok(ExecOutcome::Done {
+                    msg: Some(format!(
+                        "{}: {} 个结果{}",
+                        if is_grep { "grep" } else { "find" },
+                        n,
+                        if truncated { "（已截断）" } else { "" }
+                    )),
+                });
+            }
             let base = physical_base(state)?;
             let show_hidden = state.config.show_hidden;
             let (items, truncated) = if is_grep {
@@ -2454,6 +2519,15 @@ fn handle_key(
             }
             KeyCode::Char('l') | KeyCode::Enter => {
                 input.count = None;
+                // M22-5：远端结果定位——退出结果视图 + remote_navigate 父目录
+                // + 光标停在该文件（navigate_to 语义对远端不可用）。
+                if matches!(state.active_tab().location, Location::Remote { .. }) {
+                    match remote_locate_result(state) {
+                        Ok(()) => *msg = None,
+                        Err(e) => *msg = Some(format!("定位失败: {e}")),
+                    }
+                    return Outcome::Continue;
+                }
                 let cfg = state.config;
                 if let Err(e) = state.active_tab_mut().locate_result(cfg) {
                     *msg = Some(format!("定位失败: {e}"));
@@ -10221,6 +10295,8 @@ terminal_in_new_window = false
         };
         mock.seed("/", "docs", true, 0);
         mock.seed("/", "readme.md", false, 13);
+        // M22-5：远端 :grep 测试需要 /docs/notes.md（read 固定返回 mock content）。
+        mock.seed("/docs", "notes.md", false, 12);
         register_remote_session(&mut state, "dev", Box::new(mock));
         (tmp, state)
     }
@@ -11772,6 +11848,85 @@ terminal_in_new_window = false
         assert_eq!(state.active_tab().location, before, "失败不改变位置");
         // 撤销链：mkdir/mk 各入撤销栈（可逆）。
         assert_eq!(state.undo_stack.len(), 2, "两次创建均入撤销栈");
+    }
+
+    #[test]
+    fn m22_5_remote_find_grep_and_locate() {
+        // ACCEPTANCE §21 M22-5：远端 :find/:grep 结果虚拟目录 + 定位跳回远端
+        // 父目录（mock 后端；read 返回固定 "mock content"）。
+        let (_tmp, mut state) = mock_remote_state();
+        remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
+
+        // :find readme → 结果虚拟目录（远端绝对路径显示）。
+        exec_command_impl(&mut state, "find readme").unwrap();
+        assert!(state.active_tab().in_results());
+        let names: Vec<String> = state
+            .active_tab()
+            .entries
+            .iter()
+            .map(|i| i.name.clone())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.contains("/readme.md")),
+            "远端 find 命中: {names:?}"
+        );
+
+        // l 定位 → 退出结果视图 + 回远端父目录 + 光标在 readme.md。
+        assert!(remote_locate_result(&mut state).is_ok());
+        assert!(!state.active_tab().in_results(), "定位退出结果视图");
+        assert_eq!(
+            state.active_tab().location,
+            Location::Remote {
+                remote: "dev".to_owned(),
+                path: std::path::PathBuf::from("/")
+            }
+        );
+        assert_eq!(
+            state
+                .active_tab()
+                .entries
+                .get(state.active_tab().cursor)
+                .map(|i| i.name.clone()),
+            Some("readme.md".to_owned()),
+            "光标定位命中文件"
+        );
+
+        // :grep content（read 固定返回 "mock content"）→ 命中 /docs/notes.md:1。
+        exec_command_impl(&mut state, "grep content").unwrap();
+        assert!(state.active_tab().in_results());
+        let has_hit = state
+            .active_tab()
+            .results
+            .as_ref()
+            .map(|r| {
+                r.items
+                    .iter()
+                    .any(|i| i.path == std::path::Path::new("/docs/notes.md") && i.line == Some(1))
+            })
+            .unwrap_or(false);
+        assert!(has_hit, "grep 命中远端文件行: {names:?}");
+
+        // 定位 notes.md 命中项（mock read 内容固定，readme.md 也命中——
+        // cursor 移到 /docs/notes.md 条目再定位）。
+        let idx = state
+            .active_tab()
+            .results
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .position(|i| i.path == std::path::Path::new("/docs/notes.md"))
+            .unwrap();
+        state.active_tab_mut().cursor = idx;
+        assert!(remote_locate_result(&mut state).is_ok());
+        assert_eq!(
+            state.active_tab().location,
+            Location::Remote {
+                remote: "dev".to_owned(),
+                path: std::path::PathBuf::from("/docs")
+            },
+            "grep 定位回父目录"
+        );
     }
 
     #[test]
