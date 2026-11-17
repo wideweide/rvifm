@@ -218,9 +218,15 @@
 - [x] M23-3 容量清理与书签保护（per-topic max_entries 默认 1500；超限删最低分未书签项至 90%）
 - [x] M23-4 IGNORE_PATTERNS（record 入口 glob 静默跳过；TOML 配置；不引新 crate）
 - [x] M23-5 per-topic LAMBDA / MAX_ENTRIES 配置（[frecency] 段；unified 0.005 / dir-file 0.01；缺省兼容）
-- [ ] M23-6 Frecency Pane 模式（o 进入焦点 pane 内嵌搜索；对侧 PreviewRenderer 预览 100–200 行+截断标记；Esc 三级退出）
-- [ ] M23-7 c/v/e 模式内重映射（c 复制路径；v 对侧 View 全文聚焦+Tab 切回；e 编辑器打开退出；View 10 万行上限）
+- [ ] M23-6 Frecency Pane 模式（o 进入焦点 pane 内嵌搜索；对侧 PreviewRenderer 预览 100–200 行+截断标记；Esc 三级退出；键位见 M23-7 修订）
+- [x] ~~M23-7 c/v/e 模式内重映射~~ **修订**：c/v 移除、键位与 Normal 一致（见 M23-9/10 与 SPEC M23-7 修订）
 - [ ] M23-8 选择器内 d 删除 + trash 表 + u 撤销（中优先级；超 3 轮即 deferred）
+- [ ] M23-9 远端文件跟踪上传（notify 监听副本；防抖 2s 自动上传；失败状态栏提示）
+- [ ] M23-10 y 复制序列与 e 编辑器（yn 名称/yf 全路径/yc 内容；目录/文件/多选；OSC52 优先）
+- [ ] M23-11 自定义命令快捷键与内置变量（%d/%f/%F/%D；,g lazygit 仓库判定优先级；terminal 分流复用）
+- [ ] M23-12 git 集成评估（git2/gitoxide 与 FM 集成点调研；决策入 NOTES，不实现）
+
+> 2026-11-18 追加调整：M23-7 修订（cve 移除、Frecency 键位与 Normal 一致）+ 新增 M23-9～12（远端跟踪上传/y*/e/自定义命令/git 评估）。执行顺序：M23-9 → 10 → 11 → 12 → 6（含修订后的 7）→ 8。
 
 ## M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐，见 SPEC M18 节）
 
