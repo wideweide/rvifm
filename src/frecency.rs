@@ -27,6 +27,8 @@ pub enum EntryKind {
     /// 书签 keyword 设置（M16 NAV-1）：元数据事件，重放时只应用 keyword
     /// 字段，不推进时钟、不加分。
     Keyword,
+    /// 容量清理墓碑（M23-3）：重放时删除该条目（带 keyword 条目永不清理）。
+    Remove,
 }
 
 /// 访问事件记录（append-only；M8-2 起持久化到 redb `events` 表，
@@ -331,6 +333,11 @@ fn replay_inner(
                 }
             }
         };
+        // M23-3：容量清理墓碑——删除该条目（其后访问可重新创建）。
+        if matches!(ev.kind, EntryKind::Remove) {
+            map.remove(&key);
+            continue;
+        }
         let entry = map.entry(key).or_insert_with(|| SnapshotEntry {
             path: ev.path.clone(),
             topic: ev.topic.clone(),
@@ -574,11 +581,68 @@ fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io:
     merge_pending(&store, pending)?;
     for _ in 0..WRITE_RETRIES {
         match store.append_event(record) {
-            Ok(_) => return Ok(()), // 成功静默（不污染 stdout）
+            Ok(_) => {
+                // M23-3：容量清理（dir/file topic；写事务末尾检查）。
+                if matches!(record.kind, EntryKind::Navigate | EntryKind::Open) {
+                    let _ = cleanup_capacity(&store, &record.topic);
+                }
+                return Ok(()); // 成功静默（不污染 stdout）
+            }
             Err(_) => std::thread::sleep(std::time::Duration::from_millis(WRITE_BACKOFF_MS)),
         }
     }
     degraded_write_at(pending, record, "数据库写入连续失败")
+}
+
+/// M23-3：per-topic 容量上限（M23-5 起可配置；默认与参考项目一致）。
+pub const MAX_ENTRIES_DEFAULT: usize = 1500;
+
+/// M23-3：容量清理——条目数超过 `MAX_ENTRIES_DEFAULT` 时删除最低分的
+/// **未书签**条目至 90%（带 keyword 条目永不清理）。返回删除数。
+pub fn cleanup_capacity(store: &Store, topic: &str) -> std::io::Result<usize> {
+    cleanup_capacity_with(store, topic, MAX_ENTRIES_DEFAULT)
+}
+
+/// M23-3：可注入上限的清理本体（测试用小上限加速）。
+pub fn cleanup_capacity_with(
+    store: &Store,
+    topic: &str,
+    max_entries: usize,
+) -> std::io::Result<usize> {
+    let snapshot = store.snapshot_all()?;
+    let since = store.last_compaction()?;
+    let events = store.events_since(since)?;
+    let dir_tick = store.type_tick("dir")?;
+    let file_tick = store.type_tick("file")?;
+    let entries = replay(&snapshot, &events, dir_tick, file_tick);
+    let topic_entries: Vec<&ScoredEntry> = entries.iter().filter(|e| e.topic == topic).collect();
+    if topic_entries.len() <= max_entries {
+        return Ok(0);
+    }
+    let target = max_entries * 90 / 100;
+    let mut victims: Vec<&ScoredEntry> = topic_entries
+        .iter()
+        .copied()
+        .filter(|e| e.keyword.is_empty())
+        .collect();
+    victims.sort_by(|a, b| a.score.total_cmp(&b.score));
+    let mut removed = 0usize;
+    for v in victims.into_iter().take(topic_entries.len() - target) {
+        let tomb = EntryRecord {
+            path: v.path.clone(),
+            topic: topic.to_owned(),
+            kind: EntryKind::Remove,
+            clock: 0,
+            keyword: String::new(),
+            ts: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        store.append_event(&tomb)?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 /// 降级：追加一行 JSON 到 pending 文件。失败时退出 1。
@@ -1137,6 +1201,46 @@ mod tests {
         assert_eq!(events[0].1.clock, 1); // dir #1
         assert_eq!(events[1].1.clock, 2); // dir #2
         assert_eq!(events[2].1.clock, 3); // file #1（分叉点 2 + 1；此后与 dir 分叉）
+    }
+
+    #[test]
+    fn m23_3_capacity_cleanup_protects_bookmarks() {
+        // ACCEPTANCE §22 M23-3：30 未书签 + 10 书签（共 40 > 上限 30）→ 清理至
+        // 27（90%）；书签条目全部存活。小上限经 cleanup_capacity_with 注入。
+        let tmp = TempDir::new().unwrap();
+        let store = Store::open(&tmp.path().join("f.redb")).unwrap();
+        for i in 0..30u64 {
+            store.append_event(&rec(&format!("/d/{i}"), i + 1)).unwrap();
+        }
+        for i in 0..10u64 {
+            store
+                .append_event(&EntryRecord {
+                    path: format!("/b/{i}"),
+                    topic: "dir".to_owned(),
+                    kind: EntryKind::Keyword,
+                    ts: 10000 + i,
+                    clock: 0,
+                    keyword: format!("kw{i}"),
+                })
+                .unwrap();
+        }
+        let removed = cleanup_capacity_with(&store, "dir", 30).unwrap();
+        assert!(removed > 0, "触发清理: removed={removed}");
+
+        let dir_tick = store.type_tick("dir").unwrap();
+        let file_tick = store.type_tick("file").unwrap();
+        let entries = replay(&[], &store.events_since(0).unwrap(), dir_tick, file_tick);
+        let dir_entries: Vec<&ScoredEntry> = entries.iter().filter(|e| e.topic == "dir").collect();
+        assert!(
+            dir_entries.len() <= 30,
+            "清理后 ≤ 上限: {}",
+            dir_entries.len()
+        );
+        assert_eq!(dir_entries.len(), 27, "降至 90%（上限 30）");
+        let bookmarks = dir_entries.iter().filter(|e| !e.keyword.is_empty()).count();
+        assert_eq!(bookmarks, 10, "书签条目全部存活");
+        // 被清理的 3 条 = 未书签条目（17 存活 + 3 删除 = 30 2192 配额 27）。
+        assert_eq!(dir_entries.len() - bookmarks, 17, "未书签条目被清至配额");
     }
 
     #[test]
