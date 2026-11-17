@@ -1190,9 +1190,11 @@ fn filter_jump(
     if query.is_empty() {
         return entries.to_vec();
     }
+    // M23-1：多词分级过滤——grade_for_multi 优先，无命中降级整串匹配；
+    // 命中条目的 grade 更新（ranked 按 grade 降序 → 同档保持传入序）。
     let mut out: Vec<crate::frecency::ScoredEntry> = entries
         .iter()
-        .filter(|e| {
+        .filter_map(|e| {
             let snap = crate::frecency::SnapshotEntry {
                 path: e.path.clone(),
                 topic: e.topic.clone(),
@@ -1201,9 +1203,19 @@ fn filter_jump(
                 tick: 0,
                 clock: 0,
             };
-            crate::frecency::grade_for(&snap, query) != crate::frecency::Grade::None
+            let g = crate::frecency::grade_for_multi(&snap, query);
+            let g = if g != crate::frecency::Grade::None {
+                g
+            } else {
+                crate::frecency::grade_for(&snap, query)
+            };
+            if g == crate::frecency::Grade::None {
+                return None;
+            }
+            let mut e2 = e.clone();
+            e2.grade = g;
+            Some(e2)
         })
-        .cloned()
         .collect();
     crate::frecency::ranked(&mut out);
     out
@@ -7873,6 +7885,31 @@ mod tests {
             su.score,
             sp.score
         );
+    }
+
+    #[test]
+    fn m23_1_multi_word_graded_match() {
+        // ACCEPTANCE §22 M23-1：多词查询——全词命中（any-order 降档）与
+        // 按序命中（保档）分级排序；keyword 精确命中最优先。
+        // /w/proj/notes：词 proj+notes 按序出现（路径顺序一致）→ NameContains。
+        // /f/notes/proj：词出现但乱序 → 降为 Substring。
+        let entries = vec![
+            scored("/w/proj/notes", "dir", 5.0),
+            scored("/f/notes/proj", "dir", 9.0),
+            scored("/other/readme", "file", 1.0),
+        ];
+        let out = filter_jump(&entries, "proj notes");
+        assert_eq!(out.len(), 2, "全词命中的条目保留");
+        // 按序命中档位高 → 排前（分数低但档位高）。
+        assert_eq!(out[0].path, "/w/proj/notes", "ordered 命中档位更高");
+        assert!(
+            out[0].grade.rank() > out[1].grade.rank(),
+            "乱序命中降为 Substring"
+        );
+        // 单词退化：等价 grade_for。
+        let single = filter_jump(&entries, "readme");
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].path, "/other/readme");
     }
 
     #[test]

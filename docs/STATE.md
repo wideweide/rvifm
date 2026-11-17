@@ -1,4 +1,5 @@
 # STATE —
+- `M23-1`（2026-11-17）：多词搜索与匹配分级——frecency.rs 增 grade_for_multi（每词独立 grade_for 取最低档；ordered 按序命中保持档位、any-order 全命中降为 Substring 上限；单词/空退化 grade_for）；from_snapshot 经 multi 打分（pick/TUI 同源）；filter_jump 更新命中条目 grade（ranked 档位降序→同档保持传入序）。284 单测全绿（+1：ordered 优先/乱序降档/单词退化）。
 - `M22 批次关闭`（2026-11-17）：M22-1～7 全部完成（PLAN 状态同步，ACCEPTANCE §21 全勾）。批次验收：283 单测 + 3 冒烟全绿；`--version`/`--help` 通过。批次亮点：known_hosts 校验（安全默认：指纹变更拒连 + 显式跳过）、口令认证回退、远端 :mk/:find/:grep/文件打开。已知边界（登记 NOTES）：远端结果 viewer 预览暂不可用（M22-6 副本仅覆盖 opener）；口令认证成功登录的全链路需真实 sshd 环境（单元覆盖 masked/失败路径，同 M11-6 模式登记人工验证项）。接续 M23。
 - `M22-7`（2026-11-17）：README 里程碑表补齐 M12–M22 行（M6"进行中"修正为已完成；M22 行随执行更新状态）。283 单测全绿（文档任务，无代码改动）。
 - `M22-6`（2026-11-17）：远端文件打开——remote_download_copy（RemoteFs read → `rvifm-open-{nanos}-{leaf}` 临时副本 → 登记 AppState.temp_opens）+ remote_open_file（副本 → system opener）；run 两处退出点 cleanup_temp_opens 统一清理（Windows 文件锁，不做即时删除）；不入撤销栈。opener 调用不可自动化测试（cmd start 阻塞——FEAT-3 教训），下载/清理直测。283 单测全绿（+1：副本内容/前缀/登记/清理/会话缺失错误）。
@@ -123,8 +124,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23-1 多词搜索与匹配分级
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 批次关闭，M23 开始执行；两批完成后发布 0.8.0
+- **当前任务**：M23-2 unbook 保留历史（现状核对）
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1 完成）；两批完成后发布 0.8.0
 
 ## 已完成
 

@@ -167,6 +167,45 @@ pub fn grade_for(entry: &SnapshotEntry, query: &str) -> Grade {
     Grade::None
 }
 
+/// M23-1：多词查询匹配分级——每词独立 grade_for 取最低档；词按序出现在
+/// 路径（ci 顺序扫描）→ 保持档位，乱序全命中 → 降为 Substring 上限；
+/// 单词/空查询退化为 grade_for。
+pub fn grade_for_multi(entry: &SnapshotEntry, query: &str) -> Grade {
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if words.len() <= 1 {
+        return grade_for(entry, query);
+    }
+    let mut min = Grade::BookmarkKeyword;
+    for w in &words {
+        let g = grade_for(entry, w);
+        if g == Grade::None {
+            return Grade::None;
+        }
+        if g.rank() < min.rank() {
+            min = g;
+        }
+    }
+    // ordered 判定：词按序出现在路径（ci 顺序扫描，命中点后移）。
+    let mut rest = entry.path.as_str();
+    let mut ordered = true;
+    for w in &words {
+        let (w_l, r_l) = (w.to_lowercase(), rest.to_lowercase());
+        match r_l.find(&w_l) {
+            Some(pos) => {
+                rest = &rest[pos + w.len()..];
+            }
+            None => {
+                ordered = false;
+                break;
+            }
+        }
+    }
+    if !ordered && min.rank() > Grade::Substring.rank() {
+        min = Grade::Substring;
+    }
+    min
+}
+
 /// 查询结果条目：aging 后分数 + 分级。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScoredEntry {
@@ -182,14 +221,14 @@ pub struct ScoredEntry {
 }
 
 impl ScoredEntry {
-    /// 从 snapshot 打分（M8-1）。
+    /// 从 snapshot 打分（M8-1；M23-1 起经 grade_for_multi 支持多词）。
     pub fn from_snapshot(entry: &SnapshotEntry, query: &str) -> Self {
         Self {
             path: entry.path.clone(),
             topic: entry.topic.clone(),
             keyword: entry.keyword.clone(),
             score: entry.score,
-            grade: grade_for(entry, query),
+            grade: grade_for_multi(entry, query),
             last_visit: 0,
         }
     }
