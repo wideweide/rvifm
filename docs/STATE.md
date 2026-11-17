@@ -1,4 +1,5 @@
 # STATE —
+- `M22-2`（2026-11-17）：known_hosts 校验——新模块 src/remote/known_hosts.rs（明文 + `|1|` hashed HMAC-SHA1 解析；@标记行跳过；check/append 纯函数+文件 IO）；sftp ClientHandler 接线（首连追加写入 0600、指纹变更拒连含新旧指纹与指引、错误经 Arc<Mutex> 跨 connect 失败带回——russh Err 不归还 handler）；`[remotes.toml] known_hosts = false` 显式跳过（SftpParams.skip_host_key_check）。依赖 hmac/sha1/base64ct（均已在树零新增）。279 单测全绿（+5）。API 踩坑：hmac 0.13 需 `use hmac::KeyInit`（重导出自 digest）；base64ct encode_string 而非 encode_vec；russh PublicKeyOrCertificate 为 struct 变体 `PublicKey { key, hash_alg }`。
 - `M22-1`（2026-11-17）：`:cd` 相对路径锚定——相对路径相对**当前 tab 目录**解析（原为进程 CWD，M21-E5 CI 实测漂移），词法归一化解析 `.`/`..` 段（normalize_lexical，不触 FS/不解符号链接保持逻辑路径）；失败不改位置。274 单测全绿（+1 含漂移回归断言）。踩坑：canonicalize 会展开 Windows 8.3 短名（TempDir 全断言漂移）→ 改词法归一化保持逻辑路径；存量 3 个 cd 断言随语义更新。
 - `release 0.7.0`（2026-11-17，已验证）：版本 bump 0.6.0→0.7.0（M21 UI/UX 打磨批次 17 项，minor bump）——README 状态行同步；crates.io 0.7.0 已发布（API 验证 max_version=0.7.0，持久授权）；tag `v0.7.0` → CI 4 job 全绿（test ×2 + release ×2）→ GitHub Release `v0.7.0` 双平台归档（linux 13.6MB / windows 12.0MB）。发布途中 CI 修复 2 个 cfg(unix) 测试缺陷（m21f6 fixture 后未刷新条目、m21e5 相对路径 cd 使 base 漂移到 CWD——均 Windows 编译不可见，M12-2 教训复现）。
 - `M21 批次关闭`（2026-11-17）：F1–F9 + E1–E8 全部 17 项完成（PLAN 状态同步，ACCEPTANCE §20 全勾）。批次验收：273 单测 + 3 冒烟全绿；`--version`/`--help` 冒烟通过；批次内发现并修复 2 个存量缺陷（open_dispatch 漏接 tar.bz2/xz/zst 路由、redb 全局 store 测试并行锁竞争）。批次新增依赖：jiff 0.2.43 / notify 8.2.2 / syntect 5.3（均纯 Rust，无 C 编译期依赖）。下一批次待用户指令。
@@ -116,8 +117,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M22-2 known_hosts 校验
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1 完成），M23 已登记排队；两批完成后发布 0.8.0
+- **当前任务**：M22-3 SFTP 口令认证
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1/2 完成），M23 已登记排队；两批完成后发布 0.8.0
 
 ## 已完成
 

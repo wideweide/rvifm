@@ -99,6 +99,14 @@ pub fn ssh_config_path() -> PathBuf {
     home.join(".ssh").join("config")
 }
 
+/// M22-2：`~/.ssh/known_hosts` 路径（主机密钥校验）。
+pub fn known_hosts_path() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join(".ssh").join("known_hosts")
+}
+
 /// 从路径加载配置：缺失 → 默认值；读取/解析失败 → 可理解的错误信息。
 pub fn load_from(path: &std::path::Path) -> Result<Config, String> {
     match std::fs::read_to_string(path) {

@@ -3888,10 +3888,12 @@ dependencies = [
 name = "rvifm"
 version = "0.7.0"
 dependencies = [
+ "base64ct",
  "bzip2-rs",
  "devicons",
  "exprim",
  "flate2",
+ "hmac",
  "ignore",
  "image",
  "jiff",
@@ -3909,6 +3911,7 @@ dependencies = [
  "ruzstd",
  "serde",
  "serde_json",
+ "sha1",
  "syntect",
  "tar",
  "tempfile",

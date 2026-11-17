@@ -38,6 +38,8 @@ pub struct SftpParams {
     pub name: String,
     /// 连接后的初始路径（remotes.toml root；缺省 /）。
     pub root: Option<PathBuf>,
+    /// M22-2：跳过 known_hosts 校验（安全默认 false = 校验）。
+    pub skip_host_key_check: bool,
 }
 
 /// 缺省用户名（USER/USERNAME/root）。
@@ -58,6 +60,7 @@ impl SftpParams {
             key_path_raw: None,
             name: String::new(),
             root: None,
+            skip_host_key_check: false,
         }
     }
 }
@@ -455,13 +458,28 @@ async fn connect_async(params: &SftpParams) -> Result<SshSession, RemoteError> {
     let config = client::Config::default();
     let key = load_user_key(&params.key_path)?;
     let key = PrivateKeyWithHashAlg::new(std::sync::Arc::new(key), None);
+    // M22-2：known_hosts 校验——错误经共享槽带回（russh connect 失败时不
+    // 归还 handler，用 Arc<Mutex> 跨越）。
+    let key_error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let known_hosts_path = if params.skip_host_key_check {
+        None
+    } else {
+        Some(crate::config::known_hosts_path())
+    };
+    let handler = ClientHandler {
+        host: params.host.clone(),
+        port: params.port,
+        known_hosts_path,
+        key_error: std::sync::Arc::clone(&key_error),
+    };
     let mut handle = client::connect(
         std::sync::Arc::new(config),
         (params.host.as_str(), params.port),
-        ClientHandler,
+        handler,
     )
     .await
-    .map_err(map_russh_err)?;
+    .map_err(|e| map_connect_err(e, &key_error))?;
     let auth = handle
         .authenticate_publickey(&params.user, key)
         .await
@@ -484,19 +502,96 @@ async fn connect_async(params: &SftpParams) -> Result<SshSession, RemoteError> {
     Ok(SshSession { handle, sftp })
 }
 
-/// spike 教训：check_server_key 默认拒绝全部，必须覆写。
-/// TODO(M19-4)：known_hosts 校验；当前接受新主机并提示指纹。
-struct ClientHandler;
+/// M22-2：连接错误映射——known_hosts 指纹变更等安全拒绝带可读错误。
+fn map_connect_err(e: russh::Error, key_error: &std::sync::Mutex<Option<String>>) -> RemoteError {
+    if let Some(msg) = key_error.lock().ok().and_then(|mut g| g.take()) {
+        return RemoteError::Other(msg);
+    }
+    map_russh_err(e)
+}
+
+/// M22-2：known_hosts 校验的 SSH 客户端 handler（原 M19-3b 空结构升级）。
+struct ClientHandler {
+    host: String,
+    port: u16,
+    /// None = 用户显式跳过校验（`known_hosts = false`）。
+    known_hosts_path: Option<std::path::PathBuf>,
+    /// 安全拒绝的可读错误（russh connect Err 时不归还 handler，经共享槽带回）。
+    key_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+}
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKeyOrCertificate,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        eprintln!("rvifm: 接受主机密钥（首连模式，未校验 known_hosts）");
-        Ok(true)
+        let Some(path) = &self.known_hosts_path else {
+            return Ok(true); // 用户显式跳过（known_hosts = false）
+        };
+        // 公钥串（"算法 base64"，与 known_hosts 行格式一致）+ 指纹。
+        let (key_str, fp): (String, String) = match server_public_key {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => {
+                let fp = key.fingerprint(russh::keys::HashAlg::Sha256).to_string();
+                let ok = key
+                    .to_openssh()
+                    .map(|s| s.trim().to_owned())
+                    .unwrap_or_default();
+                (ok, fp)
+            }
+            russh::keys::PublicKeyOrCertificate::Certificate(c) => {
+                // 证书场景（SIMPLIFIED）：按证书公钥串接受并提示。
+                let fp = c
+                    .public_key()
+                    .fingerprint(russh::keys::HashAlg::Sha256)
+                    .to_string();
+                let ok = c
+                    .to_openssh()
+                    .map(|s| s.trim().to_owned())
+                    .unwrap_or_default();
+                (ok, fp)
+            }
+        };
+        if key_str.is_empty() {
+            return Ok(true);
+        }
+        let entries = crate::remote::known_hosts::load(path);
+        match crate::remote::known_hosts::check(&entries, &self.host, self.port, &key_str) {
+            crate::remote::known_hosts::KeyVerdict::Match => Ok(true),
+            crate::remote::known_hosts::KeyVerdict::FirstUse => {
+                match crate::remote::known_hosts::append(path, &self.host, self.port, &key_str) {
+                    Ok(()) => {
+                        eprintln!(
+                            "rvifm: 首连 {}:{}，主机密钥已写入 known_hosts（指纹 {}）",
+                            self.host, self.port, fp
+                        );
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "rvifm: 首连 {}:{} 指纹 {}（known_hosts 写入失败: {e}，本次接受）",
+                            self.host, self.port, fp
+                        );
+                        Ok(true)
+                    }
+                }
+            }
+            crate::remote::known_hosts::KeyVerdict::Mismatch { existing } => {
+                let msg = format!(
+                    "主机密钥校验失败（{}:{}）：known_hosts 记录的指纹与服务器不符。\n已记录: {}\n本次: {}\n如确认服务器已更换密钥，请手动删除 known_hosts 中该主机条目，或在 remotes.toml 为该远端设置 known_hosts = false。",
+                    self.host,
+                    self.port,
+                    existing.join(" | "),
+                    fp
+                );
+                eprintln!("rvifm: {msg}");
+                if let Ok(mut g) = self.key_error.lock() {
+                    *g = Some(msg);
+                }
+                Ok(false)
+            }
+        }
     }
 }
 

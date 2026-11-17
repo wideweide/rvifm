@@ -122,6 +122,7 @@ pub trait RemoteFs {
 }
 
 pub mod config;
+pub mod known_hosts;
 pub mod sftp;
 
 #[cfg(test)]

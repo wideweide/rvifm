@@ -15,6 +15,9 @@ pub struct RemoteEntry {
     pub key: Option<PathBuf>,
     /// 连接后的初始路径（缺省 /）。
     pub root: Option<PathBuf>,
+    /// M22-2：跳过 known_hosts 校验（安全默认 false = 校验）。
+    /// remotes.toml 里显式 `known_hosts = false` 才跳过。
+    pub known_hosts: Option<bool>,
 }
 
 impl RemoteEntry {
@@ -33,6 +36,7 @@ impl RemoteEntry {
             ),
             name: name.to_owned(),
             root: self.root.clone(),
+            skip_host_key_check: self.known_hosts == Some(false),
         }
     }
 }
@@ -77,6 +81,7 @@ pub fn load_remotes_toml(path: &Path) -> BTreeMap<String, RemoteEntry> {
                     .get("root")
                     .and_then(|v| v.as_str())
                     .map(PathBuf::from),
+                known_hosts: table.get("known_hosts").and_then(|v| v.as_bool()),
             },
         );
     }
@@ -138,6 +143,7 @@ pub fn resolve_all(remotes_path: &Path, ssh_config_path: &Path) -> BTreeMap<Stri
             user: None,
             key: None,
             root: None,
+            known_hosts: None,
         });
     }
     out

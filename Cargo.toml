@@ -15,6 +15,10 @@ tokio-stream = "0.1.19"
 bzip2-rs = "0.1.2"
 devicons = "0.6.13"
 flate2 = "1.1.11"
+# M22-2：known_hosts hashed hostname 校验（HMAC-SHA1；三者均已在依赖树，零新增 crate）。
+hmac = "0.13"
+sha1 = "0.11"
+base64ct = "1.8"
 ignore = "0.4.34"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # M21-F1：底部详情/属性列的时间格式化（本地时区；已在依赖树中，零新增传递依赖）。
