@@ -95,6 +95,8 @@ enum Outcome {
         input: String,
         pos: usize,
     },
+    /// 用 $EDITOR 打开文件（M23-10：e；run 循环挂起 TUI 执行）。
+    EditFile { path: PathBuf },
 }
 
 /// 跳转选择器视角（M8-12）：Unified = 合一表 + 全局统一时钟；Dir/File =
@@ -682,6 +684,69 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
 }
 
 // ── M19-2：远端会话导航 ──────────────────────────────────────────────
+
+/// M23-10：OSC52 剪贴板序列（`ESC]52;c;<base64>BEL`；零依赖）。
+fn osc52_sequence(text: &str) -> String {
+    use base64ct::Encoding as _;
+    format!(
+        "\x1b]52;c;{}\x07",
+        base64ct::Base64::encode_string(text.as_bytes())
+    )
+}
+
+/// M23-10：写入剪贴板（OSC52 写 stdout；失败静默——状态栏反馈由调用方）。
+/// 测试下不写 stdout（OSC52 序列噪声）；序列本身由 osc52_sequence 覆盖。
+fn copy_to_clipboard(text: &str) {
+    #[cfg(not(test))]
+    {
+        use std::io::Write as _;
+        let _ = std::io::stdout().write_all(osc52_sequence(text).as_bytes());
+        let _ = std::io::stdout().flush();
+    }
+    #[cfg(test)]
+    {
+        let _ = osc52_sequence(text); // 保持序列路径可达（dead-code 抑制）
+    }
+}
+
+/// M23-10：复制目标的选集——标记优先（按列表序），其次可视范围，最后
+/// 光标单条目（与 cw/R 的选集语义一致）。
+fn selected_names(state: &AppState) -> Vec<String> {
+    let tab = state.active_tab();
+    if !tab.tags.is_empty() {
+        return tab
+            .entries
+            .iter()
+            .filter(|i| tab.tags.contains(&i.name))
+            .map(|i| i.name.clone())
+            .collect();
+    }
+    if let Some((lo, hi)) = tab.visual_range() {
+        return tab
+            .entries
+            .get(lo..=hi.min(tab.entries.len().saturating_sub(1)))
+            .map(|slice| slice.iter().map(|i| i.name.clone()).collect())
+            .unwrap_or_default();
+    }
+    tab.entries
+        .get(tab.cursor)
+        .map(|i| vec![i.name.clone()])
+        .unwrap_or_default()
+}
+
+/// M23-10：编辑器选择（M23-10 e / M13-6 cw 共用）——`EDITOR` → `VISUAL`
+/// → 平台缺省（Windows notepad / Unix vi）。
+fn editor_name() -> String {
+    std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "notepad".to_owned()
+            } else {
+                "vi".to_owned()
+            }
+        })
+}
 
 /// M22-5：远端结果定位（l/Enter，结果虚拟目录 + Remote 位置共用体）——
 /// 退出结果视图 + remote_navigate 命中文件父目录 + 光标停在该文件。
@@ -2323,6 +2388,109 @@ fn handle_key(
                     return Some(Outcome::ConfirmDelete(base.join(&item.name), false, None));
                 }
             }
+            Some(Action::CopyName) | Some(Action::CopyPath) | Some(Action::CopyContent) => {
+                // M23-10：y 复制序列——选集（标记/可视/光标）逐条目取目标文本，
+                // OSC52 写入剪贴板（零依赖），状态栏 `copied` 反馈。
+                if state.active_tab().on_parent_row {
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return None;
+                }
+                let names = selected_names(state);
+                if names.is_empty() {
+                    *msg = Some("无选中条目".to_owned());
+                    return None;
+                }
+                let is_physical = matches!(
+                    state.active_tab().location,
+                    crate::tab::Location::Physical(_)
+                );
+                let action = action.unwrap();
+                let text = match action {
+                    Action::CopyName => names.join("\n"),
+                    Action::CopyPath => {
+                        let base = state.active_tab().location.base_dir().to_path_buf();
+                        names
+                            .iter()
+                            .map(|n| base.join(n).to_string_lossy().replace('\\', "/"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                    Action::CopyContent => {
+                        if !is_physical {
+                            *msg = Some("当前视图不支持复制内容".to_owned());
+                            return None;
+                        }
+                        let base = state.active_tab().location.base_dir().to_path_buf();
+                        let mut parts: Vec<String> = Vec::new();
+                        for n in &names {
+                            let p = base.join(n);
+                            if p.is_dir() {
+                                let mut listing: Vec<String> = match std::fs::read_dir(&p) {
+                                    Ok(rd) => rd
+                                        .filter_map(|e| e.ok())
+                                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                                        .collect(),
+                                    Err(_) => Vec::new(),
+                                };
+                                listing.sort();
+                                parts.push(listing.join("\n"));
+                            } else {
+                                match std::fs::read_to_string(&p) {
+                                    Ok(t) => parts.push(t),
+                                    Err(_) => {
+                                        *msg = Some(format!(
+                                            "复制内容失败: {n}（非 UTF-8 或读取失败）"
+                                        ));
+                                        return None;
+                                    }
+                                }
+                            }
+                        }
+                        parts.join("\n")
+                    }
+                    _ => unreachable!("match 已限定 Copy 系列"),
+                };
+                let what = match action {
+                    Action::CopyPath => text.lines().next().unwrap_or("").to_owned(),
+                    _ => names[0].clone(), // 名称/内容：反馈条目名
+                };
+                let what = if names.len() > 1 {
+                    format!("{} 项", names.len())
+                } else {
+                    what
+                };
+                copy_to_clipboard(&text);
+                *msg = Some(format!("copied {what}"));
+            }
+            Some(Action::OpenEditor) => {
+                // M23-10：e——$EDITOR 打开光标文件（目录提示不支持）。
+                if state.active_tab().on_parent_row {
+                    *msg = Some("`..` 行仅导航".to_owned());
+                    return None;
+                }
+                if !matches!(
+                    state.active_tab().location,
+                    crate::tab::Location::Physical(_)
+                ) {
+                    *msg = Some("当前视图不支持编辑".to_owned());
+                    return None;
+                }
+                let tab = state.active_tab();
+                let is_dir = tab
+                    .entries
+                    .get(tab.cursor)
+                    .map(|i| i.is_dir)
+                    .unwrap_or(true);
+                if is_dir {
+                    *msg = Some("目录不支持编辑".to_owned());
+                    return None;
+                }
+                let base = tab.location.base_dir().to_path_buf();
+                let name = tab.entries[tab.cursor].name.clone();
+                return Some(Outcome::EditFile {
+                    path: base.join(name),
+                });
+            }
             Some(Action::RenameStart) | Some(Action::RenameClear) | Some(Action::RenameAppend) => {
                 // M21-E4：I/A 保留原名（光标首/尾），cc 清空（光标归零）。
                 if state.active_tab().in_results() {
@@ -3620,15 +3788,7 @@ fn batch_rename_flow(
         f.flush().ok();
     }
 
-    let editor = std::env::var("EDITOR")
-        .or_else(|_| std::env::var("VISUAL"))
-        .unwrap_or_else(|_| {
-            if cfg!(windows) {
-                "notepad".to_owned()
-            } else {
-                "vi".to_owned()
-            }
-        });
+    let editor = editor_name();
     let status = std::process::Command::new(&editor)
         .arg(&tmp_path)
         .status()
@@ -4640,6 +4800,31 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 normal: false,
                                 g_pending: false,
                             };
+                        }
+                        Outcome::EditFile { path } => {
+                            // M23-10：e——挂起 TUI，$EDITOR 打开文件，恢复后反馈。
+                            ratatui::restore();
+                            let editor = editor_name();
+                            let result = std::process::Command::new(&editor)
+                                .arg(&path)
+                                .status()
+                                .map_err(|e| e.to_string())
+                                .and_then(|st| {
+                                    if st.success() {
+                                        Ok(())
+                                    } else {
+                                        Err(format!("编辑器 {editor} 非零退出（{st}）"))
+                                    }
+                                });
+                            terminal = ratatui::init();
+                            let _ = ratatui::crossterm::execute!(
+                                std::io::stdout(),
+                                event::EnableMouseCapture
+                            );
+                            msg = Some(match result {
+                                Ok(()) => format!("编辑完成: {}", path.display()),
+                                Err(e) => format!("编辑失败: {e}"),
+                            });
                         }
                         Outcome::EnterShell => {
                             // M18-3/M18-4：shell 入口——按 [ui] 配置分流复用器
@@ -12416,6 +12601,148 @@ terminal_in_new_window = false
         // 退出刷写同样过滤（flush_session_visits 共用 ignored）。
         let records = collect_session_records(&state);
         assert!(records.iter().all(|r| !r.path.contains("node_modules")));
+    }
+
+    #[test]
+    fn m23_10_y_copy_sequences_and_editor_outcome() {
+        // ACCEPTANCE §22 M23-10：yn/yf/yc 单选与多选；e 产出 EditFile（目录拒绝）。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("alpha.txt"), "content-a").unwrap();
+        fs::write(tmp.path().join("beta.md"), "content-b").unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("sub/inner.txt"), "inner").unwrap();
+        let layers = config::keymap_layers();
+        let keymap =
+            crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+        let mut input = InputState::with_keymap(keymap.clone());
+        let mut msg = None;
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+        // yn：单选复制光标条目名（定位到 alpha.txt——dirs-first 排序 sub 在 0）。
+        state.active_tab_mut().cursor = 1;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        let o = press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+        );
+        let _ = o;
+        assert!(
+            msg.as_deref().unwrap().contains("copied") && msg.as_deref().unwrap().contains("alpha"),
+            "yn copied 反馈: {msg:?}"
+        );
+
+        // yf：复制全路径（含 base 前缀）。
+        msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('f'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            msg.as_deref()
+                .unwrap()
+                .contains(&tmp.path().to_string_lossy().replace('\\', "/")),
+            "yf 复制全路径: {msg:?}"
+        );
+
+        // yc：文件内容复制。
+        msg = None;
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('c'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            msg.as_deref().unwrap().contains("copied"),
+            "yc copied: {msg:?}"
+        );
+
+        // 多选（标记两个条目）→ yf 反馈 2 项。
+        let _ = input; // 重置 seq
+        let mut input2 = InputState::with_keymap(keymap.clone());
+        state.active_tab_mut().cursor = 0;
+        press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        state.active_tab_mut().cursor = 1;
+        press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        );
+        msg = None;
+        press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('f'),
+            KeyModifiers::NONE,
+        );
+        assert!(msg.as_deref().unwrap().contains("2 项"), "多选 yf: {msg:?}");
+
+        // e：目录 → 拒绝；文件 → EditFile outcome。
+        state.active_tab_mut().cursor = 0; // sub（目录——dirs-first 排序在 0）
+        let o = press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('e'),
+            KeyModifiers::NONE,
+        );
+        let _ = o;
+        assert!(msg.as_deref().unwrap().contains("目录不支持编辑"));
+        state.active_tab_mut().cursor = 1; // alpha.txt（sub 在 0）
+        let o = press_msg(
+            &mut state,
+            &mut input2,
+            &mut msg,
+            KeyCode::Char('e'),
+            KeyModifiers::NONE,
+        );
+        assert!(
+            matches!(o, Outcome::EditFile { .. }),
+            "e 文件 → EditFile: {o:?}"
+        );
     }
 
     #[test]

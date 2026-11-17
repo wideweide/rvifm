@@ -49,6 +49,14 @@ pub enum Action {
     RenameClear,
     /// 内联重命名（M21-E4：A——光标在名尾，保留原名）。
     RenameAppend,
+    /// 复制名称（M23-10：yn——名称；多选=标记/可视全部）。
+    CopyName,
+    /// 复制全路径（M23-10：yf）。
+    CopyPath,
+    /// 复制内容（M23-10：yc——文件内容/目录条目清单）。
+    CopyContent,
+    /// 打开编辑器（M23-10：e——$EDITOR 打开光标文件）。
+    OpenEditor,
     /// 切换 view 模式（M13-9：w——预览窗格完整文件视图）。
     ToggleView,
     PutCopy,
@@ -95,6 +103,10 @@ impl Action {
             "rename_start" | "rename_here" => RenameStart,
             "rename_clear" => RenameClear,
             "rename_append" => RenameAppend,
+            "copy_name" => CopyName,
+            "copy_path" => CopyPath,
+            "copy_content" => CopyContent,
+            "open_editor" | "edit" => OpenEditor,
             "toggle_view" | "view" => ToggleView,
             "put_copy" | "paste_copy" => PutCopy,
             "put_move" | "paste_move" => PutMove,
@@ -227,6 +239,10 @@ impl Keymap {
             (vec![k(Char('I'))], RenameStart),
             (vec![k(Char('A'))], RenameAppend),
             (vec![k(Char('R'))], RenameBatch),
+            (vec![k(Char('y')), k(Char('n'))], CopyName),
+            (vec![k(Char('y')), k(Char('f'))], CopyPath),
+            (vec![k(Char('y')), k(Char('c'))], CopyContent),
+            (vec![k(Char('e'))], OpenEditor),
             (vec![k(Char('w'))], ToggleView),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),
