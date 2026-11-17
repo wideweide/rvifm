@@ -1,4 +1,5 @@
 # STATE —
+- `M22-4`（2026-11-17）：远端 `:mk` + 提示修正——远端白名单加 `mk`，远端写路由 mk 分支（create_dir + 进入 dest）；拒绝提示去"在 M20 接入"过时表述；MockRemote::create_dir 补存在检查（镜像 SFTP 语义，此前静默覆盖）——mock 保真度教训：mock 必须镜像真实后端的失败路径。281 单测全绿（+1）。
 - `M22-3`（2026-11-17）：SFTP 口令认证——connect_async(password: Option)（公钥优先，失败/无密钥回退 authenticate_password，口令仅内存传递不落盘）；`connect_with_password` 独立入口（actor_thread 带 password 参数）；`ExecOutcome::RemotePass`/`InputMode::RemotePass`（masked 状态栏渲染，Enter 连接失败留在模式内重试并清空口令，Esc 干净取消）；`:remote` 公钥认证失败自动进入口令模式（remote_pass_apply 抽取体）。280 单测全绿（+1：masked 渲染/失败路径）。
 - `M22-2`（2026-11-17）：known_hosts 校验——新模块 src/remote/known_hosts.rs（明文 + `|1|` hashed HMAC-SHA1 解析；@标记行跳过；check/append 纯函数+文件 IO）；sftp ClientHandler 接线（首连追加写入 0600、指纹变更拒连含新旧指纹与指引、错误经 Arc<Mutex> 跨 connect 失败带回——russh Err 不归还 handler）；`[remotes.toml] known_hosts = false` 显式跳过（SftpParams.skip_host_key_check）。依赖 hmac/sha1/base64ct（均已在树零新增）。279 单测全绿（+5）。API 踩坑：hmac 0.13 需 `use hmac::KeyInit`（重导出自 digest）；base64ct encode_string 而非 encode_vec；russh PublicKeyOrCertificate 为 struct 变体 `PublicKey { key, hash_alg }`。
 - `M22-1`（2026-11-17）：`:cd` 相对路径锚定——相对路径相对**当前 tab 目录**解析（原为进程 CWD，M21-E5 CI 实测漂移），词法归一化解析 `.`/`..` 段（normalize_lexical，不触 FS/不解符号链接保持逻辑路径）；失败不改位置。274 单测全绿（+1 含漂移回归断言）。踩坑：canonicalize 会展开 Windows 8.3 短名（TempDir 全断言漂移）→ 改词法归一化保持逻辑路径；存量 3 个 cd 断言随语义更新。
@@ -118,8 +119,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M22-4 远端 `:mk` 创建并进入 + 提示修正
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1/2/3 完成），M23 已登记排队；两批完成后发布 0.8.0
+- **当前任务**：M22-5 `:find`/`:grep` 作用远端视图
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 进行中（M22-1～4 完成），M23 已登记排队；两批完成后发布 0.8.0
 
 ## 已完成
 

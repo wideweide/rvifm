@@ -1207,10 +1207,11 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
                 | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
-                | "touch" | "copy" | "move",
+                | "touch" | "copy" | "move" | "mk",
             ) => {}
             Some(other) => {
-                return Err(format!("远端写操作在 M20 接入: {other}"));
+                // M22-4：去掉过时的"在 M20 接入"表述。
+                return Err(format!("远端不支持: {other}"));
             }
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
@@ -1359,17 +1360,13 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 entries,
             })
         }
-        Some("rename" | "mkdir" | "touch" | "copy" | "move")
+        Some("rename" | "mkdir" | "touch" | "copy" | "move" | "mk")
             if matches!(state.active_tab().location, Location::Remote { .. }) =>
         {
-            #[cfg(test)]
-            eprintln!(
-                "DBG remote write arm: {:?} location={:?}",
-                cmd_head,
-                state.active_tab().location
-            );
             // M20-1：远端写命令（与本地同键同语义；undo 入撤销栈）。
+            // M22-4：`:mk <名>` = 远端 mkdir + 进入该目录。
             let is_mkdir = cmd_head == Some("mkdir");
+            let is_mk = cmd_head == Some("mk");
             let is_touch = cmd_head == Some("touch");
             let is_copy = cmd_head == Some("copy");
             let arg = parts
@@ -1389,7 +1386,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 .remote_sessions
                 .get(&remote)
                 .ok_or_else(|| "remote: 会话已断开".to_owned())?;
-            let kind = if is_mkdir {
+            let kind = if is_mkdir || is_mk {
                 backend.create_dir(&dest).map_err(|e| e.to_string())?;
                 crate::state::RemoteUndo::Create {
                     path: dest.clone(),
@@ -1431,9 +1428,15 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 remote: remote.clone(),
                 kind,
             });
-            let _ = remote_navigate(state, &base);
+            // M22-4：`:mk` 创建后进入新目录（其余命令刷新当前目录）。
+            let nav_target = if is_mk { &dest } else { &base };
+            let _ = remote_navigate(state, nav_target);
             Ok(ExecOutcome::Done {
-                msg: Some(format!("{}: {arg} OK", cmd_head.unwrap_or_default())),
+                msg: Some(format!(
+                    "{}: {arg} OK{}",
+                    cmd_head.unwrap_or_default(),
+                    if is_mk { "（已进入）" } else { "" }
+                )),
             })
         }
         Some("q" | "quit") => Ok(ExecOutcome::Quit),
@@ -10162,6 +10165,12 @@ terminal_in_new_window = false
         }
         fn create_dir(&self, path: &std::path::Path) -> Result<(), crate::remote::RemoteError> {
             let key = path.to_string_lossy().replace('\\', "/");
+            // M22-4：镜像 SFTP 语义——已存在返回 Err（此前 mock 静默覆盖）。
+            if self.entries.borrow().contains_key(&key) {
+                return Err(crate::remote::RemoteError::Other(format!(
+                    "mkdir: 已存在: {key}"
+                )));
+            }
             let name = key.rsplit('/').next().unwrap_or_default().to_owned();
             self.entries.borrow_mut().insert(
                 key,
@@ -10214,6 +10223,45 @@ terminal_in_new_window = false
         mock.seed("/", "readme.md", false, 13);
         register_remote_session(&mut state, "dev", Box::new(mock));
         (tmp, state)
+    }
+
+    #[test]
+    fn m22_4_remote_mk_enters_and_reject_message_updated() {
+        // ACCEPTANCE §21 M22-4：远端 `:mk d1` 创建并进入；已存在返回 Err
+        // 不进入；未接命令提示已更新为"远端不支持"。
+        let (_tmp, mut state) = mock_remote_state();
+        remote_enter(&mut state, "dev", std::path::Path::new("/")).unwrap();
+
+        // :mk d1 → 创建并进入。
+        exec_command_impl(&mut state, "mk d1").unwrap();
+        assert_eq!(
+            state.active_tab().location,
+            Location::Remote {
+                remote: "dev".to_owned(),
+                path: std::path::PathBuf::from("/d1")
+            },
+            ":mk 进入新目录"
+        );
+        // 再 :mk d1（当前已在 /d1，创建 /d1/d1）→ 成功进入 /d1/d1？——语义
+        // 与本地一致：相对当前目录。测已存在失败：回根目录再 mk docs。
+        remote_navigate(&mut state, std::path::Path::new("/")).unwrap();
+        assert!(
+            exec_command_impl(&mut state, "mk docs").is_err(),
+            "已存在 Err"
+        );
+        assert_eq!(
+            state.active_tab().location,
+            Location::Remote {
+                remote: "dev".to_owned(),
+                path: std::path::PathBuf::from("/")
+            },
+            "失败不进入"
+        );
+
+        // 未接命令：提示文本已更新（无"在 M20 接入"）。
+        let err = exec_command_impl(&mut state, "nosuchcmd").unwrap_err();
+        assert!(err.contains("远端不支持"), "提示修正: {err}");
+        assert!(!err.contains("M20"), "无过时表述: {err}");
     }
 
     #[test]
