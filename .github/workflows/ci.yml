@@ -80,36 +80,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive: rvifm-${{ github.ref_name }}-linux-x64-musl.tar.gz
+            binary: rvifm
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: rvifm-${{ github.ref_name }}-linux-x64-gnu.tar.gz
+            binary: rvifm
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: rvifm-${{ github.ref_name }}-windows-x64.tar.gz
+            binary: rvifm.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+      - name: install musl-tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: build --release
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
       - name: smoke --version
-        run: cargo run --release --locked -- --version
+        run: cargo run --release --locked --target ${{ matrix.target }} -- --version
       - name: archive
         shell: bash
         run: |
           mkdir -p dist
-          if [ -f target/release/rvifm.exe ]; then
-            tar czf dist/rvifm-${GITHUB_REF_NAME}-windows-x64.tar.gz -C target/release rvifm.exe
-          else
-            tar czf dist/rvifm-${GITHUB_REF_NAME}-linux-x64.tar.gz -C target/release rvifm
-          fi
+          tar czf dist/${{ matrix.archive }} -C target/${{ matrix.target }}/release ${{ matrix.binary }}
       - name: create GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 两平台并行：create 只成功一次（已存在则忽略），upload 各自上传。
           gh release create "$GITHUB_REF_NAME" \
             --title "rvifm $GITHUB_REF_NAME" \
             --generate-notes --verify-tag || true
           gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
       - uses: actions/upload-artifact@v4
         with:
-          name: rvifm-${{ matrix.os }}
+          name: rvifm-${{ matrix.target }}
           path: dist/
