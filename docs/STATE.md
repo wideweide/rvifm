@@ -1,4 +1,5 @@
 # STATE —
+- `M24 批次关闭`（2026-11-19）：M24-1～9 全部完成（PLAN 状态同步，ACCEPTANCE §23 全勾）。批次验收：318 单测 + 6 集成全绿；`--version`/`--help` 冒烟通过。批次亮点：Pane 列对齐（名称填充/大小右对齐/分钟日期）、自然排序（数字感知 + ignore_case_sort 分流——收尾验收补接线）、行可视 V + 可视 d/y/x（tag 管线复用）、计数前缀 Nj/Nk/Ndd/Nyy、命令历史（↑/↓ 循环 + 草稿恢复 + 失败不记 + 上限 100）、Tab 路径补全（前缀循环 + ~ 展开）、:compare 目录对比（=/!/</> 结果虚拟目录）、:jobs 交互化（j/k 选择 + x 协作式取消 + Cancelled 终态）。接续：下一批次待用户指令（发布 0.9.0 与否随批次决策）。
 - `M24-2 修正`（2026-11-19，批次收尾验收发现）：自然排序补 `ignore_case_sort` 接线——SPEC M24-2 要求"受 Config.ignore_case_sort 影响"，但原 `natural_cmp` 内嵌小写化（恒不敏感）；拆出 `natural_cmp_case` 大小写敏感变体（数字感知不变），`sort_entries` 的 Natural 分支按 `config.ignore_case_sort` 分流。318 单测全绿（+1 case 变体对照）。
 - `M24-9`（2026-11-19）：任务视图增强——`:jobs` 覆盖层交互化：`InputMode::Jobs` 增 cursor（j/k/方向键移动+两端钳制）；`x` 经 `AppState::cancel_job` 请求取消运行中作业（`Job.cancel_requested: Arc<AtomicBool>` 跨线程共享；重复请求/非 Running 忽略 + 状态栏提示）；协作式终止——`execute_job_body` 在文件边界检查标志，已完成项保留入撤销栈，终态 `JobStatus::Cancelled{summary}`（"op: 已取消（N 项完成）"）；渲染增光标 REVERSED 高亮 + "取消中…" 中间态；Esc/q 关闭（废止 M13-8 任意键关闭）；`spawn_job_thread` 参数收敛为 `JobSpec` 包（clippy too_many_arguments，8/7）。317 单测 + 6 集成全绿（+3：菜单键导航与取消/取消终止与摘要/覆盖层渲染含取消中间态与终态）。测试踩坑：TestBackend diff 渲染残留上一帧字符——每帧用全新 backend；CJK 全角断言前需去空白。
 - `M24-8`（2026-11-19）：目录对比 `:compare`——左右 pane 条目按**文件名+大小**对比（目录跳过，目录大小无比较意义；`compare_panes` 纯函数）；结果复用 Tab.results 虚拟目录：`=` 同名同大小 / `!` 同名异大小 / `<` 仅左 / `>` 仅右（text 字段承载标记；ResultItem 增 size 字段透传属性列，find/grep 保持 0、remote_find 带真实 size）；SearchKind::Compare 变体 + 显示名"标记 文件名"+ 状态栏 `[compare: N 项]`（无查询词）；l/Enter locate_result 定位实际路径（=/!/< 左侧、> 右侧）；只读守卫沿用结果视图白名单；`..` 行白名单放行 compare（只读且不依赖光标）；计数消息"相同 N · 不同 M · 仅左 X · 仅右 Y"。需双 pane 物理视图（归档/远端/树/结果视图可读报错）。314 单测 + 6 集成全绿（+2：标记与顺序（字典序随 pane 排序）/exec 结果+定位+只读守卫）。踩坑：右 pane base 初版错用 tab.location（左）——"> 定位"测试抓出。
@@ -141,9 +142,9 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 - **更新时间**：2026-11-19
-- **当前阶段**：M24 交互增强与列表规范（进行中）
-- **当前任务**：M24-9 任务视图增强（最后一个未勾选任务）
-- **阶段状态**：M0–M23 关闭 + v0.8.0 发布；M24 进行中（M24-1～8 完成）
+- **当前阶段**：M24 交互增强与列表规范（批次已关闭）；下一批次待用户指令
+- **当前任务**：无（等待用户登记下一批次）
+- **阶段状态**：M0–M24 全部关闭 + v0.8.0 已发布
 
 ## 已完成
 
