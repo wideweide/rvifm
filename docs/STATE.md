@@ -1,4 +1,5 @@
 # STATE —
+- `M24-1`（2026-11-19）：Pane 列对齐——ATTRS_WIDTH 日期列 19→16（分钟精度 format_mtime_min）；显示名填充至 name_budget（属性列对齐）；左右 pane 共用。292 单测全绿。
 - `M23 批次关闭`（2026-11-18）：M23-1～12 全部完成（PLAN 状态同步，ACCEPTANCE §22 全勾）。批次验收：292 单测 + 3 冒烟全绿；`--version`/`--help` 通过。批次亮点：多词搜索分级（ordered/any-order）、容量清理+书签保护（Remove 墓碑）、IGNORE_PATTERNS、per-topic λ/max_entries、Frecency Pane 模式（o 进入内嵌搜索替代浮层）、y 复制序列 + e 编辑器、自定义命令快捷键（%d/%f/%F/%D/%g 变量 + git root 判定）、远端文件跟踪上传、选择器删除。M23-7 修订（键位 Normal 一致，cve 移除）。批次新增依赖：hmac/sha1/base64ct（均纯 Rust，零 C 编译期依赖）。接续发布 0.8.0。
 - `M23-8`（2026-11-18）：选择器内 d 删除——frec_pane_key 增 d 臂（Remove 墓碑事件持久化 + pane 内条目移除 + 光标钳制）；frecency.rs 增 remove_entry/tombstone_record（复用 record 降级链路）。292 单测全绿（结构性新增，Remove 墓碑已由 M23-3 测试覆盖）。M23 批次全部完成。
 - `M23-6`（2026-11-18）：Frecency Pane 模式——Tab 增 pane_frecency（FrecencyPane{entries,query,cursor,normal,g_pending}）；`o` 进入（取代 JumpSelect 浮层），Esc 三级退出（Search→Normal→Directory）；frec_pane_key 可测抽取（Normal 态 j/k/gg/G/l/Enter/y*/e/w/Tab；Search 态输入即搜/方向键/Enter）；渲染 render_frecency_panes（焦点 pane 搜索 UI、对侧 PreviewRenderer 100 行快速预览）；Outcome::OpenJump 移除（o 改 pane mode；:j/:J JumpSelect 保留）。292 单测全绿（结构性新增，渲染/键路由由 handle_key 拦截测试覆盖编译形态）。
@@ -134,8 +135,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M24-1 Pane 列对齐规范（M24 已蒸馏登记，待确认执行）
-- **阶段状态**：M0–M23 关闭 + v0.8.0 发布；M24 已登记 SPEC/TASKS/ACCEPTANCE §23/PLAN/NOTES（9 任务），未开始实现
+- **当前任务**：M24-2 自然排序
+- **阶段状态**：M0–M23 关闭 + v0.8.0 发布；M24 进行中（M24-1 完成）
 
 ## 已完成
 

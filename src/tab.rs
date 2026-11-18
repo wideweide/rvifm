@@ -211,6 +211,16 @@ pub fn format_mtime(secs: u64) -> String {
     )
 }
 
+/// M24-1：分钟精度时间格式——`yyyy-mm-dd HH:mm`（16 列，列表属性列用）。
+pub fn format_mtime_min(secs: u64) -> String {
+    let full = format_mtime(secs);
+    if full.len() >= 16 {
+        full[..16].to_owned()
+    } else {
+        full
+    }
+}
+
 /// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
 #[derive(Debug, Clone)]
 pub struct SearchState {

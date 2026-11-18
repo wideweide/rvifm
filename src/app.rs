@@ -3528,9 +3528,9 @@ fn pane_border_style(focused: bool) -> Style {
     }
 }
 
-/// M21-E1：属性列布局——大小列 10 列右对齐 + 分隔 2 列 + 时间列 19 列
-/// （`yyyy-mm-dd HH:mm:ss`）。
-const ATTRS_WIDTH: usize = 10 + 2 + 19;
+/// M21-E1/M24-1：属性列布局——大小列 10 列右对齐 + 分隔 2 列 + 时间列
+/// 16 列（`yyyy-mm-dd HH:mm`，分钟精度）。
+const ATTRS_WIDTH: usize = 10 + 2 + 16;
 /// 属性列显示所需的最小 pane 内区宽度（窄终端隐藏属性列，文件名优先）。
 const MIN_ATTRS_INNER_WIDTH: usize = 55;
 
@@ -5743,14 +5743,17 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                     spans.push(Span::styled(label, ft));
                 }
             }
-            // M21-E1：属性列——大小（目录 <DIR>）+ 修改时间，DIM 弱化。
+            // M24-1：名称填充至固定列宽（属性列对齐）+ 属性列（分钟精度日期）。
             if show_attrs {
+                let name_width = display_name.chars().count() + (item.is_dir as usize);
+                let pad = name_budget.saturating_sub(name_width).max(1);
+                spans.push(Span::from(" ".repeat(pad)));
                 let size = if item.is_dir {
                     "<DIR>".to_owned()
                 } else {
                     crate::tab::format_size(item.size)
                 };
-                let attr = format!("  {:>10}  {}", size, crate::tab::format_mtime(item.mtime));
+                let attr = format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
@@ -6480,12 +6483,15 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
                 Span::styled(label, filetype_style(item.filetype_class())),
             ];
             if show_attrs {
+                let name_width = display_name.chars().count() + (item.is_dir as usize);
+                let pad = name_budget.saturating_sub(name_width).max(1);
+                spans.push(Span::from(" ".repeat(pad)));
                 let size = if item.is_dir {
                     "<DIR>".to_owned()
                 } else {
                     crate::tab::format_size(item.size)
                 };
-                let attr = format!("  {:>10}  {}", size, crate::tab::format_mtime(item.mtime));
+                let attr = format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             let mut li = ListItem::new(Line::from(spans));
@@ -12268,7 +12274,7 @@ terminal_in_new_window = false
         fs::write(tmp.path().join("doc.txt"), "12345").unwrap(); // 5 B
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
         state.active_tab_mut().entries[0].mtime = 1_700_000_000;
-        let stamp = crate::tab::format_mtime(1_700_000_000);
+        let stamp = crate::tab::format_mtime_min(1_700_000_000);
 
         let draw_at = |state: &AppState, w: u16, h: u16| {
             let backend = ratatui::backend::TestBackend::new(w, h);
