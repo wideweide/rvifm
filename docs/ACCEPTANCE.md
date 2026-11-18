@@ -632,43 +632,43 @@
 ## 22. M23 — Frecency 对齐增强与 Pane 模式（M23-1～8，见 SPEC M23 节）
 
 ### M23-1 多词搜索与匹配分级
-- [ ] keyword 精确命中排在最后段命中之前、子串命中之前（三级顺序）；多词 ordered/any-order 均可命中；o 与 pick 同源。
+- [x] keyword 精确命中排在最后段命中之前、子串命中之前（三级顺序）；多词 ordered/any-order 均可命中；o 与 pick 同源。
 
 ### M23-2 unbook 保留历史
-- [ ] `:keyword <chars>` 后 `:keyword -`：keyword 清除且分数/排名不变（对照清除前后 replay 分数全等）。
+- [x] `:keyword <chars>` 后 `:keyword -`：keyword 清除且分数/排名不变（对照清除前后 replay 分数全等）。
 
 ### M23-3 容量清理
-- [ ] 超过 max_entries 后写入触发清理：最低分未书签条目被删、条目数降至 90%；带 keyword 条目存活。
+- [x] 超过 max_entries 后写入触发清理：最低分未书签条目被删、条目数降至 90%；带 keyword 条目存活。
 
 ### M23-4 IGNORE_PATTERNS
-- [ ] 配置命中模式（如 `*/node_modules/*`）的路径 record 后不出现在 pick/o；未命中照常记录。
+- [x] 配置命中模式（如 `*/node_modules/*`）的路径 record 后不出现在 pick/o；未命中照常记录。
 
 ### M23-5 per-topic 配置
-- [ ] TOML 配置 dir lambda 后：dir 条目衰减速率变化可见（对照测试）；file/unified 不受影响；缺省配置行为与现状一致。
+- [x] TOML 配置 dir lambda 后：dir 条目衰减速率变化可见（对照测试）；file/unified 不受影响；缺省配置行为与现状一致。
 
 ### M23-6 Frecency Pane 模式
-- [ ] `o` 后焦点 pane 显示搜索+结果，对侧 pane 列表仍可见；光标移动时对侧预览当前条目（文本截断 100–200 行含截断标记）；Esc 三级退出（Search→Normal→Directory）。
+- [x] `o` 后焦点 pane 显示搜索+结果，对侧 pane 列表仍可见；光标移动时对侧预览当前条目（文本截断 100–200 行含截断标记）；Esc 三级退出（Search→Normal→Directory）。
 
 ### M23-7 c/v/e 重映射
-- [ ] Frecency 模式 `c` 状态栏出现 copied 且不退出；`v` 对侧进入 View 全文并聚焦，Tab 切回搜索区；`e` 编辑器打开并退出模式；退出 Frecency 后 c/v/e 恢复原语义（v 仍为 Visual）。
+- [x] Frecency 模式 `c` 状态栏出现 copied 且不退出；`v` 对侧进入 View 全文并聚焦，Tab 切回搜索区；`e` 编辑器打开并退出模式；退出 Frecency 后 c/v/e 恢复原语义（v 仍为 Visual）。
 
 ### M23-8 删除撤销
-- [ ] `o` 结果项 `d` 删除条目（从选择器消失）；`u` 恢复条目；带 keyword 条目可删除但优先级低（清理保护不影响手动删除）。
+- [x] `o` 结果项 `d` 删除条目（从选择器消失）；`u` 恢复条目；带 keyword 条目可删除但优先级低（清理保护不影响手动删除）。
 
 ### M23-9 远端文件跟踪上传
-- [ ] 远端文件打开后修改副本：防抖后自动上传（mock write 收到新内容）；上传失败状态栏提示；退出清理不变。
+- [x] 远端文件打开后修改副本：防抖后自动上传（mock write 收到新内容）；上传失败状态栏提示；退出清理不变。
 
 ### M23-10 y 复制与 e 编辑器
-- [ ] `yn`/`yf`：单选复制光标条目名/全路径；带标记或可视选择时全部条目换行连接。
-- [ ] `yc`：文件复制文本内容；目录复制条目名清单。
-- [ ] `e`：文件在 $EDITOR 打开；目录提示不支持。
+- [x] `yn`/`yf`：单选复制光标条目名/全路径；带标记或可视选择时全部条目换行连接。
+- [x] `yc`：文件复制文本内容；目录复制条目名清单。
+- [x] `e`：文件在 $EDITOR 打开；目录提示不支持。
 
 ### M23-11 自定义命令快捷键
-- [ ] TOML 配置 `,g` → lazygit：焦点 pane 为 git 仓库时在该目录打开；否则高亮目录；均非仓库提示"不是 git 仓库"。
-- [ ] 命令模板支持 %d/%f/%F/%D 变量替换；执行分流复用 terminal_in_new_window。
+- [x] TOML 配置 `,g` → lazygit：焦点 pane 为 git 仓库时在该目录打开；否则高亮目录；均非仓库提示"不是 git 仓库"。
+- [x] 命令模板支持 %d/%f/%F/%D 变量替换；执行分流复用 terminal_in_new_window。
 
 ### M23-7（修订）Frecency Pane 键位
-- [ ] Frecency Pane Normal 态：j/k/gg/G 移动、l/Enter 跳转、y*/e/w 作用于光标结果（与 Normal 一致）；c/v 恢复 Normal 语义。
+- [x] Frecency Pane Normal 态：j/k/gg/G 移动、l/Enter 跳转、y*/e/w 作用于光标结果（与 Normal 一致）；c/v 恢复 Normal 语义。
 
 ### M23-12 git 评估
-- [ ] git2/gitoxide 调研与集成点决策入 NOTES（不实现）。
+- [x] git2/gitoxide 调研与集成点决策入 NOTES（不实现）。

@@ -1,4 +1,5 @@
 # STATE —
+- `M23 批次关闭`（2026-11-18）：M23-1～12 全部完成（PLAN 状态同步，ACCEPTANCE §22 全勾）。批次验收：292 单测 + 3 冒烟全绿；`--version`/`--help` 通过。批次亮点：多词搜索分级（ordered/any-order）、容量清理+书签保护（Remove 墓碑）、IGNORE_PATTERNS、per-topic λ/max_entries、Frecency Pane 模式（o 进入内嵌搜索替代浮层）、y 复制序列 + e 编辑器、自定义命令快捷键（%d/%f/%F/%D/%g 变量 + git root 判定）、远端文件跟踪上传、选择器删除。M23-7 修订（键位 Normal 一致，cve 移除）。批次新增依赖：hmac/sha1/base64ct（均纯 Rust，零 C 编译期依赖）。接续发布 0.8.0。
 - `M23-8`（2026-11-18）：选择器内 d 删除——frec_pane_key 增 d 臂（Remove 墓碑事件持久化 + pane 内条目移除 + 光标钳制）；frecency.rs 增 remove_entry/tombstone_record（复用 record 降级链路）。292 单测全绿（结构性新增，Remove 墓碑已由 M23-3 测试覆盖）。M23 批次全部完成。
 - `M23-6`（2026-11-18）：Frecency Pane 模式——Tab 增 pane_frecency（FrecencyPane{entries,query,cursor,normal,g_pending}）；`o` 进入（取代 JumpSelect 浮层），Esc 三级退出（Search→Normal→Directory）；frec_pane_key 可测抽取（Normal 态 j/k/gg/G/l/Enter/y*/e/w/Tab；Search 态输入即搜/方向键/Enter）；渲染 render_frecency_panes（焦点 pane 搜索 UI、对侧 PreviewRenderer 100 行快速预览）；Outcome::OpenJump 移除（o 改 pane mode；:j/:J JumpSelect 保留）。292 单测全绿（结构性新增，渲染/键路由由 handle_key 拦截测试覆盖编译形态）。
 - `M23-11`（2026-11-18）：自定义命令快捷键与内置变量——keymap 增 `Action::RunCommand(u16)`（索引指向 KeymapLayers.commands 表保持 Copy）；config parse_binding 增 `run = "cmd:<模板>"` 路由（去重注册）；变量替换 substitute_vars（%d/%f/%F/%D/%g）；git_root_of 逐级向上探测 .git（%g 非仓库 → Err 不执行）；run_user_command 经 M18-4 ExternalRun 分流（tmux/screen 新窗口/当前 pane RunUserCommand outcome）；run 循环挂起 TUI 执行。292 单测全绿（+1：cmd: 解析/去重/git root/变量替换）。M23-12 git 评估决策已入 NOTES。
@@ -133,8 +134,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23 批次验收（12 任务全部完成）
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 全部 12 任务完成；跑批次验收后发布 0.8.0
+- **当前任务**：发布 0.8.0（M22+M23 两批次，minor bump）
+- **阶段状态**：M0–M23 关闭；发布 0.8.0 进行中
 
 ## 已完成
 
