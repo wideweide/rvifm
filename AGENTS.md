@@ -82,7 +82,7 @@
 ### 5.1 产品边界
 
 - 项目名、crate 名、二进制名统一为 `rvifm`；定位是“参考 vifm，非 fork，非行为级兼容”。
-- **不实现 marks**（`m` + 字母标记路径、`'` + 字母跳转）；路径跳转由 frecency 的 `pick` 覆盖。
+- **marks 是独立模块**（2026-11-19 修订：原“不实现 marks”经用户指令反转，立项 M25-2）——`m<char>` 记录当前光标条目、`'<char>` 跳转；不与 frecency 关联、不写 redb。frecency `pick` 的路径跳转职责不变，两者并存。
 - **`t` 标记（tag）必须保留**，它用于 M3 批量操作，与 mark 语义不同，不得混淆或移除。
 - **不实现 Vim 脚本引擎、插件系统、FUSE、archivemount、fzf、SQLite、完整 Vim 引擎**。
 - **不把 Überzug++、Chafa 作为必需依赖或编译期依赖**；它们只能作为用户显式配置的可选外部工具。

@@ -580,3 +580,17 @@ rvifm record  → 静默记录访问
 - **可视模式（M24-3/4）**：V 与 v 互斥、tag 集合复用（不新建选择结构）；d/y/x 复用 M2/M3 撤销栈。
 - **deferred 项**（SPEC M24 OUT_OF_SCOPE）：块可视 Ctrl-v、符号链接创建、归档创建、Git 状态列、磁盘用量 :du、过滤历史循环、会话持久化——均登记不立项。
 - **编号检查**：M24 未被占用（TASKS 最高 M23）✓。
+
+### 2026-11-19 — M25 立项：会话持久化、marks、归档创建与 git 集成
+
+- **来源**：用户批次需求讨论稿（一句话条目蒸馏；按 §8.3 确认前不执行）。
+- **范围重开（用户指令，决策反转登记）**：
+  - **marks**：原 OUT_OF_SCOPE（"路径跳转由 frecency 的 pick 覆盖"）。用户明确"类 vim 的 m' 单键记录导航还是要做"——实现为**独立模块**（不与 frecency 关联、不写 redb），AGENTS §5.1 已同步修订；TASKS"不在清单"中的 marks 条目已划掉。**键位冲突待确认**：`'` 已被 M16 NAV-1 quickjump 占用，默认方案 `'` 归 marks、quickjump 迁移至反引号 `` ` ``（vifm 同款 `'`/`` ` `` 分工）。
+  - **归档创建 / Git 状态列 / 会话持久化**：M24 立项时登记 deferred 不立项，本批次重新打开，M24 OUT_OF_SCOPE 清单已同步移除。
+  - **git**：M23-12"本轮不引入任何 git 模块"决策的延续而非反转——其评估结论原文即"状态装饰/分支显示可后续用 git CLI 子进程实现（零依赖，成本最低）"；本批次照此落地（git CLI 子进程），git2/gitoxide 维持不引入，无库级 API 需求（无暂存/提交场景）。
+- **归档创建编码器边界（WHY）**：写端仅 zip / tar / tar.gz——zip 与 flate2（rust_backend）纯 Rust；`.tar.xz`/`.tar.bz2`/`.tar.zst` 的主流编码器（xz2/bzip2/zstd）均为 C 绑定，违反零 C 编译期依赖原则，三者保持只读（M7-8 读端不变）。
+- **会话持久化（WHY）**：存储 `<配置目录>/session.toml`（与 config.toml/remotes.toml 同目录，跟随 config_path() 约定）；仅还原物理 Location——远端会话需重认证、归档属临时浏览态；损坏静默降级——会话文件属可丢状态，无备份/迁移机制。
+- **校验文件默认 md5（REQ 原文）**：`<名>.md5` md5sum 兼容行格式；md-5/sha2 均纯 Rust（RustCrypto 系，零 C 依赖）；sha256/none 经命令参数与 `[archive] checksum` 配置可选。
+- **gi 优先级（REQ 原文）**：gitui → ziggity → lazygit，首个 PATH 命中者挂起 TUI 启动（M23-11 run 分流复用）；三者均为外部工具，用户自行安装。
+- **frecency 通用化（M25-7，评估任务）**：用户提出"记录及评分查询方法需更通用，比如命令支持书签，路径使用目录数据及当前路径数据"——按 M23-12 同模式登记：只出决策不实现。评估点：EntryKind 扩展命令类事件、keyword 书签泛化到命令、补全候选 = 目录 frecency + 当前路径邻近加权的 schema 影响与迁移成本。
+- **编号检查**：M25 未被占用（TASKS 最高 M24）✓。版本目标 0.10.0（M24 的 0.9.0 尚未发布，发布与否随批次决策）。

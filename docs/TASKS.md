@@ -242,6 +242,18 @@
 
 > 2026-11-18 追加调整：M23-7 修订（cve 移除、Frecency 键位与 Normal 一致）+ 新增 M23-9～12（远端跟踪上传/y*/e/自定义命令/git 评估）。执行顺序：M23-9 → 10 → 11 → 12 → 6（含修订后的 7）→ 8。
 
+## M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；见 SPEC §25）
+
+> 来源：用户批次需求讨论稿蒸馏。marks / 归档创建 / Git 状态列 / 会话持久化为范围重开（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
+
+- [ ] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
+- [ ] M25-2 marks 独立模块（m<char> 记录光标条目、'<char> 跳转；不与 frecency 关联；quickjump 迁移至反引号）
+- [ ] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 只读提示）
+- [ ] M25-4 归档对话框与校验（无参交互对话框；校验文件默认 md5，sha256/none 可选；[archive] checksum）
+- [ ] M25-5 git 状态列（porcelain 缓存映射 + 着色列；仓库根探测；git CLI 子进程零编译期依赖；[ui] git_column）
+- [ ] M25-6 git 状态栏 + gi（分支 + diff 摘要缓存；PATH 优先级探测 gitui→ziggity→lazygit 挂起启动；:gitui 同语义）
+- [ ] M25-7 frecency 通用化评估（命令历史/路径补全迁移可行性 + 命令书签；决策入 NOTES，不实现）
+
 ## M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐，见 SPEC M18 节）
 
 > 来源：用户设计。编号说明：原提案 M16/M17 与已完成批次冲突，按下一空闲号重编（内容不变，见 NOTES）。
@@ -297,7 +309,7 @@
 
 以下内容明确不实现，不要为它们创建任务：
 
-- marks（`m` + 字母 / `'` + 字母）
+- ~~marks（`m` + 字母 / `'` + 字母）~~（2026-11-19 用户指令反转，已立项 M25-2 为独立模块）
 - Vim 脚本引擎、插件系统
 - FUSE / `archivemount`
 - fzf / SQLite
