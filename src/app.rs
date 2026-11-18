@@ -2551,6 +2551,50 @@ fn handle_key(
     if key.kind != KeyEventKind::Press {
         return Outcome::Continue; // Release 先过滤，避免误消费待决序列。
     }
+    // M24-4：可视模式 d/y/x 直接对选中区域执行（不再需要 dd/yy 序列）。
+    if state.active_tab().visual.is_some() {
+        match key.code {
+            KeyCode::Char('d') | KeyCode::Char('x') => {
+                input.count = None;
+                // M24-4：可视范围条目加 tag → 触发批量删除确认（复用 M3-3 管线）。
+                if let Some((lo, hi)) = state.active_tab().visual_range() {
+                    let tab = state.active_tab_mut();
+                    for i in lo..=hi.min(tab.entries.len().saturating_sub(1)) {
+                        if let Some(item) = tab.entries.get(i) {
+                            tab.tags.insert(item.name.clone());
+                        }
+                    }
+                    tab.visual = None;
+                    // M24-4：直接批量删除（tag 复用 M3-3，撤销栈可逆）。
+                    execute_tag_delete(state, msg);
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char('y') => {
+                input.count = None;
+                let range = state.active_tab().visual_range();
+                if let Some((lo, hi)) = range {
+                    let base = state.active_tab().location.base_dir().to_path_buf();
+                    let paths: Vec<String> = state
+                        .active_tab()
+                        .entries
+                        .get(lo..=hi.min(state.active_tab().entries.len().saturating_sub(1)))
+                        .map(|slice| {
+                            slice
+                                .iter()
+                                .map(|i| base.join(&i.name).to_string_lossy().replace('\\', "/"))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let text = paths.join("\n");
+                    copy_to_clipboard(&text);
+                    *msg = Some(format!("copied {} 项", paths.len()));
+                }
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
+    }
 
     // 数字计数：`N gt`（M1-5）。其他动作键会丢弃未消费的计数。
     if let KeyCode::Char(c) = key.code
@@ -3293,6 +3337,11 @@ fn handle_key(
             }
         }
         KeyCode::Char('v') => {
+            input.count = None;
+            state.active_tab_mut().toggle_visual();
+        }
+        KeyCode::Char('V') => {
+            // M24-3：行可视模式 V——与 v 同语义（选中条目），互斥自动。
             input.count = None;
             state.active_tab_mut().toggle_visual();
         }
