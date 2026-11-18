@@ -659,6 +659,41 @@ fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io:
 /// M23-3：per-topic 容量上限（M23-5 起可配置；默认与参考项目一致）。
 pub const MAX_ENTRIES_DEFAULT: usize = 1500;
 
+/// M23-8：删除单条 frecency 条目（Remove 墓碑事件持久化）。
+pub fn remove_entry(topic: &str, path: &str) -> std::io::Result<()> {
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    let store = match Store::open(&db_path) {
+        Ok(s) => s,
+        Err(e) => return degraded_write_at(&pending, &tombstone_record(topic, path), e),
+    };
+    merge_pending(&store, &pending)?;
+    let tomb = tombstone_record(topic, path);
+    for _ in 0..WRITE_RETRIES {
+        match store.append_event(&tomb) {
+            Ok(_) => return Ok(()),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(WRITE_BACKOFF_MS)),
+        }
+    }
+    degraded_write_at(&pending, &tomb, "数据库写入连续失败")
+}
+
+fn tombstone_record(topic: &str, path: &str) -> EntryRecord {
+    EntryRecord {
+        path: path.replace('\\', "/").to_string(),
+        topic: topic.to_owned(),
+        kind: EntryKind::Remove,
+        clock: 0,
+        keyword: String::new(),
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    }
+}
 /// M23-4：IGNORE_PATTERNS——路径命中任一 glob 模式则不记录（静默跳过）。
 /// glob `*` 跨 `/`（tab::glob_match 语义），`*/.git` 命中任意深度的 .git。
 pub fn ignored(path: &str, patterns: &[String]) -> bool {

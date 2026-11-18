@@ -2444,6 +2444,24 @@ fn frec_pane_key(
                     *msg = Some("目录不支持编辑".to_owned());
                 }
             }
+            KeyCode::Char('d') => {
+                // M23-8：d 删除光标 frecency 条目（Remove 墓碑 + pane 内移除）。
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(entry) = visible.get(pane.cursor).cloned() {
+                    let topic = entry.topic.clone();
+                    let path = entry.path.clone();
+                    // 追加 Remove 墓碑事件（持久化删除）。
+                    let _ = crate::frecency::remove_entry(&topic, &path);
+                    // pane 内移除（从 entries 和可见列表）。
+                    pane.entries.retain(|e| e.path != entry.path);
+                    pane.cursor = pane.cursor.min(
+                        filter_jump(&pane.entries, &pane.query)
+                            .len()
+                            .saturating_sub(1),
+                    );
+                    *msg = Some(format!("已删除 frecency 条目: {path}"));
+                }
+            }
             KeyCode::Char('w') => {
                 // w：对侧进入 View 模式（预览/查看光标条目）。
                 state.active_tab_mut().view_mode = !state.active_tab_mut().view_mode;
