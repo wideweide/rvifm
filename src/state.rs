@@ -143,11 +143,20 @@ impl UndoStack {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobStatus {
     Running,
-    Done { summary: String },
-    Failed { err: String },
+    Done {
+        summary: String,
+    },
+    Failed {
+        err: String,
+    },
+    /// M24-9：用户请求取消后的终态（已完成项仍入撤销栈，`u` 可逆）。
+    Cancelled {
+        summary: String,
+    },
 }
 
-/// 后台作业记录（M13-8）：`:jobs` 菜单展示。
+/// 后台作业记录（M13-8）：`:jobs` 菜单展示。M24-9 增协作式取消标志——
+/// `cancel_requested` 由覆盖层 `x` 置位，后台线程在文件边界检查后终止。
 #[derive(Debug, Clone)]
 pub struct Job {
     pub id: usize,
@@ -155,6 +164,7 @@ pub struct Job {
     pub src_count: usize,
     pub target: String,
     pub status: JobStatus,
+    pub cancel_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// 后台线程完成后的更新包（主线程收包后入撤销栈并刷新）。
@@ -273,8 +283,27 @@ impl AppState {
             src_count,
             target: target.to_owned(),
             status: JobStatus::Running,
+            cancel_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         });
         id
+    }
+
+    /// M24-9：请求取消运行中作业（协作式——后台线程在文件边界检查标志）。
+    /// 返回是否发出请求（索引越界 / 非 Running / 已请求过 → false）。
+    pub fn cancel_job(&mut self, index: usize) -> bool {
+        let Some(job) = self.jobs.get(index) else {
+            return false;
+        };
+        if job.status != JobStatus::Running
+            || job
+                .cancel_requested
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return false;
+        }
+        job.cancel_requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        true
     }
 
     /// 应用后台作业更新包：收撤销栈 + 更新作业状态 + 刷新所在 tab。

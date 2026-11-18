@@ -182,8 +182,8 @@ enum InputMode {
     SortDialog { cursor: usize, desc: bool },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
-    /// 后台作业菜单（M13-8：`:jobs`）。
-    Jobs,
+    /// 后台作业菜单（M13-8：`:jobs`；M24-9 增选择游标与 x 取消）。
+    Jobs { cursor: usize },
     /// 暂存区菜单（M13-10：`:trash`，Enter 恢复选中项到原路径）。
     TrashMenu {
         cursor: usize,
@@ -4336,11 +4336,18 @@ fn execute_job_body(
     base: &std::path::Path,
     target: &std::path::Path,
     tab_id: usize,
+    cancel: &std::sync::atomic::AtomicBool,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
     let mut ops = Vec::new();
     let mut first_err: Option<String> = None;
     let mut done = 0usize;
+    let mut cancelled = false;
     for name in names {
+        // M24-9：协作式取消——文件边界检查标志，已完成项保留（u 可逆）。
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
         let src = base.join(name);
         if !src.exists() {
             continue; // 已消失的条目跳过
@@ -4362,7 +4369,11 @@ fn execute_job_body(
             }
         }
     }
-    let status = if first_err.is_some() && done == 0 {
+    let status = if cancelled {
+        crate::state::JobStatus::Cancelled {
+            summary: format!("{op}: 已取消（{done} 项完成）"),
+        }
+    } else if first_err.is_some() && done == 0 {
         crate::state::JobStatus::Failed {
             err: first_err.unwrap_or_default(),
         }
@@ -4376,23 +4387,62 @@ fn execute_job_body(
     (ops, status)
 }
 
+/// M24-9：`:jobs` 覆盖层单键——j/k 选择、x 取消运行中作业、Esc/q 关闭。
+/// 返回是否关闭覆盖层。
+fn jobs_menu_key(
+    state: &mut AppState,
+    cursor: &mut usize,
+    code: KeyCode,
+    msg: &mut Option<String>,
+) -> bool {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') => true,
+        KeyCode::Char('j') | KeyCode::Down => {
+            if !state.jobs.is_empty() {
+                *cursor = (*cursor + 1).min(state.jobs.len() - 1);
+            }
+            false
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            *cursor = cursor.saturating_sub(1);
+            false
+        }
+        KeyCode::Char('x') => {
+            if state.cancel_job(*cursor) {
+                let id = state.jobs[*cursor].id;
+                *msg = Some(format!("已请求取消作业 #{id}（当前文件完成后停止）"));
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// M24-9：作业参数包（降低 spawn_job_thread 参数量；语义同 M13-8）。
+struct JobSpec<'a> {
+    op: &'a str,
+    names: &'a [String],
+    base: &'a std::path::Path,
+    target: &'a std::path::Path,
+    tab_id: usize,
+}
+
 /// spawn 后台线程执行作业并把更新发送回主线程（M13-8 run 侧薄壳）。
+/// M24-9：`cancel` 为作业的取消标志（AppState 侧与线程共享）。
 fn spawn_job_thread(
     job_tx: &std::sync::mpsc::Sender<crate::state::JobUpdate>,
     job_id: usize,
-    tab_id: usize,
-    op: &str,
-    names: &[String],
-    base: &std::path::Path,
-    target: &std::path::Path,
+    spec: &JobSpec<'_>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let tx = job_tx.clone();
-    let op = op.to_owned();
-    let names = names.to_vec();
-    let base = base.to_path_buf();
-    let target = target.to_path_buf();
+    let op = spec.op.to_owned();
+    let names = spec.names.to_vec();
+    let base = spec.base.to_path_buf();
+    let target = spec.target.to_path_buf();
+    let tab_id = spec.tab_id;
     std::thread::spawn(move || {
-        let (ops, status) = execute_job_body(&op, &names, &base, &target, tab_id);
+        let (ops, status) = execute_job_body(&op, &names, &base, &target, tab_id, &cancel);
         let _ = tx.send(crate::state::JobUpdate {
             job_id,
             tab_id,
@@ -4973,13 +5023,30 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         names.len(),
                                         &target.display().to_string(),
                                     );
+                                    // M24-9：取消标志与线程共享（覆盖层 x 置位）。
+                                    let cancel = state
+                                        .jobs
+                                        .iter()
+                                        .find(|j| j.id == job_id)
+                                        .expect("新登记作业必存在")
+                                        .cancel_requested
+                                        .clone();
                                     let tab_id = state.active;
                                     spawn_job_thread(
-                                        &job_tx, job_id, tab_id, &op, &names, &base, &target,
+                                        &job_tx,
+                                        job_id,
+                                        &JobSpec {
+                                            op: &op,
+                                            names: &names,
+                                            base: &base,
+                                            target: &target,
+                                            tab_id,
+                                        },
+                                        cancel,
                                     );
                                 }
                                 Ok(ExecOutcome::ShowJobs) => {
-                                    mode = InputMode::Jobs;
+                                    mode = InputMode::Jobs { cursor: 0 };
                                 }
                                 Ok(ExecOutcome::ShowTrash { items }) => {
                                     mode = InputMode::TrashMenu { cursor: 0, items };
@@ -5470,9 +5537,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // M13-5：详情对话框——任意键关闭（同帮助覆盖层）。
                     mode = InputMode::Normal;
                 }
-                InputMode::Jobs => {
-                    // M13-8：作业菜单——任意键关闭。
-                    mode = InputMode::Normal;
+                InputMode::Jobs { cursor } => {
+                    // M13-8 → M24-9：j/k 选择、x 取消运行中作业、Esc/q 关闭。
+                    if key.kind == KeyEventKind::Press
+                        && jobs_menu_key(&mut state, cursor, key.code, &mut msg)
+                    {
+                        mode = InputMode::Normal;
+                    }
                 }
                 InputMode::SortDialog { cursor, desc } => {
                     // M18-1：排序对话框——字母直接应用；空格换向；回车应用。
@@ -6181,30 +6252,48 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
-    if matches!(mode, InputMode::Jobs) {
-        // M13-8：后台作业菜单覆盖层（任意键关闭）。
+    if let InputMode::Jobs { cursor } = mode {
+        // M13-8 → M24-9：后台作业菜单覆盖层（j/k 选择、x 取消、Esc/q 关闭）。
         let mut lines: Vec<Line> = Vec::new();
         if state.jobs.is_empty() {
             lines.push(Line::from("（无后台作业）"));
         } else {
-            for j in &state.jobs {
+            for (i, j) in state.jobs.iter().enumerate() {
                 let status = match &j.status {
-                    crate::state::JobStatus::Running => "运行中".to_owned(),
+                    crate::state::JobStatus::Running => {
+                        if j.cancel_requested
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            "取消中…".to_owned()
+                        } else {
+                            "运行中".to_owned()
+                        }
+                    }
                     crate::state::JobStatus::Done { summary } => summary.clone(),
+                    crate::state::JobStatus::Cancelled { summary } => summary.clone(),
                     crate::state::JobStatus::Failed { err } => format!("失败: {err}"),
                 };
-                lines.push(Line::from(format!(
-                    "#{id} {kind} → {target}（{} 项）: {status}",
-                    j.src_count,
-                    id = j.id,
-                    kind = j.kind,
-                    target = j.target
-                )));
+                let sel = if i == *cursor {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new()
+                };
+                lines.push(Line::styled(
+                    format!(
+                        "#{id} {kind} → {target}（{} 项）: {status}",
+                        j.src_count,
+                        id = j.id,
+                        kind = j.kind,
+                        target = j.target
+                    ),
+                    sel,
+                ));
             }
         }
         frame.render_widget(
-            Paragraph::new(lines)
-                .block(ratatui::widgets::Block::bordered().title("后台作业（任意键关闭）")),
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered().title("后台作业（j/k=选择 x=取消 Esc=关闭）"),
+            ),
             frame.area(),
         );
         return;
@@ -6449,7 +6538,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
             Line::from(String::new()) // 帮助视图提前 return，不可达
         }
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
-        InputMode::Jobs => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
+        InputMode::Jobs { .. } => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
         InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
         InputMode::Confirm {
@@ -7554,6 +7643,167 @@ mod tests {
             Some("onlyr.txt"),
             "定位到仅右条目"
         );
+    }
+
+    // ── M24-9：任务视图增强（j/k 选择、x 取消、Esc 关闭） ───────────────────
+
+    #[test]
+    fn m249_jobs_menu_key_navigation_and_cancel() {
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let dst = TempDir::new().unwrap();
+        state.add_job("copy", 1, &dst.path().display().to_string());
+        state.add_job("move", 2, &dst.path().display().to_string());
+        let mut cursor = 0usize;
+        let mut msg = None;
+        // j/k 移动并钳制。
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('j'),
+            &mut msg
+        ));
+        assert_eq!(cursor, 1);
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('j'),
+            &mut msg
+        ));
+        assert_eq!(cursor, 1, "尾端钳制");
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('k'),
+            &mut msg
+        ));
+        assert_eq!(cursor, 0);
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('k'),
+            &mut msg
+        ));
+        assert_eq!(cursor, 0, "首端钳制");
+        // x 取消运行中作业：置位标志 + 提示，不关闭。
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('x'),
+            &mut msg
+        ));
+        assert!(
+            state.jobs[0]
+                .cancel_requested
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "取消标志已置位"
+        );
+        assert!(msg.as_deref().unwrap().contains("#1"));
+        // 已请求过 → 不重复提示；非 Running（Done）→ 忽略。
+        msg = None;
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('x'),
+            &mut msg
+        ));
+        assert!(msg.is_none(), "已请求过不重复提示");
+        state.jobs[1].status = crate::state::JobStatus::Done {
+            summary: "move: 2 项完成".to_owned(),
+        };
+        assert!(!jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('x'),
+            &mut msg
+        ));
+        assert!(msg.is_none(), "非运行中作业不可取消");
+        // Esc 关闭。
+        assert!(jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Esc,
+            &mut msg
+        ));
+        assert!(jobs_menu_key(
+            &mut state,
+            &mut cursor,
+            KeyCode::Char('q'),
+            &mut msg
+        ));
+    }
+
+    #[test]
+    fn m249_cancelled_job_body_stops_with_summary() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let dst = TempDir::new().unwrap();
+        // 标志预置 → 第一个文件边界即取消：无操作、Cancelled 摘要。
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+        let (ops, status) = execute_job_body(
+            "copy",
+            &["a.txt".to_owned()],
+            tmp.path(),
+            dst.path(),
+            0,
+            &cancel,
+        );
+        assert!(ops.is_empty(), "取消后不产生新操作");
+        assert!(!dst.path().join("a.txt").exists(), "未执行复制");
+        match status {
+            crate::state::JobStatus::Cancelled { summary } => {
+                assert!(summary.contains("已取消"), "summary: {summary}");
+                assert!(summary.contains("0 项完成"), "summary: {summary}");
+            }
+            other => panic!("expected Cancelled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m249_jobs_overlay_render_selection_and_cancel_state() {
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let dst = TempDir::new().unwrap();
+        let id = state.add_job("copy", 1, &dst.path().display().to_string());
+        state.jobs[0]
+            .cancel_requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let mode = InputMode::Jobs { cursor: 0 };
+        // CJK 全角在 TestBackend 渲染为"字+空格"——断言前去空白（M21-E3 坑）；
+        // 每帧用全新 backend，避免 diff 渲染残留上一帧字符。
+        let compact = |buf: &ratatui::backend::TestBackend, w: u16, h: u16| {
+            (0..h)
+                .map(|y| {
+                    (0..w)
+                        .map(|x| buf.buffer()[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<String>()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 8)).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let all = compact(terminal.backend(), 70, 8);
+        assert!(all.contains("取消中"), "取消请求可见: {all}");
+        assert!(all.contains("x=取消"), "标题含操作提示: {all}");
+        // 置位后取消完成（模拟线程回包）→ Cancelled 终态展示。
+        state.apply_job_update(crate::state::JobUpdate {
+            job_id: id,
+            tab_id: 0,
+            ops: Vec::new(),
+            status: crate::state::JobStatus::Cancelled {
+                summary: "copy: 已取消（0 项完成）".to_owned(),
+            },
+        });
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 8)).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let all = compact(terminal.backend(), 70, 8);
+        assert!(all.contains("已取消"), "Cancelled 终态可见: {all}");
+        let _ = id;
     }
 
     #[test]
@@ -8726,6 +8976,7 @@ mod tests {
             tmp.path(),
             &sub,
             0,
+            &std::sync::atomic::AtomicBool::new(false),
         );
         assert_eq!(ops.len(), 2, "两条复制各一条撤销记录");
         for op in ops {
@@ -8751,6 +9002,7 @@ mod tests {
             tmp.path(),
             &sub,
             0,
+            &std::sync::atomic::AtomicBool::new(false),
         );
         assert_eq!(ops.len(), 2);
         assert!(matches!(status, crate::state::JobStatus::Done { .. }));
@@ -9508,7 +9760,7 @@ mod tests {
         assert!(matches!(r, ExecOutcome::ShowJobs));
 
         // 覆盖层渲染（Running 状态）。
-        let mode = InputMode::Jobs;
+        let mode = InputMode::Jobs { cursor: 0 };
         let backend = ratatui::backend::TestBackend::new(70, 8);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal.draw(|f| render(f, &state, &mode, None)).unwrap();

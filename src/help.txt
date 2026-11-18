@@ -55,7 +55,7 @@ rvifm 帮助（vim 风格文件管理器）
   :compare        左右 pane 目录对比（= 同 / ! 异 / < 仅左 / > 仅右；只读）
   :view           同 w
   Ctrl-G          文件详情对话框
-  :jobs           后台作业列表
+  :jobs           后台作业列表（j/k 选择、x 取消、Esc 关闭）
   :trash          暂存区菜单（恢复误删文件）
 
 == 鼠标 ==
