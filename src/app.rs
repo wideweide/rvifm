@@ -117,8 +117,13 @@ enum JumpKind {
 enum InputMode {
     #[default]
     Normal,
-    /// 命令行模式：正在输入 `:` 后的内容。
-    Command { input: String },
+    /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
+    /// 与进入历史前保存的草稿输入（↓ 越过最新条目时恢复）。
+    Command {
+        input: String,
+        hist_pos: Option<usize>,
+        draft: String,
+    },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。`origin` 为进入搜索时
     /// 的光标位置（FIX-1：实时跳转的起点，Esc 时恢复）。
     Search { input: String, origin: usize },
@@ -222,6 +227,37 @@ fn command_input(input: &mut String, key: KeyEvent) -> CmdInput {
             CmdInput::Continue
         }
         _ => CmdInput::Continue,
+    }
+}
+
+/// M24-6：↑ 移到更旧的历史条目；首次进入保存当前草稿输入。空历史无操作。
+fn hist_prev(hist: &[String], pos: &mut Option<usize>, input: &mut String, draft: &mut String) {
+    if hist.is_empty() {
+        return;
+    }
+    let i = match *pos {
+        None => {
+            *draft = std::mem::take(input);
+            hist.len() - 1
+        }
+        Some(i) => i.saturating_sub(1),
+    };
+    *pos = Some(i);
+    *input = hist[i].clone();
+}
+
+/// M24-6：↓ 移到更新的历史条目；越过最新一条回到草稿输入（游标清空）。
+fn hist_next(hist: &[String], pos: &mut Option<usize>, input: &mut String, draft: &mut String) {
+    let i = match *pos {
+        None => return,
+        Some(i) => i + 1,
+    };
+    if i >= hist.len() {
+        *pos = None;
+        *input = std::mem::take(draft);
+    } else {
+        *pos = Some(i);
+        *input = hist[i].clone();
     }
 }
 
@@ -4676,121 +4712,155 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         let key_ev = if polled { event::read().ok() } else { None };
         if let Some(Event::Key(key)) = key_ev {
             match &mut mode {
-                InputMode::Command { input } => match command_input(input, key) {
-                    CmdInput::Continue => {}
-                    CmdInput::Cancel => mode = InputMode::Normal,
-                    CmdInput::Submit => {
-                        let line = std::mem::take(input);
-                        mode = InputMode::Normal;
-                        match exec_command_impl(&mut state, line.trim()) {
-                            Ok(ExecOutcome::Quit) => {
-                                flush_session_visits(&state);
-                                cleanup_temp_opens(&mut state);
-                                return Ok(());
+                InputMode::Command {
+                    input,
+                    hist_pos,
+                    draft,
+                } => {
+                    // M24-6：↑/↓ 浏览会话命令历史（内存 Vec，无持久化）；
+                    // 其余按键走原有单键处理。
+                    let hist_step = if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Up => Some(true),
+                            KeyCode::Down => Some(false),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    match if let Some(up) = hist_step {
+                        if up {
+                            hist_prev(&state.cmd_history, hist_pos, input, draft);
+                        } else {
+                            hist_next(&state.cmd_history, hist_pos, input, draft);
+                        }
+                        CmdInput::Continue
+                    } else {
+                        command_input(input, key)
+                    } {
+                        CmdInput::Continue => {}
+                        CmdInput::Cancel => mode = InputMode::Normal,
+                        CmdInput::Submit => {
+                            let line = std::mem::take(input);
+                            mode = InputMode::Normal;
+                            let result = exec_command_impl(&mut state, line.trim());
+                            // M24-6：仅记录成功执行的命令（失败不记；空命令不记）。
+                            if result.is_ok() {
+                                state.record_cmd_history(&line);
                             }
-                            Ok(ExecOutcome::EnterHelp) => {
-                                mode = InputMode::HelpView {
-                                    scroll: 0,
-                                    search: None,
-                                };
-                            }
-                            Ok(ExecOutcome::Done { msg: m }) => msg = m,
-                            Ok(ExecOutcome::ConfirmTagDelete) => {
-                                mode = InputMode::ConfirmTagDelete;
-                            }
-                            Ok(ExecOutcome::Escalate { op }) => {
-                                // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
-                                mode = InputMode::AskPass {
-                                    input: String::new(),
+                            match result {
+                                Ok(ExecOutcome::Quit) => {
+                                    flush_session_visits(&state);
+                                    cleanup_temp_opens(&mut state);
+                                    return Ok(());
+                                }
+                                Ok(ExecOutcome::EnterHelp) => {
+                                    mode = InputMode::HelpView {
+                                        scroll: 0,
+                                        search: None,
+                                    };
+                                }
+                                Ok(ExecOutcome::Done { msg: m }) => msg = m,
+                                Ok(ExecOutcome::ConfirmTagDelete) => {
+                                    mode = InputMode::ConfirmTagDelete;
+                                }
+                                Ok(ExecOutcome::Escalate { op }) => {
+                                    // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
+                                    mode = InputMode::AskPass {
+                                        input: String::new(),
+                                        op,
+                                    };
+                                }
+                                Ok(ExecOutcome::OpenJump { kind, entries }) => {
+                                    // M8-12：:j/:J → 分型跳转选择器。
+                                    mode = InputMode::JumpSelect {
+                                        input: String::new(),
+                                        cursor: 0,
+                                        entries,
+                                        kind,
+                                        normal: false,
+                                        g_pending: false,
+                                    };
+                                }
+                                Ok(ExecOutcome::SpawnJob {
                                     op,
-                                };
+                                    names,
+                                    target,
+                                    base,
+                                }) => {
+                                    // M13-8：登记作业并 spawn 后台线程。
+                                    let job_id = state.add_job(
+                                        &op,
+                                        names.len(),
+                                        &target.display().to_string(),
+                                    );
+                                    let tab_id = state.active;
+                                    spawn_job_thread(
+                                        &job_tx, job_id, tab_id, &op, &names, &base, &target,
+                                    );
+                                }
+                                Ok(ExecOutcome::ShowJobs) => {
+                                    mode = InputMode::Jobs;
+                                }
+                                Ok(ExecOutcome::ShowTrash { items }) => {
+                                    mode = InputMode::TrashMenu { cursor: 0, items };
+                                }
+                                Ok(ExecOutcome::ShowInfo { path, text }) => {
+                                    // FEAT-3：`:file` → 详情对话框（任意键关闭）。
+                                    mode = InputMode::FileInfo { path, text };
+                                }
+                                Ok(ExecOutcome::ShowHistory) => {
+                                    // M16 NAV-2：:history → 历史菜单（游标落在当前视图）。
+                                    let cur = state.active_tab().hist_pos;
+                                    mode = InputMode::HistoryMenu { cursor: cur };
+                                }
+                                Ok(ExecOutcome::BatchRename { base, names }) => {
+                                    // M21-E4：:rename 无参 → 与 cw/R 同管线。
+                                    ratatui::restore();
+                                    let result = batch_rename_flow(&mut state, &base, &names);
+                                    terminal = ratatui::init();
+                                    let _ = ratatui::crossterm::execute!(
+                                        std::io::stdout(),
+                                        event::EnableMouseCapture
+                                    );
+                                    msg = match result {
+                                        Ok(m) => Some(m),
+                                        Err(e) => Some(e),
+                                    };
+                                }
+                                Ok(ExecOutcome::RemotePass { name, params }) => {
+                                    // M22-3：公钥认证失败 → 口令输入模式（不落盘）。
+                                    mode = InputMode::RemotePass {
+                                        name,
+                                        params,
+                                        input: String::new(),
+                                    };
+                                }
+                                Ok(ExecOutcome::RunExternal { cmd }) => {
+                                    // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
+                                    ratatui::restore();
+                                    #[cfg(unix)]
+                                    let result = std::process::Command::new("sh")
+                                        .arg("-c")
+                                        .arg(&cmd)
+                                        .status();
+                                    #[cfg(windows)]
+                                    let result = std::process::Command::new("cmd")
+                                        .args(["/C", &cmd])
+                                        .status();
+                                    terminal = ratatui::init();
+                                    // FEAT-1：init 不含鼠标捕获，重新启用。
+                                    let _ = ratatui::crossterm::execute!(
+                                        std::io::stdout(),
+                                        event::EnableMouseCapture
+                                    );
+                                    msg = run_external_current_result(result);
+                                }
+                                Err(m) => msg = Some(m),
                             }
-                            Ok(ExecOutcome::OpenJump { kind, entries }) => {
-                                // M8-12：:j/:J → 分型跳转选择器。
-                                mode = InputMode::JumpSelect {
-                                    input: String::new(),
-                                    cursor: 0,
-                                    entries,
-                                    kind,
-                                    normal: false,
-                                    g_pending: false,
-                                };
-                            }
-                            Ok(ExecOutcome::SpawnJob {
-                                op,
-                                names,
-                                target,
-                                base,
-                            }) => {
-                                // M13-8：登记作业并 spawn 后台线程。
-                                let job_id =
-                                    state.add_job(&op, names.len(), &target.display().to_string());
-                                let tab_id = state.active;
-                                spawn_job_thread(
-                                    &job_tx, job_id, tab_id, &op, &names, &base, &target,
-                                );
-                            }
-                            Ok(ExecOutcome::ShowJobs) => {
-                                mode = InputMode::Jobs;
-                            }
-                            Ok(ExecOutcome::ShowTrash { items }) => {
-                                mode = InputMode::TrashMenu { cursor: 0, items };
-                            }
-                            Ok(ExecOutcome::ShowInfo { path, text }) => {
-                                // FEAT-3：`:file` → 详情对话框（任意键关闭）。
-                                mode = InputMode::FileInfo { path, text };
-                            }
-                            Ok(ExecOutcome::ShowHistory) => {
-                                // M16 NAV-2：:history → 历史菜单（游标落在当前视图）。
-                                let cur = state.active_tab().hist_pos;
-                                mode = InputMode::HistoryMenu { cursor: cur };
-                            }
-                            Ok(ExecOutcome::BatchRename { base, names }) => {
-                                // M21-E4：:rename 无参 → 与 cw/R 同管线。
-                                ratatui::restore();
-                                let result = batch_rename_flow(&mut state, &base, &names);
-                                terminal = ratatui::init();
-                                let _ = ratatui::crossterm::execute!(
-                                    std::io::stdout(),
-                                    event::EnableMouseCapture
-                                );
-                                msg = match result {
-                                    Ok(m) => Some(m),
-                                    Err(e) => Some(e),
-                                };
-                            }
-                            Ok(ExecOutcome::RemotePass { name, params }) => {
-                                // M22-3：公钥认证失败 → 口令输入模式（不落盘）。
-                                mode = InputMode::RemotePass {
-                                    name,
-                                    params,
-                                    input: String::new(),
-                                };
-                            }
-                            Ok(ExecOutcome::RunExternal { cmd }) => {
-                                // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
-                                ratatui::restore();
-                                #[cfg(unix)]
-                                let result = std::process::Command::new("sh")
-                                    .arg("-c")
-                                    .arg(&cmd)
-                                    .status();
-                                #[cfg(windows)]
-                                let result = std::process::Command::new("cmd")
-                                    .args(["/C", &cmd])
-                                    .status();
-                                terminal = ratatui::init();
-                                // FEAT-1：init 不含鼠标捕获，重新启用。
-                                let _ = ratatui::crossterm::execute!(
-                                    std::io::stdout(),
-                                    event::EnableMouseCapture
-                                );
-                                msg = run_external_current_result(result);
-                            }
-                            Err(m) => msg = Some(m),
                         }
                     }
-                },
+                }
                 InputMode::Search { input, origin } => match command_input(input, key) {
                     // FIX-1：输入变化即实时跳转到第一个匹配项（incsearch）。
                     CmdInput::Continue => live_search_jump(&mut state, *origin, input, &mut msg),
@@ -4846,18 +4916,14 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 mode = InputMode::Normal;
                                 msg = None;
                             }
-                            KeyCode::Backspace => {
-                                if *pos > 0 {
-                                    chars.remove(*pos - 1);
-                                    *pos -= 1;
-                                    *input = chars.into_iter().collect();
-                                }
+                            KeyCode::Backspace if *pos > 0 => {
+                                chars.remove(*pos - 1);
+                                *pos -= 1;
+                                *input = chars.into_iter().collect();
                             }
-                            KeyCode::Delete => {
-                                if *pos < chars.len() {
-                                    chars.remove(*pos);
-                                    *input = chars.into_iter().collect();
-                                }
+                            KeyCode::Delete if *pos < chars.len() => {
+                                chars.remove(*pos);
+                                *input = chars.into_iter().collect();
                             }
                             KeyCode::Left => *pos = pos.saturating_sub(1),
                             KeyCode::Right => *pos = (*pos + 1).min(chars.len()),
@@ -5073,6 +5139,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::EnterCommand => {
                             mode = InputMode::Command {
                                 input: String::new(),
+                                hist_pos: None,
+                                draft: String::new(),
                             };
                         }
                         Outcome::EnterSearch => {
@@ -5313,7 +5381,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         };
                                     }
                                     ContextMenuOutcome::RenamePrefill { line } => {
-                                        mode = InputMode::Command { input: line };
+                                        mode = InputMode::Command {
+                                            input: line,
+                                            hist_pos: None,
+                                            draft: String::new(),
+                                        };
                                     }
                                 }
                             }
@@ -5429,7 +5501,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             };
                         }
                         ContextMenuOutcome::RenamePrefill { line } => {
-                            mode = InputMode::Command { input: line };
+                            mode = InputMode::Command {
+                                input: line,
+                                hist_pos: None,
+                                draft: String::new(),
+                            };
                         }
                     }
                 } else if mouse.kind == MouseEventKind::Down(MouseButton::Left)
@@ -5759,7 +5835,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
     let show_attrs = state.config.ui.attrs_column
         && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
-        && !tab.tree.is_some(); // 树视图相对路径较长，不挤属性列
+        && tab.tree.is_none(); // 树视图相对路径较长，不挤属性列
     let name_budget = if show_attrs {
         (left_inner.width as usize).saturating_sub(2 + ATTRS_WIDTH + 2)
     } else {
@@ -6171,7 +6247,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         InputMode::SortDialog { .. } => Line::from(String::new()), // 排序对话框提前 return，不可达
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
-        InputMode::Command { input } => Line::from(format!(":{input}")),
+        InputMode::Command { input, .. } => Line::from(format!(":{input}")),
         InputMode::Search { input, .. } => {
             // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
             let query = input.trim();
@@ -7048,6 +7124,76 @@ mod tests {
             command_input(&mut buf, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             CmdInput::Submit
         );
+    }
+
+    // ── M24-6：命令历史（↑/↓ 浏览、草稿恢复、上限 100、失败不记） ────────────
+
+    #[test]
+    fn m246_hist_browse_and_draft_restore() {
+        let hist = vec!["cd /a".to_owned(), "sort name asc".to_owned()];
+        let mut input = "xyz".to_owned();
+        let mut pos = None;
+        let mut draft = String::new();
+        // ↑ 首次进入最新一条（草稿被保存）。
+        hist_prev(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "sort name asc");
+        assert_eq!(draft, "xyz");
+        // ↑ 继续到最旧一条；再 ↑ 钳制不越界。
+        hist_prev(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "cd /a");
+        hist_prev(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "cd /a");
+        // ↓ 回到最新一条；再 ↓ 越过末尾恢复草稿、游标清空。
+        hist_next(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "sort name asc");
+        hist_next(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "xyz");
+        assert_eq!(pos, None);
+        // 草稿已恢复后 ↓ 越界：游标为 None，无操作（保持草稿）。
+        hist_next(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "xyz");
+    }
+
+    #[test]
+    fn m246_hist_empty_history_no_op() {
+        let hist: Vec<String> = Vec::new();
+        let mut input = "cd /tmp".to_owned();
+        let mut pos = None;
+        let mut draft = String::new();
+        hist_prev(&hist, &mut pos, &mut input, &mut draft);
+        hist_next(&hist, &mut pos, &mut input, &mut draft);
+        assert_eq!(input, "cd /tmp");
+        assert_eq!(pos, None);
+        assert_eq!(draft, "", "空历史不保存草稿");
+    }
+
+    #[test]
+    fn m246_record_caps_at_100_and_skips_empty() {
+        let (_tmp, mut state) = make_state(1);
+        for i in 0..105 {
+            state.record_cmd_history(&format!("cmd{i}"));
+        }
+        assert_eq!(state.cmd_history.len(), crate::state::CMD_HISTORY_MAX);
+        assert_eq!(state.cmd_history[0], "cmd5", "超上限淘汰最旧条目");
+        assert_eq!(state.cmd_history[99], "cmd104");
+        // 空命令（含纯空白）不记。
+        state.record_cmd_history("   ");
+        assert_eq!(state.cmd_history.len(), 100);
+    }
+
+    #[test]
+    fn m246_failed_command_not_recorded() {
+        let (_tmp, mut state) = make_state(1);
+        // 运行循环契约：仅 exec_command_impl 成功（Ok）才调用 record_cmd_history。
+        let r = exec_command_impl(&mut state, "未知命令不存在xyz");
+        assert!(r.is_err(), "未知命令应返回 Err");
+        if r.is_ok() {
+            state.record_cmd_history("未知命令不存在xyz");
+        }
+        assert!(state.cmd_history.is_empty(), "失败命令不入历史");
+        assert!(exec_command_impl(&mut state, "help").is_ok());
+        state.record_cmd_history("help");
+        assert_eq!(state.cmd_history, vec!["help".to_owned()]);
     }
 
     #[test]
@@ -9706,6 +9852,8 @@ mod tests {
         let area = ratatui::layout::Rect::new(0, 0, 80, 24);
         let mode = InputMode::Command {
             input: String::new(),
+            hist_pos: None,
+            draft: String::new(),
         };
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -11514,6 +11662,8 @@ terminal_in_new_window = false
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let mode = InputMode::Command {
             input: "tabne".to_owned(),
+            hist_pos: None,
+            draft: String::new(),
         };
         terminal
             .draw(|frame| render(frame, &state, &mode, Some("未知命令: x")))

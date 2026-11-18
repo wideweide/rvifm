@@ -231,7 +231,7 @@
 - [x] M24-3 行可视模式 V（与 v 互斥；d/y/x 对选中区域执行；tag 集合复用）
 - [x] M24-4 可视模式操作扩展（v/V 内 d 删除/y 复制路径/x 别名；VISUAL 计数指示）
 - [x] M24-5 计数前缀扩展（Nj/Nk/NG/Ngg/Nh/Nl 消耗 InputState.count；Ndd/Nyy 批量）
-- [ ] M24-6 命令历史（: 模式 ↑/↓ 浏览；内存 Vec 上限 100；Enter 执行/Esc 退出）
+- [x] M24-6 命令历史（: 模式 ↑/↓ 浏览；内存 Vec 上限 100；Enter 执行/Esc 退出）
 - [ ] M24-7 路径补全（: 模式 Tab 补全文件/目录名；前缀匹配循环；~ 展开 HOME）
 - [ ] M24-8 目录对比 :compare（按名+大小；结果虚拟目录 =/!/</> 前缀；只读）
 - [ ] M24-9 任务视图增强（:jobs j/k 选择/x 取消/Esc 关闭；Job cancel_requested）

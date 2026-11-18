@@ -214,7 +214,12 @@ pub struct AppState {
     /// M23-9：副本修改防抖后的上传请求通道（run 循环消费）。
     pub upload_tx:
         Option<std::sync::mpsc::Sender<(String, std::path::PathBuf, std::path::PathBuf)>>,
+    /// M24-6：命令行历史（会话内存，仅成功执行的命令；上限 [`CMD_HISTORY_MAX`]）。
+    pub cmd_history: Vec<String>,
 }
+
+/// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
+pub const CMD_HISTORY_MAX: usize = 100;
 
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -243,7 +248,20 @@ impl AppState {
             live_recorded: std::collections::HashMap::new(),
             temp_opens: Vec::new(),
             upload_tx: None,
+            cmd_history: Vec::new(),
         }
+    }
+
+    /// M24-6：记录成功执行的命令行（去首尾空白；空命令不记；超上限淘汰最旧）。
+    pub fn record_cmd_history(&mut self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        if self.cmd_history.len() >= CMD_HISTORY_MAX {
+            self.cmd_history.remove(0);
+        }
+        self.cmd_history.push(line.to_owned());
     }
 
     /// 登记新后台作业并返回其 id（M13-8）。
