@@ -1185,7 +1185,8 @@ impl Tab {
     }
 
     /// M17 SRCH-1：进入搜索结果虚拟目录——items/entries 平行表，
-    /// entries 的 name 为显示串（find=全路径；grep=路径:行号: 内容）。
+    /// entries 的 name 为显示串（find=全路径；grep=路径:行号: 内容；
+    /// M24-8 compare=前缀标记 + 文件名，size 透传到属性列）。
     pub fn enter_results(
         &mut self,
         kind: crate::search::SearchKind,
@@ -1199,9 +1200,18 @@ impl Tab {
             .map(|item| {
                 // 显示层统一 /（AGENTS §7；Windows display 为反斜杠）。
                 let shown = item.path.display().to_string().replace('\\', "/");
-                let name = match item.line {
-                    Some(line) => format!("{}:{}: {}", shown, line, item.text),
-                    None => shown,
+                let name = if kind == crate::search::SearchKind::Compare {
+                    let file = item
+                        .path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    format!("{} {}", item.text, file)
+                } else {
+                    match item.line {
+                        Some(line) => format!("{}:{}: {}", shown, line, item.text),
+                        None => shown,
+                    }
                 };
                 FileItem {
                     icon: crate::icons::icon_for(&item.path, crate::icons::IconTheme::Dark),
@@ -1209,7 +1219,7 @@ impl Tab {
                     is_dir: false,
                     is_link: false,
                     is_exec: false,
-                    size: 0,
+                    size: item.size,
                     perm: String::new(),
                     mtime: 0,
                 }

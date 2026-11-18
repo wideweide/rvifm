@@ -14,7 +14,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::keymap::Action;
 use crate::state::AppState;
@@ -326,6 +326,55 @@ fn expand_home_arg(arg: &str) -> String {
     crate::remote::config::expand_tilde(std::path::Path::new(arg))
         .to_string_lossy()
         .into_owned()
+}
+
+/// M24-8：左右 pane 条目对比（文件名 + 大小；目录跳过——目录大小无比较
+/// 意义）。输出序：左 pane 遍历（`=` 同名同大小 / `!` 同名异大小 /
+/// `<` 仅左），随后右 pane 独有（`>` 仅右）。路径取实际所在侧
+/// （=/!/< 左，> 右），size 透传供属性列展示。
+fn compare_panes(
+    left_base: &Path,
+    left: &[crate::tab::FileItem],
+    right_base: &Path,
+    right: &[crate::tab::FileItem],
+) -> Vec<crate::search::ResultItem> {
+    let right_sizes: std::collections::HashMap<&str, u64> = right
+        .iter()
+        .filter(|i| !i.is_dir)
+        .map(|i| (i.name.as_str(), i.size))
+        .collect();
+    let mut matched: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for item in left.iter().filter(|i| !i.is_dir) {
+        match right_sizes.get(item.name.as_str()) {
+            Some(&rsize) => {
+                matched.insert(item.name.as_str());
+                let marker = if rsize == item.size { "=" } else { "!" };
+                out.push(compare_item(left_base, item, marker));
+            }
+            None => out.push(compare_item(left_base, item, "<")),
+        }
+    }
+    for item in right.iter().filter(|i| !i.is_dir) {
+        if !matched.contains(item.name.as_str()) {
+            out.push(compare_item(right_base, item, ">"));
+        }
+    }
+    out
+}
+
+/// M24-8：单条对比结果构造（text 承载前缀标记）。
+fn compare_item(
+    base: &Path,
+    item: &crate::tab::FileItem,
+    marker: &str,
+) -> crate::search::ResultItem {
+    crate::search::ResultItem {
+        path: base.join(&item.name),
+        line: None,
+        text: marker.to_owned(),
+        size: item.size,
+    }
 }
 
 /// AskPass 模式单键结果（M12-3；独立函数便于单测）。
@@ -1598,7 +1647,11 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // FEAT-2：`..` 行仅导航——写操作与详情命令拒绝（cd/q/help/tree 例外）。
     if state.active_tab().on_parent_row {
         match cmd_head {
-            Some("cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his") => {}
+            // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
+            Some(
+                "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
+                | "compare",
+            ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
@@ -1732,6 +1785,44 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     if is_grep { "grep" } else { "find" },
                     n,
                     if truncated { "（已截断）" } else { "" }
+                )),
+            })
+        }
+        Some("compare") => {
+            // M24-8：左右 pane 目录对比（按文件名+大小）→ 结果虚拟目录
+            // （只读，复用 Tab.results；= 同 / ! 异 / < 仅左 / > 仅右）。
+            let (left_base, left_items) = {
+                let tab = state.active_tab();
+                match &tab.location {
+                    Location::Physical(p) => (p.clone(), tab.entries.clone()),
+                    _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
+                }
+            };
+            let (right_base, right_items) = {
+                let tab = state.active_tab();
+                match &tab.right.location {
+                    Location::Physical(p) => (p.clone(), tab.right.entries.clone()),
+                    _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
+                }
+            };
+            let items = compare_panes(&left_base, &left_items, &right_base, &right_items);
+            let (same, diff, only_l, only_r) = (
+                items.iter().filter(|i| i.text == "=").count(),
+                items.iter().filter(|i| i.text == "!").count(),
+                items.iter().filter(|i| i.text == "<").count(),
+                items.iter().filter(|i| i.text == ">").count(),
+            );
+            let total = items.len();
+            state.active_tab_mut().enter_results(
+                crate::search::SearchKind::Compare,
+                String::new(),
+                left_base,
+                items,
+                false,
+            );
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "compare: 相同 {same} · 不同 {diff} · 仅左 {only_l} · 仅右 {only_r}（共 {total}）"
                 )),
             })
         }
@@ -6420,14 +6511,25 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 let kind = match r.kind {
                     crate::search::SearchKind::Find => "find",
                     crate::search::SearchKind::Grep => "grep",
+                    crate::search::SearchKind::Compare => "compare",
                 };
-                spans.push(Span::from(format!(
-                    "  [{}: {} — {} 项{}]",
-                    kind,
-                    r.query,
-                    r.items.len(),
-                    if r.truncated { " 已截断" } else { "" }
-                )));
+                // M24-8：compare 无查询词，状态栏只显示条数。
+                spans.push(if r.query.is_empty() {
+                    Span::from(format!(
+                        "  [{}: {} 项{}]",
+                        kind,
+                        r.items.len(),
+                        if r.truncated { " 已截断" } else { "" }
+                    ))
+                } else {
+                    Span::from(format!(
+                        "  [{}: {} — {} 项{}]",
+                        kind,
+                        r.query,
+                        r.items.len(),
+                        if r.truncated { " 已截断" } else { "" }
+                    ))
+                });
             }
             if let Some(specs) = &tab.sort {
                 // M18-1/M18-2：排序指示（多字段 join）。
@@ -7363,6 +7465,94 @@ mod tests {
             state.active_tab().location.base_dir(),
             sub,
             "失败导航不改位置"
+        );
+    }
+
+    // ── M24-8：目录对比 :compare（按名+大小 → 结果虚拟目录，只读） ──────────
+
+    #[test]
+    fn m248_compare_panes_marks_and_order() {
+        let cfg = Config::default();
+        let left = TempDir::new().unwrap();
+        fs::write(left.path().join("same.txt"), "0123456789").unwrap(); // 10B
+        fs::write(left.path().join("diff.txt"), "abc").unwrap(); // 3B
+        fs::write(left.path().join("onlyl.txt"), "L").unwrap();
+        fs::create_dir(left.path().join("subdir")).unwrap();
+        let right = TempDir::new().unwrap();
+        fs::write(right.path().join("same.txt"), "0123456789").unwrap(); // 10B
+        fs::write(right.path().join("diff.txt"), "abcxyz").unwrap(); // 6B
+        fs::write(right.path().join("onlyr.txt"), "R").unwrap();
+        fs::create_dir(right.path().join("subdir")).unwrap(); // 同名目录不参与
+        let lpane = crate::tab::Pane::from_physical(left.path(), cfg.clone()).unwrap();
+        let rpane = crate::tab::Pane::from_physical(right.path(), cfg).unwrap();
+        let items = compare_panes(left.path(), &lpane.entries, right.path(), &rpane.entries);
+        let names: Vec<String> = items.iter().map(|i| i.text.clone()).collect();
+        assert_eq!(
+            names,
+            vec!["!", "<", "=", ">"],
+            "目录跳过；左 pane 序（字典序）在前、右独有在后"
+        );
+        let leaves: Vec<&str> = items
+            .iter()
+            .map(|i| i.path.file_name().unwrap().to_str().unwrap())
+            .collect();
+        assert_eq!(
+            leaves,
+            vec!["diff.txt", "onlyl.txt", "same.txt", "onlyr.txt"]
+        );
+        // 路径取实际所在侧；size 透传（! 取左侧、> 取右侧）。
+        assert!(items[0].path.starts_with(left.path()));
+        assert!(items[1].path.starts_with(left.path()));
+        assert!(items[2].path.starts_with(left.path()));
+        assert!(items[3].path.starts_with(right.path()));
+        assert_eq!(items[0].size, 3);
+        assert_eq!(items[3].size, 1);
+    }
+
+    #[test]
+    fn m248_exec_compare_results_locate_and_guards() {
+        let cfg = Config::default();
+        let left = TempDir::new().unwrap();
+        fs::write(left.path().join("same.txt"), "x").unwrap();
+        fs::write(left.path().join("diff.txt"), "abc").unwrap();
+        fs::write(left.path().join("onlyl.txt"), "L").unwrap();
+        let right = TempDir::new().unwrap();
+        fs::write(right.path().join("same.txt"), "x").unwrap();
+        fs::write(right.path().join("diff.txt"), "abcd").unwrap();
+        fs::write(right.path().join("onlyr.txt"), "R").unwrap();
+        let mut state = AppState::new(Tab::from_physical(left.path(), cfg.clone()).unwrap());
+        state.active_tab_mut().right = crate::tab::Pane::from_physical(right.path(), cfg).unwrap();
+        // exec :compare → 结果虚拟目录 + 计数消息。
+        match exec_command_impl(&mut state, "compare") {
+            Ok(ExecOutcome::Done { msg }) => {
+                let m = msg.expect("compare 应有计数消息");
+                assert!(m.contains("相同 1"), "msg: {m}");
+                assert!(m.contains("不同 1"), "msg: {m}");
+                assert!(m.contains("仅左 1"), "msg: {m}");
+                assert!(m.contains("仅右 1"), "msg: {m}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        let tab = state.active_tab();
+        assert!(tab.in_results(), "进入结果虚拟目录");
+        let names: Vec<String> = tab.entries.iter().map(|i| i.name.clone()).collect();
+        assert_eq!(
+            names,
+            vec!["! diff.txt", "< onlyl.txt", "= same.txt", "> onlyr.txt"]
+        );
+        // 只读守卫：结果视图内写命令拒绝。
+        assert!(exec_command_impl(&mut state, "mkdir newdir").is_err());
+        // l/Enter 定位：光标停在 "> onlyr.txt" → 退出结果视图导航到右 pane 目录。
+        state.active_tab_mut().cursor = 3;
+        let cfg2 = state.config.clone();
+        state.active_tab_mut().locate_result(cfg2).unwrap();
+        let tab = state.active_tab();
+        assert!(!tab.in_results());
+        assert_eq!(tab.location.base_dir(), right.path());
+        assert_eq!(
+            tab.entries.get(tab.cursor).map(|i| i.name.as_str()),
+            Some("onlyr.txt"),
+            "定位到仅右条目"
         );
     }
 

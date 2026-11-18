@@ -1,4 +1,5 @@
 # STATE —
+- `M24-8`（2026-11-19）：目录对比 `:compare`——左右 pane 条目按**文件名+大小**对比（目录跳过，目录大小无比较意义；`compare_panes` 纯函数）；结果复用 Tab.results 虚拟目录：`=` 同名同大小 / `!` 同名异大小 / `<` 仅左 / `>` 仅右（text 字段承载标记；ResultItem 增 size 字段透传属性列，find/grep 保持 0、remote_find 带真实 size）；SearchKind::Compare 变体 + 显示名"标记 文件名"+ 状态栏 `[compare: N 项]`（无查询词）；l/Enter locate_result 定位实际路径（=/!/< 左侧、> 右侧）；只读守卫沿用结果视图白名单；`..` 行白名单放行 compare（只读且不依赖光标）；计数消息"相同 N · 不同 M · 仅左 X · 仅右 Y"。需双 pane 物理视图（归档/远端/树/结果视图可读报错）。314 单测 + 6 集成全绿（+2：标记与顺序（字典序随 pane 排序）/exec 结果+定位+只读守卫）。踩坑：右 pane base 初版错用 tab.location（左）——"> 定位"测试抓出。
 - `M24-7`（2026-11-19）：路径补全——`:` 模式 Tab 补全输入最后空白分隔词（`split_last_word` char_indices 多字节安全；候选=焦点 pane 条目名前缀匹配，M21-E1 同源）；`CmdComp{head,candidates,index}` 模式局部状态——输入自上次补全未改动则循环下一候选（尾→首环绕），改动即重建；无候选不改输入；候选 >10 状态栏显示计数。`~` 展开复用 M19-4 expand_tilde（`expand_home_arg` 补裸 `~` → HOME），作用点 cd/move/copy/tag copy|move 的目录参数（mkdir/touch/mk 取"名字"不展开；远端路径不展开）。312 单测 + 6 集成全绿（+4：前缀循环/重建、无候选+空词+多空白、~ 展开、exec cd ~ 真实导航）。
 - `M24-6`（2026-11-19）：命令历史——`:` 模式 ↑/↓ 浏览会话已执行命令（`AppState.cmd_history` 内存 Vec 无持久化；`hist_pos`/`draft` 为模式局部字段——首次 ↑ 保存草稿、↓ 越过最新一条恢复草稿并清游标、最旧钳制不越界）；仅 `exec_command_impl` 返回 Ok 且非空（trim 后）才记录，失败不记；上限 100 FIFO（`state::CMD_HISTORY_MAX`，超限淘汰最旧）。help.txt 补条目。308 单测 + 6 集成全绿（+4：浏览与草稿恢复/空历史无操作/上限淘汰+空命令不记/失败不记契约）。顺带修复本机 clippy 1.95 新 lint 报错 3 处（存量代码：Rename 臂 Backspace/Delete if → match 守卫、show_attrs `!is_some()` → `is_none()`；CI 旧版本未触发，非本任务引入）。
 - `M24-3/4`（2026-11-19）：行可视 V + 可视操作扩展——`V` 同 v（toggle_visual，文件管理器中行/字符等价）；可视态 d/x → 视觉范围条目加 tag → execute_tag_delete 批量删除（复用 M3-3 撤销栈），y → 视觉范围路径 OSC52 复制；visual exit 后操作。293 单测全绿。
@@ -139,8 +140,8 @@
 
 - **更新时间**：2026-11-19
 - **当前阶段**：M24 交互增强与列表规范（进行中）
-- **当前任务**：M24-8 目录对比 :compare（下一个可执行任务）
-- **阶段状态**：M0–M23 关闭 + v0.8.0 发布；M24 进行中（M24-1～7 完成）
+- **当前任务**：M24-9 任务视图增强（最后一个未勾选任务）
+- **阶段状态**：M0–M23 关闭 + v0.8.0 发布；M24 进行中（M24-1～8 完成）
 
 ## 已完成
 

@@ -10,10 +10,12 @@ use std::path::{Path, PathBuf};
 pub struct ResultItem {
     /// 命中文件路径。
     pub path: PathBuf,
-    /// grep 命中行号（find 为 None）。
+    /// grep 命中行号（find/compare 为 None）。
     pub line: Option<usize>,
-    /// grep 命中行内容（find 为空）。
+    /// grep 命中行内容；compare 为前缀标记（=/!/</>；find 为空）。
     pub text: String,
+    /// 文件大小（compare 使用；find/grep 为 0——属性列显示与既有结果一致）。
+    pub size: u64,
 }
 
 /// 搜索结果虚拟目录状态（Tab.results；沿 :tree 同构的静态条目）。
@@ -35,6 +37,8 @@ pub struct SearchResults {
 pub enum SearchKind {
     Find,
     Grep,
+    /// M24-8：左右 pane 目录对比（text 承载前缀标记）。
+    Compare,
 }
 
 /// 结果上限（与 :tree 的 1 万条上限同模式）。
@@ -70,6 +74,7 @@ pub fn find_files(root: &Path, query: &str, show_hidden: bool) -> (Vec<ResultIte
             path,
             line: None,
             text: String::new(),
+            size: 0,
         });
     }
     (items, false)
@@ -108,6 +113,7 @@ pub fn grep_files(
                     path: path.clone(),
                     line: Some(lineno + 1),
                     text: line.to_owned(),
+                    size: 0,
                 });
             }
         }
@@ -168,10 +174,11 @@ pub fn remote_find_files(
             let leaf = p.rsplit('/').next().unwrap_or_default().to_lowercase();
             leaf.contains(&lower)
         })
-        .map(|(p, _)| ResultItem {
+        .map(|(p, size)| ResultItem {
             path: PathBuf::from(p),
             line: None,
             text: String::new(),
+            size,
         })
         .collect();
     (items, truncated)
@@ -207,6 +214,7 @@ pub fn remote_grep_files(
                     path: PathBuf::from(path.clone()),
                     line: Some(lineno + 1),
                     text: line.to_owned(),
+                    size: 0,
                 });
             }
         }
