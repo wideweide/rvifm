@@ -23,6 +23,7 @@ mod privilege;
 #[allow(dead_code)]
 mod remote;
 mod search;
+mod session;
 mod state;
 mod store;
 mod tab;

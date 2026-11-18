@@ -142,11 +142,12 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 # STATE —
+- `M25-1`（2026-11-19）：会话持久化——新模块 src/session.rs：退出保存（run 两处 Quit 点，flush_visits 后/cleanup 前；失败 eprintln 不阻塞退出，GAP-2 同模式）+ 启动恢复（run 初始化后）；仅物理 Location 的 tab 入会话（左 pane Location/cursor/on_parent_row/focus + active 索引；归档/远端丢弃）；TOML 结构 `SessionFile{active,tabs[{path,cursor,on_parent_row,focus}]}`；恢复钳制——目录不存在跳过、cursor 钳到条目数、active 钳到 tab 数、on_parent_row 需 has_parent_row、全部失败保持初始会话；`[ui] session_restore` 默认开（false 不读不写）。320 单测 + 6 集成全绿（+2：roundtrip 全字段还原/损坏与远端丢弃与钳制）。
 - `M25 登记调整`（2026-11-19）：M25-2 marks 暂停（用户指示，`'` 键位归属待拍板，恢复待指令）；M25-5/6 SPEC 修订为**异步方案**（pathspec 限定当前目录 + `--no-optional-locks` + 后台线程 + per-目录缓存——回应 gitui 大仓库性能问题，分析见 NOTES）。执行顺序：1 → 3 → 4 → 5 → 6 → 7。
 - **更新时间**：2026-11-19
 - **当前阶段**：M25 会话持久化、marks、归档创建与 git 集成（执行中；M25-2 暂停）
-- **当前任务**：M25-1 会话持久化
-- **阶段状态**：M0–M24 全部关闭；M25 执行中（M25-2 暂停待指令）
+- **当前任务**：M25-3 归档创建
+- **阶段状态**：M0–M24 全部关闭；M25 进行中（M25-1 完成，M25-2 暂停待指令）
 
 ## 已完成
 

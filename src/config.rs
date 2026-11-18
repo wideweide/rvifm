@@ -43,11 +43,14 @@ pub struct FrecencyConfig {
 /// 默认开；false = 始终当前 pane）。
 /// `attrs_column`（M21-E1）：文件列表显示大小/修改时间列，默认开；
 /// 窄终端自动隐藏（文件名优先）。
+/// `session_restore`（M25-1）：退出保存/启动恢复会话（tabs），默认开；
+/// false = 不读不写。
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
     pub terminal_in_new_window: bool,
     pub attrs_column: bool,
+    pub session_restore: bool,
 }
 
 impl Default for UiConfig {
@@ -55,6 +58,7 @@ impl Default for UiConfig {
         Self {
             terminal_in_new_window: true,
             attrs_column: true,
+            session_restore: true,
         }
     }
 }

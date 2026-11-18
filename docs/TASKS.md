@@ -246,7 +246,7 @@
 
 > 来源：用户批次需求讨论稿蒸馏。marks / 归档创建 / Git 状态列 / 会话持久化为范围重开（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
 
-- [ ] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
+- [x] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
 - [~] M25-2 marks 独立模块（**暂停**：用户指示 2026-11-19，`'` 键位归属待拍板；恢复待指令；见 SPEC §25）
 - [ ] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 只读提示）
 - [ ] M25-4 归档对话框与校验（无参交互对话框；校验文件默认 md5，sha256/none 可选；[archive] checksum）

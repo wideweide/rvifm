@@ -705,7 +705,7 @@
 ## 24. M25 — 会话持久化、marks、归档创建与 git 集成（M25-1～7，见 SPEC §25）
 
 ### M25-1 会话持久化
-- [ ] 退出重启后 tabs/光标/活动标签还原；损坏文件静默新会话；`session_restore=false` 不读不写。
+- [x] 退出重启后 tabs/光标/活动标签还原；损坏文件静默新会话；`session_restore=false` 不读不写。
 
 ### M25-2 marks
 - [ ] `m<char>` 记录（目录/文件/`..` 行=当前目录）；`'<char>` 跳转（目录 cd / 文件定位光标）；未命中提示；无 frecency store 写入；quickjump 迁移反引号生效。

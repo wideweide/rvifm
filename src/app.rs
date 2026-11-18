@@ -4869,6 +4869,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         config.clone(),
     )?);
     state.config = config;
+    // M25-1：会话恢复（关闭/缺失/损坏 → 保持初始 CWD tab）。
+    crate::session::restore_session(&mut state);
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_keymap(keymap);
@@ -4980,6 +4982,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             match result {
                                 Ok(ExecOutcome::Quit) => {
                                     flush_session_visits(&state);
+                                    crate::session::save_session(&state);
                                     cleanup_temp_opens(&mut state);
                                     return Ok(());
                                 }
@@ -5379,6 +5382,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         Outcome::Continue => {}
                         Outcome::Quit => {
                             flush_session_visits(&state);
+                            crate::session::save_session(&state);
                             cleanup_temp_opens(&mut state);
                             return Ok(());
                         }
