@@ -300,15 +300,15 @@ redb 三表，无后台守护进程：
 - **M25-2 marks 独立模块**：`m<char>` 记录当前光标条目（目录或文件；`..` 行 = 当前目录）到 `AppState.marks`（`HashMap<char, PathBuf>`，全局跨 tab）；`'<char>` 跳转——目录 cd（navigate_to 入历史）、文件父目录定位光标（M8-12 文件语义）；未命中提示不静默；合法字符 = 字母 + 数字；`'` 与 quickjump（NAV-1）冲突：`'` 归 marks，quickjump 迁移至反引号 `` ` ``（vifm 同款分工）。
 - **M25-3 归档创建**：`:archive [zip|tar|tar.gz] <名>` 将标记集合（tags；空 = 光标条目）打包为当前目录下 `<名>`；纯 Rust 写端（zip crate / tar + flate2 rust backend）；目标同名已存在报错不覆盖；入撤销栈（Create，`u` 可逆）；`.tar.xz` / `.tar.bz2` / `.tar.zst` 创建请求可读提示不支持（只读边界）。
 - **M25-4 归档对话框与校验文件**：`:archive` 无参 → 交互对话框（名称输入预填光标条目名；j/k/空格切换格式与校验；Enter 执行 Esc 取消）；归档完成后生成校验文件，默认 md5（`<名>.md5`，md5sum 兼容行格式），可选 sha256 / none（命令参数 + 配置 `[archive] checksum = "md5"`）；md5/sha2 纯 Rust crate。
-- **M25-5 git 状态列**：目录加载时探测仓库根（逐级 .git）+ `git status --porcelain -z` 子进程缓存映射（路径 → 状态）；文件列表追加状态字符列（M/A/D/R/?? 等，着色；非仓库或开关关闭时隐藏）；`[ui] git_column` 默认开；随导航刷新（watcher 触发的刷新同样生效）。
-- **M25-6 git 状态栏与 gi 快捷键**：状态栏显示分支名 + diff 摘要（porcelain `-b` / `git diff --shortstat`，随仓库探测缓存）；`gi`（Action::GitUi）按优先级探测 PATH：gitui → ziggity → lazygit，首个命中挂起 TUI 启动（M18-4/M23-11 分流复用）；全部未命中可读报错；`:gitui` 命令同语义。
+- **M25-5 git 状态列（异步）**：目录加载时探测仓库根（逐级 .git）；`git --no-optional-locks status --porcelain -z --untracked-files=normal -- <当前目录>/` 子进程查询（pathspec 限定当前目录；不加锁不写 index）；**后台线程异步执行、UI 不等待**——列表先渲染，状态列就绪后填充（gitui 同款体感策略）；per-目录缓存，导航与 watcher 事件触发刷新；文件列表追加状态字符列（M/A/D/R/?? 等，着色；非仓库或开关关闭时隐藏）；`[ui] git_column` 默认开。
+- **M25-6 git 状态栏与 gi 快捷键**：状态栏显示分支名 + diff 摘要（porcelain `-b` / `git diff --shortstat`）——**per-仓库缓存 + 异步刷新**（同 M25-5 线程模式，非每键重算）；`gi`（Action::GitUi）按优先级探测 PATH：gitui → ziggity → lazygit，首个命中挂起 TUI 启动（M18-4/M23-11 分流复用）；全部未命中可读报错；`:gitui` 命令同语义。
 - **M25-7 frecency 通用化评估**（评估任务，不实现）：评估命令历史/路径补全迁移到 frecency 记录评分体系——记录与评分查询方法泛化（EntryKind 扩展命令类事件、命令书签 = keyword 事件泛化、补全候选 = 目录数据 + 当前路径邻近加权）的可行性、schema 影响、迁移成本；结论与边界入 NOTES；若可行给出下一批次任务建议。
 
 **SIMPLIFIED**
 - M25-1：会话文件不存归档/远端视图、不存 marks；无备份/迁移机制。
 - M25-2：marks 不持久化（后续可并入 session.toml）；合法字符不含符号。
 - M25-3：目录递归打包，软链接按链接本身收录；打包条目数/总大小无上限护栏（用户显式发起）。
-- M25-5：状态映射仅对当前目录直接子项（子目录内部变更不展开）；大仓库首次加载慢属已知风险，不做超时。
+- M25-5：状态映射仅对当前目录直接子项；异步结果未就绪时状态列暂空（不阻塞列表渲染）；超大仓库进一步提速建议用户侧开启 `core.fsmonitor` + `core.untrackedCache`（README 提示，rvifm 不代改配置）。
 - M25-6：diff 摘要仅工作区（staged 不分列）；gitui/ziggity/lazygit 为外部工具，用户自行安装。
 
 #### M22 — SFTP 安全与远端体验补全（2026-11-17 增补）

@@ -594,3 +594,13 @@ rvifm record  → 静默记录访问
 - **gi 优先级（REQ 原文）**：gitui → ziggity → lazygit，首个 PATH 命中者挂起 TUI 启动（M23-11 run 分流复用）；三者均为外部工具，用户自行安装。
 - **frecency 通用化（M25-7，评估任务）**：用户提出"记录及评分查询方法需更通用，比如命令支持书签，路径使用目录数据及当前路径数据"——按 M23-12 同模式登记：只出决策不实现。评估点：EntryKind 扩展命令类事件、keyword 书签泛化到命令、补全候选 = 目录 frecency + 当前路径邻近加权的 schema 影响与迁移成本。
 - **编号检查**：M25 未被占用（TASKS 最高 M24）✓。版本目标 0.10.0（M24 的 0.9.0 尚未发布，发布与否随批次决策）。
+
+### 2026-11-19 — M25 调整（用户指示）：M25-2 暂停 + git 状态列性能方案修订
+
+- **M25-2 marks 暂停**：用户指示暂不做（`'` 键位归属未拍板是隐性原因）；TASKS 标 `[~] 暂停`，执行顺序改为 **1 → 3 → 4 → 5 → 6 → 7**；恢复待指令。
+- **git 状态列性能（回应"gitui 为何大仓库仍快"）**：
+  - gitui 的体感快来自三层：① **异步架构**——status 在后台任务计算，UI 先渲染后填充，慢查询不等于慢界面（体感最大来源）；② **libgit2 进程内调用**（git2-rs）——无子进程 spawn / porcelain 文本解析开销，且可按需裁剪查询范围；③ **缓存 + 事件驱动刷新**——非每帧重算。大仓库场景还隐含 git 自身配置收益：`core.fsmonitor`（daemon 只 stat 变更文件，跳过全树遍历）、`core.untrackedCache`（缓存未跟踪判定）、index 的 stat 缓存（未变更文件 O(1) 判定）。
+  - `git status` 本身慢的根因：必须 stat 全仓工作树 + 对 stat 变化的文件重算哈希 + 枚举未跟踪文件（gitignore 匹配）。子进程方式下还有 spawn + 文本序列化成本。
+  - rvifm 落地（CLI 约束不变，M23-12 结论维持）：**异步后台查询**（复用 M23-9/M13-8 线程模式）+ **pathspec 限定当前目录**（`-- <dir>/`——只扫当前子树，比全仓扫描便宜一个量级；我们只需要直接子项，查询范围天然小）+ `--no-optional-locks`（浏览不写 index、不与用户其他 git 操作抢锁）+ per-目录缓存。SPEC M25-5/6 已按此修订。
+  - **不引入 gitoxide**：gix status 有并行扫描优化，但依赖树大、API 演进中（M23-12 评估不变）；CLI + 异步在"每次导航一次、只需直接子项"的场景足够。
+  - 超大仓库用户侧建议（README 提示，rvifm 不代改用户 git 配置）：`git config core.fsmonitor enable` + `git config core.untrackedCache true`。
