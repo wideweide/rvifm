@@ -222,13 +222,17 @@ pub fn format_mtime_min(secs: u64) -> String {
 }
 
 /// M24-2：自然排序比较器——分段解析数字/非数字，数字段按 u64 值比较、
-/// 非数字段按字典序（大小写不敏感由调用方预处理或直接内嵌）。
-/// "1.txt" < "2.txt" < "10.txt"。
+/// 非数字段按字典序；大小写不敏感（`Config.ignore_case_sort` 在接线处
+/// 分流到 [`natural_cmp_case`]）。"1.txt" < "2.txt" < "10.txt"。
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    natural_cmp_case(&a.to_lowercase(), &b.to_lowercase())
+}
+
+/// M24-2：大小写敏感的自然排序变体（`ignore_case_sort = false` 时使用）。
+pub fn natural_cmp_case(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    let (a_l, b_l) = (a.to_lowercase(), b.to_lowercase());
-    let mut ai = a_l.chars().peekable();
-    let mut bi = b_l.chars().peekable();
+    let mut ai = a.chars().peekable();
+    let mut bi = b.chars().peekable();
     let mut a_num = String::new();
     let mut b_num = String::new();
     loop {
@@ -804,7 +808,14 @@ impl Tab {
                 for spec in &specs {
                     let base = match spec.field {
                         SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                        SortField::Natural => natural_cmp(&a.name, &b.name),
+                        // M24-2：自然排序受 ignore_case_sort 影响（大小写敏感变体）。
+                        SortField::Natural => {
+                            if config.ignore_case_sort {
+                                natural_cmp(&a.name, &b.name)
+                            } else {
+                                natural_cmp_case(&a.name, &b.name)
+                            }
+                        }
                         SortField::Mtime => a.mtime.cmp(&b.mtime),
                         SortField::Size => a.size.cmp(&b.size),
                         SortField::Ext => {
@@ -1620,6 +1631,24 @@ mod tests {
         assert_eq!(natural_cmp("file01.txt", "file1.txt"), Ordering::Equal);
         // 混合：字母段不同 → 字典序。
         assert_eq!(natural_cmp("a1", "b1"), Ordering::Less);
+    }
+
+    #[test]
+    fn m24_2_natural_cmp_case_variant() {
+        // ACCEPTANCE §23 M24-2：受 ignore_case_sort 影响——接线处按配置分流。
+        // 默认（ignore_case_sort=true）：大小写不敏感。
+        assert_eq!(natural_cmp("a.txt", "B.txt"), Ordering::Less);
+        assert_eq!(natural_cmp("B.txt", "a.txt"), Ordering::Greater);
+        // ignore_case_sort=false：字节序 B(66) < a(97)。
+        assert_eq!(natural_cmp_case("B.txt", "a.txt"), Ordering::Less);
+        assert_eq!(natural_cmp_case("a.txt", "B.txt"), Ordering::Greater);
+        // 敏感变体数字感知不变。
+        assert_eq!(natural_cmp_case("2.txt", "10.txt"), Ordering::Less);
+        assert_eq!(
+            natural_cmp_case("File02", "file10"),
+            Ordering::Less,
+            "F(70) < f(102) 且数值段 2 < 10"
+        );
     }
     use std::path::PathBuf;
     use tempfile::TempDir;
