@@ -562,3 +562,11 @@ rvifm record  → 静默记录访问
 - **y 复制序列（M23-10）**：vifm 对齐 y{motion} 家族（yn/yf/yc）；多选 = 标记或可视选择（M3 语义复用）；剪贴板 OSC52 零依赖优先（arboard 等 GUI 剪贴板 crate 视为可选后续）。
 - **git 集成（M23-11/12）**：,g lazygit 为用户给定的示例与优先级规范（焦点 pane 仓库 → 高亮目录 → 拒绝提示）；内置变量以 vifm % 变量集为基线；git2/libgit2（C 依赖，aws-lc-sys 教训——需评估构建链）vs gitoxide（纯 Rust）在 M23-12 评估后决策，本轮只出决策不实现。
 - **执行顺序调整**：M23-9（远端跟踪）→ 10（y*/e，Frecency Pane 的前置依赖）→ 11（自定义命令）→ 12（git 评估）→ 6（含修订后 7 的键位语义）→ 8 → 发布 0.8.0。
+
+### 2026-11-18 — M23-12 git 集成评估（决策）
+
+- **git2（libgit2 绑定）**：功能全面（status/branch/diff/stage）；但 C 依赖 libgit2-sys 需要编译工具链（aws-lc-sys NASM 教训——同风险），且默认构建新增 C 编译期依赖，违反零 C 编译原则（AGENTS §7 不引入 unsafe 无明确必要 + 构建链风险）。**不采纳**。
+- **gitoxide（纯 Rust）**：功能逐步完善（read-only 较成熟，mutate 仍在开发）；纯 Rust 零 C 依赖 ✓；但 crate 体积较大且 API 尚在演进。当前无刚需场景（状态装饰/分支显示均为 UI 增强）。
+- **决策**：本轮**不引入任何 git 模块**——状态装饰/分支显示可后续用 `git` CLI 子进程实现（零依赖，成本最低），不需要库级 API。若未来需要更深度集成（暂存/提交），gitoxide 是纯 Rust 首选。
+- **集成点清单（后续立项参考）**：① 状态栏显示分支名（`git rev-parse --abbrev-ref HEAD`）② 列表条目 git 状态装饰（`git status --porcelain`）③ Frecency Pane 内 git 操作快捷键（stage/commit/push）。均为 UI 增强，优先级低。
+- **M23-11 `,g` lazygit**：用户配置示例——TOML `run = "cmd:lazygit %g"`，%g 变量解析为 git 仓库根（非仓库 → 提示）。命令执行复用 M18-4 terminal分流。lazygit 本身是外部工具（用户自行安装）。

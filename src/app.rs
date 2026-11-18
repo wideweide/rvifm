@@ -89,6 +89,8 @@ enum Outcome {
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
     BatchRename { base: PathBuf, names: Vec<String> },
+    /// 执行用户自定义命令（M23-11：挂起 TUI 运行后恢复）。
+    RunUserCommand { cmd: String },
     /// 打开内联重命名（M21-E4：I/cc/A——光标语义由 input/pos 预填表达）。
     EnterRename {
         path: PathBuf,
@@ -684,6 +686,81 @@ fn exec_command(state: &mut AppState, line: &str) -> Result<bool, String> {
 }
 
 // ── M19-2：远端会话导航 ──────────────────────────────────────────────
+
+/// M23-11：git 仓库根目录探测——从 dir 逐级向上找 .git（目录或文件，
+/// worktree 的 .git 是文件）；非仓库返回 None。
+fn git_root_of(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut cur = normalize_lexical(dir);
+    loop {
+        if cur.join(".git").exists() {
+            return Some(cur);
+        }
+        cur = cur.parent()?.to_path_buf();
+    }
+}
+
+/// M23-11：命令模板变量替换——%d 焦点 pane 目录、%f 光标文件名、
+/// %F 光标完整路径、%D 对侧 pane 目录、%g git 仓库根（非仓库为空）。
+/// %g 为空时返回 Err（git 相关命令不执行，提示不是 git 仓库）。
+fn substitute_vars(template: &str, state: &AppState) -> Result<String, String> {
+    let tab = state.active_tab();
+    let focus_dir = tab.location.base_dir().to_path_buf();
+    let other_dir = if tab.focus == crate::tab::Focus::Left {
+        tab.right.location.base_dir().to_path_buf()
+    } else {
+        tab.location.base_dir().to_path_buf()
+    };
+    let cursor_path = tab.location.base_dir().join(
+        tab.entries
+            .get(tab.cursor)
+            .map(|i| i.name.as_str())
+            .unwrap_or(""),
+    );
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    let g = git_root_of(&focus_dir)
+        .map(|p| p.to_string_lossy().replace(sep, "/"))
+        .unwrap_or_default();
+    let out = template
+        .replace("%d", &focus_dir.to_string_lossy().replace(sep, "/"))
+        .replace(
+            "%f",
+            tab.entries
+                .get(tab.cursor)
+                .map(|i| i.name.as_str())
+                .unwrap_or(""),
+        )
+        .replace("%F", &cursor_path.to_string_lossy().replace(sep, "/"))
+        .replace("%D", &other_dir.to_string_lossy().replace(sep, "/"))
+        .replace("%g", &g);
+    if template.contains("%g") && g.is_empty() {
+        return Err("不是 git 仓库".to_owned());
+    }
+    Ok(out)
+}
+
+/// M23-11：执行自定义命令（Action::RunCommand）——模板替换 → M18-4 分流。
+fn run_user_command(state: &mut AppState, index: usize, msg: &mut Option<String>) -> Outcome {
+    let commands = config::keymap_commands();
+    let Some(tpl) = commands.get(index) else {
+        *msg = Some("自定义命令索引越界".to_owned());
+        return Outcome::Continue;
+    };
+    let cmd = match substitute_vars(tpl, state) {
+        Ok(c) => c,
+        Err(e) => {
+            *msg = Some(e);
+            return Outcome::Continue;
+        }
+    };
+    let ui = state.config.ui;
+    match run_external_target(&ui, &cmd) {
+        ExternalRun::Multiplexer(m) => {
+            *msg = Some(m);
+            Outcome::Continue
+        }
+        ExternalRun::CurrentPane(cmd) => Outcome::RunUserCommand { cmd },
+    }
+}
 
 /// M23-10：OSC52 剪贴板序列（`ESC]52;c;<base64>BEL`；零依赖）。
 fn osc52_sequence(text: &str) -> String {
@@ -2490,6 +2567,9 @@ fn handle_key(
                 return Some(Outcome::EditFile {
                     path: base.join(name),
                 });
+            }
+            Some(Action::RunCommand(index)) => {
+                return Some(run_user_command(state, index as usize, msg));
             }
             Some(Action::RenameStart) | Some(Action::RenameClear) | Some(Action::RenameAppend) => {
                 // M21-E4：I/A 保留原名（光标首/尾），cc 清空（光标归零）。
@@ -4790,6 +4870,24 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };
+                        }
+                        Outcome::RunUserCommand { cmd } => {
+                            // M23-11：挂起 TUI，外部命令运行后恢复。
+                            ratatui::restore();
+                            let result = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(&cmd)
+                                .status();
+                            terminal = ratatui::init();
+                            let _ = ratatui::crossterm::execute!(
+                                std::io::stdout(),
+                                event::EnableMouseCapture
+                            );
+                            msg = match result {
+                                Ok(st) if st.success() => Some(format!("命令完成: {cmd}")),
+                                Ok(st) => Some(format!("命令失败: {cmd}（退出码 {}）", st)),
+                                Err(e) => Some(format!("命令执行失败: {e}")),
+                            };
                         }
                         Outcome::OpenJump { kind, entries } => {
                             mode = InputMode::JumpSelect {

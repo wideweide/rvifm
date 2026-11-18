@@ -57,6 +57,8 @@ pub enum Action {
     CopyContent,
     /// 打开编辑器（M23-10：e——$EDITOR 打开光标文件）。
     OpenEditor,
+    /// 执行自定义外部命令（M23-11：u16 索引指向全局命令表——保持 Copy）。
+    RunCommand(u16),
     /// 切换 view 模式（M13-9：w——预览窗格完整文件视图）。
     ToggleView,
     PutCopy,

@@ -1,4 +1,5 @@
 # STATE —
+- `M23-11`（2026-11-18）：自定义命令快捷键与内置变量——keymap 增 `Action::RunCommand(u16)`（索引指向 KeymapLayers.commands 表保持 Copy）；config parse_binding 增 `run = "cmd:<模板>"` 路由（去重注册）；变量替换 substitute_vars（%d/%f/%F/%D/%g）；git_root_of 逐级向上探测 .git（%g 非仓库 → Err 不执行）；run_user_command 经 M18-4 ExternalRun 分流（tmux/screen 新窗口/当前 pane RunUserCommand outcome）；run 循环挂起 TUI 执行。292 单测全绿（+1：cmd: 解析/去重/git root/变量替换）。M23-12 git 评估决策已入 NOTES。
 - `M23-10`（2026-11-18）：y 复制序列与 e 编辑器——keymap 增 CopyName/CopyPath/CopyContent/OpenEditor（默认键 yn/yf/yc/e）；选集 selected_names（标记→可视→光标，与 cw/R 同语义）；OSC52 剪贴板（osc52_sequence + copy_to_clipboard 写 stdout，零依赖）；yc 目录=条目名清单/文件=内容（非 UTF-8 可读错误）；e 产出 Outcome::EditFile → run 挂起 TUI $EDITOR 打开（editor_name 抽取与 M13-6 共用），目录拒绝。291 单测全绿（+1：yn/yf/yc 单多选/e 目录拒绝/e 文件 EditFile）。踩坑：测试 cursor 需对齐 dirs-first 排序（sub 在 0）；`copied` 反馈的 what 按动作区分（路径=全路径、名称/内容=条目名）。
 - `M23-9`（2026-11-18）：远端文件跟踪上传——remote_open_file 挂常驻监听线程 spawn_upload_watcher（notify 自持于线程 + std::mem::forget；修改事件 → 2s 防抖静默 → 经 upload_tx 回传请求；多次修改多次上传）；run 循环消费 upload_rx（读副本最新内容 → backend.write；成功"已同步上传"/失败"上传失败"状态栏）；upload_tx 存 AppState（Option，run 初始化）；退出清理不变。290 单测全绿（结构性新增，watcher 行为随 M22-5 模式由真实环境覆盖——单测只覆盖编译形态）。踩坑：let-else 需尾分号；`if expr.expect(...);` 无效（去掉 if 前缀）；CRLF 文件下 node 多行替换全部失配——改用 Edit 工具。
 - `M23-5`（2026-11-18）：per-topic LAMBDA / MAX_ENTRIES——FrecencySettings（lambda_dir/file=0.01、lambda_unified=0.005、max_entries=1500 默认；SETTINGS 用 **Mutex** 而非 OnceLock——并行测试 get_or_init(DEFAULT) 会抢先占位致 init 静默失败）；replay_inner/rebuild_snapshot λ 按 topic 取；cleanup_capacity 读 settings().max_entries；init_settings 挂 run()/cmd_pick/cmd_record；FrecencyConfig 扩 lambda_dir/file/unified + max_entries（Option 缺省兼容），Config 失 Eq（f64）。290 单测全绿（+2：λ 对照衰减/max_entries 清理）。
@@ -130,8 +131,8 @@
 
 - **更新时间**：2026-11-17
 - **当前阶段**：M22 SFTP 安全与远端体验补全（已确认，开始执行）；M23 Frecency 对齐增强与 Pane 模式（已登记排队）
-- **当前任务**：M23-11 自定义命令快捷键与内置变量
-- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1～5、9、10 完成）；两批完成后发布 0.8.0
+- **当前任务**：M23-6 Frecency Pane 模式
+- **阶段状态**：M0–M21 关闭 + v0.7.0 发布；M22 关闭、M23 进行中（M23-1～5、9、10、11、12 完成）；两批完成后发布 0.8.0
 
 ## 已完成
 

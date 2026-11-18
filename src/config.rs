@@ -178,19 +178,19 @@ pub struct KeymapLayers {
     pub prepend: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
     pub append: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
     pub replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>>,
+    /// M23-11：自定义外部命令模板（run = "cmd:<模板>" 注册；索引 = 数组序号）。
+    pub commands: Vec<String>,
 }
 
 /// 解析一条 `{ on = ..., run = ... }` 键位绑定。
 fn parse_binding(
     value: &toml::Value,
     into: &mut Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+    commands: &mut Vec<String>,
 ) {
     let on = value.get("on");
     let Some(run) = value.get("run").and_then(|v| v.as_str()) else {
         return;
-    };
-    let Some(action) = crate::keymap::Action::from_name(run) else {
-        return; // 未知动作名：跳过（不 panic）
     };
     let keys: Vec<crate::keymap::Key> = match on {
         Some(toml::Value::String(spec)) => match crate::keymap::parse_key(spec) {
@@ -212,6 +212,20 @@ fn parse_binding(
     if keys.is_empty() {
         return;
     }
+    // M23-11：run = "cmd:<模板>" → 注册自定义命令（去重）+ RunCommand(索引)。
+    if let Some(tpl) = run.strip_prefix("cmd:") {
+        let idx = if let Some(pos) = commands.iter().position(|c| c == tpl) {
+            pos
+        } else {
+            commands.push(tpl.to_owned());
+            commands.len() - 1
+        };
+        into.push((keys, crate::keymap::Action::RunCommand(idx as u16)));
+        return;
+    }
+    let Some(action) = crate::keymap::Action::from_name(run) else {
+        return; // 未知动作名：跳过（不 panic）
+    };
     into.push((keys, action));
 }
 
@@ -220,18 +234,18 @@ fn parse_mode_layers(table: &toml::value::Table, layers: &mut KeymapLayers) {
     let mut replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>> = None;
     if let Some(arr) = table.get("prepend_keymap").and_then(|v| v.as_array()) {
         for item in arr {
-            parse_binding(item, &mut layers.prepend);
+            parse_binding(item, &mut layers.prepend, &mut layers.commands);
         }
     }
     if let Some(arr) = table.get("append_keymap").and_then(|v| v.as_array()) {
         for item in arr {
-            parse_binding(item, &mut layers.append);
+            parse_binding(item, &mut layers.append, &mut layers.commands);
         }
     }
     if let Some(arr) = table.get("keymap").and_then(|v| v.as_array()) {
         let mut parsed = Vec::new();
         for item in arr {
-            parse_binding(item, &mut parsed);
+            parse_binding(item, &mut parsed, &mut layers.commands);
         }
         replace = Some(parsed);
     }
@@ -264,9 +278,20 @@ pub fn load_keymap_layers_from(path: &std::path::Path) -> KeymapLayers {
 
 static KEYMAP_LAYERS: std::sync::OnceLock<KeymapLayers> = std::sync::OnceLock::new();
 
+/// M23-11：自定义外部命令模板（run = "cmd:<模板>" 注册；索引 = 数组序号）。
+/// OnceLock 借 init_keymap_layers 一次性写入；handle_key 经 keymap_commands() 读取。
+static KEYMAP_COMMANDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// M23-11：读取自定义命令表（run 循环 / handle_key 消费）。
+pub fn keymap_commands() -> Vec<String> {
+    KEYMAP_COMMANDS.get().cloned().unwrap_or_default()
+}
+
 /// TUI 启动时加载一次（run 入口调用）。
 pub fn init_keymap_layers() {
-    let _ = KEYMAP_LAYERS.set(load_keymap_layers_from(&config_path()));
+    let layers = load_keymap_layers_from(&config_path());
+    let _ = KEYMAP_COMMANDS.set(layers.commands.clone());
+    let _ = KEYMAP_LAYERS.set(layers);
 }
 
 /// 已加载的键位分层（未初始化时为空 = 纯默认表）。
@@ -385,5 +410,45 @@ dl = "bad"
         std::fs::write(&path, "show_hidden = [[[").unwrap();
         let err = load_from(&path).unwrap_err();
         assert!(err.starts_with("配置解析失败"), "err: {err}");
+    }
+
+    #[test]
+    fn m23_11_parse_binding_cmd_prefix() {
+        // M23-11：run = "cmd:<模板>" → RunCommand(索引) 注册到 commands 表（去重）。
+        let mut layers = KeymapLayers::default();
+        let mut prepend = Vec::new();
+        let mut table = toml::value::Table::new();
+        table.insert(
+            "on".to_owned(),
+            toml::Value::Array(vec![
+                toml::Value::String(",".to_owned()),
+                toml::Value::String("g".to_owned()),
+            ]),
+        );
+        table.insert(
+            "run".to_owned(),
+            toml::Value::String("cmd:lazygit %g".to_owned()),
+        );
+        parse_binding(
+            &toml::Value::Table(table),
+            &mut prepend,
+            &mut layers.commands,
+        );
+        assert_eq!(prepend.len(), 1);
+        assert!(matches!(prepend[0].1, crate::keymap::Action::RunCommand(0)));
+        assert_eq!(layers.commands, vec!["lazygit %g".to_owned()]);
+        // 重复模板 → 同索引（去重）。
+        let mut table2 = toml::value::Table::new();
+        table2.insert("on".to_owned(), toml::Value::String(",x".to_owned()));
+        table2.insert(
+            "run".to_owned(),
+            toml::Value::String("cmd:lazygit %g".to_owned()),
+        );
+        parse_binding(
+            &toml::Value::Table(table2),
+            &mut prepend,
+            &mut layers.commands,
+        );
+        assert_eq!(layers.commands.len(), 1, "命令模板去重");
     }
 }
