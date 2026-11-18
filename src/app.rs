@@ -1549,7 +1549,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     format!(
                         "{} {}",
                         match s.field {
-                            crate::tab::SortField::Name => "name",
+                            crate::tab::SortField::Name => "名称 name",
+                            crate::tab::SortField::Natural => "natural",
                             crate::tab::SortField::Mtime => "mtime",
                             crate::tab::SortField::Size => "size",
                             crate::tab::SortField::Ext => "ext",
@@ -2331,12 +2332,18 @@ fn handle_right_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEven
 /// `t`（tag 标记）、`q`/`Ctrl-C`、`:`。
 /// M18-1：排序对话框字段表（小写键, 大写键, 说明, 字段）——字母直接应用；
 /// 对话框内 `s`/`S` 是"大小"字段键，不触发 shell（模态）。
-const SORT_FIELDS: [(KeyCode, KeyCode, &str, crate::tab::SortField); 4] = [
+const SORT_FIELDS: [(KeyCode, KeyCode, &str, crate::tab::SortField); 5] = [
     (
         KeyCode::Char('n'),
         KeyCode::Char('N'),
         "名称 name",
         crate::tab::SortField::Name,
+    ),
+    (
+        KeyCode::Char('t'),
+        KeyCode::Char('T'),
+        "自然 natural",
+        crate::tab::SortField::Natural,
     ),
     (
         KeyCode::Char('m'),
@@ -6196,6 +6203,7 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                             "{} {}",
                             match s.field {
                                 crate::tab::SortField::Name => "name",
+                                crate::tab::SortField::Natural => "natural",
                                 crate::tab::SortField::Mtime => "mtime",
                                 crate::tab::SortField::Size => "size",
                                 crate::tab::SortField::Ext => "ext",

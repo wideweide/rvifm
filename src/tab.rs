@@ -221,6 +221,59 @@ pub fn format_mtime_min(secs: u64) -> String {
     }
 }
 
+/// M24-2：自然排序比较器——分段解析数字/非数字，数字段按 u64 值比较、
+/// 非数字段按字典序（大小写不敏感由调用方预处理或直接内嵌）。
+/// "1.txt" < "2.txt" < "10.txt"。
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (a_l, b_l) = (a.to_lowercase(), b.to_lowercase());
+    let mut ai = a_l.chars().peekable();
+    let mut bi = b_l.chars().peekable();
+    let mut a_num = String::new();
+    let mut b_num = String::new();
+    loop {
+        a_num.clear();
+        b_num.clear();
+        // 收集两侧的数字段
+        while let Some(&c) = ai.peek() {
+            if c.is_ascii_digit() {
+                a_num.push(c);
+                ai.next();
+            } else {
+                break;
+            }
+        }
+        while let Some(&c) = bi.peek() {
+            if c.is_ascii_digit() {
+                b_num.push(c);
+                bi.next();
+            } else {
+                break;
+            }
+        }
+        // 双方都有数字段 → 按 u64 值比较
+        if !a_num.is_empty() && !b_num.is_empty() {
+            let av: u64 = a_num.parse().unwrap_or(u64::MAX);
+            let bv: u64 = b_num.parse().unwrap_or(u64::MAX);
+            if av != bv {
+                return av.cmp(&bv);
+            }
+            // 数值相等（如前导零），继续下一段
+        } else {
+            // 至少一侧非数字 → 字典序比较
+            let ac = ai.next();
+            let bc = bi.next();
+            match (ac, bc) {
+                (Some(a), Some(b)) if a == b => continue,
+                (Some(_), None) => return Ordering::Greater,
+                (None, Some(_)) => return Ordering::Less,
+                (None, None) => return Ordering::Equal,
+                (Some(a), Some(b)) => return a.cmp(&b),
+            }
+        }
+    }
+}
+
 /// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
 #[derive(Debug, Clone)]
 pub struct SearchState {
@@ -401,6 +454,8 @@ pub struct FrecencyPane {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
     Name,
+    /// M24-2：自然排序（数字感知，1.txt < 2.txt < 10.txt）。
+    Natural,
     Mtime,
     Size,
     Ext,
@@ -418,6 +473,7 @@ impl SortField {
     pub fn label(self) -> &'static str {
         match self {
             SortField::Name => "名称",
+            SortField::Natural => "自然",
             SortField::Mtime => "修改时间",
             SortField::Size => "大小",
             SortField::Ext => "扩展名",
@@ -748,6 +804,7 @@ impl Tab {
                 for spec in &specs {
                     let base = match spec.field {
                         SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                        SortField::Natural => natural_cmp(&a.name, &b.name),
                         SortField::Mtime => a.mtime.cmp(&b.mtime),
                         SortField::Size => a.size.cmp(&b.size),
                         SortField::Ext => {
@@ -1537,7 +1594,23 @@ pub(crate) fn format_size(size: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
     use std::fs;
+
+    #[test]
+    fn m24_2_natural_sort_digit_aware() {
+        // ACCEPTANCE §23 M24-2：1.txt < 2.txt < 10.txt（数字感知）。
+        assert_eq!(natural_cmp("1.txt", "2.txt"), Ordering::Less);
+        assert_eq!(natural_cmp("2.txt", "10.txt"), Ordering::Less);
+        assert_eq!(natural_cmp("10.txt", "2.txt"), Ordering::Greater);
+        assert_eq!(natural_cmp("1.5.txt", "2.txt"), Ordering::Less, "小数段");
+        assert_eq!(natural_cmp("abc", "abd"), Ordering::Less, "纯字母");
+        assert_eq!(natural_cmp("same", "same"), Ordering::Equal);
+        // 前导零：01 == 1（数值相同，继续下一段）。
+        assert_eq!(natural_cmp("file01.txt", "file1.txt"), Ordering::Equal);
+        // 混合：字母段不同 → 字典序。
+        assert_eq!(natural_cmp("a1", "b1"), Ordering::Less);
+    }
     use std::path::PathBuf;
     use tempfile::TempDir;
 
