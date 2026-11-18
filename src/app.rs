@@ -118,11 +118,13 @@ enum InputMode {
     #[default]
     Normal,
     /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
-    /// 与进入历史前保存的草稿输入（↓ 越过最新条目时恢复）。
+    /// 与进入历史前保存的草稿输入（↓ 越过最新条目时恢复）；M24-7 增 Tab
+    /// 补全状态（None = 无进行中的补全）。
     Command {
         input: String,
         hist_pos: Option<usize>,
         draft: String,
+        comp: Option<CmdComp>,
     },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。`origin` 为进入搜索时
     /// 的光标位置（FIX-1：实时跳转的起点，Esc 时恢复）。
@@ -210,6 +212,15 @@ enum CmdInput {
     Cancel,
 }
 
+/// M24-7：命令行 Tab 补全状态——`head` 为输入中最后一个空白分隔词之前的
+/// 部分，`candidates` 为焦点 pane 条目名的前缀匹配结果，`index` 为循环位置。
+#[derive(Debug, Clone, PartialEq)]
+struct CmdComp {
+    head: String,
+    candidates: Vec<String>,
+    index: usize,
+}
+
 /// 命令行模式按键（M1-5 最小集）。
 fn command_input(input: &mut String, key: KeyEvent) -> CmdInput {
     if key.kind != KeyEventKind::Press {
@@ -259,6 +270,62 @@ fn hist_next(hist: &[String], pos: &mut Option<usize>, input: &mut String, draft
         *pos = Some(i);
         *input = hist[i].clone();
     }
+}
+
+/// 取输入最后一个空白分隔词；返回（词前部分, 词）。字符边界按 char_indices
+/// 处理，多字节安全。
+fn split_last_word(s: &str) -> (String, String) {
+    match s.char_indices().rfind(|&(_, c)| c.is_whitespace()) {
+        Some((i, _)) => (s[..=i].to_owned(), s[i + 1..].to_owned()),
+        None => (String::new(), s.to_owned()),
+    }
+}
+
+/// M24-7：Tab 路径补全——输入最后一个空白分隔词按前缀匹配候选名
+/// （焦点 pane 条目，M21-E1 同源）；输入自上次补全后未改动则循环到下一
+/// 候选（尾→首环绕），否则重建候选列表。返回候选总数（调用方超 10 个
+/// 时显示计数）。无候选时不改输入。
+fn tab_complete(input: &mut String, comp: &mut Option<CmdComp>, names: &[String]) -> usize {
+    let unchanged = matches!(
+        comp.as_ref(),
+        Some(c) if *input == format!("{}{}", c.head, c.candidates[c.index])
+    );
+    if unchanged {
+        let c = comp.as_mut().expect("unchanged 时 comp 必存在");
+        c.index = (c.index + 1) % c.candidates.len();
+    } else {
+        let (head, token) = split_last_word(input);
+        let candidates: Vec<String> = names
+            .iter()
+            .filter(|n| n.starts_with(token.as_str()))
+            .cloned()
+            .collect();
+        if candidates.is_empty() {
+            *comp = None;
+            return 0;
+        }
+        *comp = Some(CmdComp {
+            head,
+            candidates,
+            index: 0,
+        });
+    }
+    let c = comp.as_ref().expect("上方必已赋值");
+    *input = format!("{}{}", c.head, c.candidates[c.index]);
+    c.candidates.len()
+}
+
+/// M24-7：`~` 展开为 HOME（裸 `~` → HOME，`~/…` → HOME/…；其余原样）。
+/// 复用 M19-4 的 expand_tilde（HOME 缺失时原样返回）。
+fn expand_home_arg(arg: &str) -> String {
+    if arg == "~"
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return home;
+    }
+    crate::remote::config::expand_tilde(std::path::Path::new(arg))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// AskPass 模式单键结果（M12-3；独立函数便于单测）。
@@ -1820,9 +1887,10 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M22-1：相对路径相对**当前 tab 目录**解析（原为进程 CWD，
             // M21-E5 CI 实测漂移）；解析后恒为绝对路径。
             let dir_arg = parts.next().ok_or_else(|| "cd: 缺少目录".to_owned())?;
+            // M24-7：`~` 展开为 HOME 后再解析（相对路径仍锚定当前 tab 目录）。
             let target = {
                 let cur = state.active_tab().location.base_dir().to_path_buf();
-                let p = PathBuf::from(dir_arg);
+                let p = PathBuf::from(expand_home_arg(dir_arg));
                 if p.is_absolute() { p } else { cur.join(p) }
             };
             if !target.is_dir() {
@@ -1926,7 +1994,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let dir_arg = parts
                 .next()
                 .ok_or_else(|| "move: 缺少目标目录".to_owned())?;
-            let target = PathBuf::from(dir_arg);
+            // M24-7：目标目录 `~` 展开为 HOME。
+            let target = PathBuf::from(expand_home_arg(dir_arg));
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
@@ -1957,7 +2026,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             let dir_arg = parts
                 .next()
                 .ok_or_else(|| "copy: 缺少目标目录".to_owned())?;
-            let target = PathBuf::from(dir_arg);
+            // M24-7：目标目录 `~` 展开为 HOME。
+            let target = PathBuf::from(expand_home_arg(dir_arg));
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
@@ -2002,7 +2072,8 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                     let dir_arg = parts
                         .next()
                         .ok_or_else(|| format!("tag {action}: 缺少目标目录"))?;
-                    let target = PathBuf::from(dir_arg);
+                    // M24-7：目标目录 `~` 展开为 HOME。
+                    let target = PathBuf::from(expand_home_arg(dir_arg));
                     let base = physical_base(state)?;
                     let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
                     if names.is_empty() {
@@ -4716,28 +4787,45 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     input,
                     hist_pos,
                     draft,
+                    comp,
                 } => {
                     // M24-6：↑/↓ 浏览会话命令历史（内存 Vec，无持久化）；
-                    // 其余按键走原有单键处理。
-                    let hist_step = if key.kind == KeyEventKind::Press {
+                    // M24-7：Tab 补全焦点 pane 条目名（前缀循环，>10 候选
+                    // 显示计数）；其余按键走原有单键处理。
+                    let handled = if key.kind == KeyEventKind::Press {
                         match key.code {
-                            KeyCode::Up => Some(true),
-                            KeyCode::Down => Some(false),
+                            KeyCode::Up => {
+                                hist_prev(&state.cmd_history, hist_pos, input, draft);
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Down => {
+                                hist_next(&state.cmd_history, hist_pos, input, draft);
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Tab => {
+                                let names: Vec<String> = {
+                                    let tab = state.active_tab();
+                                    if tab.focus == crate::tab::Focus::Right {
+                                        &tab.right.entries
+                                    } else {
+                                        &tab.entries
+                                    }
+                                }
+                                .iter()
+                                .map(|i| i.name.clone())
+                                .collect();
+                                let n = tab_complete(input, comp, &names);
+                                if n > 10 {
+                                    msg = Some(format!("补全候选 {n} 个（Tab 循环切换）"));
+                                }
+                                Some(CmdInput::Continue)
+                            }
                             _ => None,
                         }
                     } else {
                         None
                     };
-                    match if let Some(up) = hist_step {
-                        if up {
-                            hist_prev(&state.cmd_history, hist_pos, input, draft);
-                        } else {
-                            hist_next(&state.cmd_history, hist_pos, input, draft);
-                        }
-                        CmdInput::Continue
-                    } else {
-                        command_input(input, key)
-                    } {
+                    match handled.unwrap_or_else(|| command_input(input, key)) {
                         CmdInput::Continue => {}
                         CmdInput::Cancel => mode = InputMode::Normal,
                         CmdInput::Submit => {
@@ -5141,6 +5229,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                                 hist_pos: None,
                                 draft: String::new(),
+                                comp: None,
                             };
                         }
                         Outcome::EnterSearch => {
@@ -5385,6 +5474,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                             input: line,
                                             hist_pos: None,
                                             draft: String::new(),
+                                            comp: None,
                                         };
                                     }
                                 }
@@ -5505,6 +5595,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: line,
                                 hist_pos: None,
                                 draft: String::new(),
+                                comp: None,
                             };
                         }
                     }
@@ -7194,6 +7285,85 @@ mod tests {
         assert!(exec_command_impl(&mut state, "help").is_ok());
         state.record_cmd_history("help");
         assert_eq!(state.cmd_history, vec!["help".to_owned()]);
+    }
+
+    // ── M24-7：路径补全（Tab 前缀循环、~ 展开 HOME） ────────────────────────
+
+    #[test]
+    fn m247_tab_complete_cycles_prefix_matches() {
+        let names: Vec<String> = ["foo", "foobar", "bar"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut input = "cd fo".to_owned();
+        let mut comp = None;
+        // 第一次 Tab：前缀匹配 fo → 2 候选，取第一个。
+        assert_eq!(tab_complete(&mut input, &mut comp, &names), 2);
+        assert_eq!(input, "cd foo");
+        // 输入未改动再 Tab：循环到下一候选。
+        assert_eq!(tab_complete(&mut input, &mut comp, &names), 2);
+        assert_eq!(input, "cd foobar");
+        // 再 Tab：尾→首环绕。
+        assert_eq!(tab_complete(&mut input, &mut comp, &names), 2);
+        assert_eq!(input, "cd foo");
+        // 输入改动后重建：token=foob → 仅 foobar。
+        input.push('b');
+        assert_eq!(tab_complete(&mut input, &mut comp, &names), 1);
+        assert_eq!(input, "cd foobar");
+    }
+
+    #[test]
+    fn m247_tab_complete_no_candidate_and_empty_token() {
+        let names: Vec<String> = ["alpha".to_owned(), "beta".to_owned()].into();
+        let mut input = "cd zz".to_owned();
+        let mut comp = None;
+        // 无候选：不改输入，comp 清空。
+        assert_eq!(tab_complete(&mut input, &mut comp, &names), 0);
+        assert_eq!(input, "cd zz");
+        assert_eq!(comp, None);
+        // 空词（"cd "）→ 全部条目为候选，取列表序第一个。
+        let mut input2 = "cd ".to_owned();
+        let mut comp2 = None;
+        assert_eq!(tab_complete(&mut input2, &mut comp2, &names), 2);
+        assert_eq!(input2, "cd alpha");
+        // 多空白分隔：head 保留全部空白。
+        let mut input3 = "cd   al".to_owned();
+        let mut comp3 = None;
+        assert_eq!(tab_complete(&mut input3, &mut comp3, &names), 1);
+        assert_eq!(input3, "cd   alpha");
+    }
+
+    #[test]
+    fn m247_expand_home_arg() {
+        if let Ok(home) = std::env::var("HOME") {
+            assert_eq!(expand_home_arg("~"), home);
+            assert_eq!(expand_home_arg("~/sub"), format!("{home}/sub"));
+        }
+        assert_eq!(expand_home_arg("/abs/path"), "/abs/path");
+        assert_eq!(expand_home_arg("relative"), "relative");
+        assert_eq!(expand_home_arg("~user"), "~user", "仅裸 ~ 与 ~/ 前缀展开");
+    }
+
+    #[test]
+    fn m247_exec_cd_tilde_expands_to_home() {
+        let Ok(home) = std::env::var("HOME") else {
+            return; // HOME 缺失环境跳过（Windows CI 无 HOME）
+        };
+        let (_tmp, mut state) = make_state(1);
+        assert!(exec_command_impl(&mut state, "cd ~").is_ok());
+        assert_eq!(
+            state.active_tab().location.base_dir(),
+            std::path::Path::new(&home)
+        );
+        // ~/ 子路径同样展开。
+        let sub = std::path::Path::new(&home).join("nonexistent-dir-xyz");
+        // 目标不存在 → Err（只验证展开后的报错路径，不实际导航）。
+        assert!(exec_command_impl(&mut state, "cd ~/nonexistent-dir-xyz").is_err());
+        assert_ne!(
+            state.active_tab().location.base_dir(),
+            sub,
+            "失败导航不改位置"
+        );
     }
 
     #[test]
@@ -9854,6 +10024,7 @@ mod tests {
             input: String::new(),
             hist_pos: None,
             draft: String::new(),
+            comp: None,
         };
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -11664,6 +11835,7 @@ terminal_in_new_window = false
             input: "tabne".to_owned(),
             hist_pos: None,
             draft: String::new(),
+            comp: None,
         };
         terminal
             .draw(|frame| render(frame, &state, &mode, Some("未知命令: x")))
