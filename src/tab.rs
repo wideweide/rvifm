@@ -366,8 +366,25 @@ pub struct Tab {
     pub sort: Option<Vec<SortSpec>>,
     /// M17 VIEW-1：交互式查看器状态（view_mode 激活时右 pane）。
     pub viewer: Option<ViewerState>,
+    /// M23-6：焦点 pane 的 Frecency 内嵌搜索（Pane 模式，非浮层）。
+    pub pane_frecency: Option<FrecencyPane>,
     /// M19-2：进入远端前的本地位置（`h` 在远端根目录时返回此地）。
     pub pre_remote: Option<Location>,
+}
+
+/// M23-6：Frecency Pane 状态（焦点 pane 内嵌搜索，非浮层）。
+#[derive(Debug, Clone)]
+pub struct FrecencyPane {
+    /// 打开时一次性读入的候选项。
+    pub entries: Vec<crate::frecency::ScoredEntry>,
+    /// 搜索词（M23-1 多词分级过滤）。
+    pub query: String,
+    /// 可见结果光标。
+    pub cursor: usize,
+    /// Normal 子态（Esc 一次后）；可打印字符回搜索态。
+    pub normal: bool,
+    /// gg 待决。
+    pub g_pending: bool,
 }
 
 /// M18-1：运行时排序字段。
@@ -434,6 +451,7 @@ impl Tab {
             hist_pos: 0,
             results: None,
             viewer: None,
+            pane_frecency: None,
             sort: None,
             pre_remote: None,
             visual: None,
@@ -1910,6 +1928,7 @@ mod tests {
             hist_pos: 0,
             results: None,
             viewer: None,
+            pane_frecency: None,
             sort: None,
             pre_remote: None,
             visual: None,
@@ -2020,6 +2039,7 @@ mod tests {
             hist_pos: 0,
             results: None,
             viewer: None,
+            pane_frecency: None,
             sort: None,
             pre_remote: None,
             visual: None,

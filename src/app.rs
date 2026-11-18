@@ -80,17 +80,16 @@ enum Outcome {
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool, Option<String>),
-    /// 打开跳转选择器（M8-12：`o` 合一视角；数据已在 handle_key 读好）。
-    OpenJump {
-        kind: JumpKind,
-        entries: Vec<crate::frecency::ScoredEntry>,
-    },
     /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
     BatchRename { base: PathBuf, names: Vec<String> },
     /// 执行用户自定义命令（M23-11：挂起 TUI 运行后恢复）。
     RunUserCommand { cmd: String },
+    /// 打开 Frecency Pane 模式（M23-6：o，数据已在 handle_key 读好）。
+    OpenFrecencyPane {
+        entries: Vec<crate::frecency::ScoredEntry>,
+    },
     /// 打开内联重命名（M21-E4：I/cc/A——光标语义由 input/pos 预填表达）。
     EnterRename {
         path: PathBuf,
@@ -2359,6 +2358,160 @@ const SORT_FIELDS: [(KeyCode, KeyCode, &str, crate::tab::SortField); 4] = [
     ),
 ];
 
+/// M23-6：Frecency Pane 按键处理（可测抽取）。
+/// 搜索态：输入即搜（Char 入 query），方向键移动，Esc 清 query。
+/// Normal 态：j/k/gg/G 移动，l/Enter 跳转，y/n/f/c 复制，e 编辑，w view，
+/// Esc 退出 pane 模式，Tab 切换焦点。
+fn frec_pane_key(
+    state: &mut AppState,
+    input: &mut InputState,
+    msg: &mut Option<String>,
+    key: KeyEvent,
+) -> Outcome {
+    let Some(pane) = state.active_tab_mut().pane_frecency.as_mut() else {
+        return Outcome::Continue;
+    };
+    if key.kind != KeyEventKind::Press {
+        return Outcome::Continue;
+    }
+    let visible_len = filter_jump(&pane.entries, &pane.query).len();
+    let bottom = visible_len.saturating_sub(1);
+    // M23-7（修订）：Normal 态键位与 Normal 一致（作用于光标结果条目）。
+    if pane.normal {
+        match key.code {
+            KeyCode::Esc => {
+                // 退出 pane 模式回目录。
+                state.active_tab_mut().pane_frecency = None;
+                *msg = None;
+                return Outcome::Continue;
+            }
+            KeyCode::Enter | KeyCode::Char('l') => {
+                let visible = filter_jump(&pane.entries, &pane.query);
+                let picked = visible.get(pane.cursor).cloned();
+                state.active_tab_mut().pane_frecency = None;
+                match picked {
+                    Some(entry) => match jump_to(state, &entry) {
+                        Ok(m) => *msg = Some(m),
+                        Err(e) => *msg = Some(e),
+                    },
+                    None => *msg = Some("跳转: 无选定条目".to_owned()),
+                }
+                return Outcome::Continue;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                pane.cursor = (pane.cursor + 1).min(bottom);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                pane.cursor = pane.cursor.saturating_sub(1);
+            }
+            KeyCode::Char('g') => {
+                if pane.g_pending {
+                    pane.cursor = 0;
+                    pane.g_pending = false;
+                } else {
+                    pane.g_pending = true;
+                }
+            }
+            KeyCode::Char('G') => {
+                pane.cursor = bottom;
+                pane.g_pending = false;
+            }
+            KeyCode::Tab => {
+                // Tab 切换焦点 pane（frecency 保持激活）。
+                let tab = state.active_tab_mut();
+                tab.focus = match tab.focus {
+                    crate::tab::Focus::Left => crate::tab::Focus::Right,
+                    crate::tab::Focus::Right => crate::tab::Focus::Left,
+                };
+            }
+            KeyCode::Char('y') => {
+                // y 前缀：y-n 名称 / y-f 路径 / y-c 内容（作用于光标结果）。
+                // 用 seq 暂存等待第二键。
+                input
+                    .seq
+                    .push(crate::keymap::Key::plain(KeyCode::Char('y')));
+                return Outcome::Continue;
+            }
+            KeyCode::Char('e') => {
+                // e：$EDITOR 打开光标结果文件。
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(entry) = visible.get(pane.cursor) {
+                    let path = std::path::PathBuf::from(&entry.path);
+                    if path.is_file() {
+                        state.active_tab_mut().pane_frecency = None;
+                        return Outcome::EditFile { path };
+                    }
+                    *msg = Some("目录不支持编辑".to_owned());
+                }
+            }
+            KeyCode::Char('w') => {
+                // w：对侧进入 View 模式（预览/查看光标条目）。
+                state.active_tab_mut().view_mode = !state.active_tab_mut().view_mode;
+                let tab = state.active_tab_mut();
+                tab.focus = match tab.focus {
+                    crate::tab::Focus::Left => crate::tab::Focus::Right,
+                    crate::tab::Focus::Right => crate::tab::Focus::Left,
+                };
+            }
+            KeyCode::Char(c) => {
+                // 可打印字符回搜索态（携带字符重新筛选）。
+                pane.normal = false;
+                pane.query.clear();
+                pane.query.push(c);
+                pane.cursor = 0;
+                pane.g_pending = false;
+            }
+            _ => {}
+        }
+        return Outcome::Continue;
+    }
+    // 搜索态
+    match key.code {
+        KeyCode::Esc => {
+            // 搜索态 Esc → Normal（清 query）。
+            pane.normal = true;
+            pane.query.clear();
+            pane.cursor = pane.cursor.min(bottom);
+            pane.g_pending = false;
+        }
+        KeyCode::Enter => {
+            let visible = filter_jump(&pane.entries, &pane.query);
+            let picked = visible.get(pane.cursor).cloned();
+            state.active_tab_mut().pane_frecency = None;
+            match picked {
+                Some(entry) => match jump_to(state, &entry) {
+                    Ok(m) => *msg = Some(m),
+                    Err(e) => *msg = Some(e),
+                },
+                None => *msg = Some("跳转: 无选定条目".to_owned()),
+            }
+        }
+        KeyCode::Backspace => {
+            pane.query.pop();
+            pane.cursor = 0;
+        }
+        KeyCode::Down => {
+            pane.cursor = (pane.cursor + 1).min(bottom);
+        }
+        KeyCode::Up => {
+            pane.cursor = pane.cursor.saturating_sub(1);
+        }
+        KeyCode::Tab => {
+            let tab = state.active_tab_mut();
+            tab.focus = match tab.focus {
+                crate::tab::Focus::Left => crate::tab::Focus::Right,
+                crate::tab::Focus::Right => crate::tab::Focus::Left,
+            };
+        }
+        KeyCode::Char(c) => {
+            pane.query.push(c);
+            pane.cursor = 0;
+        }
+        _ => {}
+    }
+    Outcome::Continue
+}
+
 fn handle_key(
     state: &mut AppState,
     input: &mut InputState,
@@ -2366,6 +2519,10 @@ fn handle_key(
     key: KeyEvent,
     viewport_h: u16,
 ) -> Outcome {
+    // M23-6：Frecency Pane 模式——全部键路由到 pane 键处理。
+    if state.active_tab().pane_frecency.is_some() {
+        return frec_pane_key(state, input, msg, key);
+    }
     if key.kind != KeyEventKind::Press {
         return Outcome::Continue; // Release 先过滤，避免误消费待决序列。
     }
@@ -3090,14 +3247,11 @@ fn handle_key(
             return Outcome::EnterCommand;
         }
         KeyCode::Char('o') => {
-            // M8-12：合一跳转选择器（合一表 + 全局统一时钟视角，纯只读）。
+            // M23-6：Frecency Pane 模式——焦点 pane 进入内嵌搜索（非浮层）。
             input.count = None;
             match load_jump_entries(state, JumpKind::Unified) {
                 Ok(entries) => {
-                    return Outcome::OpenJump {
-                        kind: JumpKind::Unified,
-                        entries,
-                    };
+                    return Outcome::OpenFrecencyPane { entries };
                 }
                 Err(e) => *msg = Some(e),
             }
@@ -4889,15 +5043,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Err(e) => Some(format!("命令执行失败: {e}")),
                             };
                         }
-                        Outcome::OpenJump { kind, entries } => {
-                            mode = InputMode::JumpSelect {
-                                input: String::new(),
-                                cursor: 0,
+                        Outcome::OpenFrecencyPane { entries } => {
+                            // M23-6：o → 焦点 pane 进入 Frecency 内嵌搜索。
+                            let tab = state.active_tab_mut();
+                            tab.pane_frecency = Some(crate::tab::FrecencyPane {
                                 entries,
-                                kind,
+                                query: String::new(),
+                                cursor: 0,
                                 normal: false,
                                 g_pending: false,
-                            };
+                            });
                         }
                         Outcome::EditFile { path } => {
                             // M23-10：e——挂起 TUI，$EDITOR 打开文件，恢复后反馈。
@@ -5323,10 +5478,126 @@ fn jump_key(
     }
 }
 
+/// M23-6：Frecency Pane 渲染——焦点 pane 显示搜索+结果，对侧显示光标
+/// 条目的快速预览（PreviewRenderer，文本 100 行截断 + 标记）。
+fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
+    let tab = state.active_tab();
+    let pane = match &tab.pane_frecency {
+        Some(p) => p,
+        None => return,
+    };
+    let [tab_bar_area, left_area, right_area, status_area] = pane_layout(frame.area());
+    // 标签栏照常渲染。
+    let tab_spans: Vec<Span> = state
+        .tabs
+        .iter()
+        .enumerate()
+        .map(|(idx, t)| {
+            let dir = t
+                .location
+                .base_dir()
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| t.location.display_path());
+            let label = format!("{}:{} ", idx + 1, dir);
+            if idx == state.active {
+                Span::styled(
+                    label,
+                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                )
+            } else {
+                Span::from(label)
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
+
+    let focused_is_left = tab.focus == crate::tab::Focus::Left;
+    let frec_area = if focused_is_left {
+        left_area
+    } else {
+        right_area
+    };
+    let other_area = if focused_is_left {
+        right_area
+    } else {
+        left_area
+    };
+
+    // 焦点 pane：Frecency 搜索 UI。
+    let visible = filter_jump(&pane.entries, &pane.query);
+    let mode_mark = if pane.normal {
+        " · Normal"
+    } else {
+        " · /搜索"
+    };
+    let title = format!("Frecency{mode_mark}（{} 项）", visible.len());
+    let frec_block = ratatui::widgets::Block::bordered()
+        .title(title)
+        .border_style(pane_border_style(true));
+    let inner = frec_block.inner(frec_area);
+    frame.render_widget(frec_block, frec_area);
+    let frec_items: Vec<ListItem> = visible
+        .iter()
+        .enumerate()
+        .map(|(idx, e)| {
+            let topic = if e.topic == "dir" {
+                "[目录]"
+            } else {
+                "[文件]"
+            };
+            let bm = if e.keyword.is_empty() {
+                String::new()
+            } else {
+                format!(" ✦{}", e.keyword)
+            };
+            ListItem::new(Line::from(format!("{topic}{bm} {}", e.path))).style(
+                if idx == pane.cursor {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new()
+                },
+            )
+        })
+        .collect();
+    let mut list_state = ListState::default().with_selected(Some(pane.cursor));
+    frame.render_stateful_widget(
+        ratatui::widgets::List::new(frec_items)
+            .highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        inner,
+        &mut list_state,
+    );
+
+    // 对侧：光标条目的快速预览（PreviewRenderer，100 行截断）。
+    let other_block = ratatui::widgets::Block::bordered()
+        .title("预览")
+        .border_style(pane_border_style(false));
+    let other_inner = other_block.inner(other_area);
+    frame.render_widget(other_block, other_area);
+    if let Some(entry) = visible.get(pane.cursor) {
+        let path = std::path::PathBuf::from(&entry.path);
+        let preview = crate::preview::render_preview(&path, 100);
+        frame.render_widget(preview.into_paragraph(), other_inner);
+    }
+    frame.render_widget(
+        Paragraph::new(if pane.normal {
+            "j/k/gg/G=移动 l/Enter=跳转 y=复制 e=编辑 w=view Esc=关闭"
+        } else {
+            "输入=筛选 方向键=移动 Enter=跳转 Esc=Normal"
+        }),
+        status_area,
+    );
+}
+
 fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
     // M14-2：标签栏（1 行）——每个 tab 的索引与目录名，当前 tab 高亮。
     let [tab_bar_area, left_area, right_area, status_area] = pane_layout(frame.area());
+    // M23-6：Frecency Pane 模式——焦点 pane 显示搜索 UI，对侧显示快速预览。
+    if state.active_tab().pane_frecency.is_some() {
+        render_frecency_panes(frame, state);
+        return;
+    }
     let tab_spans: Vec<Span> = state
         .tabs
         .iter()
@@ -6269,6 +6540,7 @@ mod tests {
             hist_pos: 0,
             results: None,
             viewer: None,
+            pane_frecency: None,
             sort: None,
             pre_remote: None,
             visual: None,
