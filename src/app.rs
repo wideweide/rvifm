@@ -2654,7 +2654,16 @@ fn handle_key(
         _viewport_h: u16,
     ) -> Option<Outcome> {
         match action {
-            Some(Action::ToTop) => state.active_tab_mut().cursor_top(),
+            Some(Action::ToTop) => {
+                // M24-5：Ngg → 光标定位到第 N 行（1-based）。
+                if let Some(n) = count {
+                    let tab = state.active_tab_mut();
+                    tab.cursor = (n - 1).min(tab.entries.len().saturating_sub(1));
+                    tab.scroll = tab.cursor;
+                } else {
+                    state.active_tab_mut().cursor_top();
+                }
+            }
             Some(Action::NextTab) => match count {
                 Some(n) => state.goto_tab(n),
                 None => state.next_tab(),
@@ -3249,23 +3258,33 @@ fn handle_key(
             undo_last(state, msg);
         }
         KeyCode::Char('j') => {
-            // M13-4：j/k 环绕（尾→首 / 首→尾）。
+            // M13-4/M24-5：j/k 环绕 + 计数前缀 N 消耗。
+            let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
-            state.active_tab_mut().move_cursor_wrap(1);
+            for _ in 0..n {
+                state.active_tab_mut().move_cursor_wrap(1);
+            }
         }
         KeyCode::Char('k') => {
+            let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
-            state.active_tab_mut().move_cursor_wrap(-1);
+            for _ in 0..n {
+                state.active_tab_mut().move_cursor_wrap(-1);
+            }
         }
         KeyCode::Char('l') | KeyCode::Enter => {
             input.count = None;
             open_selected(state, msg);
         }
         KeyCode::Char('h') => {
+            let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
-            let cfg = state.config.clone();
-            if let Err(e) = state.active_tab_mut().return_parent(cfg) {
-                *msg = Some(format!("返回失败: {e}"));
+            for _ in 0..n {
+                let cfg = state.config.clone();
+                if let Err(e) = state.active_tab_mut().return_parent(cfg) {
+                    *msg = Some(format!("返回失败: {e}"));
+                    break;
+                }
             }
         }
         KeyCode::Char('/') => {
@@ -6957,7 +6976,7 @@ mod tests {
 
     #[test]
     fn count_is_dropped_by_unrelated_keys() {
-        let (_tmp, mut state) = make_state(3);
+        let (_tmp, mut state) = make_state(10);
         let layers = config::keymap_layers();
         let keymap =
             crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
@@ -6976,7 +6995,7 @@ mod tests {
             KeyModifiers::NONE,
         );
         assert_eq!(input.count, None); // 计数被动作键丢弃
-        assert_eq!(state.active_tab().cursor, 1); // j 只移动 1 行
+        assert_eq!(state.active_tab().cursor, 3); // M24-5：3j 移动 3 行
     }
 
     #[test]
