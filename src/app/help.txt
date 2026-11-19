@@ -15,6 +15,8 @@ rvifm 帮助（vim 风格文件管理器）
   n / N           下一个/上一个匹配
   ={glob}         过滤（如 =*.txt；Esc 清除）
   f / F {字符}    按文件名首字符快速定位（; 同向重复，, 反向）
+  :find {模式}    递归文件名查找（结果为虚拟目录，全路径显示；上限 1 万）
+  :grep {模式}    内容搜索（regex；条目 = 路径:行号: 内容；上限 1 万）
   o               跳转选择器（frecency 合一视角）
   :j / :J         仅目录 / 仅文件的跳转选择器
   :recent         近期视角（全部条目按最后访问时间倒序，含会话内跳转）
@@ -23,6 +25,7 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 选择、标记与批量 ==
   v               可视选择（j/k 扩选，Esc 退出）
+  V               行可视模式（与 v 互斥；d/y/x 对选中区域执行）
   t               标记/取消标记当前条目（tag）
   :select {glob}  按 pattern 批量标记（无参=当前条目）
   :unselect       同上取消（无参=清空全部）
@@ -30,6 +33,8 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 文件操作 ==
   yy              复制到 yank 缓冲区（可视选择/标记优先，count 前缀支持 Nyy）
+  y / yn / yf / yc
+                  复制序列（y=条目名, yn=名称, yf=全路径, yc=内容；OSC52 优先）
   p / P           粘贴：p=复制到当前目录，P=移动到当前目录
   dd              删除（应用内暂存，u 可恢复）
   DD              永久删除（不可恢复，强提示）
@@ -42,6 +47,8 @@ rvifm 帮助（vim 风格文件管理器）
   :cd <目录>
   :file           显示当前条目详情（路径/大小/权限/修改时间/类型）
   :keyword <chars>  设置当前目录书签 keyword（`-` 清除；' 直达的锚点）
+  s               进入 shell（$SHELL；退出返回，光标与滚动不变）
+  :!<cmd>         外部命令（$TMUX/$STY 下新窗口执行；[ui] terminal_in_new_window 可配）
 
 == 多标签 ==
   :tabnew / :tabclose
@@ -51,6 +58,8 @@ rvifm 帮助（vim 风格文件管理器）
 == 视图 ==
   Tab             切换左右 pane 焦点（双栏均可导航）
   w               右 pane 在目录列表与预览间切换
+  S               排序对话框（字母直接应用 / 空格切换方向 / 回车确认）
+  :sort 字段,...  多字段排序（name/natural/mtime/size/ext，逗号分隔 + asc/desc）
   :tree           树视图（只读，depth 可选；再执行恢复平铺）
   :archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]
                   归档创建（tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
@@ -59,6 +68,11 @@ rvifm 帮助（vim 风格文件管理器）
   Ctrl-G          文件详情对话框
   :jobs           后台作业列表（j/k 选择、x 取消、Esc 关闭）
   :trash          暂存区菜单（恢复误删文件）
+  :theme [名]     切换主题（opaline 内置名或用户 TOML；无参列出可用）
+
+== 远端（SFTP） ==
+  :remote <名>    进入远端（~/.ssh/config 别名 + remotes.toml 覆盖）
+  :remote         列出全部远端；远端内 dd/yy/p/P/:mkdir/:find/:grep 同本地
 
 == 鼠标 ==
   左键单击        聚焦条目（已聚焦再击 = 打开；双击 = 直接打开）
@@ -71,7 +85,7 @@ rvifm 帮助（vim 风格文件管理器）
   :histnext       目录历史前进
   :history        目录历史菜单（j/k 移动，Enter/l 导航，dd 移除）
 
-  推荐键位映射（keymap.toml，注意 Ctrl-I 与 Tab 同键码、
+  推荐键位映射（config.toml 的 [normal] 段，注意 Ctrl-I 与 Tab 同键码、
   rvifm 已把 Tab 用于 pane 焦点切换，故不设默认键）：
     [normal]
     prepend_keymap = [
@@ -87,5 +101,5 @@ rvifm 帮助（vim 风格文件管理器）
   Tab（命令行内） 补全当前词为条目名（前缀匹配循环；~ 展开 HOME）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 
-提示：用户配置见 README（TOML：keymap/opener/主题分层）。
+提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap]）。
 本帮助页按 q 或 Esc 返回列表，光标与滚动位置保持不变。

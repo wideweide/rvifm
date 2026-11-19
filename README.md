@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.8.0 已发布；M0–M24 名义关闭（M9/M11 部分能力待 AUDIT 整改），M25 主体完成（M25-2 marks 待实现），AUDIT 执行中，M26 归档创建扩展已确认启动。** 已具备核心浏览/撤销/批量、归档浏览与创建（zip/tar/tar.gz + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、键位 TOML 分层、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。**尚未接通**：marks（M25-2）、主题选择（AUDIT-13）、opener 的 TOML 分层（AUDIT-7）、PDF 视觉预览（AUDIT-2）、`pick` 预览与 `--topic`（AUDIT-3/15）。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.8.0 已发布；M0–M24 名义关闭，M25 主体完成（M25-2 marks 待实现），AUDIT 整改执行中（已完成 15/17），M26 归档创建扩展已确认启动。** 已具备核心浏览/撤销/批量、归档浏览与创建（zip/tar/tar.gz + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 第 1 页视觉链、`pick` 预览与 `--topic`。**尚未实现**：marks（M25-2，规划中）。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -39,9 +39,9 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 |---|---|---|
 | **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.tar` / `.tar.gz` 直接当目录浏览，**无内核模块、无外部工具** |
 | **图标** | 装 Nerd Font + 装插件 + 改 `vifmrc` | 编译期集成 `devicons`，一行调用返回图标与颜色；**只需装字体** |
-| **主题** | 手动配置颜色方案 | 集成 `opaline`，内置 20 套主题、TOML 定义；**主题选择/运行时切换待 AUDIT-13 接通** |
+| **主题** | 手动配置颜色方案 | 集成 `opaline`，内置 20 套主题、TOML 定义；`[ui] theme` 配置与 `:theme` 运行时切换已接线 |
 | **图片预览** | 调用外部 GUI 看图工具 | `ratatui-image` 统一协议适配，**原生协议 → halfblocks 无条件回退**，任何终端都有图可看 |
-| **文件打开** | 逐条写 `filetype` / `filextype` | 默认走系统 opener（`gio open` / `xdg-open` / `open` / `start`），**零配置可用**；TOML 分层定制待 AUDIT-7 接通 |
+| **文件打开** | 逐条写 `filetype` / `filextype` | 默认走系统 opener（`gio open` / `xdg-open` / `open` / `start`），**零配置可用**；TOML 分层定制（`[opener]`+`[open]`，mime/name 规则）已接线 |
 | **模糊跳转** | 依赖 fzf 薄插件 + SQLite | 原生 `pick` / `record` 子命令，redb 存储，**无 fzf、无 SQLite**，可作为独立程序供 bash/fish 使用 |
 | **文档预览** | 无内建能力 | Office 纯 Rust 内建预览；PDF 探测式回退 |
 | **键位定制** | vimrc 风格脚本 | 动作驱动 + TOML 分层（`prepend` / `append` / `replace`），与文件打开定制**同构** |
@@ -51,11 +51,11 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 **归档即目录，不依赖 FUSE。** vifm 的归档浏览需要系统安装 FUSE 或 archivemount，这在许多受限环境（容器、Windows、无 root 的机器）里直接不可用。`rvifm` 在导航层引入 `Location` 抽象，把物理目录和归档内路径统一成同一种可浏览对象。`.zip` / `.tar` / `.tar.gz` 首批支持，`.tar.xz` / `.tar.bz2` / `.tar.zst` 随后；`.7z` / `.rar` 明确标记为不支持虚拟浏览并给出提示。归档内**只读**，不污染撤销栈。
 
-**图标与主题内建，不靠插件。** `devicons` 直接返回 glyph 和关联颜色，内置 Dark/Light 两套图标配色；`opaline` 提供 TOML 驱动的主题引擎和 20 套内置主题（选择与运行时切换待 AUDIT-13 接通）。文件列表、预览窗格、归档浏览共享同一套视觉语义。用户仍然需要 Nerd Font，但**插件安装、配置片段、运行时外部进程全部消失**。
+**图标与主题内建，不靠插件。** `devicons` 直接返回 glyph 和关联颜色，内置 Dark/Light 两套图标配色；`opaline` 提供 TOML 驱动的主题引擎和 20 套内置主题（`[ui] theme` 配置与 `:theme` 运行时切换已接线）。文件列表、预览窗格、归档浏览共享同一套视觉语义。用户仍然需要 Nerd Font，但**插件安装、配置片段、运行时外部进程全部消失**。
 
 **图片预览：协议优先，halfblocks 兜底。** 这是与 yazi 最关键的差异。yazi 在支持原生图形协议的终端上体验很好，但在 Alacritty 这类不实现终端图形协议的终端上，需要用户额外安装 Überzug++ 或 Chafa。`rvifm` 用 `ratatui-image` 在启动时探测最佳协议，并建立三级回退：**原生协议（Kitty / iTerm2 / Sixel）→ Unicode halfblocks（无条件可用）→ 可选外部字符画工具**。第二级是内置的，意味着**任何能显示 Unicode 和颜色的终端都能看到图片预览**，不需要任何额外安装。
 
-**文件打开：零配置默认，分层定制（待接通）。** 普通用户不写任何配置，按 Enter 就用系统关联程序打开文件；目录在 `rvifm` 内部进入。`prepend_rules`（覆盖默认）、`append_rules`（补充规则）、`rules`（完全替换）的设计目标与键位系统**结构完全一致**；**当前版本仅系统 opener 生效，TOML 规则层尚未接线（AUDIT-7）**。
+**文件打开：零配置默认，分层定制。** 普通用户不写任何配置，按 Enter 就用系统关联程序打开文件；目录在 `rvifm` 内部进入。规则支持 `mime`（内置常见扩展名映射 + 通配）与 `name`（glob）匹配，按序取第一个命中；`prepend_rules`（覆盖默认）、`append_rules`（补充规则）、`rules`（完全替换默认规则表）的设计与键位系统**结构完全一致**；**TOML 规则层已接线（AUDIT-7）：规则命中执行 `use` 名单（`block=true` 挂起 TUI 执行），未命中回退系统 opener**。
 
 **原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持手动执行，惰性触发待 AUDIT-4。**`pick` 的设计契约是纯只读选择器**，选中后不写任何事件；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。当前 `events.pending` 合并路径仍会在 `pick` 中写库（AUDIT-1 修复中），`--topic` 参数也尚未实现（AUDIT-15）。
 
@@ -147,12 +147,12 @@ Linux 与 Windows 为优先目标，macOS 尽力支持。Rust 对 `x86_64-pc-win
 ### 运行时依赖说明
 
 - **Nerd Font**：显示文件图标所需，由终端提供。
-- **PDF 预览**：文本提取内建（`pdf-inspector =1.25.2`，零配置、无外部依赖）；视觉预览可选 exprim（`pdf-visual` feature）或 Poppler/MuPDF；均不可用时回退系统 opener。默认构建的依赖树不包含 `exprim`。
+- **PDF 预览**：文本提取内建（`pdf-inspector =1.25.2`，零配置、无外部依赖）；文本层不足时按链回退视觉渲染（`pdf-visual` feature 的 exprim → Poppler/MuPDF → 可读提示），第 1 页图像预览在查看器中已接线；均不可用时回退系统 opener。默认构建的依赖树不包含 `exprim`。
 - **其余能力**（归档浏览、图片 halfblocks 回退、Office 预览、frecency）**无外部依赖**。
 
 ## 配置哲学
 
-`rvifm` 的定制模型统一为三层（键位已落地；opener 的设计同构但截至当前版本尚未接线）：
+`rvifm` 的定制模型统一为三层，**全部在同一个 `config.toml` 中落地**（键位 / opener / 主题）：
 
 ```toml
 # ~/.config/rvifm/config.toml
@@ -164,14 +164,15 @@ append_keymap = [
     { on = ["g", "t"], run = "next_tab" }, # 补充
 ]
 
-# opener 分层的目标形态（当前版本尚未接线，见 AUDIT-7；仍按系统 opener 打开）
-# ~/.config/rvifm/opener.toml
+# opener 分层（已接线；规则命中执行 use 名单，未命中回退系统 opener）
 [opener]
+preview_image = { run = "imv %s" }
 edit_text = { run = "nvim %s", block = true }
 
 [open]
 prepend_rules = [
     { mime = "image/*", use = ["preview_image"] },
+    { mime = "text/*", use = ["edit_text", "open"] },
 ]
 append_rules = [
     { name = "*.md", use = ["edit_text"] },
@@ -195,9 +196,9 @@ append_rules = [
 | M6 | 打磨与 v0.1.0 发布 | 已完成 |
 | M7 | 归档浏览（只读 VFS） | 已完成 |
 | M8 | 原生 frecency 选择器 | 已完成 |
-| M9 | 图标与主题 | 引擎完成；主题选择/用户主题接线待 AUDIT-13 |
-| M10 | 声明式键位系统 | 已完成（仅 `[normal]` 模式可配） |
-| M11 | 预览与文件打开 | 部分完成；opener 分层、PDF 视觉、pick 预览待 AUDIT-2/3/7 |
+| M9 | 图标与主题 | 完成（主题接线随 AUDIT-13 整改落地） |
+| M10 | 声明式键位系统 | 已完成（`[normal]` 分层 + `[keymap] seq_timeout_ms`） |
+| M11 | 预览与文件打开 | 完成（opener 分层 / PDF 视觉 / pick 预览随 AUDIT-2/3/7 整改落地） |
 | M12 | 权限不足内联提权（sudo -A） | 已完成 |
 | M13 | vifm 对齐增强（DD/tree/cw/:jobs/view 等） | 已完成 |
 | M14 | 双栏模型与标签栏 | 已完成 |
@@ -210,8 +211,8 @@ append_rules = [
 | M24 | 交互增强与列表规范 | 已完成 |
 | M25 | 会话持久化、归档创建与 git 集成 | 主体完成；M25-2 marks 待实现 |
 | M26 | 归档创建扩展与外部工具降级 | 已确认启动 |
-| M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 首页图像） | 已登记，暂不启动 |
-| AUDIT | 评估报告整改批次（17 项，见 docs/REVIEW.md） | 已确认，执行中（优先于 M26） |
+| M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 首页图像） | 已确认，按序排队 |
+| AUDIT | 评估报告整改批次（17 项 + AUDIT-18，见 docs/REVIEW.md） | 已确认，执行中（已完成 15/18，优先于 M26） |
 
 **优先保证 M0–M2 闭环**，尤其是 `u` 撤销的可逆语义。M0–M6 构成 v0.1.0 核心版本；M7–M11 是在核心可用之后逐步叠加的增强，不阻塞 v0.1.0 发布。
 

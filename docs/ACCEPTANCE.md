@@ -775,7 +775,7 @@
 ### AUDIT-10 重复实现统一
 - [x] glob 匹配与配置失败回退各只保留一份实现，行为测试通过（含 `*x*` 双星模式）。（2026-11-20：opener 规则名匹配改走 `tab::glob_match`（M4-2/M23-4 同源单一实现，递归语义天然支持双星），`*ma*`/`*ai*n*`/`?` 行为测试）
 ### AUDIT-11 帮助同步
-- [ ] `help.txt` 含 `:find` / `:grep` 等已实现命令；README 的 keymap 路径、marks/主题/opener 状态与实现一致。
+- [x] `help.txt` 含 `:find` / `:grep` 等已实现命令；README 的 keymap 路径、marks/主题/opener 状态与实现一致。（2026-11-20：help 补 `:find`/`:grep`/`:theme`/`:sort`/`S`/`:remote`/`s`/`:!`/`V`/`y` 序列/计数前缀，keymap.toml→config.toml [normal] 修正；README 状态句/对比表/三层示例（opener 归入 config.toml）/里程碑表同步，唯一保留的待实现项 = M25-2 marks）
 ### AUDIT-12 测试补强
 - [ ] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。
 

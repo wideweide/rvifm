@@ -315,7 +315,7 @@
 - [x] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8；2026-11-20 完成：生产 unwrap/expect/unreachable 清零，fs-change 自动刷新失败上浮状态栏）
 - [x] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9；2026-11-20 完成：ci.yml 双步增补，cross-check 仅 ubuntu job——host triple 即该 target）
 - [x] AUDIT-10 统一 glob 匹配（含 opener `*x*` 缺陷）与配置失败回退实现（见 SPEC AUDIT-10；2026-11-20 完成：删除 opener 私有 glob_match_simple，统一 tab::glob_match，`*x*` 双星测试）
-- [ ] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11）
+- [x] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11；2026-11-20 完成：help 补 :find/:grep/:theme/:sort/S/:remote/:!/:V/y 序列 + keymap.toml→config.toml 修正；README 12 处状态/示例同步）
 - [ ] AUDIT-12 keymap/state/session/CLI 子命令分派测试补强（见 SPEC AUDIT-12）
 - [x] AUDIT-13 主题选择接线（内置/用户 TOML/`:theme`/明暗与图标对齐；见 SPEC AUDIT-13；2026-11-20 完成：`[ui] theme` 启动激活 + `:theme` 运行时切换；ACTIVE 升级 RwLock 修复二次切换静默失效）
 - [x] AUDIT-14 测试环境隔离（`TMUX`/`STY` 依赖修复；见 SPEC AUDIT-14；2026-11-20 完成：`run_external_target_with` 注入路由 + 复用器输出静音）
