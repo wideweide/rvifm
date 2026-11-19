@@ -725,3 +725,12 @@ rvifm record  → 静默记录访问
 - **`--topic dir|file`（与 record 对称）**：原实现把所有候选硬编码为 dir topic（`score_of(path, "dir")`）——文件候选永远拿 dir 分数或 0。重构为 `parse_pick_args`（--topic + 位置查询，缺省 dir）+ `pick_score_candidates`（纯函数，按传入 topic 查分，无对应条目 0 分、不跨 topic 兜底）+ `pick_ranked_entries_at`（只读加载，库缺失 → 空表全 0 分——AUDIT-1 的 `open_store_readonly` 降级在此落成 CLI 契约）。
 - **测试分层**：单测覆盖解析/评分纯函数与缺失库降级；CLI 集成测试（tests/cli.rs）以 `LOCALAPPDATA`/`XDG_DATA_HOME` 子进程重定向数据目录，`record` 播种 dir+file 事件后断言双视角排序——宿主真实数据零接触。SPEC §4.6 示例（`rvifm pick --topic dir < <(fd -t d)`）自此真实可用。
 - **"与 AUDIT-3 的预览承诺统一"**：本任务只动评分与 CLI 契约，pick 预览留与 AUDIT-3 决定，无交叉改动。
+
+### 2026-11-20 — AUDIT-7 实现：opener 整层接线（WHY）
+
+- **Schema 按 SPEC §4.9（yazi 风格）**：`[opener]` 命名定义（run 模板含 `%s` 占位、block、desc）+ `[open]` 规则（mime/name/use）。`use` 名单按序执行：`open` = 系统 opener 内建名，未知名跳过，名单空/全未知回退系统层；`block=true` 经 `state.pending_external` 交 run 循环挂起 TUI 执行（与 `:!` 共用新提取的 `suspend_execute`），`block=false` fire-and-forget（IO 静默，不等待退出）。
+- **mime 内建表（SIMPLIFIED）**：不引 mime_guess 等新依赖（M23-4/M23-5 先例——无明确需要不加 crate）；内置 ext→mime 映射覆盖常见类别（text/image/audio/video/pdf/archive），未知 → `application/octet-stream`；`image/*` 前缀通配、精确值大小写不敏感。长尾类型规则作者用 `name` glob 命中。
+- **规则匹配语义**：链序 prepend →（rules 覆盖默认规则表——默认为空，故 rules 单独生效）→ append，首个命中生效；单规则内 mime 先判、name 回退。
+- **接线范围**：`app::open_selected`（l/Enter/鼠标/右键菜单共用）物理文件路径接入；M22-6 远端临时副本打开仍走 system_open（远端文件的规则匹配属后续增强，不在本任务）。
+- **shell_quote 迁移**：M18-4 的 app 内部实现迁至 `opener::shell_quote`（pub(crate)），tmux 窗口命令与 `%s` 展开共用同一 POSIX 转义，消除重复（AUDIT-10 的 glob 去重另有其任务，`*x*` 缺陷未动）。
+- **frecency 记录边界**：block=true 转交时退出码未知，不记 file_open 访问（避免记入未发生的访问——`pick` 只读红线的同源语义）。

@@ -554,10 +554,9 @@ fn tmux_window_args(cmd: &str) -> Vec<String> {
     ]
 }
 
-/// M18-4：极简 POSIX 单引号转义（tmux 窗口命令用）。
-fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
+// AUDIT-7：shell_quote 迁往 opener::shell_quote（tmux 窗口命令与 opener
+// `%s` 展开共用同一 POSIX 转义），此处 use 引入保持原调用点不变。
+use crate::opener::shell_quote;
 
 /// M18-4：外部命令执行目标判定——`[ui] terminal_in_new_window=true` 且
 /// 检测到 $TMUX/$STY 时走复用器新窗口（fire-and-forget），否则当前 pane
@@ -649,6 +648,21 @@ fn run_external_current_result(
         )),
         Err(e) => Some(format!("命令执行失败: {e}")),
     }
+}
+
+/// AUDIT-7：挂起 TUI 执行外部命令并恢复（`:!` 当前 pane 与 block=true
+/// opener 共用）。`ratatui::init()` 重建终端（旧终端随 restore 弃用），
+/// 返回新终端与新状态栏消息。
+fn suspend_execute(cmd: &str) -> (ratatui::DefaultTerminal, Option<String>) {
+    ratatui::restore();
+    #[cfg(unix)]
+    let result = std::process::Command::new("sh").arg("-c").arg(cmd).status();
+    #[cfg(windows)]
+    let result = std::process::Command::new("cmd").args(["/C", cmd]).status();
+    let terminal = ratatui::init();
+    // FEAT-1：init 不含鼠标捕获，重新启用。
+    let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
+    (terminal, run_external_current_result(result))
 }
 
 /// M18-1：排序对话框按键结果。
@@ -3872,8 +3886,16 @@ fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
             return;
         }
         let path = tab.location.base_dir().join(&name);
-        match crate::opener::system_open(&path) {
-            Ok(()) => {
+        // AUDIT-7：opener 规则整层接线——规则命中按 `use` 名单执行
+        // （block=true 交 run 循环挂起），未命中/系统项回退系统 opener。
+        match crate::opener::open_with_layers(&state.config.open, &state.config.opener, &path) {
+            Ok(Some(cmd)) => {
+                // block=true：命令交由 run 循环挂起执行；frecency 记录在此
+                // 不做（退出码未知，避免记入未发生的访问）。
+                state.pending_external = Some(cmd);
+                *msg = None;
+            }
+            Ok(None) => {
                 // M21-E8：打开成功记录文件访问（o/:J 可见）。
                 let tab_id = state.active;
                 record_file_open(state, tab_id, &path);
@@ -5202,6 +5224,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
         let viewport_h = terminal.size()?.height.saturating_sub(1);
+        // AUDIT-7：block=true opener 的挂起执行（open_selected 经
+        // state.pending_external 转交；与 :! 同款 TUI 挂起/恢复语义）。
+        if let Some(cmd) = state.pending_external.take() {
+            (terminal, msg) = suspend_execute(&cmd);
+        }
         // M13-8：收割后台作业更新（撤销栈入栈 + 状态刷新 + 提示）。
         while let Ok(update) = job_rx.try_recv() {
             let id = update.job_id;
@@ -5429,24 +5456,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     };
                                 }
                                 Ok(ExecOutcome::RunExternal { cmd }) => {
-                                    // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复。
-                                    ratatui::restore();
-                                    #[cfg(unix)]
-                                    let result = std::process::Command::new("sh")
-                                        .arg("-c")
-                                        .arg(&cmd)
-                                        .status();
-                                    #[cfg(windows)]
-                                    let result = std::process::Command::new("cmd")
-                                        .args(["/C", &cmd])
-                                        .status();
-                                    terminal = ratatui::init();
-                                    // FEAT-1：init 不含鼠标捕获，重新启用。
-                                    let _ = ratatui::crossterm::execute!(
-                                        std::io::stdout(),
-                                        event::EnableMouseCapture
-                                    );
-                                    msg = run_external_current_result(result);
+                                    // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复
+                                    // （AUDIT-7 起与 block=true opener 共用 suspend_execute）。
+                                    (terminal, msg) = suspend_execute(&cmd);
                                 }
                                 Err(m) => msg = Some(m),
                             }
@@ -11595,6 +11607,54 @@ mod tests {
         assert_eq!(
             exec_command_impl(&mut state2, "file"),
             Err("file: 无选中条目".to_owned())
+        );
+    }
+
+    #[test]
+    fn audit7_block_opener_hands_off_to_pending_external() {
+        // AUDIT-7：规则命中 block=true opener → 命令交 run 循环挂起执行
+        // （state.pending_external），不在此处 spawn；目录条目照常内部进入
+        // （不经 opener，pending 不受影响）。测试不触真实系统 opener。
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("notes.md"), "M").unwrap();
+        fs::write(tmp.path().join("other.txt"), "T").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.config.opener.insert(
+            "edit".to_owned(),
+            crate::opener::OpenerDef {
+                run: "nvim %s".to_owned(),
+                block: true,
+                desc: None,
+            },
+        );
+        state.config.open.prepend_rules = vec![crate::opener::OpenRule {
+            mime: None,
+            name: Some("*.md".to_owned()),
+            use_rules: vec!["edit".to_owned()],
+        }];
+        // 目录优先排序：sub(0)、notes.md(1)、other.txt(2)。cursor=1 → .md。
+        state.active_tab_mut().cursor = 1;
+        let mut msg = None;
+        open_selected(&mut state, &mut msg);
+        let cmd = state.pending_external.take().expect("block 命令应转交");
+        assert!(
+            cmd.starts_with("nvim ") && cmd.contains("notes.md"),
+            "run 模板已展开: {cmd}"
+        );
+        assert!(msg.is_none(), "转交无错误消息: {msg:?}");
+        // 目录条目（cursor=0 → sub）→ 内部进入，不经 opener 层。
+        state.active_tab_mut().cursor = 0;
+        let mut msg2 = None;
+        open_selected(&mut state, &mut msg2);
+        assert!(
+            state.active_tab().location != crate::tab::Location::Physical(tmp.path().to_path_buf())
+                || msg2.is_none(),
+            "目录应进入或保持无错"
+        );
+        assert!(
+            state.pending_external.is_none(),
+            "目录进入不产生 block 转交"
         );
     }
 

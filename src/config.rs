@@ -25,6 +25,12 @@ pub struct Config {
     /// M25-4：归档创建选项（[archive] 表）。
     #[serde(default)]
     pub archive: ArchiveConfig,
+    /// AUDIT-7：[opener] 表——命名 opener 定义（run/block/desc）。
+    #[serde(default)]
+    pub opener: std::collections::BTreeMap<String, crate::opener::OpenerDef>,
+    /// AUDIT-7：[open] 表——打开规则分层（prepend/append/rules）。
+    #[serde(default)]
+    pub open: crate::opener::OpenLayers,
 }
 
 /// M25-4：[archive] 表——归档后校验文件类型（md5 默认 / sha256 / none）。
@@ -93,6 +99,8 @@ impl Default for Config {
             ui: UiConfig::default(),
             frecency: FrecencyConfig::default(),
             archive: ArchiveConfig::default(),
+            opener: std::collections::BTreeMap::new(),
+            open: crate::opener::OpenLayers::default(),
         }
     }
 }
@@ -345,6 +353,66 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg = load_from(&tmp.path().join("nope.toml")).unwrap();
         assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn opener_and_open_tables_parse() {
+        // AUDIT-7：SPEC §4.9 示例形态——[opener] 定义 + [open] 三层规则
+        // （`use` 字段 rename、block 默认 false、desc 可选）。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[opener]
+preview_image = { run = "imv %s", desc = "用 imv 打开图片" }
+edit_text = { run = "nvim %s", block = true, desc = "用 nvim 编辑" }
+
+[open]
+prepend_rules = [
+    { mime = "image/*", use = ["preview_image"] },
+    { mime = "text/*", use = ["edit_text", "open"] },
+]
+append_rules = [
+    { name = "*.md", use = ["edit_text"] },
+]
+"#,
+        )
+        .unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.opener.len(), 2);
+        let edit = &cfg.opener["edit_text"];
+        assert_eq!(edit.run, "nvim %s");
+        assert!(edit.block, "block 字段生效");
+        assert_eq!(edit.desc.as_deref(), Some("用 nvim 编辑"));
+        let img = &cfg.opener["preview_image"];
+        assert!(!img.block, "block 缺省 false");
+        assert_eq!(cfg.open.prepend_rules.len(), 2);
+        assert_eq!(cfg.open.append_rules.len(), 1);
+        assert!(cfg.open.rules.is_none());
+        let r0 = &cfg.open.prepend_rules[0];
+        assert_eq!(r0.mime.as_deref(), Some("image/*"));
+        assert!(r0.name.is_none());
+        assert_eq!(r0.use_rules, vec!["preview_image".to_owned()]);
+        let r1 = &cfg.open.prepend_rules[1];
+        assert_eq!(
+            r1.use_rules,
+            vec!["edit_text".to_owned(), "open".to_owned()]
+        );
+        assert_eq!(cfg.open.append_rules[0].name.as_deref(), Some("*.md"));
+    }
+
+    #[test]
+    fn opener_missing_tables_default_empty() {
+        // AUDIT-7：无 [opener]/[open] → 空定义/空分层（SystemDefault 兜底）。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[ui]\nterminal_in_new_window = false\n").unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert!(cfg.opener.is_empty());
+        assert!(cfg.open.prepend_rules.is_empty());
+        assert!(cfg.open.append_rules.is_empty());
+        assert!(cfg.open.rules.is_none());
     }
 
     #[test]

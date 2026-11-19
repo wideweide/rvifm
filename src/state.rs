@@ -233,6 +233,9 @@ pub struct AppState {
     /// M25-5：git 查询回传通道（后台线程 → run 循环）。
     pub git_tx:
         Option<std::sync::mpsc::Sender<(PathBuf, std::io::Result<crate::git::GitDirStatus>)>>,
+    /// AUDIT-7：block=true opener 待执行命令（open_selected 转交，
+    /// run 循环取走并挂起 TUI 执行后清空）。
+    pub pending_external: Option<String>,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -269,6 +272,7 @@ impl AppState {
             git_cache: std::collections::HashMap::new(),
             git_pending: std::collections::HashSet::new(),
             git_tx: None,
+            pending_external: None,
         }
     }
 
