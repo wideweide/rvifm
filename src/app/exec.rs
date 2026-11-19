@@ -1958,6 +1958,95 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 )),
             }
         }
+        Some("link") => {
+            // M28-1：符号链接创建——`:link <dest>`。作用域 = 标记/可视/光标
+            //（selected_names，与 M23-10 复制同口径）；dest 为已存在目录 →
+            // 其内逐条目建同名链接（批量），否则作为单个链接路径；预检
+            // 全过才开始创建（无半成品），预检后 IO 失败已建条目留在
+            // 撤销栈可 `u` 逆。远端/归档/结果/树视图被既有守卫拒绝。
+            let dest_raw = parts
+                .next()
+                .ok_or("link: 缺少目标路径（:link <dest>；dest 为已存在目录时在其内建链）")?;
+            if parts.next().is_some() {
+                return Err("link: 参数过多（:link <dest>）".to_owned());
+            }
+            let base = physical_base(state)?;
+            let dest_path = {
+                let p = std::path::Path::new(dest_raw);
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    base.join(p)
+                }
+            };
+            let names = selected_names(state);
+            if names.is_empty() {
+                return Err("link: 无选中条目".to_owned());
+            }
+            let batch = dest_path.is_dir();
+            if !batch && names.len() > 1 {
+                return Err(format!(
+                    "link: {n} 个条目需要 dest 为已存在的目录",
+                    n = names.len()
+                ));
+            }
+            let (targets, links): (Vec<PathBuf>, Vec<PathBuf>) = if batch {
+                names
+                    .iter()
+                    .map(|n| (base.join(n), dest_path.join(n)))
+                    .unzip()
+            } else {
+                (vec![base.join(&names[0])], vec![dest_path.clone()])
+            };
+            // 预检：父目录存在 + 链接路径无冲突 → 全部通过才开始创建。
+            for link in &links {
+                let Some(parent) = link.parent() else {
+                    return Err("link: 非法链接路径".to_owned());
+                };
+                if !parent.as_os_str().is_empty() && !parent.is_dir() {
+                    return Err(format!(
+                        "link: 父目录不存在: {}",
+                        parent.display().to_string().replace('\\', "/")
+                    ));
+                }
+                if std::fs::symlink_metadata(link).is_ok() {
+                    return Err(format!(
+                        "link: 目标已存在（不覆盖）: {}",
+                        link.display().to_string().replace('\\', "/")
+                    ));
+                }
+            }
+            let mut created: Vec<crate::state::UndoableOp> = Vec::new();
+            for (target, link) in targets.iter().zip(&links) {
+                match crate::ops::create_link(state.active, target, link) {
+                    Ok(op) => created.push(op),
+                    Err(e) => {
+                        let n = created.len();
+                        for op in created.drain(..) {
+                            state.undo_stack.push(op);
+                        }
+                        refresh_tab_panes(state, state.active);
+                        if n == 0 {
+                            return Err(format!("link: {e}"));
+                        }
+                        return Err(format!(
+                            "link: 部分完成（已建 {n} 条留在撤销栈，u 可逆）: {e}"
+                        ));
+                    }
+                }
+            }
+            let count = created.len();
+            for op in created {
+                state.undo_stack.push(op);
+            }
+            refresh_tab_panes(state, state.active);
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "已创建 {count} 个符号链接 -> {}",
+                    dest_path.display().to_string().replace('\\', "/")
+                )),
+            })
+        }
         Some(cmd @ ("mkdir" | "touch")) => {
             // M2-5：在当前目录新建目录/空文件。
             let name = parts.next().ok_or_else(|| format!("{cmd}: 缺少名字"))?;

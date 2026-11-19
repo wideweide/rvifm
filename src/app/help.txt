@@ -53,6 +53,7 @@ rvifm 帮助（vim 风格文件管理器）
   cw              批量重命名（$EDITOR 编辑名单）
   :rename 新名    重命名当前条目
   :copy / :move <目录>
+  :link <dest>    创建符号链接（dest 为已存在目录时在其内批量建链；u 可逆）
   :mkdir / :touch <名>   （:mkdir 后光标定位新目录）
   :mk <名>        创建并进入新目录
   :cd <目录>

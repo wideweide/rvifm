@@ -269,6 +269,71 @@ pub fn copy_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result
     }
 }
 
+/// 创建符号链接（M28-1，`:link <dest>`）。`target` 为链接指向的条目
+/// （绝对路径），`link` 为新建链接路径。撤销 = 移除链接本身（
+/// [`UndoableOp::Create`]，undo_op 已按 symlink_metadata 判链接类型）。
+pub fn create_link(tab_id: usize, target: &Path, link: &Path) -> std::io::Result<UndoableOp> {
+    if fs::symlink_metadata(link).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("链接目标已存在: {}", link.display()),
+        ));
+    }
+    let is_dir = fs::symlink_metadata(target)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    fs_symlink(target, link, is_dir)?;
+    Ok(UndoableOp::Create {
+        tab_id,
+        path: link.to_path_buf(),
+        recursive: false,
+    })
+}
+
+/// 平台链接原语：unix symlink；Windows 文件用 symlink_file、目录用
+/// symlink_dir——权限不足（未开发者模式/未提权，os error 1314 归类
+/// PermissionDenied）时目录回退目录联接（junction，`mklink /J`，
+/// 无需特权；参数化传递、IO 静默）。产物判定沿用 M26-4 外部 CLI 口径
+/// （成功退出 + 产物存在）。
+fn fs_symlink(target: &Path, link: &Path, is_dir: bool) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = is_dir;
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        let result = if is_dir {
+            std::os::windows::fs::symlink_dir(target, link)
+        } else {
+            std::os::windows::fs::symlink_file(target, link)
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) if is_dir && e.kind() == std::io::ErrorKind::PermissionDenied => {
+                // 目录联接回退：junction 无特权要求；经 cmd 内建 mklink /J。
+                let out = std::process::Command::new("cmd")
+                    .args(["/c", "mklink", "/J"])
+                    .arg(link.as_os_str())
+                    .arg(target.as_os_str())
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()?;
+                if out.success() && link.is_dir() {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other(format!(
+                        "符号链接创建失败且目录联接回退失败（mklink /J 退出码 {}）",
+                        out.code().unwrap_or(-1)
+                    )))
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
 /// 新建名字校验（M2-5）：仅当前目录下的合法新名字。
 fn validate_new_name(base: &Path, name: &str) -> std::io::Result<PathBuf> {
     if name.is_empty() || name.contains('/') || name.contains('\\') {
@@ -827,10 +892,16 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
         UndoableOp::Create {
             path, recursive, ..
         } => {
-            if !path.exists() {
+            // M28-1：链接产物（符号链接/目录联接）按链接自身移除——
+            // `path.is_dir()` 会穿越链接（unix 上 remove_dir 对链接报
+            // ENOTDIR；断链 exists() 为 false 会被误判"已撤销"），因此
+            // 先按 symlink_metadata 判链接类型。断链 = 只删链接本身。
+            let Ok(meta) = fs::symlink_metadata(path) else {
                 return Ok(()); // 已不存在：等同已撤销
-            }
-            if path.is_dir() {
+            };
+            if meta.file_type().is_symlink() {
+                fs::remove_file(path)
+            } else if path.is_dir() {
                 if *recursive {
                     // 目录树整体为新建产物（copy 目录）：整树移除。
                     fs::remove_dir_all(path)
@@ -1080,6 +1151,74 @@ mod tests {
         );
         undo_op(&op).unwrap();
         assert!(!dst.path().join("tree").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_link_file_and_undo_removes_link_not_target() {
+        // M28-1：文件符号链接创建 + 撤销——只删链接，不动目标。
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("src.txt");
+        fs::write(&target, "S").unwrap();
+        let link = tmp.path().join("src-link");
+        let op = create_link(0, &target, &link).unwrap();
+        assert!(link.is_file(), "链接可读");
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        undo_op(&op).unwrap();
+        assert!(!link.exists(), "链接已移除");
+        assert!(target.is_file(), "目标不受影响");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_link_dir_and_undo_removes_link_itself() {
+        // M28-1 回归：链接指向目录——undo 必须删链接本身（旧实现
+        // `path.is_dir()` 穿越链接走 remove_dir，unix 报 ENOTDIR）。
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("dir");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("a.txt"), "A").unwrap();
+        let link = tmp.path().join("dir-link");
+        let op = create_link(0, &target, &link).unwrap();
+        assert!(link.is_dir(), "链接可进入");
+        undo_op(&op).unwrap();
+        assert!(!link.exists(), "链接已移除");
+        assert!(
+            target.is_dir() && target.join("a.txt").is_file(),
+            "目标不受影响"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_link_broken_target_and_undo_removes_broken_link() {
+        // M28-1：断链目标——创建成功（指向不存在路径）、链接仍可删
+        //（exists() 穿越语义为 false，undo 不得误判"已撤销"）。
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("no-such-target");
+        let link = tmp.path().join("broken-link");
+        let op = create_link(0, &target, &link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_ok());
+        assert!(!link.exists(), "断链 exists() 为 false（穿越语义）");
+        undo_op(&op).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err(), "断链已移除");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_link_duplicate_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("t.txt");
+        fs::write(&target, "T").unwrap();
+        let link = tmp.path().join("l.txt");
+        create_link(0, &target, &link).unwrap();
+        let err = create_link(0, &target, &link).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
     }
 
     #[test]

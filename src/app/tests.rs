@@ -8107,6 +8107,96 @@ fn m271_symlink_dir_follows_target_and_broken_link_degrades() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn m281_link_command_creates_undoable_symlinks() {
+    // M28-1：:link 命令流——单条目（dest 为新路径）、批量（dest 为已存在
+    // 目录）、u 逐条逆、错误路径（缺参/父目录不存在/已存在不覆盖）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    fs::create_dir(tmp.path().join("sub")).unwrap();
+    fs::write(tmp.path().join("sub").join("b.txt"), "B").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 光标定位 a.txt（目录优先排序：sub=0、a.txt=1）。
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "a.txt")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+
+    // 单条目：dest 为新链接路径。
+    assert_eq!(exec_command(&mut state, "link l-a"), Ok(false));
+    let link = tmp.path().join("l-a");
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "l-a 为符号链接"
+    );
+    assert_eq!(std::fs::read(&link).unwrap(), b"A", "链接指向 a.txt");
+
+    // u 撤销：删链接不删目标。
+    let mut msg = None;
+    undo_last(&mut state, &mut msg);
+    assert!(
+        msg.as_deref().unwrap().starts_with("已撤销"),
+        "msg: {msg:?}"
+    );
+    assert!(std::fs::symlink_metadata(&link).is_err(), "链接已移除");
+    assert!(tmp.path().join("a.txt").is_file(), "目标不受影响");
+
+    // 错误路径：缺参、父目录不存在。
+    assert!(exec_command(&mut state, "link").is_err(), "缺 dest");
+    assert!(
+        exec_command(&mut state, "link nonexistent-dir/l").is_err(),
+        "父目录不存在 → 可读错误"
+    );
+
+    // 批量：dest 为已存在目录 → 其内建同名链接（tags 优先）。
+    fs::create_dir(tmp.path().join("links")).unwrap();
+    let tab = state.active_tab_mut();
+    tab.tags.insert("a.txt".to_owned());
+    tab.tags.insert("sub".to_owned());
+    assert_eq!(exec_command(&mut state, "link links"), Ok(false));
+    assert!(
+        std::fs::symlink_metadata(tmp.path().join("links/a.txt"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        std::fs::symlink_metadata(tmp.path().join("links/sub"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+
+    // 两次 u 逆序恢复两条链接（LIFO）。
+    let mut msg = None;
+    undo_last(&mut state, &mut msg);
+    undo_last(&mut state, &mut msg);
+    assert!(std::fs::symlink_metadata(tmp.path().join("links/sub")).is_err());
+    assert!(std::fs::symlink_metadata(tmp.path().join("links/a.txt")).is_err());
+
+    // 已存在不覆盖（重复 :link 同 dest；先清 tags 回单条目形态）。
+    state.active_tab_mut().tags.clear();
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "a.txt")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    assert_eq!(exec_command(&mut state, "link l-2"), Ok(false));
+    assert!(
+        exec_command(&mut state, "link l-2").is_err(),
+        "已存在不覆盖"
+    );
+}
+
 #[test]
 fn m273_pdf_overflow_note_variants() {
     // M27-3：pages=2 未进两页布局时的底部说明——两页齐全=高度不足；
