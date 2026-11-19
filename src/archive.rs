@@ -9,7 +9,7 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// 归档内条目（M7-1）。`path` 以 `/` 分隔、不带前导 `/`。
@@ -18,6 +18,54 @@ pub struct ArchiveEntry {
     pub path: String,
     pub is_dir: bool,
     pub size: u64,
+}
+
+/// AUDIT-17：单成员读取上限（声明尺寸超过即拒绝，防分配炸弹）。
+pub const MAX_MEMBER_READ_BYTES: u64 = 64 * 1024 * 1024;
+
+/// AUDIT-17：tar.xz 整体解压体积上限（xz 无 seek 解码器，开档时全量
+/// 解压入内存——压缩炸弹在此拦截）。
+pub const MAX_XZ_DECODED_BYTES: u64 = 256 * 1024 * 1024;
+
+/// AUDIT-17：单成员声明尺寸守卫（纯函数，测试用）——超过上限返回
+/// 可读错误，调用方在分配缓冲之前调用。
+pub(crate) fn check_member_size(size: u64, cap: u64) -> std::io::Result<()> {
+    if size > cap {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::FileTooLarge,
+            format!(
+                "归档成员声明尺寸 {size} 字节超过读取上限 {cap} 字节，已拒绝读取（避免内存耗尽）"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// AUDIT-17：xz 解压的限长 writer——累计写入超过 `cap` 即返回可读错误
+/// （压缩炸弹在解码过程中拦截，而不是解压完再检查）。
+struct CappedWriter {
+    out: Vec<u8>,
+    cap: u64,
+}
+
+impl Write for CappedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let new_len = self.out.len() as u64 + buf.len() as u64;
+        if new_len > self.cap {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::FileTooLarge,
+                format!(
+                    "tar.xz 解压后体积超过上限 {cap} 字节，已中止解压（避免内存耗尽）",
+                    cap = self.cap
+                ),
+            ));
+        }
+        self.out.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// 归档内路径规范化（M7-1）：统一 `/`、去前导与尾随 `/`、折叠重复 `/`、
@@ -155,6 +203,8 @@ impl ArchiveFs for ZipFs {
             .index
             .get(&path)
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))?;
+        // AUDIT-17：声明尺寸守卫先于缓冲分配。
+        check_member_size(size, MAX_MEMBER_READ_BYTES)?;
         let mut file = self
             .archive
             .by_index(idx)
@@ -228,6 +278,11 @@ enum Decoder {
 
 impl Decoder {
     fn open(host: &Path, kind: TarKind) -> std::io::Result<Self> {
+        Self::open_with_xz_cap(host, kind, MAX_XZ_DECODED_BYTES)
+    }
+
+    /// 注入 xz 解压上限形态（AUDIT-17 测试用）；生产走 `open`（常量上限）。
+    fn open_with_xz_cap(host: &Path, kind: TarKind, xz_cap: u64) -> std::io::Result<Self> {
         let file = std::fs::File::open(host)?;
         Ok(match kind {
             TarKind::Plain => Decoder::Plain(file),
@@ -241,10 +296,15 @@ impl Decoder {
             TarKind::Xz => {
                 let mut raw = Vec::new();
                 (&file).read_to_end(&mut raw)?;
-                let mut out = Vec::new();
-                lzma_rs::xz_decompress(&mut std::io::Cursor::new(raw), &mut out)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Decoder::Xz(std::io::Cursor::new(out))
+                // AUDIT-17：解压走限长 writer——压缩炸弹在解码过程中拦截。
+                let mut out = CappedWriter {
+                    out: Vec::new(),
+                    cap: xz_cap,
+                };
+                lzma_rs::xz_decompress(&mut std::io::Cursor::new(raw), &mut out).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                })?;
+                Decoder::Xz(std::io::Cursor::new(out.out))
             }
         })
     }
@@ -401,6 +461,8 @@ impl ArchiveFs for TarFs {
                 "目录不可读",
             ));
         }
+        // AUDIT-17：声明尺寸守卫先于缓冲分配（read_block 会按 size 分配）。
+        check_member_size(size, MAX_MEMBER_READ_BYTES)?;
         self.read_block(pos, size)
     }
 
@@ -818,5 +880,60 @@ mod tests {
 
         // host 同源。
         assert_eq!(fs.host(), Path::new("a.zip"));
+    }
+
+    #[test]
+    fn member_size_guard_boundary() {
+        // AUDIT-17：单成员声明尺寸守卫——上限内 Ok；超限可读 Err
+        // （FileTooLarge），调用方在分配缓冲前调用。
+        assert!(check_member_size(MAX_MEMBER_READ_BYTES, MAX_MEMBER_READ_BYTES).is_ok());
+        let err = check_member_size(MAX_MEMBER_READ_BYTES + 1, MAX_MEMBER_READ_BYTES).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::FileTooLarge);
+        assert!(err.to_string().contains("超过读取上限"));
+    }
+
+    #[test]
+    fn capped_writer_stops_bomb_midstream() {
+        // AUDIT-17：xz 限长 writer——累计超限即 Err（解码途中拦截，
+        // 而非解压完再检查），已写入内容保留用于诊断。
+        let mut w = CappedWriter {
+            out: Vec::new(),
+            cap: 8,
+        };
+        w.write_all(b"12345678").unwrap();
+        let err = w.write_all(b"9").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::FileTooLarge);
+        assert!(err.to_string().contains("超过上限"));
+        assert_eq!(w.out, b"12345678");
+    }
+
+    #[test]
+    fn tarxz_bomb_rejected_during_decode() {
+        // AUDIT-17：tar.xz 压缩炸弹端到端——解压后体积（64B）超过注入
+        // 上限（8B）→ 解码中止，可读 Err，不 OOM、不 panic。
+        let tmp = TempDir::new().unwrap();
+        let _tar_path = tmp.path().join("bomb.tar");
+        let mut tar_bytes = Vec::new();
+        {
+            let mut b = tar::Builder::new(&mut tar_bytes);
+            let mut h = tar::Header::new_gnu();
+            h.set_size(64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            b.append_data(&mut h, "bomb.txt", std::io::Cursor::new(vec![0u8; 64]))
+                .unwrap();
+            b.finish().unwrap();
+        }
+        let mut xz_bytes = Vec::new();
+        lzma_rs::xz_compress(&mut std::io::Cursor::new(&tar_bytes), &mut xz_bytes).unwrap();
+        let xz_path = tmp.path().join("bomb.tar.xz");
+        std::fs::write(&xz_path, &xz_bytes).unwrap();
+        let err = match Decoder::open_with_xz_cap(&xz_path, TarKind::Xz, 8) {
+            Err(e) => e,
+            Ok(_) => panic!("超限炸弹应被拒绝"),
+        };
+        assert!(err.to_string().contains("超过上限"), "err: {err}");
+        // 正常上限：同文件解码成功（64B ≤ 256MB）。
+        Decoder::open_with_xz_cap(&xz_path, TarKind::Xz, MAX_XZ_DECODED_BYTES).unwrap();
     }
 }

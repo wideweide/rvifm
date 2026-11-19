@@ -798,7 +798,7 @@
 - [x] `pick` 读取 `[frecency]` 的 λ / max_entries 配置，与 TUI 行为一致。（2026-11-20：cmd_pick 头部 init_settings（与 cmd_record 同款））
 
 ### AUDIT-17 归档读取上限
-- [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。
+- [x] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。（2026-11-20：zip/tar 读取前 `check_member_size`（64MB）；tar.xz 解压走 `CappedWriter`（256MB，解码途中拦截）；端到端注入式炸弹测试）
 
 ### AUDIT-18 本机测试失败整改
 - [x] `m249_jobs_overlay_render_selection_and_cancel_state` 在长临时路径环境（如 8.3 短名/多级 Temp）下稳定通过：作业行断言不依赖宿主路径长度。（2026-11-20：目标改固定短标签 `d`——add_job 第三参仅作展示串）

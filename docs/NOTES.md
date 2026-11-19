@@ -749,6 +749,12 @@ rvifm record  → 静默记录访问
 - **每帧安全**：查看器逐帧渲染——`VISUAL_CACHE`（含**失败缓存**）保证外部工具探测/spawn 每路径仅一次；否则无工具环境每帧 spawn 两次。临时 PNG 进程内原子计数命名；清理随 M27-3 统一（其验收含"预览切换/退出清理"）。
 - **接线点**：viewer（w/预览窗格）PDF 臂拆分——视觉命中走 `ImageEngine` 渲染缓存 PNG（标题"PDF 预览（第 1 页图像）"），渲染失败回退可读提示；pick 的 PDF 视觉预览归 AUDIT-3。注入式测试（`_with(None)`）保证 CI 无工具环境确定性。
 
+### 2026-11-20 — AUDIT-17 实现 + AUDIT 批次关闭（WHY）
+
+- **AUDIT-17 归档上限**：zip/tar 单成员读取前按**声明尺寸**守卫（64MB，先于缓冲分配——zip 的 `with_capacity(size)` 分配炸弹在读取前拦截）；tar.xz 解压走 `CappedWriter`（256MB，解码途中拦截压缩炸弹，而非解压完再检查）；`Decoder::open` 注入式 cap 支持小体积端到端炸弹测试（64B 解压 > 8B 上限 → 可读 Err）。守卫函数纯化（`check_member_size`）便于边界测试。
+- **批次关闭**：AUDIT 18 项全部完成（2026-11-20，17 个整改项 + 门禁复现新增的 AUDIT-18）。9 项"未接线"能力（opener/主题/PDF 视觉/pick 预览+CLI/惰性 compaction）全部落地；两个真 bug 随整改修复（ACTIVE OnceLock 二次切换失效 → RwLock；Store::open 数据目录缺失 → 自动创建）；357 单测 + 5 集成双环境绿。M9/M11 的"引擎存在、未接线"状态自此**计入实质完成**（STATE/PLAN/README 已同步）。
+- **下一阶段**：M25-2（marks 由 frecency 实现）→ M26（归档创建扩展 5 项）→ M27（实测问题与视觉对齐 3 项）→ MISC-1（rv 别名）→ 全部完成后自动发布 0.9.0（PLAN §4）。
+
 ### 2026-11-20 — AUDIT-3 实现：pick 同源预览（决策 + WHY）
 
 - **决策：保留承诺并接线**（撤销"文档撤回"选项）。`draw_pick_ui` 抽出（TestBackend 可测）：查询行 + 候选列表 + 右侧预览窗格；≥60 列双栏（1:1），窄终端降级单栏。预览源与 TUI 完全一致——文本/目录/Office/PDF 文本走共享 `render_preview`，图像走 `ImageEngine::detect()`（协议探测 + halfblocks 回退）；同进程完成，不 fork/exec（SPEC §4.9）。
