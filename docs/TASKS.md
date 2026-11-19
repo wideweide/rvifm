@@ -312,7 +312,7 @@
 - [x] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5；2026-11-20 完成：15261 行上帝文件 → `src/app/` 7 模块，测试独立 `tests.rs`，零行为变化 350+4 全绿）
 - [x] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6；2026-11-20 完成：`[keymap] seq_timeout_ms`（缺省 500）+ run 循环待决 seq 超时清空——原实现无超时、被弃前缀吞后续键）
 - [x] AUDIT-7 opener 整层接线（TOML 加载 + mime/name + prepend/append/rules 三层 + 命令执行；见 SPEC AUDIT-7；2026-11-20 完成：`open_with_layers` 生产接线 `open_selected`，block=true 经 pending_external 挂起执行）
-- [ ] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8）
+- [x] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8；2026-11-20 完成：生产 unwrap/expect/unreachable 清零，fs-change 自动刷新失败上浮状态栏）
 - [x] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9；2026-11-20 完成：ci.yml 双步增补，cross-check 仅 ubuntu job——host triple 即该 target）
 - [ ] AUDIT-10 统一 glob 匹配（含 opener `*x*` 缺陷）与配置失败回退实现（见 SPEC AUDIT-10）
 - [ ] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11）

@@ -128,8 +128,13 @@ pub(crate) fn tab_complete(
         Some(c) if *input == format!("{}{}", c.head, c.candidates[c.index])
     );
     if unchanged {
-        let c = comp.as_mut().expect("unchanged 时 comp 必存在");
-        c.index = (c.index + 1) % c.candidates.len();
+        // AUDIT-8：不变量（unchanged ⇒ comp 存在）用 filter 表达，去 expect。
+        if let Some(c) = comp
+            .as_mut()
+            .filter(|c| *input == format!("{}{}", c.head, c.candidates[c.index]))
+        {
+            c.index = (c.index + 1) % c.candidates.len();
+        }
     } else {
         let (head, token) = split_last_word(input);
         let candidates: Vec<String> = names
@@ -147,7 +152,10 @@ pub(crate) fn tab_complete(
             index: 0,
         });
     }
-    let c = comp.as_ref().expect("上方必已赋值");
+    // AUDIT-8：去 expect——comp 缺失（不可达）时安全返回 0（无候选补全）。
+    let Some(c) = comp.as_ref() else {
+        return 0;
+    };
     *input = format!("{}{}", c.head, c.candidates[c.index]);
     c.candidates.len()
 }
@@ -739,7 +747,7 @@ pub(crate) fn handle_key(
                     return Some(Outcome::ConfirmDelete(base.join(&item.name), false, None));
                 }
             }
-            Some(Action::CopyName) | Some(Action::CopyPath) | Some(Action::CopyContent) => {
+            Some(action @ (Action::CopyName | Action::CopyPath | Action::CopyContent)) => {
                 // M23-10：y 复制序列——选集（标记/可视/光标）逐条目取目标文本，
                 // OSC52 写入剪贴板（零依赖），状态栏 `copied` 反馈。
                 if state.active_tab().on_parent_row {
@@ -755,7 +763,7 @@ pub(crate) fn handle_key(
                     state.active_tab().location,
                     crate::tab::Location::Physical(_)
                 );
-                let action = action.unwrap();
+                // AUDIT-8：外层模式已限定 Copy 系列，去 unwrap。
                 let text = match action {
                     Action::CopyName => names.join("\n"),
                     Action::CopyPath => {
@@ -799,7 +807,9 @@ pub(crate) fn handle_key(
                         }
                         parts.join("\n")
                     }
-                    _ => unreachable!("match 已限定 Copy 系列"),
+                    // AUDIT-8：去 unreachable!——外层模式已限定 Copy 系列，
+                    // 此臂防御性兜底（与"不命中即忽略"语义一致）。
+                    _ => return None,
                 };
                 let what = match action {
                     Action::CopyPath => text.lines().next().unwrap_or("").to_owned(),

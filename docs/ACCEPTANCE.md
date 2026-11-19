@@ -769,7 +769,7 @@
 - [x] opener TOML 被实际读取；`prepend_rules` / `append_rules` / `rules` 三层语义与键位系统一致。（2026-11-20：Config 增 [opener]/[open] 表，`resolve_open_actions` 链序 prepend→(rules 替换默认空表)→append）
 - [x] `mime` 与 `name` 匹配按顺序命中；命中规则执行 `use`/`run` 命令；未命中回退系统 opener。（2026-11-20：内建 ext→mime 表 + 通配匹配；`use` 名单按序执行、`open`=系统、未知名跳过；`open_selected` 生产接线）
 ### AUDIT-8 错误上浮
-- [ ] 生产路径无新增 `unwrap/expect` panic；刷新/会话/known_hosts 权限失败有可读提示。
+- [x] 生产路径无新增 `unwrap/expect` panic；刷新/会话/known_hosts 权限失败有可读提示。（2026-11-20：清理 keys 补全/复制臂、run 循环作业登记、frecency SETTINGS 锁、highlight 主题兜底；自动刷新失败 → 状态栏"自动刷新失败: …"；会话/known_hosts 原有 eprintln 上浮保留）
 ### AUDIT-9 CI 门禁增强
 - [x] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。（2026-11-20：ci.yml 增补两步；cross-check 挂 `matrix.os == 'ubuntu-latest'`——host triple 即该 target，Windows runner 无 linux-gnu 交叉 gcc）
 ### AUDIT-10 重复实现统一

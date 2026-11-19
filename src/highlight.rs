@@ -28,7 +28,8 @@ fn theme_set() -> &'static ThemeSet {
 }
 
 /// 主题随 opaline 明暗对齐（内置默认主题集；空集不可达——load_defaults
-/// 恒含 base16-ocean 系列）。
+/// 恒含 base16-ocean 系列）。AUDIT-8：去 expect——理论不可达（空集）
+/// 兜底为泄漏的空主题（无着色，不 panic）。
 fn theme(dark: bool) -> &'static Theme {
     let ts = theme_set();
     ts.themes
@@ -38,7 +39,15 @@ fn theme(dark: bool) -> &'static Theme {
             "base16-ocean.light"
         })
         .or_else(|| ts.themes.values().next())
-        .expect("syntect 默认主题集为空（不可达）")
+        .unwrap_or_else(|| {
+            // 空主题集兜底：无着色的空主题（泄漏一次，进程级静态）。
+            Box::leak(Box::new(Theme {
+                name: None,
+                author: None,
+                settings: syntect::highlighting::ThemeSettings::default(),
+                scopes: Vec::new(),
+            }))
+        })
 }
 
 /// 查找语法：首行 shebang 优先（`.txt` 内容推断，对齐 syntect

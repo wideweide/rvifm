@@ -59,20 +59,33 @@ pub(crate) fn sync_watcher(state: &mut AppState) {
 }
 
 /// M21-F5：外部变更后刷新活动 tab 双 pane——光标跟随原条目名（仍在时），
-/// 否则钳制在列表内。
-pub(crate) fn refresh_on_fs_change(state: &mut AppState) {
+/// 否则钳制在列表内。AUDIT-8：刷新的权限/IO 失败不再静默——返回可读
+/// 提示（调用方进状态栏）；失败时列表未更新，光标保持原位。
+pub(crate) fn refresh_on_fs_change(state: &mut AppState) -> Option<String> {
     let active = state.active;
     let cur_name = state.tabs[active]
         .entries
         .get(state.tabs[active].cursor)
         .map(|i| i.name.clone());
-    refresh_tab_panes(state, active);
+    let cfg = state.config.clone();
+    let mut err: Option<String> = None;
+    if let Some(tab) = state.tabs.get_mut(active) {
+        if let Err(e) = tab.refresh(cfg.clone()) {
+            err = Some(format!("自动刷新失败: {e}"));
+        } else if let Err(e) = tab.right.refresh(cfg) {
+            err = Some(format!("自动刷新失败: {e}"));
+        }
+    }
+    if err.is_some() {
+        return err;
+    }
     let tab = &state.tabs[active];
     let new_cursor = cur_name
         .as_deref()
         .and_then(|n| tab.entries.iter().position(|i| i.name == n))
         .unwrap_or_else(|| tab.cursor.min(tab.entries.len().saturating_sub(1)));
     state.tabs[active].cursor = new_cursor;
+    None
 }
 
 /// 后台作业执行体（M13-8）：对 `base` 下 `names` 逐项 copy/move 到 target。

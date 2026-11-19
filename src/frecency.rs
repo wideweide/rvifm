@@ -287,19 +287,23 @@ static SETTINGS: std::sync::Mutex<FrecencySettings> = std::sync::Mutex::new(Frec
 });
 
 /// M23-5：初始化 per-topic 设置（TUI run / pick / record 启动时调用；
-/// None 字段取默认值，旧配置缺省兼容）。
+/// None 字段取默认值，旧配置缺省兼容）。AUDIT-8：锁毒化时静默跳过
+/// （保留原设置，不 panic）。
 pub fn init_settings(cfg: &crate::config::FrecencyConfig) {
     let d = FrecencySettings::default();
-    *SETTINGS.lock().unwrap() = FrecencySettings {
-        lambda_dir: cfg.lambda_dir.unwrap_or(d.lambda_dir),
-        lambda_file: cfg.lambda_file.unwrap_or(d.lambda_file),
-        lambda_unified: cfg.lambda_unified.unwrap_or(d.lambda_unified),
-        max_entries: cfg.max_entries.unwrap_or(d.max_entries),
-    };
+    if let Ok(mut s) = SETTINGS.lock() {
+        *s = FrecencySettings {
+            lambda_dir: cfg.lambda_dir.unwrap_or(d.lambda_dir),
+            lambda_file: cfg.lambda_file.unwrap_or(d.lambda_file),
+            lambda_unified: cfg.lambda_unified.unwrap_or(d.lambda_unified),
+            max_entries: cfg.max_entries.unwrap_or(d.max_entries),
+        };
+    }
 }
 
 fn settings() -> FrecencySettings {
-    *SETTINGS.lock().unwrap()
+    // AUDIT-8：锁毒化时回退默认设置（不 panic）。
+    SETTINGS.lock().map(|s| *s).unwrap_or_default()
 }
 
 /// EMS 老化：`score * exp(-λ * Δtick)`。

@@ -462,7 +462,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             }
         }
         if fs_dirty {
-            refresh_on_fs_change(&mut state);
+            // AUDIT-8：自动刷新失败不再静默（可读提示进状态栏）。
+            if let Some(e) = refresh_on_fs_change(&mut state) {
+                msg = Some(e);
+            }
             // M25-5：外部变更 → git 状态缓存整体失效（触发器按可见目录重查）。
             state.git_cache.clear();
             state.git_pending.clear();
@@ -597,13 +600,17 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         &target.display().to_string(),
                                     );
                                     // M24-9：取消标志与线程共享（覆盖层 x 置位）。
-                                    let cancel = state
+                                    // AUDIT-8：去 expect——登记异常时不 spawn
+                                    // （可读提示），不留悬挂线程。
+                                    let Some(cancel) = state
                                         .jobs
                                         .iter()
                                         .find(|j| j.id == job_id)
-                                        .expect("新登记作业必存在")
-                                        .cancel_requested
-                                        .clone();
+                                        .map(|j| j.cancel_requested.clone())
+                                    else {
+                                        msg = Some("后台作业登记异常：未找到作业".to_owned());
+                                        continue;
+                                    };
                                     let tab_id = state.active;
                                     spawn_job_thread(
                                         &job_tx,
