@@ -758,7 +758,7 @@
 ### AUDIT-2 PDF 视觉探测链
 - [x] 文本提取优先；启用 `pdf-visual` 后 exprim / 外部渲染器按序回退，缺失时可读提示，不 panic。（2026-11-20：`render_first_page_png_with` 按序 exprim→pdftoppm→mutool；Text/Unavailable 不进视觉链；viewer NeedsVisual → ImageEngine 渲染缓存 PNG，失败回退提示）
 ### AUDIT-3 pick 预览同源
-- [ ] 若保留 pick 预览承诺，pick 与 TUI 对同一文件渲染一致；否则文档撤回该承诺。
+- [x] 若保留 pick 预览承诺，pick 与 TUI 对同一文件渲染一致；否则文档撤回该承诺。（2026-11-20：保留承诺并接线——`draw_pick_ui` 预览窗格走共享 `render_preview`/`ImageEngine`，同进程无 fork/exec；TestBackend 验证宽/窄终端）
 ### AUDIT-4 惰性 compaction
 - [ ] 事件超过阈值时 TUI 启动触发 compaction（写 snapshot + 截断 events）；`pick` 不触发；或文档明确仅手动。
 ### AUDIT-5 app.rs 拆分

@@ -1012,33 +1012,15 @@ fn pick_interactive(
     };
 
     let mut terminal = ratatui::init();
+    // AUDIT-3：预览与 TUI 同源——图像经 ImageEngine（与 TUI 预览一致）。
+    let mut image_engine = crate::image::ImageEngine::detect();
     let outcome = loop {
         let hits = matches(&query, candidates);
         if cursor >= hits.len() {
             cursor = hits.len().saturating_sub(1);
         }
         let draw_result = terminal.draw(|frame| {
-            let [query_area, list_area] = ratatui::layout::Layout::vertical([
-                ratatui::layout::Constraint::Length(1),
-                ratatui::layout::Constraint::Min(0),
-            ])
-            .areas(frame.area());
-            frame.render_widget(Paragraph::new(format!("/{query}")), query_area);
-            let items: Vec<ListItem> = hits
-                .iter()
-                .map(|(path, _, _)| ListItem::new(Line::from(path.clone())))
-                .collect();
-            let mut ls = ListState::default()
-                .with_selected(Some(cursor))
-                .with_offset(scroll);
-            frame.render_stateful_widget(
-                List::new(items).highlight_style(
-                    ratatui::style::Style::new().add_modifier(ratatui::style::Modifier::REVERSED),
-                ),
-                list_area,
-                &mut ls,
-            );
-            scroll = ls.offset();
+            draw_pick_ui(frame, &query, cursor, &hits, &mut scroll, &mut image_engine);
         });
         if let Err(e) = draw_result {
             eprintln!("rvifm pick: 渲染失败: {e}");
@@ -1087,6 +1069,71 @@ fn pick_interactive(
         PickOutcome::NoMatch => std::process::exit(1),
         PickOutcome::Cancelled => std::process::exit(1),
     }
+}
+
+/// AUDIT-3：pick 选择器 UI——查询行 + 候选列表 + 右侧预览窗格。
+/// 预览与 TUI **同源**（SPEC §4.9）：文本/目录/Office/PDF 文本走共享
+/// `render_preview`，图像走 `ImageEngine`；同一进程内完成，不 fork/exec
+/// 外部命令。宽终端（≥60 列）双栏，窄终端降级单栏（预览隐藏）。
+fn draw_pick_ui(
+    frame: &mut ratatui::Frame,
+    query: &str,
+    cursor: usize,
+    hits: &[(String, String, f64)],
+    scroll: &mut usize,
+    image_engine: &mut crate::image::ImageEngine,
+) {
+    use ratatui::layout::Constraint;
+    let [query_area, body] =
+        ratatui::layout::Layout::vertical([Constraint::Length(1), Constraint::Min(0)])
+            .areas(frame.area());
+    frame.render_widget(Paragraph::new(format!("/{query}")), query_area);
+    let (list_area, preview_area) = if body.width >= 60 {
+        let [l, p] = ratatui::layout::Layout::horizontal([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .areas(body);
+        (l, p)
+    } else {
+        (body, ratatui::layout::Rect::default())
+    };
+    let items: Vec<ListItem> = hits
+        .iter()
+        .map(|(path, _, _)| ListItem::new(Line::from(path.clone())))
+        .collect();
+    let mut ls = ListState::default()
+        .with_selected(Some(cursor))
+        .with_offset(*scroll);
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(
+            ratatui::style::Style::new().add_modifier(ratatui::style::Modifier::REVERSED),
+        ),
+        list_area,
+        &mut ls,
+    );
+    *scroll = ls.offset();
+
+    if preview_area.width == 0 || preview_area.height == 0 {
+        return;
+    }
+    let pane = ratatui::widgets::Block::bordered().title("预览");
+    let inner = pane.inner(preview_area);
+    frame.render_widget(pane, preview_area);
+    let Some((path, _, _)) = hits.get(cursor) else {
+        frame.render_widget(Paragraph::new("（无候选）"), inner);
+        return;
+    };
+    let p = std::path::Path::new(path);
+    if crate::preview::preview_kind(p) == crate::preview::PreviewKind::Image {
+        // 图像与 TUI 同源：ImageEngine 协议探测 + halfblocks 回退。
+        if image_engine.render_file(frame, inner, p).is_err() {
+            frame.render_widget(Paragraph::new("图片渲染失败（损坏/超大）"), inner);
+        }
+        return;
+    }
+    let preview = crate::preview::render_preview(p, inner.height.max(1) as usize);
+    frame.render_widget(preview.into_paragraph(), inner);
 }
 
 #[cfg(test)]
@@ -1718,5 +1765,54 @@ mod tests {
         // 克隆语义可用（append-only 队列复制）。
         let c = r.clone();
         assert_eq!(c, r);
+    }
+
+    #[test]
+    fn pick_ui_preview_same_source_as_tui() {
+        // AUDIT-3：pick 预览与 TUI 同源——共享 render_preview 内容直接可见；
+        // 宽终端双栏（≥60 列），窄终端降级单栏（预览隐藏）。
+        // CJK 全角在 TestBackend 渲染为"字+空格"——断言前去空白（M21-E3 坑）。
+        let compact = |t: &ratatui::backend::TestBackend, w: u16, h: u16| -> String {
+            (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .map(|(x, y)| t.buffer()[(x, y)].symbol().to_owned())
+                .collect::<String>()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect()
+        };
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("hello.txt"), "line1\nline2").unwrap();
+        let hits = vec![(
+            tmp.path().join("hello.txt").to_string_lossy().into_owned(),
+            "dir".to_owned(),
+            1.0,
+        )];
+        let mut scroll = 0usize;
+        let mut engine = crate::image::ImageEngine::halfblocks();
+        // 200 列：列表列 100——候选全路径（宿主临时目录长度不定）不截断
+        // 丢叶子名（AUDIT-18 同款可移植性考量）。
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 20)).unwrap();
+        terminal
+            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine))
+            .unwrap();
+        let text = compact(terminal.backend(), 200, 20);
+        assert!(text.contains("预览"), "预览窗格标题: {text}");
+        assert!(
+            text.contains("line1"),
+            "与 TUI 同源的 render_preview 内容: {text}"
+        );
+        assert!(text.contains("hello.txt"), "候选列表可见: {text}");
+        // 窄终端：预览隐藏（单栏降级）。
+        let mut narrow =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 12)).unwrap();
+        narrow
+            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine))
+            .unwrap();
+        let text2 = compact(narrow.backend(), 40, 12);
+        assert!(!text2.contains("预览"), "窄终端单栏无预览: {text2}");
+        // 列表可见性不在此断言——候选全路径长度随宿主变化（AUDIT-18 坑），
+        // 40 列必然截断；列表渲染已由宽终端用例覆盖。
     }
 }

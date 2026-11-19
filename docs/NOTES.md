@@ -748,3 +748,9 @@ rvifm record  → 静默记录访问
 - **视觉链（第 1 页）**：`render_first_page_png_with` 按序 exprim（仅 pdf-visual，M11-13 护栏内，失败落外部工具）→ `pdftoppm -png -f 1 -l 1 -singlefile` → `mutool draw -o`（外部工具 IO 静默，M21-F8 同款）；产物校验存在且非空。PNG 编码走 `image` crate（内存编码后落盘，避免半成品）。
 - **每帧安全**：查看器逐帧渲染——`VISUAL_CACHE`（含**失败缓存**）保证外部工具探测/spawn 每路径仅一次；否则无工具环境每帧 spawn 两次。临时 PNG 进程内原子计数命名；清理随 M27-3 统一（其验收含"预览切换/退出清理"）。
 - **接线点**：viewer（w/预览窗格）PDF 臂拆分——视觉命中走 `ImageEngine` 渲染缓存 PNG（标题"PDF 预览（第 1 页图像）"），渲染失败回退可读提示；pick 的 PDF 视觉预览归 AUDIT-3。注入式测试（`_with(None)`）保证 CI 无工具环境确定性。
+
+### 2026-11-20 — AUDIT-3 实现：pick 同源预览（决策 + WHY）
+
+- **决策：保留承诺并接线**（撤销"文档撤回"选项）。`draw_pick_ui` 抽出（TestBackend 可测）：查询行 + 候选列表 + 右侧预览窗格；≥60 列双栏（1:1），窄终端降级单栏。预览源与 TUI 完全一致——文本/目录/Office/PDF 文本走共享 `render_preview`，图像走 `ImageEngine::detect()`（协议探测 + halfblocks 回退）；同进程完成，不 fork/exec（SPEC §4.9）。
+- **PDF 视觉不入 pick**（M27-3 遗留决策点）：pick 是纯只读选择器（AGENTS §5.3），PDF 视觉需要临时文件 + 外部 spawn/exprim——选择器内做视觉渲染超出其职责；pick 的 PDF 预览保持文本层（同源 `render_preview`）。TUI viewer 已有视觉链（AUDIT-2）。
+- **测试可移植性**：候选全路径长度随宿主变化——宽终端用例 200 列（列表列 100）保证叶子名不截断；窄终端用例不断言列表内容（40 列必截断，列表渲染已由宽用例覆盖）。AUDIT-18 同款考量。
