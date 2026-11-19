@@ -20,12 +20,36 @@ use ratatui::style::{Color as RtColor, Modifier as RtModifier, Style as RtStyle}
 use opaline::Theme;
 
 /// 当前激活主题（进程级单选；TUI 与 pick 共用）。
-static ACTIVE: std::sync::OnceLock<ThemeState> = std::sync::OnceLock::new();
+/// AUDIT-13：`OnceLock` 只能写入一次——运行时 `:theme` 重复切换会静默
+/// 失效，改用 `RwLock<Option<_>>` 支持任意次替换；None = 未激活
+/// （样式走调用方 16 色回退、图标默认 Dark）。
+static ACTIVE: std::sync::RwLock<Option<ThemeState>> = std::sync::RwLock::new(None);
 
 struct ThemeState {
     theme: Theme,
     variant: opaline::schema::ThemeVariant,
 }
+
+/// 写入激活主题（读写锁失败静默——仅毒化时发生，UI 主题保持原样）。
+fn set_active(theme: Theme, variant: opaline::schema::ThemeVariant) {
+    if let Ok(mut slot) = ACTIVE.write() {
+        *slot = Some(ThemeState { theme, variant });
+    }
+}
+
+/// 测试专用：清空激活主题（恢复"未选主题默认 Dark"基线）。
+/// 激活类测试与颜色敏感渲染测试须共用 [`TEST_LOCK`] 串行。
+#[cfg(test)]
+pub(crate) fn reset_active() {
+    if let Ok(mut slot) = ACTIVE.write() {
+        *slot = None;
+    }
+}
+
+/// 测试专用串行锁：主题激活会改变进程级样式/图标（Rgb 前景），
+/// 与颜色断言的渲染测试（如 m21e3）共用此锁避免并行污染。
+#[cfg(test)]
+pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 内置主题名列表（opaline 自动发现，启动时打印枚举供 `:theme` 类命令用）。
 pub fn builtin_names() -> Vec<String> {
@@ -44,15 +68,31 @@ pub fn set_builtin(name: &str) -> std::io::Result<()> {
         )
     })?;
     let variant = theme.meta.variant;
-    let _ = ACTIVE.set(ThemeState { theme, variant });
+    set_active(theme, variant);
     Ok(())
+}
+
+/// AUDIT-13：统一激活入口——内置主题优先，其次用户主题目录
+/// （`~/.config/rvifm/themes/`）；两者都未命中/不可读时返回可读 Err
+/// （`[ui] theme` 启动激活与 `:theme` 运行时切换共用）。
+pub fn activate(name: &str) -> std::io::Result<()> {
+    if set_builtin(name).is_ok() {
+        return Ok(());
+    }
+    set_user_theme(name).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("主题 `{name}` 激活失败（内置与用户主题目录均未命中或不可读）: {e}"),
+        )
+    })
 }
 
 /// 读取当前主题 variant（M9-3 明暗对齐用；未设置时默认 Dark）。
 pub fn active_variant() -> opaline::schema::ThemeVariant {
     ACTIVE
-        .get()
-        .map(|s| s.variant)
+        .read()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|s| s.variant))
         .unwrap_or(opaline::schema::ThemeVariant::Dark)
 }
 
@@ -131,14 +171,17 @@ pub fn set_user_theme(name: &str) -> std::io::Result<()> {
 pub fn set_user_theme_from(dir: &Path, name: &str) -> std::io::Result<()> {
     let theme = load_user_theme_from(dir, name)?;
     let variant = theme.meta.variant;
-    let _ = ACTIVE.set(ThemeState { theme, variant });
+    set_active(theme, variant);
     Ok(())
 }
 
 /// 将 opaline 命名样式解析为 ratatui `Style`。
 /// 未激活主题或样式名不存在时返回默认样式（零配置可用）。
 pub fn style(style_name: &str) -> RtStyle {
-    let Some(state) = ACTIVE.get() else {
+    let Ok(slot) = ACTIVE.read() else {
+        return RtStyle::default();
+    };
+    let Some(state) = slot.as_ref() else {
         return RtStyle::default();
     };
     let s = state.theme.style(style_name);
@@ -179,11 +222,13 @@ mod tests {
 
     #[test]
     fn set_builtin_known_theme_enables_styles() {
+        let _guard = TEST_LOCK.lock().unwrap();
         set_builtin("ayu-dark").unwrap();
         // 激活后样式解析不再返回默认（以常见命名样式验证存在即可）。
         // 具体样式名由主题 TOML 决定——用 palette 常见的 "background" 探测。
         let s = style("background");
         let _ = s; // 存在性由主题文件决定；不 panic 即通过
+        reset_active();
     }
 
     #[test]
@@ -218,11 +263,56 @@ mod tests {
 
         // 未存在主题：NotFound，不 panic。
         assert!(load_user_theme_from(&themes_dir, "nope").is_err());
+        reset_active();
     }
 
     #[test]
     fn set_builtin_unknown_theme_errors() {
         let err = set_builtin("no-such-theme-xyz").unwrap_err();
         assert!(err.to_string().contains("未知内置主题"));
+    }
+
+    #[test]
+    fn activate_prefers_builtin_then_user_and_errors_readable() {
+        // AUDIT-13：activate 内置优先；用户目录命中次之；均未命中 → 可读
+        // Err（不 panic、不改变当前主题）。激活测试持 TEST_LOCK（与颜色
+        // 敏感渲染测试串行）并在结束复位，避免全局样式污染。
+        let _guard = TEST_LOCK.lock().unwrap();
+        let name = builtin_names().first().expect("内置主题非空").clone();
+        activate(&name).unwrap();
+
+        let tmp = TempDir::new().unwrap();
+        let themes_dir = tmp.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(
+            themes_dir.join("mine.toml"),
+            "[meta]\nname = \"Mine\"\nvariant = \"light\"\n\n\
+             [palette]\nbg = \"#ffffff\"\n\n\
+             [styles]\nbackground = { fg = \"bg\" }\n",
+        )
+        .unwrap();
+        set_user_theme_from(&themes_dir, "mine").unwrap();
+        assert!(matches!(
+            active_variant(),
+            opaline::schema::ThemeVariant::Light
+        ));
+
+        // 均未命中：可读错误（含主题名），当前主题不变。
+        let variant_before = active_variant();
+        let err = activate("no-such-theme-xyz").unwrap_err();
+        assert!(err.to_string().contains("no-such-theme-xyz"));
+        assert_eq!(active_variant(), variant_before);
+        reset_active();
+    }
+
+    #[test]
+    fn corrupt_user_theme_file_errors_readable() {
+        // AUDIT-13：损坏主题文件 → 可读 Err，不 panic。
+        let tmp = TempDir::new().unwrap();
+        let themes_dir = tmp.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("broken.toml"), "not toml at all [[[").unwrap();
+        let err = load_user_theme_from(&themes_dir, "broken").unwrap_err();
+        assert!(!err.to_string().is_empty());
     }
 }

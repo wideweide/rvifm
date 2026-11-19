@@ -734,3 +734,10 @@ rvifm record  → 静默记录访问
 - **接线范围**：`app::open_selected`（l/Enter/鼠标/右键菜单共用）物理文件路径接入；M22-6 远端临时副本打开仍走 system_open（远端文件的规则匹配属后续增强，不在本任务）。
 - **shell_quote 迁移**：M18-4 的 app 内部实现迁至 `opener::shell_quote`（pub(crate)），tmux 窗口命令与 `%s` 展开共用同一 POSIX 转义，消除重复（AUDIT-10 的 glob 去重另有其任务，`*x*` 缺陷未动）。
 - **frecency 记录边界**：block=true 转交时退出码未知，不记 file_open 访问（避免记入未发生的访问——`pick` 只读红线的同源语义）。
+
+### 2026-11-20 — AUDIT-13 实现：主题选择接线（WHY + 真 bug）
+
+- **激活入口补齐**：`[ui] theme`（UiConfig 去 Copy 增 Option 字段，5 处拷贝点改 clone）启动激活 + `:theme <name>` 运行时切换臂（`activate` 内置优先→用户目录，无参列全量，错误可读）；`..` 行/远端/结果视图/树视图四个守卫放行（UI 全局只读操作）。渲染消费早已就绪（M21-F1 `filetype_style` 经 `theme::style` + 16 色回退；`icon_theme()`/预览明暗实时读活跃态）——REVIEW 所述"零调用方"指激活入口缺失，接线即生效。
+- **真 bug（接线时发现）**：`ACTIVE` 用 `OnceLock` 只能写一次——`:theme` 第二次切换静默失效（`let _ = ACTIVE.set` 吞掉 Err）。升级 `RwLock<Option<ThemeState>>`（写失败仅毒化场景，UI 保持原样）；AUDIT-13 语义"运行时切换"要求可重复替换，OnceLock 设计与 M9 启动单次激活的假设绑死。
+- **测试隔离**：主题激活改变进程级样式（图标/列表转 Rgb 前景），污染颜色敏感渲染测试（m21e3 "Rgb==语法着色" 断言）。新增 `theme::TEST_LOCK`（cfg(test) 共享锁）串行激活类测试与 m21e3，激活后 `reset_active()` 复位基线。
+- **观察**：`large_directory_load_and_render_fast`（计时类）在 5 次全量中出现 1 次超时失败，单跑 3/3 过——负载敏感 flake，与主题改动无关；若复现频繁再登记整改（AUDIT-12 可吸收）。

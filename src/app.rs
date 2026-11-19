@@ -969,7 +969,7 @@ fn run_user_command(state: &mut AppState, index: usize, msg: &mut Option<String>
             return Outcome::Continue;
         }
     };
-    let ui = state.config.ui;
+    let ui = state.config.ui.clone();
     match run_external_target(&ui, &cmd) {
         ExternalRun::Multiplexer(m) => {
             *msg = Some(m);
@@ -1708,7 +1708,7 @@ fn jump_to(state: &mut AppState, entry: &crate::frecency::ScoredEntry) -> Result
 fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
     if let Some(rest) = line.strip_prefix('!') {
-        let cfg = state.config.ui;
+        let cfg = state.config.ui.clone();
         return match run_external_target(&cfg, rest.trim()) {
             ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
             ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
@@ -1722,7 +1722,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
-                | "compare",
+                | "compare" | "theme",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
@@ -1734,7 +1734,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
                 | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
-                | "touch" | "copy" | "move" | "mk",
+                | "touch" | "copy" | "move" | "mk" | "theme",
             ) => {}
             Some(other) => {
                 // M22-4：去掉过时的"在 M20 接入"表述。
@@ -1746,7 +1746,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // M17 SRCH：结果视图只读——find/grep 重执行与退出类命令豁免。
     if state.active_tab().in_results() {
         match cmd_head {
-            Some("find" | "grep" | "sort" | "q" | "quit" | "help") => {}
+            Some("find" | "grep" | "sort" | "q" | "quit" | "help" | "theme") => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
             }
@@ -1756,7 +1756,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
     if state.active_tab().in_tree() {
         match cmd_head {
-            Some("tree") | Some("q" | "quit") | Some("help") => {}
+            Some("tree") | Some("q" | "quit") | Some("help") | Some("theme") => {}
             Some(other) => {
                 return Err(format!("树视图为只读浏览（:tree 退出）: {other}"));
             }
@@ -1765,6 +1765,26 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("theme") => {
+            // AUDIT-13：运行时主题切换（内置优先、用户主题次之）；
+            // 无参列出可用主题（内置 + 用户目录）。
+            let name = parts.collect::<Vec<&str>>().join(" ");
+            if name.is_empty() {
+                let mut names = crate::theme::builtin_names();
+                names.extend(crate::theme::discover_user_themes());
+                return Ok(ExecOutcome::Done {
+                    msg: Some(format!("可用主题: {}", names.join(", "))),
+                });
+            }
+            crate::theme::activate(&name).map_err(|e| e.to_string())?;
+            let variant = match crate::theme::active_variant() {
+                opaline::schema::ThemeVariant::Light => "light",
+                _ => "dark",
+            };
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("主题已切换: {name}（{variant}）")),
+            })
+        }
         Some("sort") => {
             // M18-2：多字段排序（:sort name,size desc）。
             let args = parts.collect::<Vec<&str>>().join(" ");
@@ -1948,7 +1968,7 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             // 分流（terminal_in_new_window 一致）。
             match crate::git::find_git_tui() {
                 Some(bin) => {
-                    let cfg = state.config.ui;
+                    let cfg = state.config.ui.clone();
                     match run_external_target(&cfg, bin) {
                         ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
                         ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
@@ -3143,7 +3163,7 @@ fn handle_key(
                 // M18-4 分流（terminal_in_new_window 语义与 :! / 自定义命令一致）。
                 return Some(match crate::git::find_git_tui() {
                     Some(bin) => {
-                        let ui = state.config.ui;
+                        let ui = state.config.ui.clone();
                         match run_external_target(&ui, bin) {
                             ExternalRun::Multiplexer(m) => {
                                 *msg = Some(m);
@@ -5191,6 +5211,14 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     };
     // M16 NAV-1：加载 [quickjump] char→keyword 别名（一次）。
     config::init_quickjump();
+    // AUDIT-13：[ui] theme 启动激活（内置优先、用户主题次之；失败提示
+    // 不 panic——保留配置错误或回退默认 Dark）。
+    if let Some(name) = &config.ui.theme
+        && let Err(e) = crate::theme::activate(name)
+        && msg.is_none()
+    {
+        msg = Some(format!("主题激活失败: {e}"));
+    }
     // M23-5：加载 [frecency] per-topic 设置（λ/容量上限）。
     crate::frecency::init_settings(&config.frecency);
     // AUDIT-1：TUI 启动合并上次降级的 pending（合并只发生在 record/TUI 启动）。
@@ -5850,7 +5878,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             // M18-3/M18-4：shell 入口——按 [ui] 配置分流复用器
                             // 新窗口（不挂起）/ 当前 pane（挂起 TUI；state 全程
                             // 未动，光标/滚动与 raw mode/alt screen 恢复）。
-                            let ui = state.config.ui;
+                            let ui = state.config.ui.clone();
                             let shell =
                                 std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
                             match run_external_target(&ui, &shell) {
@@ -11611,6 +11639,43 @@ mod tests {
     }
 
     #[test]
+    fn audit13_theme_command_switches_lists_and_errors() {
+        // AUDIT-13：`:theme` 运行时切换（内置优先）；无参列出可用主题；
+        // 未知主题可读错误（不 panic）。列表/图标渲染经 theme::style /
+        // active_variant 即时跟随（filetype_style 已接线，见 M21-F1）。
+        // 持 theme::TEST_LOCK 与颜色敏感渲染测试串行，结束复位全局主题。
+        let _guard = crate::theme::TEST_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let first = crate::theme::builtin_names()
+            .first()
+            .expect("内置主题非空")
+            .clone();
+        match exec_command_impl(&mut state, &format!("theme {first}")) {
+            Ok(ExecOutcome::Done { msg }) => {
+                let m = msg.unwrap();
+                assert!(m.contains("主题已切换") && m.contains(&first), "msg: {m}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        match exec_command_impl(&mut state, "theme") {
+            Ok(ExecOutcome::Done { msg }) => {
+                let m = msg.unwrap();
+                assert!(m.contains("可用主题") && m.contains(&first), "msg: {m}");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        let err =
+            exec_command_impl(&mut state, "theme no-such-theme-xyz").expect_err("未知主题应报错");
+        assert!(
+            err.contains("激活失败") && err.contains("no-such-theme-xyz"),
+            "{err}"
+        );
+        crate::theme::reset_active();
+    }
+
+    #[test]
     fn audit7_block_opener_hands_off_to_pending_external() {
         // AUDIT-7：规则命中 block=true opener → 命令交 run 循环挂起执行
         // （state.pending_external），不在此处 spawn；目录条目照常内部进入
@@ -14253,6 +14318,10 @@ terminal_in_new_window = false
 
     #[test]
     fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
+        // AUDIT-13：本测试断言 Rgb 前景 == 语法着色——与主题激活类测试
+        // 持 theme::TEST_LOCK 串行（激活主题后图标/列表样式为 Rgb，
+        // 会污染此断言）。
+        let _guard = crate::theme::TEST_LOCK.lock().unwrap();
         // ACCEPTANCE §20 M21-E3：.rs/.py/.json 预览有高亮；.txt shebang 推断
         // 或安全降级；大文件截断提示。
         let tmp = TempDir::new().unwrap();

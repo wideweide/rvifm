@@ -317,7 +317,7 @@
 - [ ] AUDIT-10 统一 glob 匹配（含 opener `*x*` 缺陷）与配置失败回退实现（见 SPEC AUDIT-10）
 - [ ] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11）
 - [ ] AUDIT-12 keymap/state/session/CLI 子命令分派测试补强（见 SPEC AUDIT-12）
-- [ ] AUDIT-13 主题选择接线（内置/用户 TOML/`:theme`/明暗与图标对齐；见 SPEC AUDIT-13）
+- [x] AUDIT-13 主题选择接线（内置/用户 TOML/`:theme`/明暗与图标对齐；见 SPEC AUDIT-13；2026-11-20 完成：`[ui] theme` 启动激活 + `:theme` 运行时切换；ACTIVE 升级 RwLock 修复二次切换静默失效）
 - [x] AUDIT-14 测试环境隔离（`TMUX`/`STY` 依赖修复；见 SPEC AUDIT-14；2026-11-20 完成：`run_external_target_with` 注入路由 + 复用器输出静音）
 - [x] AUDIT-15 pick CLI 契约（`--topic`、文件 topic、数据目录缺失、与预览接线；见 SPEC AUDIT-15；2026-11-20 完成：`--topic dir|file` 对称评分、缺失库空评分降级、CLI 集成测试）
 - [ ] AUDIT-16 frecency 一致性（compaction per-topic λ、pick 初始化设置；见 SPEC AUDIT-16）

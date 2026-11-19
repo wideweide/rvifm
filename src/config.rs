@@ -70,13 +70,16 @@ pub struct FrecencyConfig {
 /// `session_restore`（M25-1）：退出保存/启动恢复会话（tabs），默认开；
 /// false = 不读不写。
 /// `git_column`（M25-5）：文件列表 git 状态字符列，默认开；非仓库隐藏。
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+/// `theme`（AUDIT-13）：opaline 内置主题名或用户主题文件名；None = 不激活
+/// （图标默认 Dark、样式走 16 色回退）。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
     pub terminal_in_new_window: bool,
     pub attrs_column: bool,
     pub session_restore: bool,
     pub git_column: bool,
+    pub theme: Option<String>,
 }
 
 impl Default for UiConfig {
@@ -86,6 +89,7 @@ impl Default for UiConfig {
             attrs_column: true,
             session_restore: true,
             git_column: true,
+            theme: None,
         }
     }
 }
@@ -413,6 +417,17 @@ append_rules = [
         assert!(cfg.open.prepend_rules.is_empty());
         assert!(cfg.open.append_rules.is_empty());
         assert!(cfg.open.rules.is_none());
+        assert!(cfg.ui.theme.is_none(), "未配置主题 → None（默认 Dark）");
+    }
+
+    #[test]
+    fn ui_theme_option_parses() {
+        // AUDIT-13：[ui] theme = "ayu-dark" → Option<String>。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[ui]\ntheme = \"ayu-dark\"\n").unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.ui.theme.as_deref(), Some("ayu-dark"));
     }
 
     #[test]

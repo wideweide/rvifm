@@ -780,9 +780,9 @@
 - [ ] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。
 
 ### AUDIT-13 主题选择
-- [ ] 可通过 `:theme` 或 `[ui] theme` 选择 `opaline` 内置主题，切换后文件列表/预览/归档配色即时变化。
-- [ ] `~/.config/rvifm/themes/` 下的用户 TOML 主题可被发现并加载；损坏主题文件给出可读提示，不 panic。
-- [ ] 图标 Dark/Light 随主题 variant 变化（含远端列表路径）；未选主题时默认 Dark。
+- [x] 可通过 `:theme` 或 `[ui] theme` 选择 `opaline` 内置主题，切换后文件列表/预览/归档配色即时变化。（2026-11-20：启动激活 + 运行时切换臂；渲染经既有 `filetype_style`/`theme::style` 消费即时跟随；ACTIVE 由 OnceLock 升级 RwLock——原实现二次切换静默失效）
+- [x] `~/.config/rvifm/themes/` 下的用户 TOML 主题可被发现并加载；损坏主题文件给出可读提示，不 panic。（2026-11-20：`activate` 内置优先→用户目录；`:theme` 无参列全量）
+- [x] 图标 Dark/Light 随主题 variant 变化（含远端列表路径）；未选主题时默认 Dark。（2026-11-20：`icon_theme()` 经 active_variant 实时读取，列表渲染共用）
 
 ### AUDIT-14 测试环境隔离
 - [x] 在 `TMUX` 与 `STY` 均设置的 shell 中运行 `cargo test -- --test-threads=1` 全绿；清除两个变量后同样全绿。（2026-11-20；AUDIT-18 的 m249/m253 两项按 STATE 门禁偏差 skip）
