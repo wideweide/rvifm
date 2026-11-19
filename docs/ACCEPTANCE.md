@@ -20,6 +20,14 @@
 - 集成测试不得依赖真实 TTY；TUI 渲染使用 `ratatui` 的 `TestBackend`。
 - 冒烟测试只跑 `rvifm --version` / `rvifm --help`，不进入交互模式。
 - 测试 fixture 使用 `tempfile`，不硬编码 `/tmp`。
+
+预算中断自检（AGENTS §3「剩余预算门控与断点落地」，命中预算不足而暂停时检查）：
+
+- [ ] `docs/REVIEW.md` 或对应审计/设计文档已有可阅读的已验证结论。
+- [ ] 未完成项已登记到 `docs/TASKS.md`（`deferred` 或待续）与 `docs/NOTES.md`。
+- [ ] 断点记录含当前 `HEAD`、已验证结论、未验证假设、下一会话起点。
+- [ ] 进度已 `git commit` 并 `git push` 到当前进度分支。
+- [ ] 未留下未提交的破坏性改动或无法验证的中间状态。
 - 路径内部统一 `/`；跨平台比较前规范化。
 
 ## 2. M0 — 骨架 + SPEC + 双平台 CI
@@ -791,3 +799,28 @@
 
 ### AUDIT-17 归档读取上限
 - [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。
+
+## 27. M27 — 0.8.0 实测问题与 vifm 视觉对齐（见 SPEC §27）
+
+### M27-1 符号链接目录
+- [ ] `ln -s <目标目录> link` 后，列表中 `link` 可被识别为目录；`l`/`Enter` 在 rvifm 内部进入目标目录并列出内容，不调用系统 opener。
+- [ ] 进入后 `h` 能返回来源目录；目录优先排序把链接目录按目录处理。
+- [ ] `ln -s <不存在路径> broken` 时目录列表仍可加载；`l`/`Enter` 给出可读提示或不执行，不 panic、不误开系统程序。
+- [ ] 指向普通文件的符号链接仍按文件处理，`Enter` 走系统 opener（不因本修复被误判为目录）。
+- [ ] 目录树/预览中的符号链接目录与列表判定一致（至少不把可进入的链接目录显示为普通文件）。
+
+### M27-2 vifm 风格布局与配色
+- [ ] 默认启动无左右 pane 整框边框；双 pane 之间为 1 列分隔线；标签栏与每个 pane 顶部路径行各占 1 行。
+- [ ] 当前/非当前 pane 的顶部路径行使用不同背景色（`TopLineSel` / `TopLine`），焦点切换时颜色随之切换。
+- [ ] 标签栏（`TabLine`/`TabLineSel`）、状态行（`StatusLine`/`CmdLine`）、分隔线（`Border`）、当前行（`CurrLine`/`OtherLine`）、选中项（`Selected`）均有可区分的样式。
+- [ ] `[ui] pane_borders = true` 可恢复旧的整框边框外观；默认 `false`。
+- [ ] 主题提供对应命名样式时优先使用；未激活主题/样式缺失时回退到 vifm Default 风格的 16 色，不 panic。
+- [ ] `NO_COLOR` 与无 Nerd Font 环境下布局仍正确、无乱码崩溃；README 的界面描述与实现一致。
+
+### M27-3 PDF 前 1–2 页图像预览
+- [ ] `[preview] pdf_image_pages = 0` 时 PDF 仅走文本/提示路径，不生成图像。
+- [ ] `pdf_image_pages = 1` 且文本层不足（`NeedsVisual`）时，若 `exprim`/`pdftoppm`/`mutool` 可用，查看器显示第 1 页图像；工具缺失或失败时回退到文本/提示。
+- [ ] `pdf_image_pages = 2` 时生成前两页；预览区足够高时上下显示两页，不足时至少显示第 1 页并提示。
+- [ ] `pdf_prefer_image = true` 时，即使文本层可用也优先显示图像；但仍先执行文本提取（探测顺序不跳过文本层），图像失败回退到已提取文本。
+- [ ] 启用 `pdf-visual` 时优先走 `exprim`；未启用时走 `pdftoppm` → `mutool`；命令逐参数传递、不经 shell。
+- [ ] 超大输入/超页数/损坏 PDF 不 panic、不 OOM；预览切换或退出后临时图像文件被清理。

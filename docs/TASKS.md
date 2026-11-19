@@ -306,7 +306,7 @@
 > 来源：全面评估报告（第二轮复核新增 AUDIT-13～17），用户已确认批次（2026-11-19）。执行顺序：AUDIT-1 → AUDIT-14 → AUDIT-9 → AUDIT-15 → AUDIT-7/13 → AUDIT-2/3/4/16 → 其余。AUDIT-1 方案（pending 合并移出 pick / 只读 open）已拍板，见 NOTES §10。
 
 - [ ] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1）
-- [ ] AUDIT-2 PDF 视觉探测链接线（exprim → pdftoppm/mutool → 提示，或文档降级，见 SPEC AUDIT-2）
+- [ ] AUDIT-2 PDF 视觉探测链最小接线（第 1 页：exprim → pdftoppm/mutool → 提示，或文档降级；1–2 页与 prefer 配置由 M27-3 扩展，见 SPEC AUDIT-2）
 - [ ] AUDIT-3 pick 预览同源接线或撤回承诺（见 SPEC AUDIT-3）
 - [ ] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4）
 - [ ] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5）
@@ -339,7 +339,17 @@
 - [ ] M26-4 外部 CLI 归档降级（rar/cab/lzh/tar.xz/tar.bz2/tar.zst：PATH 探测 7z/rar → Command 调用 → 缺失优雅终止；输出抑制；无半成品；入撤销栈）
 - [ ] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项）
 
+## M27 — 0.8.0 实测问题与 vifm 视觉对齐（2026-11-19 增补；见 SPEC §27，**已登记，暂不启动**）
+
+> 来源：用户 0.8.0 实测反馈（符号链接目录、vifm 配色、PDF 首页图像）。用户 2026-11-19 决定：批次暂不启动，仅保留登记；执行顺序不变（AUDIT 批次继续）。依赖关系：M27-1 无前置；M27-2 依赖 AUDIT-13（主题接线）；M27-3 依赖 AUDIT-2（最小链接线）。
+
+- [ ] M27-1 符号链接目录 l/Enter 内部进入（跟随目标判定 is_dir、保留 is_link；断链可读；目录优先/树/预览一致；见 SPEC M27-1）
+- [ ] M27-2 vifm 风格布局与配色（默认去 pane 边框，TabLine/TopLine/StatusLine/Border/CurrLine/OtherLine；`[ui] pane_borders`；见 SPEC M27-2）
+- [ ] M27-3 PDF 前 1–2 页图像预览可配置（`[preview] pdf_image_pages` / `pdf_prefer_image`；失败回退文本；见 SPEC M27-3）
+
 ## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
+
+- [ ] PROC-1 预算门控与断点落地协议（已写入 AGENTS §3 + ACCEPTANCE §1；无代码改动，待用户确认后生效）
 
 - [ ] MISC-1 提供 `rv` 短别名二进制（与 `rvifm` 并存；项目名/crate/主二进制名不变；Cargo `[[bin]]` + 安装产物 + README 说明）
 

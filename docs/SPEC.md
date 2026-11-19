@@ -310,6 +310,25 @@ redb 三表，无后台守护进程：
 **OUT_OF_SCOPE**
 - ArchiveWriter trait 抽象层（评估否决：枚举分派 + pack_* 函数已满足，格式数少不值得间接层——见 NOTES M26 立项）；归档内写入；7z 加密归档创建；分卷（multi-volume）；xz/bz2/zst 纯 Rust 编码器（crates.io 核实不可用/不成熟——lzma-rust 不产出 .xz 容器、bzip2 纯编码器不存在、yolowzstd 0.1.x 过年轻，走 M26-4 外部 CLI）。
 
+#### M27 — 0.8.0 实测问题与 vifm 视觉对齐（2026-11-19 增补；来源：用户 0.8.0 实测反馈）
+
+**硬约束**：符号链接目录必须在 rvifm 内部导航，不得因类型判定错误落到系统 opener；视觉调整不得引入新依赖、不得为特定终端写硬编码分支（AGENTS §5.5/§5.6），主题缺失、`NO_COLOR`、无 Nerd Font 时必须安全回退；PDF 仍遵守 AGENTS §5.5 的探测顺序——文本提取必须先执行，`prefer_image` 只改变“展示优先级”，不得跳过文本提取。
+
+**MUST**
+- **M27-1 符号链接目录进入**：物理视图分类条目时必须跟随符号链接目标判定 `is_dir`（保留 `is_link` 用于着色）；`ln -s <dir> link` 后 `l`/`Enter` 进入目标目录（rvifm 内部 `navigate_to`），不得调用 `system_open()`；目录优先排序、`..` 返回、目录树/预览的目录判定与之一致；断链不得使目录列表加载失败，`Enter` 给出可读提示且不 panic。
+- **M27-2 vifm 风格布局与配色**：默认去掉左右 pane 的整框边框，改为 vifm 式布局——标签栏 1 行、每个 pane 顶部路径行 1 行、双 pane 之间 1 列分隔线、底部状态行；用背景色而非边框区分：`TabLine`/`TabLineSel`、`TopLine`/`TopLineSel`（非焦点/焦点 pane 路径行）、`Border`（分隔线）、`StatusLine`/`CmdLine`、`CurrLine`/`OtherLine`、`Selected`；文件类型映射 vifm 组名（`Directory`/`Link`/`BrokenLink`/`Executable` 等），缺失时回退现有 `ft_*`/16 色；新增 `[ui] pane_borders`（默认 false；true 恢复旧整框外观）；主题样式存在时优先，未激活主题时使用 vifm Default 风格的 16 色回退。
+- **M27-3 PDF 首页/前两页图像预览（可配置）**：TUI 查看器（`w`/view）在 PDF 文本提取后，可按配置生成前 1–2 页图像交给 `ImageEngine` 渲染；`[preview] pdf_image_pages = 0|1|2`（默认 1；0 关闭）与 `pdf_prefer_image = false|true`（默认 false）；`prefer_image=false` 时仅在文本层不足（`NeedsVisual`）才走图像，`true` 时文本提取成功后仍优先展示图像；探测顺序仍为 `pdf-inspector` 文本 → `exprim`（仅 `pdf-visual`）→ `pdftoppm`/`mutool`；任一环节失败（工具缺失/非零退出/解码失败/超页数）回退到已提取文本或可读提示，不 panic；外部命令逐参数传递、不经 shell，临时图像文件在预览切换/退出时清理；输入文件大小与导出像素沿用 M11/AUDIT-2 护栏；`pick` 的 PDF 预览不在本任务（AUDIT-3 决定）。
+
+**SIMPLIFIED**
+- M27-1：进入后路径可显示链接路径或解析后的目标路径；不实现“编辑链接目标/创建链接”UI。
+- M27-2：只覆盖 TUI 主界面（列表/预览/归档共用样式）；不实现 vifm 的完整 `:highlight` 语法或目录级 colorscheme；不新增第二行命令栏，状态行沿用 1 行。
+- M27-3：只渲染前 1–2 页，不做任意页跳转/缩略图/连续滚动；DPI 固定（约 150），不暴露配置；2 页在预览区上下排列，空间不足时至少显示第 1 页并提示。
+
+**OUT_OF_SCOPE**
+- 符号链接创建/修改、链接目标解析对话框。
+- vifmrc/完整 vifm 颜色方案解析、运行时 `:highlight` 命令。
+- PDF 全页渲染、文本层重建、OCR、PDF 编辑。
+
 #### M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；来源：用户批次需求讨论稿蒸馏）
 
 **硬约束**：marks 由 frecency 模块实现，数据持久化在 frecency 的 redb 存储中（与 `keyword` bookmark 共用），带频率记录，不设独立 marks 存储/模块；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
@@ -942,7 +961,7 @@ append_rules = [
 
 **MUST**
 - **AUDIT-1 pick 只读性**：`pick` 路径不得写 redb、不得推进任何 tick；`events.pending` 合并移出 pick 路径或提供只读 open。与“下次启动合并”的冲突决策入 NOTES §8。
-- **AUDIT-2 PDF 视觉探测链**：按 `pdf-inspector` 文本提取 → `exprim`（仅 pdf-visual）→ `pdftoppm`/`mutool` → 提示 + opener 接线，或明确文档降级。
+- **AUDIT-2 PDF 视觉探测链（最小接线）**：按 `pdf-inspector` 文本提取 → `exprim`（仅 pdf-visual）→ `pdftoppm`/`mutool` → 提示 + opener 接线，或明确文档降级；本任务先接通第 1 页，前 1–2 页与 `prefer_image` 配置由 M27-3 扩展。
 - **AUDIT-3 pick 预览同源**：pick 接入 `PreviewRenderer`，或从 SPEC/README 删除“同源”承诺。
 - **AUDIT-4 惰性 compaction**：TUI 启动时按阈值（默认 5000 条）触发写 snapshot + 截断 events；`pick` 不触发（只读）；原“读方启动”表述已按 AUDIT-1 修正为“TUI 启动”。
 - **AUDIT-5 app.rs 拆分**：按 keys/exec/render/jobs/preview 分片，测试随迁，单文件生产代码降到可维护规模。

@@ -663,6 +663,18 @@ rvifm record  → 静默记录访问
 - **WHY**：只读红线是 frecency 语义正确性的基础（记录的是“已发生的访问”）；合并是可用性降级路径，不能反过来破坏只读契约。
 - **执行**：AUDIT-1 为 AUDIT 批次首个任务，验收见 ACCEPTANCE §26（存在 pending 时执行 `pick`，DB mtime 与 `global_tick` 不变）。状态已同步至 SPEC §6.1、TASKS、STATE、PLAN、AGENTS §10。
 
+### 2026-11-19 — M27 需求评估：符号链接 / vifm 配色 / PDF 页预览（WHY）
+
+- **来源**：用户 0.8.0 实测反馈（三项）；本轮只评估并登记 SPEC/TASKS/ACCEPTANCE/PLAN/STATE，不实现代码，待用户确认。
+- **符号链接根因**：`tab::load_entries` 用 `DirEntry::file_type()`（lstat，不跟随链接）判定 `is_dir`，symlink-to-dir 得 `false`；`app::open_selected` 对 `!is_dir` 走 `system_open()`，于是系统文件管理器打开。修复方向：用 `fs::metadata`（跟随）判定目录，失败回退 `DirEntry::metadata`（断链）；`is_link` 保留用于着色；目录优先排序、目录树、预览的目录判定一并统一。
+- **vifm 配色调研**：vifm 不用每 pane 整框边框；`Border` 只表示垂直分隔；`TopLine`（非焦点 pane 顶部路径行）/`TopLineSel`（焦点）、`TabLine`/`TabLineSel`、`StatusLine`/`CmdLine`、`CurrLine`/`OtherLine`、`Selected` 用背景色区分。Default.vifm 关键值：TopLine 黑字白底、TopLineSel 黑字默认底加粗、StatusLine 黑字白底、Border 黑字白底、CurrLine 默认字蓝底、Selected 品红加粗。rvifm 现状是每个 pane `Block::bordered()` 整框 + 标题，焦点靠边框 bold/dim，tab 用 REVERSED，与 vifm 差距大。
+- **决策 M27-2**：默认 `[ui] pane_borders = false`（vifm 式）；`true` 保留旧整框。默认用 vifm Default 风格的 16 色回退，主题命名样式存在时覆盖；不实现 vifmrc、`:highlight`、目录级 colorscheme。依赖 AUDIT-13，避免再次“有样式无加载”。
+- **PDF 调研（yazi）**：yazi 默认 `pdf.lua` 用 `pdftoppm -f N -l N -singlefile -jpeg ...` 逐页转图并缓存，preloader 预热；poppler 缺失或 Windows winget 版缺 `-jpeg` 时报错。rvifm 改用 `-png`（`image` crate 已支持，避开 `-jpeg` 平台差异），外部工具逐页转 PNG 后交 `ImageEngine`。
+- **PDF 与硬约束**：AGENTS §5.5 要求“文本提取 → exprim → pdftoppm/mutool”，不得跳过文本提取。用户“优先图片、失败文本”解释为**展示优先级**：`pdf_prefer_image = true` 时仍先执行 PDF 文本提取，再优先显示图像；失败回退已提取文本。若要求完全跳过文本提取，必须修订 AGENTS §5.5，本轮不做。`pdf_image_pages` 默认 1（文本层不足时使用），0 关闭，2 在预览区上下显示两页。
+- **范围收缩**：M27-1 不实现链接创建/编辑；M27-2 不做完整 vifm colorscheme；M27-3 不做任意页跳转/缩略图/OCR/全页渲染；`pick` 的 PDF 图像预览归 AUDIT-3 决定。
+- **顺序**：M27-1 是用户实测功能 bug，如启动建议优先于 AUDIT-1；M27-2/3 依赖 AUDIT-13/2。
+- **用户决定（2026-11-19）**：M27 批次暂不启动，仅保留登记；执行顺序不变，AUDIT 批次继续。文档改动（SPEC/TASKS/ACCEPTANCE/PLAN/STATE/README）保留在工作区，未提交。
+
 ### 2026-11-19 — 第二轮复核：AUDIT 扩至 17 项（WHY）
 
 - **来源**：用户要求对 harness 与代码做第二轮严肃评估；上一轮报告已归档 `docs/reviews/REVIEW-2026-11-19.md`，新结论见 `docs/REVIEW.md`（基线 `9532cd0`）。本轮不采信上一轮结论，全部重新核验。
