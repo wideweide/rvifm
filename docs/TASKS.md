@@ -338,7 +338,7 @@
 - [x] M26-2 7z 内建创建（sevenz-rust 0.6 写端；ArchiveFormat::SevenZ 分派；校验文件与对话框格式扩展；2026-11-20 完成：pack_7z 递归打包，roundtrip 读端测试，对话框 4 格式循环）
 - [x] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端 SevenZFs；损坏/加密可读错误；2026-11-20 完成：open_dispatch/is_archive_file 更新，roundtrip+损坏+空归档测试，FIX-3 测试改写 .rar/.7z 双语义）
 - [x] M26-4 外部 CLI 归档降级（rar/cab/lzh/tar.xz/tar.bz2/tar.zst：PATH 探测 7z/rar → Command 调用 → 缺失优雅终止；输出抑制；无半成品；入撤销栈；2026-11-20 完成：cli_tool_candidates/cli_create_args/pack_cli，纯函数测试 + SpawnJob 形态断言）
-- [ ] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项）
+- [x] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项；2026-11-20 完成：新增"归档创建"行为表，对比表/状态句/frecency 段同步）
 
 ## M27 — 0.8.0 实测问题与 vifm 视觉对齐（2026-11-19 增补；见 SPEC §27，**已确认，按序排队**）
 

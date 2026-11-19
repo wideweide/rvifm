@@ -750,7 +750,7 @@
 - [x] 7z/rar 存在时 xz/bz2/zst/rar 创建成功且产物可被读端/外部工具验证；缺失时优雅终止（可读提示、无半成品）。（2026-11-20：`cli_tool_candidates`/`cli_create_args`/`pack_cli`（cwd=base、.output() 捕获、stderr 尾部上浮、目标缺失检查、半成品清理归调用方）；工具探测失败 → "创建 .rar 需要 rar…均未在系统中找到"；e2e 成败依赖环境 CLI 可用性，纯函数层测试 + SpawnJob 形态断言）
 
 ### M26-5 文档
-- [ ] README 归档创建格式行为表与实现一致（内建/外部/不支持 + 校验默认）。
+- [x] README 归档创建格式行为表与实现一致（内建/外部/不支持 + 校验默认）。（2026-11-20：新增"归档创建"行为表（内建 4 格式/CLI 6 格式/校验/观察项）；对比表与状态句同步 7z；frecency 段 AUDIT-1/4/15 过期表述一并勘正）
 
 ## 26. AUDIT — 评估报告整改（AUDIT-1～17，见 SPEC AUDIT 段 / docs/REVIEW.md）
 
