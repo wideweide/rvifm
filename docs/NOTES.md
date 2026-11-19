@@ -741,3 +741,10 @@ rvifm record  → 静默记录访问
 - **真 bug（接线时发现）**：`ACTIVE` 用 `OnceLock` 只能写一次——`:theme` 第二次切换静默失效（`let _ = ACTIVE.set` 吞掉 Err）。升级 `RwLock<Option<ThemeState>>`（写失败仅毒化场景，UI 保持原样）；AUDIT-13 语义"运行时切换"要求可重复替换，OnceLock 设计与 M9 启动单次激活的假设绑死。
 - **测试隔离**：主题激活改变进程级样式（图标/列表转 Rgb 前景），污染颜色敏感渲染测试（m21e3 "Rgb==语法着色" 断言）。新增 `theme::TEST_LOCK`（cfg(test) 共享锁）串行激活类测试与 m21e3，激活后 `reset_active()` 复位基线。
 - **观察**：`large_directory_load_and_render_fast`（计时类）在 5 次全量中出现 1 次超时失败，单跑 3/3 过——负载敏感 flake，与主题改动无关；若复现频繁再登记整改（AUDIT-12 可吸收）。
+
+### 2026-11-20 — AUDIT-2 实现：PDF 视觉链最小接线（WHY）
+
+- **顺序合规**：AGENTS §5.5"不得跳过文本提取"——`cached_visual_png` 仅在 `preview_pdf` 判定 `NeedsVisual` 时进视觉链；`Text`/`Unavailable` 返回 None 走既有文本/提示路径。
+- **视觉链（第 1 页）**：`render_first_page_png_with` 按序 exprim（仅 pdf-visual，M11-13 护栏内，失败落外部工具）→ `pdftoppm -png -f 1 -l 1 -singlefile` → `mutool draw -o`（外部工具 IO 静默，M21-F8 同款）；产物校验存在且非空。PNG 编码走 `image` crate（内存编码后落盘，避免半成品）。
+- **每帧安全**：查看器逐帧渲染——`VISUAL_CACHE`（含**失败缓存**）保证外部工具探测/spawn 每路径仅一次；否则无工具环境每帧 spawn 两次。临时 PNG 进程内原子计数命名；清理随 M27-3 统一（其验收含"预览切换/退出清理"）。
+- **接线点**：viewer（w/预览窗格）PDF 臂拆分——视觉命中走 `ImageEngine` 渲染缓存 PNG（标题"PDF 预览（第 1 页图像）"），渲染失败回退可读提示；pick 的 PDF 视觉预览归 AUDIT-3。注入式测试（`_with(None)`）保证 CI 无工具环境确定性。

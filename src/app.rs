@@ -7313,17 +7313,36 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
         // 文本提取先行 / office_oxide 提取），失败按类型提示；不落文本读取
         // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。
         match crate::preview::preview_kind(&path) {
-            crate::preview::PreviewKind::Pdf | crate::preview::PreviewKind::Office => {
-                let label = if matches!(
-                    crate::preview::preview_kind(&path),
-                    crate::preview::PreviewKind::Pdf
-                ) {
-                    "PDF 预览"
-                } else {
-                    "Office 预览"
-                };
+            crate::preview::PreviewKind::Office => {
                 let pane = ratatui::widgets::Block::bordered()
-                    .title(format!("{shown} · {label}"))
+                    .title(format!("{shown} · Office 预览"))
+                    .border_style(pane_border_style(true));
+                let inner = pane.inner(area);
+                frame.render_widget(pane, area);
+                let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                frame.render_widget(preview.into_paragraph(), inner);
+                return;
+            }
+            crate::preview::PreviewKind::Pdf => {
+                // AUDIT-2：NeedsVisual → 第 1 页视觉链（exprim → pdftoppm →
+                // mutool，结果缓存），产出经 ImageEngine 渲染；Text/失败 →
+                // 文本/提示路径（文本提取先行不跳过，AGENTS §5.5）。
+                if let Some(png) = crate::pdf::cached_visual_png(&path) {
+                    let pane = ratatui::widgets::Block::bordered()
+                        .title(format!("{shown} · PDF 预览（第 1 页图像）"))
+                        .border_style(pane_border_style(true));
+                    let inner = pane.inner(area);
+                    frame.render_widget(pane, area);
+                    if state.image_engine.render_file(frame, inner, &png).is_err() {
+                        frame.render_widget(
+                            Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
+                            inner,
+                        );
+                    }
+                    return;
+                }
+                let pane = ratatui::widgets::Block::bordered()
+                    .title(format!("{shown} · PDF 预览"))
                     .border_style(pane_border_style(true));
                 let inner = pane.inner(area);
                 frame.render_widget(pane, area);

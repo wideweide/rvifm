@@ -12,7 +12,9 @@
 // M11-10 探测链先行；TUI 预览分支在 M11-11 接入，exprim 视觉路径 M11-13。
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
 
 /// 预览提取的页数上限（第一页即可判定内容形态）。
 const PREVIEW_PAGES: u32 = 1;
@@ -78,6 +80,143 @@ fn which_ok(cmd: &str) -> bool {
         let p = dir.join(format!("{cmd}{ext}"));
         p.is_file()
     })
+}
+
+// ── AUDIT-2：视觉链最小接线（NeedsVisual → 第 1 页 PNG） ──────────────────
+//
+// SPEC 顺序：文本提取先行（调用方 render_preview 已做）→ exprim（仅
+// pdf-visual）→ pdftoppm → mutool → 提示。查看器每帧渲染——结果缓存
+// （含失败缓存）保证外部工具只探测/执行一次；临时文件清理随 M27-3
+// 统一处理（本任务保证进程内唯一命名）。
+
+/// 视觉渲染结果缓存：路径 → 第 1 页 PNG 临时文件；`None` = 全链失败
+/// （避免每帧重复 spawn / PATH 探测）。
+static VISUAL_CACHE: std::sync::LazyLock<
+    Mutex<std::collections::HashMap<PathBuf, Option<PathBuf>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// 视觉预览入口（查看器调用，每帧安全）。仅 PDF 判定为 `NeedsVisual`
+/// 才可能产出 PNG；`Text` / `Unavailable` 返回 `None`（调用方走文本/提示
+/// 路径——AGENTS §5.5：不得跳过文本提取直接进入视觉渲染）。
+pub fn cached_visual_png(path: &Path) -> Option<PathBuf> {
+    cached_visual_png_with(path, find_external_renderer())
+}
+
+/// 注入外部工具形态（测试用）；语义同 [`cached_visual_png`]。
+fn cached_visual_png_with(
+    path: &Path,
+    ext: Option<(&'static str, &'static str)>,
+) -> Option<PathBuf> {
+    let key = path.to_path_buf();
+    if let Ok(cache) = VISUAL_CACHE.lock()
+        && let Some(hit) = cache.get(&key)
+    {
+        return hit.clone();
+    }
+    let outcome = match preview_pdf(path) {
+        PdfPreview::NeedsVisual => {
+            let png = next_temp_png();
+            render_first_page_png_with(path, &png, ext)
+                .ok()
+                .map(|()| png)
+        }
+        _ => None,
+    };
+    if let Ok(mut cache) = VISUAL_CACHE.lock() {
+        cache.insert(key, outcome.clone());
+    }
+    outcome
+}
+
+/// 临时 PNG 路径（进程内原子计数，避免并发/多文件冲突）。
+fn next_temp_png() -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rvifm-pdf-{}-{n}.png", std::process::id()))
+}
+
+/// 按序尝试把第 1 页渲染为 PNG：exprim（仅 pdf-visual，M11-13 护栏内）
+/// → pdftoppm → mutool（外部工具，IO 静默）。全部不可用返回可读 Err。
+pub fn render_first_page_png(path: &Path, out_png: &Path) -> Result<(), String> {
+    render_first_page_png_with(path, out_png, find_external_renderer())
+}
+
+/// 注入外部工具形态（测试用）；语义同 [`render_first_page_png`]。
+fn render_first_page_png_with(
+    path: &Path,
+    out_png: &Path,
+    ext: Option<(&'static str, &'static str)>,
+) -> Result<(), String> {
+    // 1. exprim（仅 pdf-visual feature；失败不中断，落外部工具）。
+    #[cfg(feature = "pdf-visual")]
+    if let Ok(pixels) = visual::render_page(path, 0) {
+        return encode_png(pixels, out_png);
+    }
+    // 2. 外部工具（pdftoppm → mutool，find_external_renderer 顺序保证）。
+    if let Some((_name, cmd)) = ext {
+        let out_stem = out_png.with_extension("");
+        let spawn = if cmd == "pdftoppm" {
+            silent_command("pdftoppm").and_then(|mut c| {
+                c.args([
+                    "-png",
+                    "-f",
+                    "1",
+                    "-l",
+                    "1",
+                    "-singlefile",
+                    &path.to_string_lossy(),
+                    &out_stem.to_string_lossy(),
+                ])
+                .status()
+            })
+        } else {
+            silent_command("mutool").and_then(|mut c| {
+                c.args([
+                    "draw",
+                    "-o",
+                    &out_png.to_string_lossy(),
+                    &path.to_string_lossy(),
+                    "1",
+                ])
+                .status()
+            })
+        };
+        let ok = matches!(spawn, Ok(s) if s.success())
+            && out_png.is_file()
+            && std::fs::metadata(out_png)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
+        if ok {
+            return Ok(());
+        }
+    }
+    Err("无可用的 PDF 视觉渲染途径（pdf-visual 未启用且 pdftoppm/mutool 均未安装）".to_owned())
+}
+
+/// M21-F8 同款：外部命令 IO 静默化（stderr/stdout 不漏进 TUI）。
+fn silent_command(prog: &str) -> std::io::Result<Command> {
+    let mut c = Command::new(prog);
+    c.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    Ok(c)
+}
+
+/// exprim 页面像素 → PNG 落盘（先编码内存再写文件，避免半成品）。
+#[cfg(feature = "pdf-visual")]
+fn encode_png(pixels: visual::PagePixels, out: &Path) -> Result<(), String> {
+    let img = image::RgbImage::from_raw(pixels.width, pixels.height, pixels.rgb)
+        .ok_or_else(|| "像素缓冲尺寸不匹配".to_owned())?;
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .map_err(|e| format!("PNG 编码失败: {e}"))?;
+    std::fs::write(out, bytes.into_inner()).map_err(|e| format!("PNG 写入失败: {e}"))
+}
+
+#[cfg(test)]
+pub(crate) fn visual_cache_len() -> usize {
+    VISUAL_CACHE.lock().map(|c| c.len()).unwrap_or(0)
 }
 
 // ── M11-13：pdf-visual 护栏（仅 feature 启用时编译） ─────────────────────
@@ -286,6 +425,40 @@ mod tests {
         let p = tmp.path().join("bad.pdf");
         std::fs::write(&p, b"not a pdf").unwrap();
         assert!(matches!(preview_pdf(&p), PdfPreview::Unavailable(_)));
+    }
+
+    #[test]
+    fn cached_visual_png_text_pdf_short_circuits() {
+        // AUDIT-2：文本层可用（Text）→ 不进视觉链（None），文本提取先行
+        // 不跳过（AGENTS §5.5）。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "text-first.pdf", "Hello Audit2");
+        assert_eq!(cached_visual_png_with(&p, None), None);
+        assert!(visual_cache_len() >= 1, "结果入缓存（含失败缓存）");
+    }
+
+    #[test]
+    fn cached_visual_png_needs_visual_no_tools_none_and_cached() {
+        // AUDIT-2：NeedsVisual（空文本层）+ 无外部工具（注入 None）→
+        // 全链失败缓存为 None（避免每帧 spawn）；二次调用命中缓存。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "scanned.pdf", "");
+        assert!(matches!(preview_pdf(&p), PdfPreview::NeedsVisual));
+        let before = visual_cache_len();
+        assert_eq!(cached_visual_png_with(&p, None), None);
+        assert_eq!(visual_cache_len(), before + 1, "失败结果入缓存");
+        assert_eq!(cached_visual_png_with(&p, None), None, "二次命中缓存");
+        assert_eq!(visual_cache_len(), before + 1, "缓存命中不新增条目");
+    }
+
+    #[test]
+    fn render_first_page_png_no_tools_err_readable() {
+        // AUDIT-2：无 exprim（默认构建）且注入 None → 可读 Err，不 panic。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "scanned2.pdf", "");
+        let out = tmp.path().join("p1.png");
+        let err = render_first_page_png_with(&p, &out, None).unwrap_err();
+        assert!(err.contains("视觉渲染途径"), "{err}");
     }
 
     #[test]
