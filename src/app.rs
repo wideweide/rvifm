@@ -1826,6 +1826,59 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 )),
             })
         }
+        Some("archive") => {
+            // M25-3：归档创建——tags 优先（空 = 光标条目）；纯 Rust 写端
+            // zip/tar/tar.gz（xz/bz2/zst 经格式解析/推断失败可读提示不支持）。
+            let base = physical_base(state)?;
+            let args: Vec<&str> = parts.collect();
+            let (format, name): (ops::ArchiveFormat, &str) = match args.as_slice() {
+                [fmt, name] => (
+                    ops::ArchiveFormat::parse(fmt)
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?,
+                    name,
+                ),
+                [name] => (
+                    ops::ArchiveFormat::infer(name).ok_or_else(|| {
+                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz）".to_owned()
+                    })?,
+                    name,
+                ),
+                [] => return Err("archive: 缺少参数（:archive [zip|tar|tar.gz] <名>）".to_owned()),
+                _ => return Err("archive: 参数过多（:archive [zip|tar|tar.gz] <名>）".to_owned()),
+            };
+            let tab = state.active_tab();
+            let names: Vec<String> = if tab.tags.is_empty() {
+                vec![
+                    tab.entries
+                        .get(tab.cursor)
+                        .ok_or_else(|| "archive: 无选中条目".to_owned())?
+                        .name
+                        .clone(),
+                ]
+            } else {
+                // HashSet 顺序不定 → 排序使打包条目顺序确定。
+                let mut names: Vec<String> = tab.tags.iter().cloned().collect();
+                names.sort();
+                names
+            };
+            let tab_id = state.active;
+            let op = ops::create_archive(tab_id, &base, name, format, &names)
+                .map_err(|e| format!("archive: {e}"))?;
+            let dest = match &op {
+                crate::state::UndoableOp::Create { path, .. } => {
+                    path.display().to_string().replace('\\', "/")
+                }
+                _ => String::new(),
+            };
+            state.undo_stack.push(op);
+            refresh_tab_panes(state, tab_id);
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "archive: 已创建 {dest}（{} 项，u 可撤销）",
+                    names.len()
+                )),
+            })
+        }
         Some("remote") => {
             // M19-4：进入远端（remotes.toml 覆盖 ssh config 别名）；无参列出。
             match parts.next() {
@@ -7808,6 +7861,94 @@ mod tests {
         let all = compact(terminal.backend(), 70, 8);
         assert!(all.contains("已取消"), "Cancelled 终态可见: {all}");
         let _ = id;
+    }
+
+    // ── M25-3：归档创建（:archive；zip/tar/tar.gz 纯 Rust 写端） ────────────
+
+    #[test]
+    fn m253_archive_zip_roundtrip_and_undo() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "AAA").unwrap();
+        fs::create_dir(tmp.path().join("sub")).unwrap();
+        fs::write(tmp.path().join("sub/b.txt"), "BBB").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().tags.insert("a.txt".to_owned());
+        state.active_tab_mut().tags.insert("sub".to_owned());
+        // 缺扩展名自动补齐。
+        match exec_command_impl(&mut state, "archive zip out") {
+            Ok(ExecOutcome::Done { msg }) => {
+                assert!(msg.unwrap().contains("out.zip"), "自动补扩展名");
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        let dest = tmp.path().join("out.zip");
+        assert!(dest.exists(), "产物存在");
+        // rvifm 自身读端可浏览（open_dispatch 复用）。
+        let mut fsx = crate::archive::open_dispatch(&dest).unwrap();
+        let names: Vec<String> = fsx
+            .list("/")
+            .unwrap()
+            .iter()
+            .map(|i| i.path.clone())
+            .collect();
+        assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
+        assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
+        assert!(fsx.read("/sub/b.txt").unwrap() == b"BBB", "目录内容被打包");
+        // u 撤销移除产物。
+        let mut msg = None;
+        undo_last(&mut state, &mut msg);
+        assert!(!dest.exists(), "undo 移除归档");
+    }
+
+    #[test]
+    fn m253_archive_tar_gz_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("one.txt"), "1").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().cursor = 0;
+        // 1 参数：从扩展名推断 tar.gz。
+        assert!(exec_command_impl(&mut state, "archive bundle.tar.gz").is_ok());
+        let dest = tmp.path().join("bundle.tar.gz");
+        assert!(dest.exists());
+        // gzip 真压缩产物：读端解包验证。
+        let fsx = crate::archive::open_dispatch(&dest).unwrap();
+        let names: Vec<String> = fsx
+            .list("/")
+            .unwrap()
+            .iter()
+            .map(|i| i.path.clone())
+            .collect();
+        assert!(names.contains(&"one.txt".to_owned()), "names: {names:?}");
+        // .tar 同理（光标条目单选）。
+        state.active_tab_mut().cursor = 0;
+        assert!(exec_command_impl(&mut state, "archive plain.tar").is_ok());
+        assert!(tmp.path().join("plain.tar").exists());
+    }
+
+    #[test]
+    fn m253_archive_guards() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        // xz/bz2/zst：格式解析拒绝（纯 Rust 写端边界）。
+        assert!(exec_command_impl(&mut state, "archive tar.xz x.tar.xz").is_err());
+        assert!(exec_command_impl(&mut state, "archive tar.bz2 x.tar.bz2").is_err());
+        assert!(exec_command_impl(&mut state, "archive tar.zst x.tar.zst").is_err());
+        // 1 参数但扩展名不可推断。
+        assert!(exec_command_impl(&mut state, "archive out.rar").is_err());
+        // 无参 / 参数过多。
+        assert!(exec_command_impl(&mut state, "archive").is_err());
+        assert!(exec_command_impl(&mut state, "archive zip a b").is_err());
+        // 同名已存在报错不覆盖。
+        fs::write(tmp.path().join("dup.zip"), "old").unwrap();
+        state.active_tab_mut().cursor = 0;
+        assert!(exec_command_impl(&mut state, "archive zip dup.zip").is_err());
+        assert_eq!(fs::read(tmp.path().join("dup.zip")).unwrap(), b"old");
+        // 源缺失整批中止且不留半成品。
+        state.active_tab_mut().tags.insert("a.txt".to_owned());
+        state.active_tab_mut().tags.insert("ghost.txt".to_owned());
+        assert!(exec_command_impl(&mut state, "archive zip ghost.zip").is_err());
+        assert!(!tmp.path().join("ghost.zip").exists(), "失败无半成品");
     }
 
     #[test]

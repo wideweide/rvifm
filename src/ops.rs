@@ -333,6 +333,175 @@ pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<Un
     })
 }
 
+/// 归档创建格式（M25-3）。**纯 Rust 写端边界**：xz/bz2/zst 主流编码器均为
+/// C 绑定（违反零 C 编译期依赖原则），保持只读（M7-8 读端不变），创建请求
+/// 给出可读提示（WHY 见 NOTES M25 立项）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveFormat {
+    Zip,
+    Tar,
+    TarGz,
+}
+
+impl ArchiveFormat {
+    /// 对应扩展名（含点；tar.gz 为 `.tar.gz`）。
+    pub fn ext(self) -> &'static str {
+        match self {
+            ArchiveFormat::Zip => ".zip",
+            ArchiveFormat::Tar => ".tar",
+            ArchiveFormat::TarGz => ".tar.gz",
+        }
+    }
+
+    /// 从格式名解析（`:archive <格式> <名>`）。
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "zip" => Some(ArchiveFormat::Zip),
+            "tar" => Some(ArchiveFormat::Tar),
+            "tar.gz" => Some(ArchiveFormat::TarGz),
+            _ => None,
+        }
+    }
+
+    /// 从归档名扩展名推断（`:archive <名>` 无显式格式时）。
+    pub fn infer(name: &str) -> Option<Self> {
+        let lower = name.to_lowercase();
+        if lower.ends_with(".zip") {
+            Some(ArchiveFormat::Zip)
+        } else if lower.ends_with(".tar.gz") {
+            Some(ArchiveFormat::TarGz)
+        } else if lower.ends_with(".tar") {
+            Some(ArchiveFormat::Tar)
+        } else {
+            None
+        }
+    }
+}
+
+/// 归档创建（M25-3，`:archive [zip|tar|tar.gz] <名>`）：把 `names`（当前
+/// 目录条目名，目录递归打包、软链接按链接本身收录）打包为 `base` 下 `<名>`
+/// （缺扩展名自动补齐）。同名已存在报错不覆盖；任一源缺失整批中止；
+/// 写入失败清理半成品（M20-3 教训）；产物入撤销栈（Create，`u` 可逆）。
+pub fn create_archive(
+    tab_id: usize,
+    base: &Path,
+    name: &str,
+    format: ArchiveFormat,
+    names: &[String],
+) -> std::io::Result<UndoableOp> {
+    let final_name = if name.to_lowercase().ends_with(format.ext()) {
+        name.to_owned()
+    } else {
+        format!("{name}{}", format.ext())
+    };
+    let dest = validate_new_name(base, &final_name)?;
+    let mut sources = Vec::new();
+    for n in names {
+        let p = base.join(n);
+        fs::symlink_metadata(&p)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("源条目不存在: {n}——整批中止")))?;
+        sources.push((n.as_str().to_owned(), p));
+    }
+    let result = match format {
+        ArchiveFormat::Zip => pack_zip(&dest, &sources),
+        ArchiveFormat::Tar => pack_tar(&dest, &sources, false),
+        ArchiveFormat::TarGz => pack_tar(&dest, &sources, true),
+    };
+    if let Err(e) = result {
+        let _ = fs::remove_file(&dest);
+        return Err(e);
+    }
+    Ok(UndoableOp::Create {
+        tab_id,
+        path: dest,
+        recursive: false,
+    })
+}
+
+/// zip 打包（zip crate deflate；目录递归、软链接 add_symlink）。
+fn pack_zip(dest: &Path, sources: &[(String, PathBuf)]) -> std::io::Result<()> {
+    let file = fs::File::create(dest)?;
+    let mut w = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let pack_result = (|| {
+        for (name, path) in sources {
+            pack_zip_entry(&mut w, &opts, name.clone(), path)?;
+        }
+        w.finish().map_err(zip_err)?;
+        Ok(())
+    })();
+    // 任何失败：半成品文件由调用方清理（M20-3 教训）。
+    pack_result
+}
+
+/// zip 单条目递归打包（目录 → add_directory + 子项递归；软链接 →
+/// add_symlink 按链接本身收录；文件 → start_file + 内容拷贝）。
+fn pack_zip_entry(
+    w: &mut zip::ZipWriter<fs::File>,
+    opts: &zip::write::SimpleFileOptions,
+    arc: String,
+    path: &Path,
+) -> std::io::Result<()> {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.is_dir() {
+        w.add_directory(arc.clone(), *opts).map_err(zip_err)?;
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let leaf = entry.file_name().to_string_lossy().into_owned();
+            let sub_arc = format!("{arc}/{leaf}");
+            pack_zip_entry(w, opts, sub_arc, &entry.path())?;
+        }
+        Ok(())
+    } else if meta.is_symlink() {
+        let target = fs::read_link(path)?;
+        w.add_symlink(arc, target.to_string_lossy().into_owned(), *opts)
+            .map_err(zip_err)
+    } else {
+        w.start_file(arc, *opts).map_err(zip_err)?;
+        let mut src = fs::File::open(path)?;
+        std::io::copy(&mut src, w)?;
+        Ok(())
+    }
+}
+
+fn zip_err(e: zip::result::ZipError) -> std::io::Error {
+    std::io::Error::other(e)
+}
+
+/// tar / tar.gz 打包（flate2 GzEncoder；目录 append_dir_all、
+/// 软链接 append_link 按链接本身收录）。
+fn pack_tar(dest: &Path, sources: &[(String, PathBuf)], gzip: bool) -> std::io::Result<()> {
+    let file = fs::File::create(dest)?;
+    let buf = std::io::BufWriter::new(file);
+    if gzip {
+        let enc = flate2::write::GzEncoder::new(buf, flate2::Compression::default());
+        pack_tar_into(enc, sources)
+    } else {
+        pack_tar_into(buf, sources)
+    }
+}
+
+fn pack_tar_into<W: std::io::Write>(w: W, sources: &[(String, PathBuf)]) -> std::io::Result<()> {
+    let mut b = tar::Builder::new(w);
+    for (name, path) in sources {
+        let meta = fs::symlink_metadata(path)?;
+        if meta.is_dir() {
+            b.append_dir_all(name, path)?;
+        } else if meta.is_symlink() {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(0);
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_mode(0o777);
+            b.append_link(&mut header, name, fs::read_link(path)?)?;
+        } else {
+            b.append_path_with_name(path, name)?;
+        }
+    }
+    b.finish()?;
+    Ok(())
+}
+
 /// 撤销执行（`u`）：按操作类型逆操作。
 /// 逆操作源已不存在时按成功处理（幂等，避免过期操作卡住撤销栈）。
 pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {

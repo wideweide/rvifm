@@ -711,7 +711,7 @@
 - [ ] `m<char>` 记录（目录/文件/`..` 行=当前目录）；`'<char>` 跳转（目录 cd / 文件定位光标）；未命中提示；无 frecency store 写入；quickjump 迁移反引号生效。
 
 ### M25-3 归档创建
-- [ ] zip/tar/tar.gz 产物可被 rvifm 自身浏览；xz/bz2/zst 可读提示不支持；`u` 可逆；同名不覆盖。
+- [x] zip/tar/tar.gz 产物可被 rvifm 自身浏览；xz/bz2/zst 可读提示不支持；`u` 可逆；同名不覆盖。
 
 ### M25-4 归档对话框与校验
 - [ ] 无参对话框交互完整（格式/校验/名称）；默认生成 `.md5`（`md5sum -c` 通过）；sha256/none 生效；`[archive] checksum` 配置生效。
