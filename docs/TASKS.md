@@ -322,7 +322,7 @@
 - [ ] AUDIT-15 pick CLI 契约（`--topic`、文件 topic、数据目录缺失、与预览接线；见 SPEC AUDIT-15）
 - [ ] AUDIT-16 frecency 一致性（compaction per-topic λ、pick 初始化设置；见 SPEC AUDIT-16）
 - [ ] AUDIT-17 归档成员读取上限（超限可读错误、不 OOM；见 SPEC AUDIT-17）
-- [ ] AUDIT-18 本机测试失败整改（m249 作业行 70 列断言依赖宿主路径长度；m253 第二次 undo 未移除归档；均 HEAD 复现、与 AUDIT-1 无关，见 NOTES 2026-11-20）
+- [x] AUDIT-18 本机测试失败整改（m249 作业行 70 列断言依赖宿主路径长度；m253 第二次 undo 未移除归档；均 HEAD 复现、与 AUDIT-1 无关，见 NOTES 2026-11-20；同日完成：m249 改固定短标签、m253 撤销前释放 ZipFs 句柄，全量 328 单测无 skip 双环境绿）
 
 ## M25-2（重定义）— marks 由 frecency 实现（2026-11-19 用户指令；见 SPEC §25）
 

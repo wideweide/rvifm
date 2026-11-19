@@ -8260,8 +8260,9 @@ mod tests {
     fn m249_jobs_overlay_render_selection_and_cancel_state() {
         let tmp = TempDir::new().unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-        let dst = TempDir::new().unwrap();
-        let id = state.add_job("copy", 1, &dst.path().display().to_string());
+        // AUDIT-18：目标只作展示串，用固定短标签——宿主临时路径长度（如
+        // 8.3 短名/多级 Temp）不再截断 70 列断言里的"取消中"。
+        let id = state.add_job("copy", 1, "d");
         state.jobs[0]
             .cancel_requested
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -8323,17 +8324,21 @@ mod tests {
         }
         let dest = tmp.path().join("out.zip");
         assert!(dest.exists(), "产物存在");
-        // rvifm 自身读端可浏览（open_dispatch 复用）。
-        let mut fsx = crate::archive::open_dispatch(&dest).unwrap();
-        let names: Vec<String> = fsx
-            .list("/")
-            .unwrap()
-            .iter()
-            .map(|i| i.path.clone())
-            .collect();
-        assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
-        assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
-        assert!(fsx.read("/sub/b.txt").unwrap() == b"BBB", "目录内容被打包");
+        // rvifm 自身读端可浏览（open_dispatch 复用）。AUDIT-18：读句柄在
+        // 撤销前必须释放——Windows 上打开的 File 会阻塞 remove_file（共享
+        // 冲突 → undo 失败回推），Linux 无此限制（CI 绿、本机挂的根因）。
+        {
+            let mut fsx = crate::archive::open_dispatch(&dest).unwrap();
+            let names: Vec<String> = fsx
+                .list("/")
+                .unwrap()
+                .iter()
+                .map(|i| i.path.clone())
+                .collect();
+            assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
+            assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
+            assert!(fsx.read("/sub/b.txt").unwrap() == b"BBB", "目录内容被打包");
+        }
         // u 撤销移除产物（M25-4 起默认生成 .md5——两条撤销记录，LIFO）。
         let mut msg = None;
         undo_last(&mut state, &mut msg);

@@ -708,3 +708,9 @@ rvifm record  → 静默记录访问
 - **修法（不走测试改环境变量路线）**：edition 2024 下 `env::set_var`/`remove_var` 是 unsafe，测试内清环境不可取。改注入式——`detect_mux()`（生产探测）→ `run_external_target_with(mux, cfg, cmd)`；测试只注入会短路到 `CurrentPane` 的组合（`Some+true` 会真实 spawn 复用器，不覆盖），exec 路径用 `state.config.ui.terminal_in_new_window = false` 与宿主解耦；成功命令换静默 `cmd /C exit 0`；复用器 spawn 输出 `Stdio::null()`（M21-F8 同款）。生产行为不变（仅复用器输出静音）。
 - **验收**：`--test-threads=1` 在 `TMUX=1 STY=1` 与清除两变量下各全绿（326 单测 + 3 集成，AUDIT-18 两项按 STATE 偏差 skip）。
 - **观察（待 AUDIT-12 复核）**：`TMUX=1` 并行 4 跑中出现一次未捕获测试名的偶发失败，随后 3 连绿未复现；不影响 AUDIT-14 验收结论，记录备查。
+
+### 2026-11-20 — AUDIT-18 实现：两项本机测试失败根因与修复（WHY）
+
+- **m249（长路径截断）**：作业行断言渲染 70 列，目标串用宿主临时路径（`ADMINI~1\...\Temp\2\.tmpXXXX` ≈54 字符）拼上"取消中"后越界截断。修复：`add_job` 第三参仅作展示串、不触 fs，测试改固定短标签 `d`——断言与宿主路径彻底解耦。生产行为不变（真实长路径的覆盖层截断属 UX 打磨，不在本任务）。
+- **m253（二次 undo 不删归档）**：根因是**测试**的 `open_dispatch(&dest)`（ZipFs 持有打开的 `std::fs::File`）跨 `undo_last` 存活——Windows 上打开句柄令 `fs::remove_file` 共享冲突失败，`undo_last` 失败回推（app.rs）→ 第二次 undo 重复弹同一记录再失败；Linux 允许删打开文件故 CI 绿。修复：读句柄在撤销前 drop（作用域块）。生产删除路径本就正确（失败回推 + "撤销失败" 可读提示），无需改动。
+- **结果**：全量 `cargo test` 无 skip 全绿（328 单测 + 3 集成），`TMUX`/`STY` 设/不设双验证；STATE 门禁偏差除 Linux cross-check（本机无法构建 aws-lc-sys，CI 承担）外全部解除。

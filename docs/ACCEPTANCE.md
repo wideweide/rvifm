@@ -801,8 +801,8 @@
 - [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。
 
 ### AUDIT-18 本机测试失败整改
-- [ ] `m249_jobs_overlay_render_selection_and_cancel_state` 在长临时路径环境（如 8.3 短名/多级 Temp）下稳定通过：作业行断言不依赖宿主路径长度。
-- [ ] `m253_archive_zip_roundtrip_and_undo` 本机复现的"第二次 undo 未移除归档"根因修复或测试修正，本机与两端 CI 均绿。
+- [x] `m249_jobs_overlay_render_selection_and_cancel_state` 在长临时路径环境（如 8.3 短名/多级 Temp）下稳定通过：作业行断言不依赖宿主路径长度。（2026-11-20：目标改固定短标签 `d`——add_job 第三参仅作展示串）
+- [x] `m253_archive_zip_roundtrip_and_undo` 本机复现的"第二次 undo 未移除归档"根因修复或测试修正，本机与两端 CI 均绿。（2026-11-20：根因 = 测试的 ZipFs 读句柄跨撤销存活，Windows 打开句柄阻塞 remove_file；句柄在撤销前 drop）
 
 ## 27. M27 — 0.8.0 实测问题与 vifm 视觉对齐（见 SPEC §27）
 
