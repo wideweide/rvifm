@@ -188,3 +188,23 @@ fn pick_scores_by_topic_and_degrades_without_data_dir() {
     let proj = stdout.find("/data/proj\n").expect("dir candidate");
     assert!(main < proj, "file 视角文件排前: {stdout}");
 }
+
+// ── AUDIT-12：CLI 子命令分派补测（maintenance 臂） ──────────────────────────
+
+#[test]
+fn maintenance_dispatch_compact_and_missing_subcommand() {
+    let data = tempfile::tempdir().expect("tempdir");
+    let mut cmd = pick_command(data.path());
+    cmd.args(["maintenance", "compact"]);
+    let out = cmd.output().expect("run maintenance compact");
+    // 空库压实 = no-op，退出 0。
+    assert_eq!(out.status.code(), Some(0));
+    // 缺子命令 → 退出 2 + 可读提示。
+    let data2 = tempfile::tempdir().expect("tempdir");
+    let mut cmd2 = pick_command(data2.path());
+    cmd2.arg("maintenance");
+    let out2 = cmd2.output().expect("run maintenance");
+    assert_eq!(out2.status.code(), Some(2), "缺子命令退出 2");
+    let stderr = String::from_utf8_lossy(&out2.stderr);
+    assert!(stderr.contains("compact"), "stderr: {stderr}");
+}

@@ -45,7 +45,13 @@ pub struct Store {
 
 impl Store {
     /// 打开（不存在则创建）数据库文件，并确保三表存在（redb 4 显式建表）。
+    /// AUDIT-12：数据目录缺失时自动创建——全新安装的首次
+    /// `record` / `maintenance compact` 不再因父目录不存在而失败
+    /// （此前 record 靠降级文件的 create_dir_all 兜底、compact 直接失败）。
     pub fn open(path: &Path) -> std::io::Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(io_err("数据目录创建失败"))?;
+        }
         let db = redb::Database::create(path)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let tx = db.begin_write().map_err(io_err("建表事务失败"))?;

@@ -563,4 +563,40 @@ mod tests {
         assert!(s.undo_stack.is_empty());
         assert_eq!(s.undo_stack.pop(), None);
     }
+
+    #[test]
+    fn job_update_completes_and_pushes_undo_ops() {
+        // AUDIT-12：后台作业回包语义——ops 入撤销栈（可 u 撤销）、状态
+        // 终态化、changed 反映"有撤销记录"。
+        let mut s = AppState::new(tab("C:/a"));
+        let id = s.add_job("copy", 1, "C:/b");
+        assert!(matches!(s.jobs[0].status, JobStatus::Running));
+        let changed = s.apply_job_update(crate::state::JobUpdate {
+            job_id: id,
+            tab_id: 0,
+            ops: vec![UndoableOp::Create {
+                tab_id: 0,
+                path: PathBuf::from("C:/b/x.zip"),
+                recursive: false,
+            }],
+            status: JobStatus::Done {
+                summary: "copy: 完成".to_owned(),
+            },
+        });
+        assert!(changed, "带 ops 的回包 → changed");
+        assert_eq!(s.undo_stack.len(), 1, "作业产物入撤销栈");
+        assert!(matches!(&s.jobs[0].status, JobStatus::Done { .. }));
+        // 取消终态（M24-9）：无 ops → 不入撤销栈、changed=false。
+        let changed = s.apply_job_update(crate::state::JobUpdate {
+            job_id: id,
+            tab_id: 0,
+            ops: Vec::new(),
+            status: JobStatus::Cancelled {
+                summary: "copy: 已取消".to_owned(),
+            },
+        });
+        assert!(!changed);
+        assert!(matches!(&s.jobs[0].status, JobStatus::Cancelled { .. }));
+        assert_eq!(s.undo_stack.len(), 1, "取消不追加撤销记录");
+    }
 }

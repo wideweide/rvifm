@@ -428,4 +428,49 @@ mod tests {
             Feed::Complete(Action::HalfPageDown)
         );
     }
+
+    #[test]
+    fn layers_merge_prepend_append_replace() {
+        // AUDIT-12：GAP-1 分层合并语义直接测试——prepend 覆盖默认、
+        // append 补充、replace 完全替换默认表。
+        // prepend：同键覆盖默认（P: put_copy 覆盖默认 put_move）。
+        let k = Keymap::with_layers(
+            vec![(vec![plain(Char('P'))], Action::PutCopy)],
+            vec![],
+            None,
+        );
+        assert_eq!(
+            k.lookup(&[plain(Char('P'))]),
+            Some(Action::PutCopy),
+            "prepend 覆盖默认"
+        );
+        // append：默认未占用的键补充绑定；不影响默认。
+        let k = Keymap::with_layers(vec![], vec![(vec![plain(Char('Z'))], Action::Quit)], None);
+        assert_eq!(k.lookup(&[plain(Char('Z'))]), Some(Action::Quit));
+        assert_eq!(k.lookup(&[plain(Char('P'))]), Some(Action::PutMove));
+        // 多键序列经 append 分层 → resolver 完整解析。
+        let k = Keymap::with_layers(
+            vec![],
+            vec![(vec![plain(Char('g')), plain(Char('w'))], Action::NextTab)],
+            None,
+        );
+        let mut r = Resolver::default();
+        assert_eq!(r.feed(&k, plain(Char('g'))), Feed::Pending);
+        assert_eq!(
+            r.feed(&k, plain(Char('w'))),
+            Feed::Complete(Action::NextTab)
+        );
+        // replace：默认表整体失效，仅 replace 表生效。
+        let k = Keymap::with_layers(
+            vec![],
+            vec![],
+            Some(vec![(vec![plain(Char('x'))], Action::Quit)]),
+        );
+        assert_eq!(k.lookup(&[plain(Char('x'))]), Some(Action::Quit));
+        assert_eq!(
+            k.lookup(&[plain(Char('j'))]),
+            None,
+            "replace 后默认 j 不可用"
+        );
+    }
 }
