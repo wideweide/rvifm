@@ -351,11 +351,57 @@ pub(crate) enum SortDialogOutcome {
 }
 
 /// M25-4：归档对话框单键结果。
+/// M26-1：`Exec` 携带作业参数（op 编码格式/校验、条目集、目标、基目录）
+/// ——创建在后台线程执行（run 循环 spawn），不再同步阻塞 UI。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ArchiveDialogOutcome {
     None,
     Close,
-    Exec,
+    Exec {
+        op: String,
+        names: Vec<String>,
+        target: PathBuf,
+        base: PathBuf,
+    },
+}
+
+/// M26-1：登记 + spawn 后台作业（SpawnJob 臂与归档对话框共用）。
+/// 返回登记异常提示（正常返回 None）。
+fn spawn_job_from_plan(
+    state: &mut AppState,
+    job_tx: &std::sync::mpsc::Sender<crate::state::JobUpdate>,
+    op: &str,
+    names: &[String],
+    target: &std::path::Path,
+    base: &std::path::Path,
+) -> Option<String> {
+    // :jobs 展示作业种类取 op 首段（"archive:zip:md5" → "archive"）。
+    let kind = op.split(':').next().unwrap_or(op);
+    let job_id = state.add_job(kind, names.len(), &target.display().to_string());
+    // M24-9：取消标志与线程共享（覆盖层 x 置位）。
+    // AUDIT-8：去 expect——登记异常时不 spawn（可读提示），不留悬挂线程。
+    let Some(cancel) = state
+        .jobs
+        .iter()
+        .find(|j| j.id == job_id)
+        .map(|j| j.cancel_requested.clone())
+    else {
+        return Some("后台作业登记异常：未找到作业".to_owned());
+    };
+    let tab_id = state.active;
+    spawn_job_thread(
+        job_tx,
+        job_id,
+        &JobSpec {
+            op,
+            names,
+            base,
+            target,
+            tab_id,
+        },
+        cancel,
+    );
+    None
 }
 
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
@@ -593,37 +639,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     target,
                                     base,
                                 }) => {
-                                    // M13-8：登记作业并 spawn 后台线程。
-                                    let job_id = state.add_job(
-                                        &op,
-                                        names.len(),
-                                        &target.display().to_string(),
-                                    );
-                                    // M24-9：取消标志与线程共享（覆盖层 x 置位）。
-                                    // AUDIT-8：去 expect——登记异常时不 spawn
-                                    // （可读提示），不留悬挂线程。
-                                    let Some(cancel) = state
-                                        .jobs
-                                        .iter()
-                                        .find(|j| j.id == job_id)
-                                        .map(|j| j.cancel_requested.clone())
-                                    else {
-                                        msg = Some("后台作业登记异常：未找到作业".to_owned());
-                                        continue;
-                                    };
-                                    let tab_id = state.active;
-                                    spawn_job_thread(
-                                        &job_tx,
-                                        job_id,
-                                        &JobSpec {
-                                            op: &op,
-                                            names: &names,
-                                            base: &base,
-                                            target: &target,
-                                            tab_id,
-                                        },
-                                        cancel,
-                                    );
+                                    // M13-8/M26-1：登记作业并 spawn 后台线程
+                                    // （与归档对话框共用 helper）。
+                                    if let Some(e) = spawn_job_from_plan(
+                                        &mut state, &job_tx, &op, &names, &target, &base,
+                                    ) {
+                                        msg = Some(e);
+                                    }
                                 }
                                 Ok(ExecOutcome::ShowJobs) => {
                                     mode = InputMode::Jobs { cursor: 0 };
@@ -1148,7 +1170,21 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         ) {
                             ArchiveDialogOutcome::None => {}
                             ArchiveDialogOutcome::Close => mode = InputMode::Normal,
-                            ArchiveDialogOutcome::Exec => mode = InputMode::Normal,
+                            ArchiveDialogOutcome::Exec {
+                                op,
+                                names,
+                                target,
+                                base,
+                            } => {
+                                // M26-1：对话框确认 → 后台线程创建归档
+                                // （完成回包入撤销栈，:jobs 可见可取消）。
+                                mode = InputMode::Normal;
+                                if let Some(e) = spawn_job_from_plan(
+                                    &mut state, &job_tx, &op, &names, &target, &base,
+                                ) {
+                                    msg = Some(e);
+                                }
+                            }
                         }
                     }
                 }

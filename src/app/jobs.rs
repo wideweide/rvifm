@@ -88,8 +88,86 @@ pub(crate) fn refresh_on_fs_change(state: &mut AppState) -> Option<String> {
     None
 }
 
+/// M26-1：归档创建作业体——`rest = "<fmt>:<cs>"`。产物（含扩展名补齐 /
+/// 同名不覆盖，由 `create_archive` 保证）与校验文件各入一条撤销记录；
+/// 失败 Err（半成品已由 create_archive 清理）。
+fn execute_archive_job(
+    rest: &str,
+    names: &[String],
+    base: &std::path::Path,
+    target: &std::path::Path,
+    tab_id: usize,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    use crate::state::{JobStatus, UndoableOp};
+    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        return (
+            Vec::new(),
+            JobStatus::Cancelled {
+                summary: "archive: 已取消".to_owned(),
+            },
+        );
+    }
+    let mut seg = rest.splitn(2, ':');
+    let fmt = seg.next().unwrap_or("zip");
+    let cs_str = seg.next().unwrap_or("md5");
+    let Some(format) = ops::ArchiveFormat::parse(fmt) else {
+        return (
+            Vec::new(),
+            JobStatus::Failed {
+                err: format!("archive: 未知格式 {fmt}"),
+            },
+        );
+    };
+    let checksum = ops::Checksum::parse(cs_str).unwrap_or(ops::Checksum::Md5);
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match ops::create_archive(tab_id, base, &name, format, names) {
+        Ok(op) => {
+            let dest = match &op {
+                UndoableOp::Create { path, .. } => path.clone(),
+                _ => std::path::PathBuf::new(),
+            };
+            let mut ops_out = vec![op];
+            // M25-4：校验文件（失败不回滚归档——归档已入撤销栈可 u 移除）。
+            if let Ok(Some(c)) = ops::write_checksum(&dest, checksum) {
+                ops_out.push(UndoableOp::Create {
+                    tab_id,
+                    path: c,
+                    recursive: false,
+                });
+            }
+            let cs_label = match checksum {
+                ops::Checksum::Md5 => "，已生成 .md5",
+                ops::Checksum::Sha256 => "，已生成 .sha256",
+                ops::Checksum::None => "",
+            };
+            (
+                ops_out,
+                JobStatus::Done {
+                    summary: format!(
+                        "archive: 已创建 {}（{} 项{cs_label}，u 可撤销）",
+                        dest.display().to_string().replace('\\', "/"),
+                        names.len()
+                    ),
+                },
+            )
+        }
+        Err(e) => (
+            Vec::new(),
+            JobStatus::Failed {
+                err: format!("archive: {e}"),
+            },
+        ),
+    }
+}
+
 /// 后台作业执行体（M13-8）：对 `base` 下 `names` 逐项 copy/move 到 target。
-/// 返回（撤销记录列表, 终态）；纯同步，供后台线程与测试共用。
+/// M26-1：`op = "archive:<fmt>:<cs>"` → 归档创建（tags 打包 + 校验文件，
+/// 产物与校验各入一条撤销记录）。返回（撤销记录列表, 终态）；纯同步，
+/// 供后台线程与测试共用。
 pub(crate) fn execute_job_body(
     op: &str,
     names: &[String],
@@ -98,6 +176,10 @@ pub(crate) fn execute_job_body(
     tab_id: usize,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    // M26-1：归档创建分支——整段原子（不做逐项取消；取消在启动前检查）。
+    if let Some(rest) = op.strip_prefix("archive:") {
+        return execute_archive_job(rest, names, base, target, tab_id, cancel);
+    }
     let mut ops = Vec::new();
     let mut first_err: Option<String> = None;
     let mut done = 0usize;

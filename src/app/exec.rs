@@ -1539,23 +1539,41 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 [fmt, name] => {
                     let format = ops::ArchiveFormat::parse(fmt)
                         .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
-                    let msg = archive_execute(state, format, name, default_checksum)?;
-                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                    let (op, names, target, base) =
+                        archive_plan(state, format, name, default_checksum)?;
+                    // M26-1：创建在后台线程执行（UI 不阻塞），完成回包入撤销栈。
+                    Ok(ExecOutcome::SpawnJob {
+                        op,
+                        names,
+                        target,
+                        base,
+                    })
                 }
                 [name] => {
                     let format = ops::ArchiveFormat::infer(name).ok_or_else(|| {
                         "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz）".to_owned()
                     })?;
-                    let msg = archive_execute(state, format, name, default_checksum)?;
-                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                    let (op, names, target, base) =
+                        archive_plan(state, format, name, default_checksum)?;
+                    Ok(ExecOutcome::SpawnJob {
+                        op,
+                        names,
+                        target,
+                        base,
+                    })
                 }
                 [fmt, name, kv] if kv.starts_with("checksum=") => {
                     let format = ops::ArchiveFormat::parse(fmt)
                         .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
                     let checksum = ops::Checksum::parse(&kv["checksum=".len()..])
                         .ok_or_else(|| "archive: 校验类型需 md5 / sha256 / none".to_owned())?;
-                    let msg = archive_execute(state, format, name, checksum)?;
-                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                    let (op, names, target, base) = archive_plan(state, format, name, checksum)?;
+                    Ok(ExecOutcome::SpawnJob {
+                        op,
+                        names,
+                        target,
+                        base,
+                    })
                 }
                 [_, _, _] => {
                     Err("archive: 参数错误（:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]）".to_owned())
@@ -2668,8 +2686,9 @@ pub(crate) const ARCHIVE_CHECKSUMS: [ops::Checksum; 3] = [
 ];
 
 /// M25-4：归档对话框单键——Tab/↑↓ 切字段、←→/空格 循环当前字段取值、
-/// 名称字段（field=0）接收字符输入/退格；Enter 执行（名称空 → 留在对话
-/// 框提示）；Esc 取消。执行失败留在对话框（名称保留可改）。
+/// 名称字段（field=0）接收字符输入/退格；Enter 返回作业参数（M26-1：
+/// 创建在后台线程执行，run 循环 spawn）；Esc 取消。名称空 → 留在对话
+/// 框提示；计划失败留在对话框（名称保留可改）。
 pub(crate) fn handle_archive_dialog_key(
     state: &mut AppState,
     input: &mut String,
@@ -2687,16 +2706,18 @@ pub(crate) fn handle_archive_dialog_key(
                 *msg = Some("archive: 名称不能为空".to_owned());
                 return ArchiveDialogOutcome::None;
             }
-            match archive_execute(
+            match archive_plan(
                 state,
                 ARCHIVE_FORMATS[*format_idx],
                 &name,
                 ARCHIVE_CHECKSUMS[*checksum_idx],
             ) {
-                Ok(m) => {
-                    *msg = Some(m);
-                    ArchiveDialogOutcome::Exec
-                }
+                Ok((op, names, target, base)) => ArchiveDialogOutcome::Exec {
+                    op,
+                    names,
+                    target,
+                    base,
+                },
                 Err(e) => {
                     *msg = Some(e);
                     ArchiveDialogOutcome::None
@@ -2743,16 +2764,29 @@ pub(crate) fn handle_archive_dialog_key(
     }
 }
 
-/// M25-3/M25-4：归档创建执行体（exec 臂与对话框共用）——tags 优先（排序
-/// 确定顺序）、空 = 光标条目；产物与校验文件各入一条撤销记录（u 可逆）。
-/// 返回状态栏消息；失败 Err（归档半成品已由 create_archive 清理）。
-pub(crate) fn archive_execute(
-    state: &mut AppState,
+/// M25-3/M25-4 + M26-1：归档创建**计划**（exec 臂与对话框共用）——tags
+/// 优先（排序确定顺序）、空 = 光标条目。返回作业参数：`op` 编码格式与
+/// 校验类型（`archive:<fmt>:<cs>`），`target` = base/原始名（扩展名补齐、
+/// 同名不覆盖检查在作业线程的 `create_archive` 内）。物理视图限定。
+/// 同步部分只做校验与收集，压缩本身在后台线程（M26-1）。
+pub(crate) fn archive_plan(
+    state: &AppState,
     format: ops::ArchiveFormat,
     name: &str,
     checksum: ops::Checksum,
-) -> Result<String, String> {
+) -> Result<(String, Vec<String>, PathBuf, PathBuf), String> {
+    if name.trim().is_empty() {
+        return Err("archive: 名称不能为空".to_owned());
+    }
     let base = physical_base(state)?;
+    // 目标已存在 → 同步预检（快速反馈；create_archive 内的同名不覆盖
+    // 仍兜底——扩展名补齐后的真实产物路径以线程内检查为准）。
+    if base.join(name).exists() {
+        return Err(format!(
+            "archive: 目标已存在: {}（不覆盖）",
+            base.join(name).display().to_string().replace('\\', "/")
+        ));
+    }
     let tab = state.active_tab();
     let names: Vec<String> = if tab.tags.is_empty() {
         vec![
@@ -2768,34 +2802,19 @@ pub(crate) fn archive_execute(
         names.sort();
         names
     };
-    let tab_id = state.active;
-    let op = ops::create_archive(tab_id, &base, name, format, &names)
-        .map_err(|e| format!("archive: {e}"))?;
-    let dest = match &op {
-        crate::state::UndoableOp::Create { path, .. } => path.clone(),
-        _ => PathBuf::new(),
+    let fmt_name = match format {
+        ops::ArchiveFormat::Zip => "zip",
+        ops::ArchiveFormat::Tar => "tar",
+        ops::ArchiveFormat::TarGz => "tar.gz",
     };
-    state.undo_stack.push(op);
-    // M25-4：校验文件（失败不回滚归档——归档已入撤销栈可 u 移除）。
-    let cpath = ops::write_checksum(&dest, checksum).map_err(|e| format!("archive: {e}"))?;
-    if let Some(c) = cpath {
-        state.undo_stack.push(crate::state::UndoableOp::Create {
-            tab_id,
-            path: c,
-            recursive: false,
-        });
-    }
-    refresh_tab_panes(state, tab_id);
-    let dest_display = dest.display().to_string().replace('\\', "/");
-    let cs = match checksum {
-        ops::Checksum::Md5 => "，已生成 .md5",
-        ops::Checksum::Sha256 => "，已生成 .sha256",
-        ops::Checksum::None => "",
+    let cs_str = match checksum {
+        ops::Checksum::Md5 => "md5",
+        ops::Checksum::Sha256 => "sha256",
+        ops::Checksum::None => "none",
     };
-    Ok(format!(
-        "archive: 已创建 {dest_display}（{} 项{cs}，u 可撤销）",
-        names.len()
-    ))
+    let op = format!("archive:{fmt_name}:{cs_str}");
+    let target = base.join(name);
+    Ok((op, names, target, base))
 }
 
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。

@@ -852,6 +852,37 @@ fn m249_jobs_overlay_render_selection_and_cancel_state() {
 
 // ── M25-3：归档创建（:archive；zip/tar/tar.gz 纯 Rust 写端） ────────────
 
+/// M26-1：SpawnJob → 执行作业体 → 回包入撤销栈（模拟 run 循环回包路径）。
+/// 返回（撤销记录数, 终态）。
+fn run_job_from_outcome(
+    state: &mut AppState,
+    outcome: Result<ExecOutcome, String>,
+) -> (usize, crate::state::JobStatus) {
+    match outcome {
+        Ok(ExecOutcome::SpawnJob {
+            op,
+            names,
+            target,
+            base,
+        }) => {
+            let (ops, status) = execute_job_body(
+                &op,
+                &names,
+                &base,
+                &target,
+                0,
+                &std::sync::atomic::AtomicBool::new(false),
+            );
+            let n = ops.len();
+            for uop in ops {
+                state.undo_stack.push(uop);
+            }
+            (n, status)
+        }
+        other => panic!("expected SpawnJob, got {other:?}"),
+    }
+}
+
 #[test]
 fn m253_archive_zip_roundtrip_and_undo() {
     let tmp = TempDir::new().unwrap();
@@ -861,13 +892,14 @@ fn m253_archive_zip_roundtrip_and_undo() {
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().tags.insert("a.txt".to_owned());
     state.active_tab_mut().tags.insert("sub".to_owned());
-    // 缺扩展名自动补齐。
-    match exec_command_impl(&mut state, "archive zip out") {
-        Ok(ExecOutcome::Done { msg }) => {
-            assert!(msg.unwrap().contains("out.zip"), "自动补扩展名");
-        }
-        other => panic!("expected Done, got {other:?}"),
-    }
+    // 缺扩展名自动补齐（M26-1：后台作业体创建，Done summary 携带产物名）。
+    let outcome = exec_command_impl(&mut state, "archive zip out");
+    let (n, status) = run_job_from_outcome(&mut state, outcome);
+    assert!(
+        matches!(&status, crate::state::JobStatus::Done { summary } if summary.contains("out.zip")),
+        "自动补扩展名: {status:?}"
+    );
+    assert_eq!(n, 2, "归档 + .md5 校验各一条撤销记录");
     let dest = tmp.path().join("out.zip");
     assert!(dest.exists(), "产物存在");
     // rvifm 自身读端可浏览（open_dispatch 复用）。AUDIT-18：读句柄在
@@ -902,8 +934,13 @@ fn m253_archive_tar_gz_roundtrip() {
     fs::write(tmp.path().join("one.txt"), "1").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().cursor = 0;
-    // 1 参数：从扩展名推断 tar.gz。
-    assert!(exec_command_impl(&mut state, "archive bundle.tar.gz").is_ok());
+    // 1 参数：从扩展名推断 tar.gz（M26-1：经作业体创建）。
+    let outcome = exec_command_impl(&mut state, "archive bundle.tar.gz");
+    let (_, status) = run_job_from_outcome(&mut state, outcome);
+    assert!(
+        matches!(status, crate::state::JobStatus::Done { .. }),
+        "{status:?}"
+    );
     let dest = tmp.path().join("bundle.tar.gz");
     assert!(dest.exists());
     // gzip 真压缩产物：读端解包验证。
@@ -917,7 +954,9 @@ fn m253_archive_tar_gz_roundtrip() {
     assert!(names.contains(&"one.txt".to_owned()), "names: {names:?}");
     // .tar 同理（光标条目单选）。
     state.active_tab_mut().cursor = 0;
-    assert!(exec_command_impl(&mut state, "archive plain.tar").is_ok());
+    let outcome = exec_command_impl(&mut state, "archive plain.tar");
+    let (_, status) = run_job_from_outcome(&mut state, outcome);
+    assert!(matches!(status, crate::state::JobStatus::Done { .. }));
     assert!(tmp.path().join("plain.tar").exists());
 }
 
@@ -944,10 +983,15 @@ fn m253_archive_guards() {
     state.active_tab_mut().cursor = 0;
     assert!(exec_command_impl(&mut state, "archive zip dup.zip").is_err());
     assert_eq!(fs::read(tmp.path().join("dup.zip")).unwrap(), b"old");
-    // 源缺失整批中止且不留半成品。
+    // 源缺失整批中止且不留半成品（M26-1：失败在作业体中终态化）。
     state.active_tab_mut().tags.insert("a.txt".to_owned());
     state.active_tab_mut().tags.insert("ghost.txt".to_owned());
-    assert!(exec_command_impl(&mut state, "archive zip ghost.zip").is_err());
+    let outcome = exec_command_impl(&mut state, "archive zip ghost.zip");
+    let (_, status) = run_job_from_outcome(&mut state, outcome);
+    assert!(
+        matches!(&status, crate::state::JobStatus::Failed { err } if err.contains("ghost")),
+        "失败终态可读: {status:?}"
+    );
     assert!(!tmp.path().join("ghost.zip").exists(), "失败无半成品");
 }
 
@@ -993,16 +1037,23 @@ fn m254_exec_archive_checksum_arg_and_config() {
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().cursor = 0;
-    // 显式 sha256。
-    assert!(exec_command_impl(&mut state, "archive zip c1.zip checksum=sha256").is_ok());
+    // 显式 sha256（M26-1：经作业体创建）。
+    let outcome = exec_command_impl(&mut state, "archive zip c1.zip checksum=sha256");
+    let (n1, status1) = run_job_from_outcome(&mut state, outcome);
+    assert!(matches!(status1, crate::state::JobStatus::Done { .. }));
+    assert_eq!(n1, 2, "sha256 校验文件也入撤销栈");
     assert!(tmp.path().join("c1.zip").exists());
     assert!(tmp.path().join("c1.zip.sha256").exists());
     // none 不生成。
-    assert!(exec_command_impl(&mut state, "archive zip c2.zip checksum=none").is_ok());
+    let outcome = exec_command_impl(&mut state, "archive zip c2.zip checksum=none");
+    let (n2, _) = run_job_from_outcome(&mut state, outcome);
+    assert_eq!(n2, 1, "none → 仅归档一条");
     assert!(tmp.path().join("c2.zip").exists());
     assert!(!tmp.path().join("c2.zip.md5").exists());
     // 缺省（[archive] checksum 默认 md5）。
-    assert!(exec_command_impl(&mut state, "archive zip c3.zip").is_ok());
+    let outcome = exec_command_impl(&mut state, "archive zip c3.zip");
+    let (_, status3) = run_job_from_outcome(&mut state, outcome);
+    assert!(matches!(status3, crate::state::JobStatus::Done { .. }));
     assert!(tmp.path().join("c3.zip.md5").exists());
     // 非法 checksum 值。
     assert!(exec_command_impl(&mut state, "archive zip c4.zip checksum=md4").is_err());
@@ -1092,7 +1143,7 @@ fn m254_dialog_keys_flow() {
         &mut msg,
     );
     assert_eq!(format_idx, 0, "← 反向循环");
-    // Enter 执行（tar 格式 → out.tar 创建，Exec 关闭）。
+    // Enter → 返回作业参数（M26-1：创建在后台线程执行，不在对话框内）。
     handle_archive_dialog_key(
         &mut state,
         &mut input,
@@ -1102,19 +1153,39 @@ fn m254_dialog_keys_flow() {
         KeyCode::Char(' '),
         &mut msg,
     );
-    assert_eq!(
-        handle_archive_dialog_key(
-            &mut state,
-            &mut input,
-            &mut field,
-            &mut format_idx,
-            &mut checksum_idx,
-            KeyCode::Enter,
-            &mut msg
-        ),
-        ArchiveDialogOutcome::Exec
+    let outcome = handle_archive_dialog_key(
+        &mut state,
+        &mut input,
+        &mut field,
+        &mut format_idx,
+        &mut checksum_idx,
+        KeyCode::Enter,
+        &mut msg,
     );
-    // 名称在名称字段曾再追加一个 x（outx）→ 产物 outx.tar。
+    let ArchiveDialogOutcome::Exec {
+        op,
+        names,
+        target,
+        base,
+    } = outcome
+    else {
+        panic!("Enter 应返回作业参数: {outcome:?}");
+    };
+    assert!(op.starts_with("archive:tar"), "op 编码格式: {op}");
+    // 产物由作业体创建（名称在名称字段曾再追加一个 x → outx.tar）。
+    let (ops, status) = execute_job_body(
+        &op,
+        &names,
+        &base,
+        &target,
+        0,
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    assert!(
+        matches!(status, crate::state::JobStatus::Done { .. }),
+        "{status:?}"
+    );
+    assert_eq!(ops.len(), 2, "归档 + .md5 校验各一条撤销记录");
     assert!(tmp.path().join("outx.tar").exists());
     // Esc 关闭；空名称 → 错误提示留在对话框。
     assert_eq!(
@@ -7792,4 +7863,26 @@ fn m252_jump_to_file_semantics_locates_cursor() {
         expected_parent,
         "cd 到父目录"
     );
+}
+
+#[test]
+fn m261_archive_job_cancelled_before_start() {
+    // M26-1：归档作业启动前检查取消标志（:jobs x 置位）——不产生产物。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let cancel = std::sync::atomic::AtomicBool::new(true);
+    let (ops, status) = execute_job_body(
+        "archive:zip:md5",
+        &["a.txt".to_owned()],
+        tmp.path(),
+        &tmp.path().join("out.zip"),
+        0,
+        &cancel,
+    );
+    assert!(ops.is_empty(), "取消不产生撤销记录");
+    assert!(
+        matches!(status, crate::state::JobStatus::Cancelled { .. }),
+        "{status:?}"
+    );
+    assert!(!tmp.path().join("out.zip").exists(), "取消不产生产物");
 }
