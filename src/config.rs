@@ -25,6 +25,9 @@ pub struct Config {
     /// M25-4：归档创建选项（[archive] 表）。
     #[serde(default)]
     pub archive: ArchiveConfig,
+    /// M27-3：预览选项（[preview] 表——PDF 图像页数/展示优先级）。
+    #[serde(default)]
+    pub preview: PreviewConfig,
     /// AUDIT-7：[opener] 表——命名 opener 定义（run/block/desc）。
     #[serde(default)]
     pub opener: std::collections::BTreeMap<String, crate::opener::OpenerDef>,
@@ -47,6 +50,27 @@ impl Default for ArchiveConfig {
     fn default() -> Self {
         Self {
             checksum: "md5".to_owned(),
+        }
+    }
+}
+
+/// M27-3：[preview] 表——PDF 图像预览配置。
+/// `pdf_image_pages`：0=关闭，1=第 1 页（默认），2=前两页（预览区上下排列）。
+/// `pdf_prefer_image`：true = 文本提取先行后仍优先展示图像（展示优先级，
+/// 探测顺序不跳过文本提取——AGENTS §5.5）；false = 仅文本层不足
+/// （NeedsVisual）时走图像。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PreviewConfig {
+    pub pdf_image_pages: u32,
+    pub pdf_prefer_image: bool,
+}
+
+impl Default for PreviewConfig {
+    fn default() -> Self {
+        Self {
+            pdf_image_pages: 1,
+            pdf_prefer_image: false,
         }
     }
 }
@@ -126,6 +150,7 @@ impl Default for Config {
             ui: UiConfig::default(),
             frecency: FrecencyConfig::default(),
             archive: ArchiveConfig::default(),
+            preview: PreviewConfig::default(),
             opener: std::collections::BTreeMap::new(),
             open: crate::opener::OpenLayers::default(),
             keymap: KeymapConfig::default(),

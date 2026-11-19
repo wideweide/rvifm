@@ -125,20 +125,62 @@ pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratat
                 return;
             }
             crate::preview::PreviewKind::Pdf => {
-                // AUDIT-2：NeedsVisual → 第 1 页视觉链（exprim → pdftoppm →
-                // mutool，结果缓存），产出经 ImageEngine 渲染；Text/失败 →
-                // 文本/提示路径（文本提取先行不跳过，AGENTS §5.5）。
-                if let Some(png) = crate::pdf::cached_visual_png(&path) {
+                // AUDIT-2 + M27-3：`[preview] pdf_image_pages`（0 关/1 第 1 页/
+                // 2 前两页）与 `pdf_prefer_image`（true = 文本先行后仍优先展示
+                // 图像）。产出（结果缓存）经 ImageEngine 渲染；两页在预览区
+                // 上下排列（高度不足仅显示第 1 页并提示）；失败回退文本/提示
+                // 路径（文本提取先行不跳过，AGENTS §5.5）。
+                let pages = state.config.preview.pdf_image_pages.min(2);
+                let prefer = state.config.preview.pdf_prefer_image;
+                if let Some(pngs) = crate::pdf::cached_visual_pngs(&path, pages, prefer) {
+                    let page_note = if pngs.len() >= 2 {
+                        "第 1–2 页图像"
+                    } else {
+                        "第 1 页图像"
+                    };
                     let pane = ratatui::widgets::Block::bordered()
-                        .title(format!("{shown} · PDF 预览（第 1 页图像）"))
+                        .title(format!("{shown} · PDF 预览（{page_note}）"))
                         .border_style(pane_border_style(true));
                     let inner = pane.inner(area);
                     frame.render_widget(pane, area);
-                    if state.image_engine.render_file(frame, inner, &png).is_err() {
-                        frame.render_widget(
-                            Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
-                            inner,
-                        );
+                    if pngs.len() >= 2 && inner.height >= 12 {
+                        // 两页上下排列（预览区足够高）。
+                        let [top, bottom] = ratatui::layout::Layout::vertical([
+                            ratatui::layout::Constraint::Ratio(1, 2),
+                            ratatui::layout::Constraint::Ratio(1, 2),
+                        ])
+                        .areas(inner);
+                        let r1 = state.image_engine.render_file(frame, top, &pngs[0]);
+                        let r2 = state.image_engine.render_file(frame, bottom, &pngs[1]);
+                        if r1.is_err() || r2.is_err() {
+                            frame.render_widget(
+                                Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
+                                inner,
+                            );
+                        }
+                    } else {
+                        // 单页（pages=1 / 第 2 页生成失败 / 区域不足只显示第 1 页）。
+                        if state
+                            .image_engine
+                            .render_file(frame, inner, &pngs[0])
+                            .is_err()
+                        {
+                            frame.render_widget(
+                                Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
+                                inner,
+                            );
+                        }
+                        if pngs.len() < 2 && pages >= 2 {
+                            // 区域不足或第 2 页失败：提示已省略第 2 页。
+                            let note =
+                                ratatui::text::Line::from("（预览区高度不足，仅显示第 1 页）");
+                            let [_, note_area] = ratatui::layout::Layout::vertical([
+                                ratatui::layout::Constraint::Min(0),
+                                ratatui::layout::Constraint::Length(1),
+                            ])
+                            .areas(inner);
+                            frame.render_widget(Paragraph::new(note), note_area);
+                        }
                     }
                     return;
                 }

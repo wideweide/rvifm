@@ -603,6 +603,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     flush_session_visits(&state);
                                     crate::session::save_session(&state);
                                     cleanup_temp_opens(&mut state);
+                                    // M27-3：退出清理 PDF 视觉预览临时 PNG。
+                                    crate::pdf::cleanup_visual_temps();
                                     return Ok(());
                                 }
                                 Ok(ExecOutcome::EnterHelp) => {
@@ -985,6 +987,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             flush_session_visits(&state);
                             crate::session::save_session(&state);
                             cleanup_temp_opens(&mut state);
+                            // M27-3：退出清理 PDF 视觉预览临时 PNG。
+                            crate::pdf::cleanup_visual_temps();
                             return Ok(());
                         }
                         Outcome::EnterCommand => {
