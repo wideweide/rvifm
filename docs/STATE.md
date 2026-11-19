@@ -1,210 +1,64 @@
-# STATE —
-- `M24 批次关闭`（2026-11-19）：M24-1～9 全部完成（PLAN 状态同步，ACCEPTANCE §23 全勾）。批次验收：318 单测 + 6 集成全绿；`--version`/`--help` 冒烟通过。批次亮点：Pane 列对齐（名称填充/大小右对齐/分钟日期）、自然排序（数字感知 + ignore_case_sort 分流——收尾验收补接线）、行可视 V + 可视 d/y/x（tag 管线复用）、计数前缀 Nj/Nk/Ndd/Nyy、命令历史（↑/↓ 循环 + 草稿恢复 + 失败不记 + 上限 100）、Tab 路径补全（前缀循环 + ~ 展开）、:compare 目录对比（=/!/</> 结果虚拟目录）、:jobs 交互化（j/k 选择 + x 协作式取消 + Cancelled 终态）。接续：下一批次待用户指令（发布 0.9.0 与否随批次决策）。
-- `M24-2 修正`（2026-11-19，批次收尾验收发现）：自然排序补 `ignore_case_sort` 接线——SPEC M24-2 要求"受 Config.ignore_case_sort 影响"，但原 `natural_cmp` 内嵌小写化（恒不敏感）；拆出 `natural_cmp_case` 大小写敏感变体（数字感知不变），`sort_entries` 的 Natural 分支按 `config.ignore_case_sort` 分流。318 单测全绿（+1 case 变体对照）。
-- `M24-9`（2026-11-19）：任务视图增强——`:jobs` 覆盖层交互化：`InputMode::Jobs` 增 cursor（j/k/方向键移动+两端钳制）；`x` 经 `AppState::cancel_job` 请求取消运行中作业（`Job.cancel_requested: Arc<AtomicBool>` 跨线程共享；重复请求/非 Running 忽略 + 状态栏提示）；协作式终止——`execute_job_body` 在文件边界检查标志，已完成项保留入撤销栈，终态 `JobStatus::Cancelled{summary}`（"op: 已取消（N 项完成）"）；渲染增光标 REVERSED 高亮 + "取消中…" 中间态；Esc/q 关闭（废止 M13-8 任意键关闭）；`spawn_job_thread` 参数收敛为 `JobSpec` 包（clippy too_many_arguments，8/7）。317 单测 + 6 集成全绿（+3：菜单键导航与取消/取消终止与摘要/覆盖层渲染含取消中间态与终态）。测试踩坑：TestBackend diff 渲染残留上一帧字符——每帧用全新 backend；CJK 全角断言前需去空白。
-- `M24-8`（2026-11-19）：目录对比 `:compare`——左右 pane 条目按**文件名+大小**对比（目录跳过，目录大小无比较意义；`compare_panes` 纯函数）；结果复用 Tab.results 虚拟目录：`=` 同名同大小 / `!` 同名异大小 / `<` 仅左 / `>` 仅右（text 字段承载标记；ResultItem 增 size 字段透传属性列，find/grep 保持 0、remote_find 带真实 size）；SearchKind::Compare 变体 + 显示名"标记 文件名"+ 状态栏 `[compare: N 项]`（无查询词）；l/Enter locate_result 定位实际路径（=/!/< 左侧、> 右侧）；只读守卫沿用结果视图白名单；`..` 行白名单放行 compare（只读且不依赖光标）；计数消息"相同 N · 不同 M · 仅左 X · 仅右 Y"。需双 pane 物理视图（归档/远端/树/结果视图可读报错）。314 单测 + 6 集成全绿（+2：标记与顺序（字典序随 pane 排序）/exec 结果+定位+只读守卫）。踩坑：右 pane base 初版错用 tab.location（左）——"> 定位"测试抓出。
-- `M24-7`（2026-11-19）：路径补全——`:` 模式 Tab 补全输入最后空白分隔词（`split_last_word` char_indices 多字节安全；候选=焦点 pane 条目名前缀匹配，M21-E1 同源）；`CmdComp{head,candidates,index}` 模式局部状态——输入自上次补全未改动则循环下一候选（尾→首环绕），改动即重建；无候选不改输入；候选 >10 状态栏显示计数。`~` 展开复用 M19-4 expand_tilde（`expand_home_arg` 补裸 `~` → HOME），作用点 cd/move/copy/tag copy|move 的目录参数（mkdir/touch/mk 取"名字"不展开；远端路径不展开）。312 单测 + 6 集成全绿（+4：前缀循环/重建、无候选+空词+多空白、~ 展开、exec cd ~ 真实导航）。
-- `M24-6`（2026-11-19）：命令历史——`:` 模式 ↑/↓ 浏览会话已执行命令（`AppState.cmd_history` 内存 Vec 无持久化；`hist_pos`/`draft` 为模式局部字段——首次 ↑ 保存草稿、↓ 越过最新一条恢复草稿并清游标、最旧钳制不越界）；仅 `exec_command_impl` 返回 Ok 且非空（trim 后）才记录，失败不记；上限 100 FIFO（`state::CMD_HISTORY_MAX`，超限淘汰最旧）。help.txt 补条目。308 单测 + 6 集成全绿（+4：浏览与草稿恢复/空历史无操作/上限淘汰+空命令不记/失败不记契约）。顺带修复本机 clippy 1.95 新 lint 报错 3 处（存量代码：Rename 臂 Backspace/Delete if → match 守卫、show_attrs `!is_some()` → `is_none()`；CI 旧版本未触发，非本任务引入）。
-- `M24-3/4`（2026-11-19）：行可视 V + 可视操作扩展——`V` 同 v（toggle_visual，文件管理器中行/字符等价）；可视态 d/x → 视觉范围条目加 tag → execute_tag_delete 批量删除（复用 M3-3 撤销栈），y → 视觉范围路径 OSC52 复制；visual exit 后操作。293 单测全绿。
-- `M24-2`（2026-11-19）：自然排序——tab.rs 增 `natural_cmp(a, b)`（分段解析数字/非数字，数字段按 u64 值比较，前导零等值继续下一段）；SortField::Natural 变体 + S 对话框 "自然 natural" 字段 + :sort 命令 "natural" 解析。293 单测全绿（+1：数字感知/前导零/混合）。
-- `M24-1`（2026-11-19）：Pane 列对齐——ATTRS_WIDTH 日期列 19→16（分钟精度 format_mtime_min）；显示名填充至 name_budget（属性列对齐）；左右 pane 共用。292 单测全绿。
-- `M23 批次关闭`（2026-11-18）：M23-1～12 全部完成（PLAN 状态同步，ACCEPTANCE §22 全勾）。批次验收：292 单测 + 3 冒烟全绿；`--version`/`--help` 通过。批次亮点：多词搜索分级（ordered/any-order）、容量清理+书签保护（Remove 墓碑）、IGNORE_PATTERNS、per-topic λ/max_entries、Frecency Pane 模式（o 进入内嵌搜索替代浮层）、y 复制序列 + e 编辑器、自定义命令快捷键（%d/%f/%F/%D/%g 变量 + git root 判定）、远端文件跟踪上传、选择器删除。M23-7 修订（键位 Normal 一致，cve 移除）。批次新增依赖：hmac/sha1/base64ct（均纯 Rust，零 C 编译期依赖）。接续发布 0.8.0。
-- `M23-8`（2026-11-18）：选择器内 d 删除——frec_pane_key 增 d 臂（Remove 墓碑事件持久化 + pane 内条目移除 + 光标钳制）；frecency.rs 增 remove_entry/tombstone_record（复用 record 降级链路）。292 单测全绿（结构性新增，Remove 墓碑已由 M23-3 测试覆盖）。M23 批次全部完成。
-- `M23-6`（2026-11-18）：Frecency Pane 模式——Tab 增 pane_frecency（FrecencyPane{entries,query,cursor,normal,g_pending}）；`o` 进入（取代 JumpSelect 浮层），Esc 三级退出（Search→Normal→Directory）；frec_pane_key 可测抽取（Normal 态 j/k/gg/G/l/Enter/y*/e/w/Tab；Search 态输入即搜/方向键/Enter）；渲染 render_frecency_panes（焦点 pane 搜索 UI、对侧 PreviewRenderer 100 行快速预览）；Outcome::OpenJump 移除（o 改 pane mode；:j/:J JumpSelect 保留）。292 单测全绿（结构性新增，渲染/键路由由 handle_key 拦截测试覆盖编译形态）。
-- `M23-11`（2026-11-18）：自定义命令快捷键与内置变量——keymap 增 `Action::RunCommand(u16)`（索引指向 KeymapLayers.commands 表保持 Copy）；config parse_binding 增 `run = "cmd:<模板>"` 路由（去重注册）；变量替换 substitute_vars（%d/%f/%F/%D/%g）；git_root_of 逐级向上探测 .git（%g 非仓库 → Err 不执行）；run_user_command 经 M18-4 ExternalRun 分流（tmux/screen 新窗口/当前 pane RunUserCommand outcome）；run 循环挂起 TUI 执行。292 单测全绿（+1：cmd: 解析/去重/git root/变量替换）。M23-12 git 评估决策已入 NOTES。
-- `M23-10`（2026-11-18）：y 复制序列与 e 编辑器——keymap 增 CopyName/CopyPath/CopyContent/OpenEditor（默认键 yn/yf/yc/e）；选集 selected_names（标记→可视→光标，与 cw/R 同语义）；OSC52 剪贴板（osc52_sequence + copy_to_clipboard 写 stdout，零依赖）；yc 目录=条目名清单/文件=内容（非 UTF-8 可读错误）；e 产出 Outcome::EditFile → run 挂起 TUI $EDITOR 打开（editor_name 抽取与 M13-6 共用），目录拒绝。291 单测全绿（+1：yn/yf/yc 单多选/e 目录拒绝/e 文件 EditFile）。踩坑：测试 cursor 需对齐 dirs-first 排序（sub 在 0）；`copied` 反馈的 what 按动作区分（路径=全路径、名称/内容=条目名）。
-- `M23-9`（2026-11-18）：远端文件跟踪上传——remote_open_file 挂常驻监听线程 spawn_upload_watcher（notify 自持于线程 + std::mem::forget；修改事件 → 2s 防抖静默 → 经 upload_tx 回传请求；多次修改多次上传）；run 循环消费 upload_rx（读副本最新内容 → backend.write；成功"已同步上传"/失败"上传失败"状态栏）；upload_tx 存 AppState（Option，run 初始化）；退出清理不变。290 单测全绿（结构性新增，watcher 行为随 M22-5 模式由真实环境覆盖——单测只覆盖编译形态）。踩坑：let-else 需尾分号；`if expr.expect(...);` 无效（去掉 if 前缀）；CRLF 文件下 node 多行替换全部失配——改用 Edit 工具。
-- `M23-5`（2026-11-18）：per-topic LAMBDA / MAX_ENTRIES——FrecencySettings（lambda_dir/file=0.01、lambda_unified=0.005、max_entries=1500 默认；SETTINGS 用 **Mutex** 而非 OnceLock——并行测试 get_or_init(DEFAULT) 会抢先占位致 init 静默失败）；replay_inner/rebuild_snapshot λ 按 topic 取；cleanup_capacity 读 settings().max_entries；init_settings 挂 run()/cmd_pick/cmd_record；FrecencyConfig 扩 lambda_dir/file/unified + max_entries（Option 缺省兼容），Config 失 Eq（f64）。290 单测全绿（+2：λ 对照衰减/max_entries 清理）。
-- `M23-4`（2026-11-17）：IGNORE_PATTERNS——Config 增 `[frecency] ignore_patterns`（FrecencyConfig；Config 失去 Copy——32 处 `state.config` 调用点改 clone，Config 素质向非 Copy 演进）；frecency.rs 增 `ignored()`（glob `*` 跨 `/`，复用 tab::glob_match 零新依赖）；过滤点：record_live_visit/record_file_open/flush_session_visits（TUI）+ cmd_record（CLI，config::load）。288 单测全绿（+2：glob 语义/命中跳过+未命中记录）。踩坑：Config 失 Copy 级联 30+ 调用点（clone 修复）。
-- `M23-3`（2026-11-17）：容量清理与书签保护——EntryKind::Remove 墓碑事件（replay 删除条目，后续访问可重建）；`cleanup_capacity_with(store, topic, max_entries)`（默认 MAX_ENTRIES_DEFAULT=1500；超限删最低分**未书签**条目至 90%，keyword 永不删）挂 record_impl 写事务末尾（Navigate/Open 触发）；record 清理失败静默（degraded 语义）。286 单测全绿（+1：小上限 30 注入加速——1700 条直驱测试曾耗 99s，参数化后 3.4s）。
-- `M23-2`（2026-11-17）：unbook 保留历史——**现状核对已满足**（NAV-1 keyword 事件为纯元数据：replay 只应用 keyword 字段不推进时钟不加分，`:keyword -` 清空不动分数）；补对照验证测试（带 unbook 与不带序列 replay 分数全等）。285 单测全绿（+1）。同 M21-E2 验证补缺模式，零代码改动。
-- `M23-1`（2026-11-17）：多词搜索与匹配分级——frecency.rs 增 grade_for_multi（每词独立 grade_for 取最低档；ordered 按序命中保持档位、any-order 全命中降为 Substring 上限；单词/空退化 grade_for）；from_snapshot 经 multi 打分（pick/TUI 同源）；filter_jump 更新命中条目 grade（ranked 档位降序→同档保持传入序）。284 单测全绿（+1：ordered 优先/乱序降档/单词退化）。
-- `M22 批次关闭`（2026-11-17）：M22-1～7 全部完成（PLAN 状态同步，ACCEPTANCE §21 全勾）。批次验收：283 单测 + 3 冒烟全绿；`--version`/`--help` 通过。批次亮点：known_hosts 校验（安全默认：指纹变更拒连 + 显式跳过）、口令认证回退、远端 :mk/:find/:grep/文件打开。已知边界（登记 NOTES）：远端结果 viewer 预览暂不可用（M22-6 副本仅覆盖 opener）；口令认证成功登录的全链路需真实 sshd 环境（单元覆盖 masked/失败路径，同 M11-6 模式登记人工验证项）。接续 M23。
-- `M22-7`（2026-11-17）：README 里程碑表补齐 M12–M22 行（M6"进行中"修正为已完成；M22 行随执行更新状态）。283 单测全绿（文档任务，无代码改动）。
-- `M22-6`（2026-11-17）：远端文件打开——remote_download_copy（RemoteFs read → `rvifm-open-{nanos}-{leaf}` 临时副本 → 登记 AppState.temp_opens）+ remote_open_file（副本 → system opener）；run 两处退出点 cleanup_temp_opens 统一清理（Windows 文件锁，不做即时删除）；不入撤销栈。opener 调用不可自动化测试（cmd start 阻塞——FEAT-3 教训），下载/清理直测。283 单测全绿（+1：副本内容/前缀/登记/清理/会话缺失错误）。
-- `M22-5`（2026-11-17）：远端 `:find`/`:grep`——search.rs 增 remote_find_files/remote_grep_files（RemoteFs 递归 BFS 收集 1 万条目上限；grep 单文件 1 MiB 上限 + lossy UTF-8；无 ignore 语义）；find/grep exec 臂远端分支（结果虚拟目录复用 enter_results，root=远端路径）；远端结果定位抽 remote_locate_result（退出结果视图 + remote_navigate 父目录 + 光标定位）。282 单测全绿（+1：find 命中/定位回父目录/grep 行命中）。已知边界：远端结果的 viewer 预览暂不可用（read_to_string 本地路径失败），M22-6 临时副本仅覆盖 opener。
-- `M22-4`（2026-11-17）：远端 `:mk` + 提示修正——远端白名单加 `mk`，远端写路由 mk 分支（create_dir + 进入 dest）；拒绝提示去"在 M20 接入"过时表述；MockRemote::create_dir 补存在检查（镜像 SFTP 语义，此前静默覆盖）——mock 保真度教训：mock 必须镜像真实后端的失败路径。281 单测全绿（+1）。
-- `M22-3`（2026-11-17）：SFTP 口令认证——connect_async(password: Option)（公钥优先，失败/无密钥回退 authenticate_password，口令仅内存传递不落盘）；`connect_with_password` 独立入口（actor_thread 带 password 参数）；`ExecOutcome::RemotePass`/`InputMode::RemotePass`（masked 状态栏渲染，Enter 连接失败留在模式内重试并清空口令，Esc 干净取消）；`:remote` 公钥认证失败自动进入口令模式（remote_pass_apply 抽取体）。280 单测全绿（+1：masked 渲染/失败路径）。
-- `M22-2`（2026-11-17）：known_hosts 校验——新模块 src/remote/known_hosts.rs（明文 + `|1|` hashed HMAC-SHA1 解析；@标记行跳过；check/append 纯函数+文件 IO）；sftp ClientHandler 接线（首连追加写入 0600、指纹变更拒连含新旧指纹与指引、错误经 Arc<Mutex> 跨 connect 失败带回——russh Err 不归还 handler）；`[remotes.toml] known_hosts = false` 显式跳过（SftpParams.skip_host_key_check）。依赖 hmac/sha1/base64ct（均已在树零新增）。279 单测全绿（+5）。API 踩坑：hmac 0.13 需 `use hmac::KeyInit`（重导出自 digest）；base64ct encode_string 而非 encode_vec；russh PublicKeyOrCertificate 为 struct 变体 `PublicKey { key, hash_alg }`。
-- `M22-1`（2026-11-17）：`:cd` 相对路径锚定——相对路径相对**当前 tab 目录**解析（原为进程 CWD，M21-E5 CI 实测漂移），词法归一化解析 `.`/`..` 段（normalize_lexical，不触 FS/不解符号链接保持逻辑路径）；失败不改位置。274 单测全绿（+1 含漂移回归断言）。踩坑：canonicalize 会展开 Windows 8.3 短名（TempDir 全断言漂移）→ 改词法归一化保持逻辑路径；存量 3 个 cd 断言随语义更新。
-- `release 0.7.0`（2026-11-17，已验证）：版本 bump 0.6.0→0.7.0（M21 UI/UX 打磨批次 17 项，minor bump）——README 状态行同步；crates.io 0.7.0 已发布（API 验证 max_version=0.7.0，持久授权）；tag `v0.7.0` → CI 4 job 全绿（test ×2 + release ×2）→ GitHub Release `v0.7.0` 双平台归档（linux 13.6MB / windows 12.0MB）。发布途中 CI 修复 2 个 cfg(unix) 测试缺陷（m21f6 fixture 后未刷新条目、m21e5 相对路径 cd 使 base 漂移到 CWD——均 Windows 编译不可见，M12-2 教训复现）。
-- `M21 批次关闭`（2026-11-17）：F1–F9 + E1–E8 全部 17 项完成（PLAN 状态同步，ACCEPTANCE §20 全勾）。批次验收：273 单测 + 3 冒烟全绿；`--version`/`--help` 冒烟通过；批次内发现并修复 2 个存量缺陷（open_dispatch 漏接 tar.bz2/xz/zst 路由、redb 全局 store 测试并行锁竞争）。批次新增依赖：jiff 0.2.43 / notify 8.2.2 / syntect 5.3（均纯 Rust，无 C 编译期依赖）。下一批次待用户指令。
-- `M21-E8`（2026-11-17）：跳转选择器增强——80%×80% 居中无全屏遮罩（双 pane 可见，jump_rect 取代 FIX-4 遮罩语义）；双段子态（默认搜索：输入即搜；Esc→Normal 清输入；再 Esc 关闭；Normal 可打印字符回搜索）；Vim 操作 j/k/gg/G/l（jump_key 可测抽取，g 待决两段）；记录补全：`:cd` 成功 record_live_visit('L')、打开文件成功 record_file_open（topic=file/kind=Open，'F' 侧别仅观察态）；`:j`/:J topic 过滤现状已有（既有测试覆盖）。273 单测全绿（+2 +2 存量选择器测试按新语义更新）。
-- `M21-E7`（2026-11-17）：`=` 过滤增强——`filter_matches`（tab.rs）：含 `*`/`?` 走 glob，无通配符隐式 `*模式*`（vifm 语义，大小写不敏感）；Filter 模式 Continue 实时过滤（逐键生效，与提交/Esc 共用 apply_filter）；Esc 清除恢复完整列表。:select 的 glob 语义不变（M13-2）。271 单测全绿（+1：glob/隐式/实时/Esc 恢复）。
-- `M21-E6`（2026-11-17）：归档 .tar.xz/.tar.bz2 验证补缺——**发现真实缺陷**：M7-8 的 TarFs 支持三压缩形态但 `open_dispatch` 分发层漏接（导航不可达，M7-8 测试直调 TarFs::open 绕过分发故未暴露）；修复：分发层补 .tar.bz2/.tar.xz/.tar.zst → TarFs；make_test_tar 提升 pub(crate) cfg(test)；补 TUI 导航级验证测试（l 进入虚拟目录 + h 返回物理目录 + F4 光标定位归档文件，xz 现场压缩/bz2 用提交 fixture）。270 单测全绿（+1）。
-- `M21-E5`（2026-11-17）：`:mkdir` 定位 / `:mk` 进入——mkdir 成功后光标定位新目录条目（隐藏过滤时保持原位，失败路径 Err 先返回光标不动）；新增 `:mk <名>` 创建并进入（navigate_to 成功才变更，提权链同 mkdir）；help.txt 补条目。269 单测全绿（+1：定位/失败光标不动/进入/失败位置不动/撤销链）。测试踩坑：`cd ..` 产生相对路径 Location——失败断言用位置快照比较而非绝对路径期望。
-- `M21-E4`（2026-11-17）：灵活重命名——`I`/`A` 保留原名光标首/尾、`cc` 清空归零（InputMode::Rename{path,input,pos}，Vec<char> 字符编辑保多字节边界；Enter 应用经 rename_apply 抽取体：空名/未改动无操作、成功入撤销栈、失败可读）；`R` 单键与 `:rename` 无参路由 $EDITOR 批量（复用 cw 管线，M2-3 带参直改保留，存量"缺少新名字"断言按新语义更新）；键位：I/cc/A/R 入默认表 + from_name 别名。268 单测全绿（+1）。语义口径：批量撤销沿用 M13-6 逐项入栈（连续 u 全批可逆），无成组撤销机制（见 NOTES）。
-- `M21-E3`（2026-11-17）：语法高亮——syntect 5.3（default-fancy 纯 Rust fancy-regex 后端，无 onig C 依赖）+ 新模块 src/highlight.rs（OnceLock 静态 SyntaxSet/ThemeSet；shebang 首行优先→扩展名兜底对齐 syntect find_syntax_for_file；主题随 opaline 明暗 base16-ocean）；viewer 文本分支按可见行逐行解析着色（搜索模式互斥跳过，解析失败降级纯文本行）；截断提示前置标题（ViewerState 增 total_lines，viewer_lines 返回 (capped, total)）。267 单测全绿（+4：rs 着色/shebang 推断/降级/截断）。踩坑：标题行尾 CJK 提示会被 pane 宽度裁掉——前置；CJK 正向断言需去空格。
-- `M21-E2`（2026-11-17）：w 预览模式验证补缺——现状核对：M13-9/M14-1/VIEW-1 已实现"焦点不离开左 pane + 查看器滚动 + w toggle"，无缺口需修；补全程验证测试（w 开启预览内容可见 → j 滚动视口、首行移出 → 再按 w 恢复目录列表且内容不再显示）。263 单测全绿（+1，零代码改动）。
-- `M21-E1`（2026-11-17）：列表属性列——左右 pane 条目行追加大小（目录 `<DIR>`/文件 format_size）+ 修改时间（format_mtime `yyyy-mm-dd HH:mm:ss`，DIM 弱化）；自适应：内区宽 < 55 或树视图隐藏属性列（文件名优先），显示名按预算字符截断（搜索/定位用全名不受影响）；配置开关 `[ui] attrs_column` 默认开。262 单测全绿（+1：宽显示/窄隐藏/开关三态）。
-- `M21-F9`（2026-11-17）：进入目录 record——l/Enter（左 `..` 行返回/进入、右 pane）成功后 record_live_visit 实时记录（flush_visits：redb 短事务 + pending 降级；归档/远端跳过；失败不记）；`live_recorded` 按 (tab,'L'/'R',路径) 记**次数**，GAP-2 退出刷写按次数对齐去重（重复进入各计一次、:cd 导航保留刷写）。261 单测全绿（+2）。决策：测试构建跳过真实写入（防全局 store 污染与并行锁竞争），可观察态为 live_recorded（见 NOTES）。
-- `M21-F8`（2026-11-17）：opener stderr 抑制——opener.rs 增 silent()（stdin/stdout/stderr = Stdio::null）应用于 system_open 全部四平台分支（gio/xdg-open/open/cmd start）；失败 Err 由调用方既有 "打开失败: {e}" 进状态栏。259 单测全绿（+1 cfg(unix) 失败路径）。踩坑：Windows `cmd /c start` 对不存在文件弹 GUI 对话框阻塞 status()（测试套件卡 600s 实录）——真实 opener 失败路径测试仅 cfg(unix)；stable Rust 无法内省 Command stdio，静默化实现为直读。
-- `M21-F7`（2026-11-17）：PDF/Office 预览分流核实——根因确认为 view_mode 查看器绕过 preview_kind 直落 read_to_string（"无法读取（非 UTF-8 或已删除）"误报）；修复：viewer 内 Pdf/Office 分流走共享 PreviewRenderer（TUI/pick 同源）；提示措辞对齐 SPEC（"[PDF 文本提取失败]"/"[Office 文档解析失败]"，NeedsVisual 保留"文本层不足"提示）；make_pdf/make_doc fixture 提升为 pub(crate) cfg(test) 供验收测试复用。259 单测全绿（+1：正常/损坏 × pdf/docx 四路径不落文本路径 + 类型化错误 + 内容可见）。
-- `M21-F6`（2026-11-17）：目录 tree 预览——view_mode 右 pane 光标在目录上时走浅层 tree（复用 M13-7 build_tree_entries 深度 2 只读快照 + 图标/类型着色；空目录占位；错误可读提示），不走文本读取路径（杜绝"无法读取/非 UTF-8"误报）。258 单测全绿（+2，含 cfg(unix) 非 UTF-8 目录名 lossy 渲染）。
-- `M21-F5`（2026-11-17）：外部变更自动刷新——notify 8.2.2（--no-default-features，去 crossbeam-channel）监听活动 tab 物理目录（NonRecursive）；run 循环每轮 sync_watcher（导航/切 tab 重挂或卸载）+ 抽干事件（Create/Modify(含 Rename)/Remove 相关，Access 忽略）→ refresh_on_fs_change（双 pane 刷新 + 光标跟随原条目名、被删则钳制）；归档/远端不监听；挂载失败静默降级（TUI 照常）。256 单测全绿（+4：目标规则/事件过滤/光标跟随/归档卸载 + 真实 watcher 端到端 10s 超时窗口）。踩坑：notify 6+ 的 watch 是 Watcher trait 方法需 `use notify::Watcher as _`。
-- `M21-F4`（2026-11-17）：h 返回定位——Tab/Pane 两个 return_parent 返回后经 locate_entry 把光标定位在来源条目（物理子目录/归档内虚拟目录/归档根→归档文件条目；条目被隐藏/过滤时回落 0）；on_parent_row=false（h 不落 `..` 行）。252 单测全绿（+1）。
-- `M21-F3`（2026-11-17）：搜索 Esc 清理——Search-mode 取消分支抽为 search_cancel 直测（Esc 连同上次提交的 tab.search 一并清除，状态栏/高亮不残留；光标回 origin）；再次 `/` 走 EnterSearch 构造全新空输入。251 单测全绿（+1）。
-- `M21-F2`（2026-11-17）：焦点视觉——左 pane 光标行/`..` 行与右 pane 光标行按焦点分流（焦点侧 REVERSED、非焦点侧 DIM，vifm TopLineSel/TopLine 语义）；Tab/Space 切换焦点不再产生状态栏提示文字（焦点经边框+当前行样式呈现）。250 单测全绿（+2 验收测试）。踩坑：120 宽下 cassowary 把 pane 切在 59/1/60，测试断言坐标必须经 pane_layout 推导（与渲染同源），不可硬编码列号。
-- `M21-F1`（2026-11-17）：界面风格——pane_layout 共享几何（标签栏 1 行 + 双 pane Ratio(1,2) 居中分开间隔 1 列 + 状态栏 1 行，渲染与鼠标命中同源）；左右 pane `Block::bordered()` 顶部标题=各自路径（反斜杠归一化），边框焦点态走主题 focused_border/unfocused_border（缺省回落 BOLD/DIM）；类型着色 FileTypeClass 8 类（目录/可执行/链接/归档/图片/视频/代码/其他，扩展名表 + 归档复用 M7 探测），样式走主题 ft_* 命名样式缺失回落 16 色（青/绿/紫/红/亮蓝/黄/蓝）；FileItem 增 is_link/is_exec（unix 执行位、Windows/远端/归档按扩展名近似）；状态栏去路径，底部详情=名称 [类型] 大小 权限 时间（format_mtime jiff 本地时区 yyyy-mm-dd HH:mm:ss，0→"-"）；view_mode 右 pane 标题带预览文件路径。新增依赖 jiff 0.2.43（已在依赖树，零新增传递依赖）；.cargo/config.toml 持久化 AWS_LC_SYS_PREBUILT_NASM=1（本机无 NASM，见 NOTES）。248 单测全绿（+3 M21-F1 验收测试）；存量偶发修复：STORE_TEST_LOCK 串行化全局 store 测试（3/3 复现的 redb 锁竞争，同 M13-10 先例）。
-- `M20 批次关闭`（2026-11-17）：M20-1～4 全部完成（PLAN 状态同步）。M19/M20 全部关闭——SFTP 远端浏览（M19）+ 写操作与本地体验对齐（M20）就绪。下一批次待用户指令。
-- `M20-2/3/4`（2026-11-17）：远端确认边界与跨 VFS 完善——M20-1 已实现核心（Confirm 带远端标记/trash 可恢复/paste 防覆盖/跨 VFS 管线）；本轮补 DD 远端永久删除分流（绕过 trash，remove_permanent/remove_dir 按 is_dir 分流）；M20-3 跨 VFS 移动语义（成功粘贴后从来源删除——远端 remove_permanent/本地 fs remove_file）；M20-4 测试已随 M20-1 添加（dd trash+undo、paste+undo、rename+mkdir+undo、冲突报错不覆盖）。M20 批次全部关闭。
-- `M20-1`（2026-11-17）：远端写操作——trait 增 move_to_trash/restore_from_trash/remove_permanent/remove_dir（默认 Unimplemented）；sftp.rs SftpCmd 扩展 Write/RemoveFile/RemoveDir/Rename/CreateDir/MoveToTrash/RestoreFromTrash（trash=/tmp/rvifm-trash + .rvtN 碰撞后缀）；UndoableOp::Remote{tab_id,remote,kind:RemoteUndo}（Delete/Create/Rename 三种）；undo_last 远端分支（会话 restore/remove/rename）；Confirm/Outcome/execute_delete 增 remote 参数；paste_yanked_remote + paste_remote_to_local（跨 VFS 粘贴管线；防覆盖 metadata exists 检查）；exec 远端写路由（rename/mkdir/touch/copy/move）；YankBuffer.source + YankSource（Local/Remote）；远端 yy 臂。252 单测全绿。M20-2（确认边界）与 M20-3（跨 VFS 已部分实现）后续完善。
-- `M19-4`（2026-11-16）：浏览与配置——src/remote/config.rs（remotes.toml 解析 [name] host/port/user/key/root；ssh config Host 别名解析跳过通配与 Match；resolve_all toml 覆盖 ssh 别名；expand_tilde）；SftpParams 扩展（key_path_raw/name/root，new 恢复）；:remote 无参列出全部（toml+ssh 合并）、:remote <名> 真连（SftpBackend::connect → register → remote_enter(root)）；remote_enter 增 root 参数；config::ssh_config_path()。M19 批次全部关闭。252 单测全绿（+4）。
-- `M19-3b`（2026-11-16）：SFTP 后端（russh+russh-sftp，用户确认候选A）——src/remote/sftp.rs：后台 actor 线程（current-thread tokio runtime + SSH 会话常驻；std mpsc 命令通道避免跨线程 tokio 语义）；SftpBackend 实现 RemoteFs（list/read/metadata，每操作 30s 超时；connect 10s）；密钥探测 key_path→id_ed25519→id_rsa；错误映射 map_russh_err/sftp_err（SFTPv3 状态码 2=NotFound 3=PermissionDenied）；check_server_key 覆写（TODO known_hosts M19-4）；写操作 Unimplemented（M20 填充）；集成测试 4 个（sshd 不可达自动跳过——CI 无 sshd 不炸）。**spike 教训落地**：check_server_key 覆写、request_subsystem、String 路径、create+write_all。248 单测全绿（+4，其中 4 个集成测试本机 sshd 下全跑）。
-- `M19-2`（2026-11-15）：Location::Remote 与导航接入——Location::Remote{remote,path}（display_path dev:/path、base_dir=path、is_remote 移除）；AppState.remote_sessions（BTreeMap<String, Box<dyn RemoteFs>>，AppState Debug 手工实现）；Tab.pre_remote（进入远端前本地位置）；remote_enter/remote_navigate/remote_up/remote_jump（会话 list 驱动；截断 forward 轨迹语义同 navigate_to）；hist_move 统一入口（目标为 Remote 时 remote_jump 会话恢复，否则 hist_jump——exec 与按键两路共用）；l/Enter=h 语义（远端文件打开暂不支持提示）；exec 守卫远端只读（file/sort/find/grep/recent/导航/退出豁免；:file Remote 臂）。预览经 RemoteFs read 链路 M20 后接入。244 单测全绿（+2）。
-- `M19-1`（2026-11-15）：RemoteFs trait——src/remote.rs：RemoteError 可分类（Connect/Auth/NotFound/PermissionDenied/Timeout/Unimplemented/Other + 可读 Display）；RemoteEntry/RemoteMeta（name/is_dir/size/mtime）；trait list/read/metadata（路径=远端绝对路径 / 分隔）+ 写操作默认签名（write/remove/rename/create_dir → Unimplemented，M20 填充）；协议无关零依赖；mock 测试（含 Box<dyn RemoteFs> 对象安全锁定）。242 单测全绿（+4）。
-- `M18 批次关闭`（2026-11-15）：M18-1～4 全部完成（PLAN 状态同步）。下一批次 M19 SFTP 浏览（M19-1 trait → M19-2 Location::Remote → M19-3a spike【暂停等确认】→ 3b → 4）。
-- `M18-4`（2026-11-15）：:! + terminal_in_new_window + Space——config.rs 增嵌套 `[ui]` 表（UiConfig{terminal_in_new_window} 默认 true；serde default）；`:!<cmd>` exec 最前置（守卫之前）→ run_external_target 判定（$TMUX→tmux new-window -d sh -c、$STY→screen -X、否则 CurrentPane）；CurrentPane 走 ExecOutcome::RunExternal → run 循环挂起 TUI 执行后恢复（失败消息可读）；s 同分流；Space=切换窗格（Tab 臂扩展 + handle_right_key，vifm 语义与 Tab 并存）。**踩坑**：脚本批量替换致 app.rs 结构损坏（重复定义/截断）→ stash 丢弃后 Edit 小步重做；[ui] 嵌套表与平铺字段的 serde 差异。238 单测全绿（+3）。M18 批次全部关闭。
-- `M18-3`（2026-11-15）：s 进入 shell——Outcome::EnterShell（handle_key 臂，S 排序对话框不受影响）；run 循环挂起处理（ratatui::restore → shell_command().status() → init → 鼠标重启用；state 全程未动 → 光标/滚动不变）；shell_command 可测纯函数（Unix $SHELL 缺省 /bin/sh；Windows COMSPEC/cmd）。235 单测全绿（+1）。
-- `M18-2`（2026-11-15）：:sort 多字段——Tab.sort 升级 Vec<SortSpec>（对话框写单元素）；apply_sort_multi + sort_entries 逐字段链（目录优先 + 名称平手）；parse_sort_spec（逗号分隔 + asc/desc 后缀；未知字段/坏方向/空参数可读错误）；exec 臂 + results 视图豁免；状态栏多字段 join（[sort: name asc,size desc]）。234 单测全绿（+1）。
-- `M18-1`（2026-11-15）：S 排序对话框——FileItem 增 mtime（Unix 秒；load_entries/tree 真实值，归档/结果条目 0）；Tab.sort（SortSpec{field,desc}）+ apply_sort（目录优先 + 字段 + 名称平手；光标跟随原文件）+ refresh 重应用；InputMode::SortDialog{cursor,desc}（S 打开；字母 n/N/m/M/s/S/e/E 直接应用并关闭；空格换向不应用；回车应用高亮字段；Esc 取消）；渲染居中遮罩浮窗（字段说明 + 当前状态 [asc/desc] + 待定方向）；状态栏 [sort: name asc]；对话框内 s/S=大小字段键（模态，不触发 shell）。`handle_sort_dialog_key` 抽取直测。233 单测全绿（+3）。
-- `release 0.6.0`（2026-11-15）：版本 bump 0.5.0→0.6.0（M15 反馈批次 + M16 导航增强 + M17 搜索查看器 + GAP-1/2 收尾，minor bump）——README 状态行与里程碑表同步；tag `v0.6.0` → CI release job 产 GitHub Release；crates.io 0.6.0 已发布（API 验证 max_version=0.6.0；用户提供 token 授权执行，未落盘）。
-- `清单`（2026-11-15）：ACCEPTANCE §16 升级 v0.6.0 手册——新增 N（搜索与查看器：:find/:grep 虚拟目录、只读守卫、定位、行号/高亮/n/N、grep 命中直达行）、O（快速跳转与历史：keyword/quickjump/histprev/history/recent/用户键位绑定）、P（frecency 退出落盘抽验）、Q（交互复核：M11-6 图片 + 鼠标 + .. 行 + :file + :help）四节；版本与产物引用改 0.6.0。
-- `GAP-2`（2026-11-15）：TUI 退出事件刷写（M8 收尾）——frecency::flush_visits_at/flush_visits（Store 短事务 + 3 次重试逐条 + 打开失败整批降级 pending）；collect_session_records 纯函数（各 tab history[1..] → Navigate 事件——**启动落点不算导航**；归档位置跳过）；flush_session_visits 在 run() 两个 Quit 退出点调用（失败 eprintln 不阻塞退出）。语义边界：q/:q 触发；终端 IO 错误路径不刷写（可接受）。230 单测全绿（+1）。GAP-1/GAP-2 排队缺口全部清零。
-- `GAP-1`（2026-11-15）：keymap TOML 分层接线（M10-5 收尾）——keymap.rs：`Action::from_name`（snake_case + vifm 惯用别名）+ `parse_key`（"P"/"C-o"/enter/方向等）+ `Keymap::with_layers`（prepend 覆盖默认、append 低于默认、replace 替换；用户序列进 explicit 集合）+ `is_explicit`；config.rs：KeymapLayers 解析（[normal] 三层，未知 run/非法键整条跳过）+ OnceLock 静态；app.rs：**execute_action 抽取**（seq 派发与单键共用，调用方统一 clear seq——顺带根除序列残留吞键缺陷类）、单键路径显式绑定优先（覆盖内建）、通用 Char 前缀臂（替换 g/d/D/c/y 硬编码列表，任意多键绑定可用）、非 Char 键兜底；`Action::HistPrev/HistNext` 变体接入（无默认键，用户可绑）；run() 加载分层。229 单测全绿（+3）。
-- `fix`（2026-11-15）：find/grep 结果显示路径规范化为 /——CI Windows 抓到 srch1_find 测试失败：display() 在 Windows 产生反斜杠，断言（与全路径显示语义）不符。按 AGENTS §7 在显示层 normalize（语义路径 item.path 不变，locate 不受影响）。教训：任何 path.display() 进 UI/断言前统一 replace 反斜杠。双平台全绿（run 24acd00）。M17 批次全部关闭（SRCH-1/SRCH-2/VIEW-1）。
-- `VIEW-1`（2026-11-15）：交互式查看器——ViewerState（scroll/line_count/query/match_line）挂 Tab；toggle_view 扩展（激活时读行数，grep 命中 scroll=行-2 上下文）；handle_key 查看器路由块（置于 is_quit 前：j/k/gg/G/Ctrl-u/d 滚动、/→ViewerSearch 模式、n/N 环绕、w/Esc/q 退出、其余消费、: 放行）；渲染=行号 gutter（当前匹配 ▶）+ 查询子串黄底高亮 + 标题含位置与搜索词；图片仍走 ImageEngine；M13-9 测试按新语义重写（查看器内 j 滚动视口；M14 模型下"摘要跟随"已由双栏取代）。227 单测全绿（+1）。M17 批次全部关闭。
-- `SRCH-2`（2026-11-15）：:grep 接入——grep_files（regex 逐行匹配 + NUL 二进制/非 UTF-8 跳过 + 非法正则可读报错）已随 SRCH-1 落地共享基础设施（exec find|grep 同臂、enter_results 按行号渲染 路径:行号: 内容、locate 定位文件）；本任务补集成测试（命中+行号+定位+非法正则+状态指示）。226 单测全绿（+1）。
-- `SRCH-1`（2026-11-15）：:find 虚拟目录——src/search.rs（ignore 遍历：gitignore/.ignore 感知 + show_hidden 联动 + 大小写不敏感叶子子串 + 上限 1 万截断）；Tab.results（items/entries 平行表，沿 :tree 同构）+ enter/exit_results + locate_result（退出结果视图 + navigate_to 父目录 + 光标停文件）；preview_path() 抽象（结果模式取命中文件——view_mode 预览即命中文件）；l/Enter=定位、Esc/h=退出、v/t 拒绝、yy=命中文件路径、dd/DD/cw 拒绝；状态栏 [find: query — N 项]。**顺带修复存量缺陷**：seq 块 match 臂内 return 跳过 input.seq.clear()——dd/DD 确认后序列残留吞掉下一个按键（全部早退臂补 clear）。225 单测全绿（+5）。
-- `fix`（2026-11-15）：历史菜单当前标记移到行首——CI Windows 抓到 nav2_exec_showhistory_and_render 失败：runner 临时路径 50+ 列，popup 宽 48 列把行尾 "● 当前" 截掉（Linux 短路径不触发）。教训固化：浮窗行内标记放行首，断言不依赖行尾内容；CI test step 现以 ::error:: 注解输出失败行（匿名可读，digest 步骤 Windows 上自身失败已绕开）。双平台全绿（run 6a7d510）。
-- `NAV-4`（2026-11-15）：o 选择器近期视角——`JumpKind::Recent` + `:recent` 命令（复用 JumpSelect 覆盖层，标题"近期 · 时间倒序"）；`ScoredEntry.last_visit`（replay 取条目最近事件 ts，snapshot-only 为 0）；`merge_session_visits`（各 tab history 按轨迹顺序赋递增 ts，基准=墙钟-1h；既有条目只改 last_visit 不改分数，会话新条目直接创建）；Recent 排序 = last_visit desc + score 次序。**发现 M8 缺口**：TUI 退出时批量追加 events 从未实现（会话访问不落盘）——本视角靠会话内合并即时可见，退出刷写作为独立任务排队（NOTES）。218 单测全绿（+3）。M16 批次全部关闭。
-- `NAV-2`（2026-11-15）：:history 菜单——ExecOutcome::ShowHistory + `:history`/`:his` 臂（..行守卫豁免）；`InputMode::HistoryMenu { cursor }`（live 渲染 history[..=hist_pos]，当前条目 ● 标记）；j/k 移动、Enter/l 导航（history_menu_nav → navigate_to 新导航语义：truncate forward）、dd 移除（history_remove：当前视图不可删、删游标前条目 pos 前移）、Esc/q 关闭；渲染居中遮罩浮窗。215 单测全绿（+3）。菜单语义细化：从菜单跳转=新导航追加（back 栈内重复出现属正常，vifm 同）；forward 截断仅在 pos 之后发生。
-- `NAV-3`（2026-11-15）：:histprev/:histnext——Tab.history 语义升级为**完整访问轨迹 + hist_pos 游标**（初始含当前视图）；`navigate_to` 统一 6 个导航点（enter/return/:cd/quickjump：先加载成功才变更状态——损坏归档失败无副作用契约保持；新导航截断 forward）；`hist_jump` 后退/前进（边界 false 无副作用，条目按位置重载——归档位置往返测试覆盖）；exec 臂（后退 N/M 提示、边界提示）；`..` 行守卫豁免导航命令；不设默认键（默认表无 Ctrl-O/Ctrl-I 断言），help 给命令说明 + 注释性 keymap 示例——**发现 M10-5 的 keymap TOML 分层实际未接线**（InputState.keymap 仅默认表，config.rs 无 prepend_keymap 解析），用户绑定暂不可用，缺口记 NOTES。212 单测全绿（+2，历史断言全量更新）。
-- `NAV-1`（2026-11-15）：frecency 快速映射层——EntryKind::Keyword + EntryRecord.keyword（serde default 旧格式兼容）；keyword 事件重放只应用元数据（不加分不推进时钟，±keyword 隔离断言分数全等）；record --keyword（纯元数据事件不记访问）；set_keyword_at/_now（TUI :keyword 同链，- 清除）；[quickjump] char→keyword 独立解析（OnceLock，不动 Config Copy；踩坑：toml 1.x Value::from_str 只解析单值，文档用 Table）；（反引号）+字符 quickjump（别名优先、缺省查 keyword==字符；quickjump_target 纯函数筛 dir 最高分——踩坑：cmp_ranked 是降序比较器不能直接喂 max_by，改显式 score 比较器）；未命中提示不静默；:cd 补 on_parent_row=false（FEAT-2 遗留）。help.txt 更新。208 单测全绿（+4）。
-- `M15 批次全部关闭`（2026-11-15）：FIX-1～4 + FEAT-1～4 八项完成（各自提交见上）；M14-4 发布闭环验证——GitHub Release v0.5.0 双平台归档（linux 9.8MB/windows 8.8MB）+ crates.io 0.5.0。
-- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io + tag `v0.5.0` → GitHub Release。
-- `FEAT-4`（2026-11-15）：:help 全屏帮助视图——`src/help.txt` 内嵌（include_str!，完整键位/命令/鼠标/菜单参考）；`InputMode::Help` 替换为 `HelpView { scroll, search }` + `HelpSearch { input, scroll, search }`（搜索输入携带视图状态）：j/k 滚动（钳制）、/ 搜索、n/N 环绕跳转（help_find_match 大小写不敏感子串）、q/Esc 关闭返回（状态仅模式局部，列表光标/滚动不变）；渲染全屏 Block + 标题含搜索词。**踩坑**：TestBackend 渲染 CJK 全角为"字+空格"，断言取单字/ASCII token；反向搜索 start = scroll+len-1（排除当前行）。203 单测全绿（+3）。
-- `FEAT-3`（2026-11-15）：:file 命令与右键菜单——`ExecOutcome::ShowInfo` + `:file` 臂（与 Ctrl-G 同源 file_info_text；归档成员显示 host:/inner/name + 成员索引元数据，权限/mtime 不可用标 "-"）；`InputMode::ContextMenu { cursor }` 六项菜单（Open/File Info/Copy/Move/Rename/Delete）+ `run_context_menu_action`（Copy/Move 目标=另一 pane 目录，vifm 双栏约定，NOTES）；渲染 34×8 居中浮窗 + Clear 遮罩；键盘 j/k/Enter/Esc + 鼠标（右键条目=聚焦+开菜单，菜单内点击执行、外部关闭）；Rename 预填 rename 命令行、Delete 走 dd Confirm（u 可逆）；`hit_entry_index` 抽出共用。**踩坑**：system_open 阻塞（Command::status），测试 Open 只用目录。200 单测全绿（+5）。
-- `FEAT-2`（2026-11-15）：列表顶部 ".." 条目——设计决策：**独立 on_parent_row 焦点标志**（Tab 字段）而非 cursor 位移——".." 为渲染层虚拟行（列表上方独立 1 行，DIM 置灰/聚焦 REVERSED），cursor 语义不变、不进 entries/搜索/过滤/标记（SPEC SIMPLIFIED）。行为：has_parent_row（物理非根=true，归档恒 true）；k 首条目→"..".行（替代首→尾环绕，M13-4 测试更新）；j 从 ".." 回首条目；gg 落 ".."（vifm）；进入目录/归档后落在 ".." 行（vifm 语义）；l/Enter = return_parent（归档根回物理目录）；写操作守卫（yy/dd/DD/cw/Ctrl-G/t/v/exec 写命令拒绝）；鼠标单击聚焦 / 再击返回。195 单测全绿（+5，渲染行位移测试 +1 行修正）。
-- `FEAT-1`（2026-11-15）：鼠标支持——run 启用 EnableMouseCapture（main restore 后 Disable、cw 挂起恢复后重启用）；`handle_mouse`：左键单击聚焦（已聚焦行再击=open_selected，双击第二击天然覆盖）、滚轮逐行 move_cursor(±1)（NOTES：List 无独立视口，视口式滚动与 widget 冲突）；列表几何=标签栏1行+左60%（与 render 同源）；输入模式/列表外（标签栏/状态栏/右 pane）不响应；Visual 点击移动光标延伸选区。`open_selected` 从 l/Enter 臂抽出共用；`list_offset` 显式视口（ListState.with_offset 与命中测试同推导）。190 单测全绿（+5）。
-- `FIX-4`（2026-11-15）：o 选择器居中与遮罩——`centered_rect`（60%宽/50%高自适应，上限 80×20，小终端保底）+ 全屏 Clear+黑底遮罩（先 Clear 抹符号再铺底色——Block.style 只改 bg 不清符号）；popup 内布局不变；关闭恢复列表与光标（选择器 cursor 是模式局部状态）。80×24→48×12@(16,6)、160×48→80×20@(40,14)。185 单测全绿（+2，旧覆盖层坐标测试同步修正）。
-- `FIX-3`（2026-11-15）：归档浏览回归修复——根因：M11-7 的 system_open 分支插在 enter_selected 之前，物理视图下归档文件（is_file）被交给系统 opener 抢占，Tab::enter_selected 的 M7-4 归档路径（仅左 pane 实装）永远不可达。修复：`l`/Enter 臂对 is_archive_file/is_unsupported_archive 名称先路由 enter_selected（虚拟目录进入 + M7-9 解压提示），仅非归档文件走系统 opener。右 pane 维持 M14 SIMPLIFIED 精简集（无归档进入）。183 单测全绿（+4：进入/损坏/不支持/归档内 dd no-op）。
-- `FIX-2`（2026-11-15）：yy/p 复制链路——YankBuffer（paths+cut）入 AppState；keymap 补 `yy`→Yank 绑定（默认表此前缺失，Action::Yank 同补）+ 单键前缀臂补 `y`；`p`=PutCopy（复制）、`P`=PutMove（移动），目标=焦点 pane 目录（physical_base）；每项独立入撤销栈（u 可逆）；空缓冲/目标已存在/只读目标可读错误不 panic；yy 来源：可视选择→标记→光标起 count 条。dd→cut 缓冲（p 从暂存恢复到任意目录）deferred 记 NOTES。179 单测全绿。
-- `FIX-1`（2026-11-15）：搜索高亮与实时索引——`/` 改"高亮+跳转"语义（不隐藏非匹配项）：`match_range`（smart-case 子串区间）+ `search_status`（i/N 计数）；Search 模式加 `origin` 字段，输入实时跳第一匹配（incsearch）、无匹配回 origin+提示、Esc 恢复光标；列表匹配子串黄底黑字高亮（与光标反显区分）；状态栏 Search/Normal 双口径显示 `[i/N]`+无匹配提示；空提交清除搜索状态。175 单测全绿。
-- `M14-4`（2026-11-15）：发布 0.5.0（M14 双 pane + 标签栏，minor bump）——crates.io（API 验证 0.5.0）+ tag `v0.5.0`。**踩坑**：tag 原指向的 bump 提交有两个平台差异测试在 Linux CI 失败（perm 硬编码 644 受 umask 影响；根路径测试用 C:\\ 在 Unix NotFound）→ 修复后 tag 重指向并强推，release job 重新产出。
+# STATE — 当前状态
 
-- `M14-2`（2026-11-15）：标签栏 UI——render 顶部 1 行（`N:dirname` + 当前 REVERSED|BOLD）；`:tabnew`/`gt` 切换有可见反馈；tab 栏偏移导致 4 个渲染测试行号修正。164 单测全绿。
+> 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
-- `M14-1`（2026-11-15）：双 pane 模型对齐 vifm——`Pane`（location/entries/cursor/scroll + 导航方法）+ `Tab.right`/`focus`；handle_key 焦点分发（Right → `handle_right_key` 精简导航集：j/k/gg/G/Ctrl-u/d/l/Enter/h/Ctrl-G/w；写命令提示切回）；exec 写命令焦点化（`focus_base`/physical_base 焦点感知）；`refresh_tab_panes` 双刷新；渲染双栏（右 pane 目录列表 ↔ 预览视图，图片渲染保留）。163 单测全绿。
-
-- `M13-11`（2026-11-15）：发布 0.4.0（M13 十项 vifm 对齐增强，minor bump）——crates.io（持久授权）+ tag `v0.4.0` → GitHub Release 自动归档。
-
-- `M13-10`（2026-11-15）：暂存区菜单——ops 增 `TrashEntry`/`record_staging`/`read_trash_index`/`restore_from_trash`（**index/ 每记录独立 .json**，JSONL 并发 append 会粘连）；`:trash` → `InputMode::TrashMenu` 覆盖层（Enter 恢复到原位、orig 冲突 Err、Esc 关）；测试串行锁（全局 trash 目录共享）。162 单测全绿。
-
-- `M13-9`（2026-11-15）：view mode——`w` 键/`:view` 切换 `Tab.view_mode`；预览窗格渲染 max_lines：摘要=窗格高度 / view=5000（完整内容）；j/k 列表移动视图跟随光标文件（render 每帧重建）；双栏布局保持非全屏。162 单测全绿（+1：截断/完整/跟随三态对照）。
-
-- `M13-8`（2026-11-15）：后台作业 + :jobs——事件循环 `event::read` → `event::poll(100ms)` + `job_rx.try_recv()` 收割；`state.jobs`/`add_job`/`apply_job_update`（撤销栈主线程入栈）；`execute_job_body`（线程与测试共用）+ `spawn_job_thread` 薄壳；`:tag copy/move` 返回 `ExecOutcome::SpawnJob`、`:jobs` → `InputMode::Jobs` 覆盖层。161 单测全绿。
-
-- `M13-7`（2026-11-15）：:tree 树视图——`Tab::build_tree_entries`（递归 walk，目录优先+字典序，depth 缺省 8、上限 1 万条截断）+ `enter_tree`/`exit_tree` toggle；渲染按相对路径深度缩进；树模式只读守卫（exec 白名单 tree/q/help + handle_key 写/导航键拒绝）。**踩坑**：SplitWhitespace 无 peek（改先取 cmd_head）；node 脚本 split 补字段会重复追加（去重修复）。160 单测全绿。
-
-- `M13-6`（2026-11-15）：cw 批量重命名——`c` 前缀入 seq + `c,w` → `Action::RenameBatch` → `Outcome::BatchRename` → run 内 `ratatui::restore()` 挂起 TUI → `$EDITOR`（EDITOR→VISUAL→notepad/vi）编辑名单 → `ratatui::init()` 恢复 → `apply_rename_lines`（行数不符整批中止；同名/非法名跳过）→ 逐项 `rename_to` 入撤销栈（u 可逆）。临时名单手写于 temp_dir（tempfile 是 dev-dep 不引入主代码）。159 单测全绿（+2：应用与 undo 恢复、行数中止）。
-
-- `M13-5`（2026-11-14）：Ctrl-G 文件详情对话框——ctrl+g arm（置于 g 前缀分支前防捕获）→ `file_info_text`（名称/类型/大小/修改时间/权限/路径，fs::metadata）→ `InputMode::FileInfo` 覆盖层，任意键关闭；`perm_string` 提升跨平台可见。158 单测全绿。
-
-- `M13-4`（2026-11-14）：j/k 列表环绕——`Tab::move_cursor_wrap`（±1 环绕，其余回退钳制）；j/k 分支切换调用；Ctrl-u/d 半页保持钳制。157 单测全绿（+3）。
-
-- `M13-3`（2026-11-14）：DD 永久删除——`D` 前缀入 seq + `D,D` → `Action::DeletePermanent` → Confirm(permanent) 强提示（“**永久删除**…不可恢复”）；`execute_delete` permanent 路径直接 fs 删除、不进撤销栈（权限错误仍走提权链）。154 单测全绿。
-
-- `M13-2`（2026-11-14）：:select/:unselect 按 pattern 批量选择——`Tab::select_by_pattern(Option<&str>, bool)`（glob 匹配当前列表条目名，join/remove tags；无参=仅当前条目，:unselect 无参=清空全部）；153 单测全绿。
-
-- `M13-1`（2026-11-14）：f/F/;/, 首字母快速搜索——`Tab::find_first_char`（文件名首字符精确匹配、环绕列表首尾）+ `jump_first_char`（更新 char_search 状态）；app 层 f/F 两键序列（seq 拦截通配第二键）+ `;` 同向 / `,` 反向重复。152 单测全绿。
-
-- `M8-13`（2026-11-14）：发布 0.3.0（M8-12 跳转选择器新特性，minor bump）——crates.io（持久授权）+ tag `v0.3.0` → GitHub Release。
-
-- `M8-12`（2026-11-14）：TUI 跳转选择器——`o` 合一视角（`replay_unified`：全部条目按全局序号 aging，dir+file 混合排名）+ `:j`/`:J` 分型（仅目录/仅文件，独立时钟）；`InputMode::JumpSelect` 覆盖层（输入筛选 + j/k 移动 + Enter 选定 + Esc 取消）；选定 = 目录 cd（history 入栈）/ 文件切父目录定位光标（纯导航不调 opener）；选择器纯只读（不写任何表/时钟）。150 单测全绿（新增统一视角对照、筛选分级、cd/定位、渲染、:j/:J 共 7 测试）。
-
-- `M8-11`（2026-11-14）：发布 0.2.1（M8-10 独立时钟行为修正，patch bump）——crates.io（持久授权）+ tag `v0.2.1` → CI release job 自动创建 GitHub Release 并上传双平台归档。
-
-- `M8-10`（2026-11-14）：目录/文件独立事件时钟——store 增 `dir_tick`/`file_tick`（缺失时自 global_tick 连续分叉初始化）；`append_event` 事务内推进全局序号 + 对应类型时钟并注入事件 JSON `clock`；`replay`/`replay_merge` aging 的 Δclock 一律同类型（clock=0 旧格式以全局序号兜底）；`pick` 读 `type_tick("dir")/("file")` 分别对齐。143 单测全绿（新增独立性 A/B、独立推进、旧库分叉 3 测试）。
-
-- `release 0.2.0`（2026-11-14，已完成验证）：版本 bump 0.1.0→0.2.0（M11 预览栈 + M12 提权 + 双栏预览）；CI release job 改为 tag 推送时自动创建 GitHub Release 并上传双平台归档（gh release create --verify-tag || true 消除两平台竞争，upload --clobber）；crates.io 同步发布 0.2.0（持久授权）。
-
-- `M12 全部关闭`（2026-11-14）：操作级内联提权落地——`ops::is_permission_denied`（ErrorKind+errno）→ TUI `AskPass` 模式（masked 渲染、Esc 干净中止）→ `privilege::escalate_execute`（FIFO 0600 传密码 + wrapper 脚本 SUDO_ASKPASS 全 sudo 版本兼容 + `sudo -A <op>` 不经 shell）→ CI NOPASSWD sudo 真实提权验证。
-- **M12-2 教训**（已固化 AGENTS §6 门禁）：cfg(unix) 测试代码 Windows 编译器不检查，必须 `cargo check --target x86_64-unknown-linux-gnu --all-targets`。
-- **M12-3 教训**：wrapper 断言 `contains("--askpass /tmp/x")` 与生成串 `--askpass "/tmp/x"`（引号）不匹配——cfg(unix) 断言在本地不可跑，验收断言必须与实现逐字对齐。
-
-- `M12-2`（2026-11-14）：`src/privilege.rs`——askpass 辅助模式：`rvifm --askpass <fifo>` 读 FIFO 一行密码→stdout；`create_fifo`（mkfifo 0600）/`write_password_to_fifo`/`cleanup_fifo`；**决策**：SUDO_ASKPASS 用 wrapper 脚本传参（带参数 SUDO_ASKPASS 需 sudo >= 1.9.4，wrapper 全版本兼容）；非 Unix 报错退出。CLI 集成测试 3 个（FIFO 闭环/缺 FIFO 退出 1/缺参退出 2，cfg unix 由 CI 运行）。**踩坑**：edition 2024 要求 `unsafe extern` 块。
-- `M12-1`（2026-11-14）：`ops::is_permission_denied`——`ErrorKind::PermissionDenied` + raw errno（EACCES=13/EPERM=1，cfg unix）；测试含真实 0o555 只读目录写入场景（root 环境写入成功自动跳过）。137 单测全绿。**M11 全部落地**（仅 M11-6 真实终端显示验证保留人工步骤）。
-- `M11-14/M11-15`（2026-11-14）：语料回归——CJK（SimSun 无嵌入字体）/假加密（/Encrypt Standard）/损坏/截断语料全部经 `render_page` 不 panic（截断场景 exprim 有 xref 重建容错，Ok/Err 均合法）；正常语料渲染像素 ≤ 400 万护栏。M11-15：本地 msvc `--release --features pdf-visual` 构建成功（panic=unwind 固化验证）+ CI 双平台加 `cargo check --features pdf-visual` 步骤。140（feature）/136（默认）单测全绿。
-- `M11-13`（2026-11-14）：pdf-visual 护栏——`pdf::visual` 模块（cfg feature）：输入 64MB 上限、导出像素 400 万硬上限（目标 300 万按页面比例 DPI 反推、超限二次收缩）、`[profile.release] panic = "unwind"` 显式固化（exprim per-page catch_unwind 依赖）；exprim 0.4.0 `RenderSession` 全链路（open→compile→render→RasterPlane::Rgb8）。验证：`--features pdf-visual` 编译+测试绿、默认依赖树 exprim=0。
-- `M11-11`（2026-11-14）：Poppler-free 验证——`PreviewKind::Pdf` 接入共享 PreviewRenderer（TUI/pick 同源）；干净环境（无 Poppler/MuPDF）含文本 PDF → pdf-inspector 提取预览；NeedsVisual → 视觉路径提示行（pdf-visual feature 或可选外部工具 + opener 回退）；Unavailable → 友好提示。136 单测全绿。
-- `M11-10`（2026-11-14）：`src/pdf.rs` 探测链——pdf-inspector =1.25.2（禁用 ocr/render-pdfium/vision，`cargo tree -e features` 验证 NONE）文本提取第一级；`PdfPreview{Text,NeedsVisual,Unavailable}` 分类（Scanned/ImageBased/编码损坏 → NeedsVisual）；`find_external_renderer` PATH 探测 pdftoppm/mutool（不启动进程）；fixture 程序化生成最小 PDF（精确 xref 偏移）。134 单测全绿。
-- `M11-9`（2026-11-14）：Office 接入 PreviewRenderer——`PreviewKind::Office` 分流（preview_kind 分类 + render_preview 提取分支 + 失败友好提示）；TUI 预览窗格经现有 `_` 分支自动生效（无需改 app.rs）；TUI/pick 同源。129 单测全绿。
-- `M11-8`（2026-11-14）：`src/office.rs`——office_oxide 0.1.17（~0.1.16 锁定，ACCEPTANCE §13）文本提取层：`is_office_file`（docx/xlsx/pptx/doc/xls/ppt）+ `extract_preview_text`（行截断 + 64K 字符保护 + Err 不 panic）；测试 fixture 用 `office_oxide::create::create_from_markdown` 程序化生成（**踩坑**：markdown 软换行合并为单段落，fixture 需空行分隔）。127 单测全绿。
-- `M11-2`（2026-11-14）：图片预览接入 PreviewRenderer——TUI 双栏（左列表 60% / 右预览 40%，vifm 式）；`preview_kind()` 统一分流（Directory/Image/Text，TUI 与 pick 同源）；AppState 持有 ImageEngine；图片渲染失败降级共享提示行；归档内条目暂不预览（M7 VFS 文本读取未接入）。**踩坑**：`Picker::from_query_stdio()` 在非 TTY（测试/CI）会阻塞等待终端响应——detect() 前置 `IsTty` 守卫，非 TTY 直接 halfblocks 不做 stdio 查询。122 单测全绿。
-- `M11-1`（2026-11-14）：`src/image.rs`——ratatui-image 11.1.0 引擎层（`Picker::from_query_stdio()` TTY 探测 → `Picker::halfblocks()` 无条件回退；无状态 `Image` widget + `Resize::Fit`，规避 StatefulImage 无后台线程阻塞 UI）；`image 0.25.10` 显式依赖（png/jpeg/gif/webp/bmp）；chafa 零引入（AGENTS §5.5）；TestBackend halfblocks 渲染测试。120 单测全绿。真实终端显示验证随 M11-6。
-- `CI`（2026-11-14）：**双平台全绿**（run 43462270991）。两个历史失败均为 CI 配置问题而非代码问题——ubuntu：`enter_selected` 调 system_open 无 gio/xdg-open（已移入 handle_key）；Windows：test 步骤 `RUST_BACKTRACE=1 ... | tee` 是 bash 语法，pwsh 默认 shell 无法执行（补 `shell: bash` 修复）。
-- `TASKS`（2026-11-14）：修正勾选遗漏——M7-1/3/4/8、M8-1/2、M9-6、M10-2/4 代码在库且 STATE 已宣布关闭，TASKS 勾选补齐。开始 deferred 清零冲刺（用户指示：能写的代码先写出来，Linux 验证借 CI）。
-- `M10-5/M10-6/M10-7`（2026-11-13）：TOML 分层、PutMove 语义、Trie 确认——Keymap 即 Trie（M10-2 评估已确认不用 keymap-rs）；yy\/P\/p 键位已入表（PutMove\/PutCopy 动作映射存在，Yank 缓冲区和实际文件操作接线在 M11 opener 阶段）；TOML 分层 prepend\/append\/replace 的实现依赖 config.rs 的 keymap 段落。标记为完成（SIMPLIFIED 级别：键位表已入口，实际 yank 缓冲区等待 M11 的 opener 集成）。
-- `M10-3/M10-4`（2026-11-13）：Keymap 解析层接入 handle_key——`Pending` 枚举替换为 `Vec<Key>` 序列缓冲 + `Keymap::lookup/has_prefix` 查表驱动；`q`→Quit 补入默认表；序列中未知第二键丢弃后 seq 清空（修复 seq 残留导致后续按键误触发序列的缺陷）。InputMode Normal\/Command\/Search\/Filter\/Confirm\/Help 已在 M5-M8 落地。112 单测 + 3 冒烟全绿。
-- `M10-1`（2026-11-13）：`src/keymap.rs`——`Action` 枚举（导航/搜索过滤/选择标记/文件操作/多标签/模式命令共 23 项）、`Keymap` 序列→Action 精确匹配 + 前缀检测（gg\/dd\/gt 多键序列）、vifm 对齐默认表。TOML 分层随 M10-5、111 单测 + 3 冒烟全绿。 当前进度
-
-> 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
-
-# STATE —
-- `M25 批次关闭`（2026-11-19）：M25-1/3/4/5/6/7 全部完成，M25-2 marks 暂停（用户指示，恢复待指令；PLAN 标注"基本完成"）。批次验收：336 单测 + 6 集成全绿；`--version`/`--help` 冒烟通过。批次亮点：会话持久化（session.toml 退出保存/启动恢复/损坏静默降级）、归档创建（:archive zip/tar/tar.gz 纯 Rust 写端 + md5/sha256 校验文件 + 交互对话框 + u 双重可逆）、git 集成（异步状态列 + 分支/diff 摘要状态栏 + gi/:gitui 按 gitui→ziggity→lazygit 优先级打开，git CLI 零编译期依赖——M23-12 路线）、frecency 通用化评估（可行结论入 NOTES，M26 候选）。批次新增依赖：md-5 0.11 / sha2 0.11（RustCrypto 纯 Rust）。git 异步方案（pathspec 限定 + --no-optional-locks + 后台线程）回应 gitui 性能问题（分析见 NOTES）。下一批次待用户指令（frecency 通用化迁移为候选）。
-- `M25-6`（2026-11-19）：git 状态栏 + gi——状态栏 DIM span `  [branch +X -Y]`（干净/无 diff 只显分支；per-dir 异步缓存复用 M25-5 链路，git_column 关/非仓库/未就绪隐藏）；`GitDirStatus` 增 `diff_summary`（`git diff --shortstat` best-effort，`parse_shortstat` 纯函数压缩 +X/-Y/+X -Y）；`find_git_tui_in`（unix 可执行位 / Windows .exe/.bat/.cmd）+ `find_git_tui`（PATH；优先级常量 GIT_TUI_PRIORITY=gitui→ziggity→lazygit）；`Action::GitUi`（默认键 gi + run 名 gitui/git_tui）与 `:gitui` exec 臂——两路均复用 `run_external_target` 分流（terminal_in_new_window 与 :! 一致，Multiplexer 直接提示/CurrentPane 挂起 TUI 执行），全部未命中可读报错。336 单测 + 6 集成全绿（+4：shortstat 变体/PATH 优先级探测（unix 755 假二进制）/状态栏渲染/:gitui 条件守卫）。
-- `M25-5`（2026-11-19）：git 状态列（异步）——新模块 src/git.rs：`GitStatus` 7 态（porcelain 字母映射）+ `GitDirStatus{branch,entries}`（M25-6 复用 branch）+ `repo_root`（逐级 .git）+ `parse_status`（porcelain -z 纯函数：`## ` 分支行、XY 记录 NUL 分隔、rename orig 追加段跳过、untracked 目录尾 `/` 剥离；归并规则 未跟踪→冲突优先→Y 工作区优先 X 暂存兜底、双侧无映射跳过）+ `query_status`（`git --no-optional-locks status --porcelain -z -b --untracked-files=normal -- <dir>`；pathspec 限定当前目录）+ `spawn_status_query`（后台线程 + mpsc 回传，UI 不等待）。AppState 增 git_cache（dir→Some/None：None=在途或非仓库）+ git_pending + git_tx；run 循环回填 + `sync_status_trigger`（左右 pane 物理目录按需触发；非仓库记空缓存防重复探测）+ watcher 事件清缓存重查。渲染：左/右 pane 属性区内状态字符列（GIT_STATUS_WIDTH=3 占位对齐、M/D 红 A 绿 R/T 黄 ? 青 U 品红、`[ui] git_column` 默认开、树视图随属性列隐藏、name_budget 扣列宽）。332 单测 + 6 集成全绿（+4：porcelain 解析/子目录聚合/子目录前缀剥离/真实仓库 query——git 不可用自动跳过）。踩坑：X 空白的工作区变更不能先 from_code(x) 再 continue（Y 优先 X 兜底合并）；PathBuf::ends_with 是组件语义；`init -b main` 显式分支名防 master/main 环境差异。
-- `M25-4`（2026-11-19）：归档对话框与校验文件——ops.rs 增 `Checksum`（Md5/Sha256/None + parse/ext）与 `digest_hex`（64KiB 分块 read+update，md-5 0.11/sha2 0.11.1 纯 Rust 与 sha1 同 digest 核心）、`write_checksum`（`<名>.<ext>`，行格式 `<hex>  <文件名>` md5sum/sha256sum 兼容）；`[archive] checksum` 配置（默认 md5）；`archive_execute` 抽取共享（exec 臂与对话框同源，归档+校验各一条撤销记录 LIFO 双逆）；exec 臂改造——`checksum=` 第三参、无参 → `ExecOutcome::ShowArchiveDialog`（名称预填光标条目）；`InputMode::ArchiveDialog{input,field,format_idx,checksum_idx}` + `handle_archive_dialog_key`（Tab/↑↓ 切字段、←→/空格循环取值、名称字段字符输入/退格、Enter 执行空名报错留在对话框、失败留框可改）+ 居中遮罩渲染（M18-1 同款）；digest 0.11 的 hasher 无 io::Write 实现 → io::copy 改 read+update。328 单测 + 6 集成全绿（+5：checksum 写入/行格式/exec 参形式与双逆/对话框键流/无参预填/配置解析）。踩坑：PathBuf::ends_with 是路径组件语义非字符串后缀。
-- `M25-3`（2026-11-19）：归档创建——ops.rs 增 `ArchiveFormat`（Zip/Tar/TarGz + ext/parse/infer）与 `create_archive`（缺扩展名自动补齐；validate_new_name 同名报错不覆盖；任一源缺失整批中止；写入失败清理半成品——M20-3 教训；产物入撤销栈 Create `u` 可逆）；写端：zip crate ZipWriter（deflate，目录递归 add_directory/start_file+io::copy、软链接 add_symlink 按链接本身收录）+ tar Builder（目录 append_dir_all、文件 append_path_with_name、软链接 append_link）+ flate2 GzEncoder；exec 臂 `:archive [zip|tar|tar.gz] <名>`（2 参显式格式 / 1 参扩展名推断 / 0 参待 M25-4 对话框；tags 优先排序确定顺序、空 = 光标条目；xz/bz2/zst 经 parse/infer 失败可读提示）；产物经 open_dispatch 读端往返验证（rvifm 自身可浏览）。323 单测 + 6 集成全绿（+3：zip 往返+undo/tar-gz 推断+读端解包/守卫×7）。API 核对：zip 9.5.1 SimpleFileOptions 为 Copy（传 *opts）、ArchiveEntry 字段 path 非 name。
-- `M25-1`（2026-11-19）：会话持久化——新模块 src/session.rs：退出保存（run 两处 Quit 点，flush_visits 后/cleanup 前；失败 eprintln 不阻塞退出，GAP-2 同模式）+ 启动恢复（run 初始化后）；仅物理 Location 的 tab 入会话（左 pane Location/cursor/on_parent_row/focus + active 索引；归档/远端丢弃）；TOML 结构 `SessionFile{active,tabs[{path,cursor,on_parent_row,focus}]}`；恢复钳制——目录不存在跳过、cursor 钳到条目数、active 钳到 tab 数、on_parent_row 需 has_parent_row、全部失败保持初始会话；`[ui] session_restore` 默认开（false 不读不写）。320 单测 + 6 集成全绿（+2：roundtrip 全字段还原/损坏与远端丢弃与钳制）。
-- `M25 登记调整`（2026-11-19）：M25-2 marks 暂停（用户指示，`'` 键位归属待拍板，恢复待指令）；M25-5/6 SPEC 修订为**异步方案**（pathspec 限定当前目录 + `--no-optional-locks` + 后台线程 + per-目录缓存——回应 gitui 大仓库性能问题，分析见 NOTES）。执行顺序：1 → 3 → 4 → 5 → 6 → 7。
 - **更新时间**：2026-11-19
-- **当前阶段**：M26 归档创建扩展与外部工具降级（已登记，**待用户确认后执行**）；M25 批次已关闭（M25-2 marks 暂停待指令）
-- **当前任务**：M26-1 :archive 后台作业化（确认后的首个任务）
-- **阶段状态**：M0–M25 关闭（M25-2 暂停）+ v0.8.0 已发布（0.9.0/0.10.0 待发布决策）；TASKS 已重排为编号升序（仅调序）
+- **当前阶段**：AUDIT 评估报告整改（**已确认，执行中**）；M26 归档创建扩展已确认启动，排在 AUDIT 与 M25-2 之后
+- **当前任务**：AUDIT-1 `pick` 只读性修复（TASKS 中第一个未勾选任务；方案已拍板：pending 合并移出 pick / 只读 open）
+- **阶段状态**：M0–M25 关闭（M25-2 marks 已定案由 frecency 实现并重开任务；M11-6 真实终端验证 deferred）；v0.8.0 已发布，0.9.0 在任务列表全部完成后自动发布
+- **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
-## 已完成
+## 进行中 / 暂停 / 延期
 
-- harness 文档初始化（README/AGENTS/SPEC/PLAN/TASKS/ACCEPTANCE/STATE/NOTES）。
-- `M0-2`：SPEC MUST / SIMPLIFIED / OUT_OF_SCOPE 分级初稿（harness 初始化提供）。
-- PDF / Office / 许可证 / crates.io 名称定稿（2026-11-10/11，详见 NOTES §4.8）。
-- **M0 全部关闭**（M0-1 骨架、M0-3 ratatui 事件循环、M0-4 最小 TUI、M0-5 CI 双平台、M0-6 --version/--help 冒烟、M0-7 LICENSE 建档、M0-8 `0.1.0-alpha.1` 发布并 install 验证）。
-- **M1 全部关闭**（M1-0 Tab/AppState、M1-1 j/k、M1-2 l/h、M1-3 gg/G/Ctrl-u/d、M1-4 状态栏元数据、M1-5 多标签与命令行、M1-6 状态独立性、M1-7 基础搜索）。
-- **M2 全部关闭**（M2-1 UndoableOp、M2-2 dd 删除+u 撤销（应用内暂存）、M2-3 rename、M2-4 move、M2-4b copy（SPEC MUST 补）、M2-5 mkdir/touch、M2-6 逆序撤销+不可逆提示、M2-7 跨 tab 撤销）。
-- **M3 全部关闭**（M3-1 v 可视选择、M3-2 t 标记、M3-3 :tag 批量、M3-4 批量后清标记）。
-- **M4 全部关闭**（M4-1 smart-case 搜索、M4-2 `=` glob 过滤）。
-- **M5 全部关闭**（M5-1 TOML 配置、M5-2 基本选项生效、M5-3 :q/:cd/:help、M5-4 统一命令解析共存）。
-- **M6 全部关闭**（M6-1 导航错误提示、M6-2 帮助页、M6-3 README+版本 0.1.0、M6-4 10.5k 性能、M6-5 发布门禁：tag 触发 release job 双平台绿 + `v0.1.0` 发布 crates.io + install 验证）。
-- **M7 全部关闭**（M7-1 ArchiveFs、M7-2 ZipFs、M7-3 TarFs、M7-4 导航接入、M7-5 面包屑、M7-6 归档内搜索、M7-7 错误处理、M7-8 五压缩形态、M7-9 .7z/.rar 提示；physical_base 只读守卫）。
-- **M8 全部关闭**（M8-1 frecency 结构+Grade 0–7、M8-2 redb 三表、M8-3 record 子命令+pending 降级、M8-4 replay EMS aging、M8-5 maintenance compact、M8-6 pick 双模式、M8-7 shell hook 示例、M8-8 共享 PreviewRenderer、M8-9 aging 排名稳定性）。
-- **M9 全部关闭**（M9-1 devicons 图标、M9-2 opaline 主题引擎、M9-3 明暗对齐、M9-4 PreviewRenderer 复用、M9-5 NO_COLOR 降级验证、M9-6 用户 TOML 主题发现与加载）。
-- `M12`（2026-11-12）：提权特性蒸馏入库排队（SPEC §5 M12、TASKS M12-1～M12-5、ACCEPTANCE §15、NOTES 决策、AGENTS §5.7、PLAN 行）——**未实现**，排在 M11 之后。
-
-## 进行中
-
-- 无。
+- AUDIT-1～AUDIT-12：评估报告整改（见 [REVIEW.md](REVIEW.md)），**用户已确认执行**；AUDIT-1 方案已拍板（NOTES §10）。
+- M26-1～M26-5：已确认启动，排在 AUDIT 与 M25-2 之后。
+- M25-2（重定义）marks/bookmark 由 frecency 实现：排在 AUDIT 之后；keyword 长度分工已确认（单字符 `'<char>` 导航 / 多字符 `o`/`:j`/`:J` 搜索高优先级匹配）。
+- M11-6：Alacritty 真实终端图片显示验证，需人工环境，deferred。
 
 ## 下一步
 
-1. `M10-1`：定义 `Action` 枚举与默认键位表（vifm 对齐，含 `yy`/`P`/`p`/`dd`）。
-2. `M10-2`～`M10-7`：键位解析层、模式切换、TOML 分层、PutMove 语义（顺序见 [TASKS.md](TASKS.md)）。
-3. `M11-1`～`M11-15`：预览与文件打开（ratatui-image、opener、Office/PDF、pdf-visual 门控）。
-4. `M12-1`～`M12-5`：权限不足内联提权（已排队）。
-5. 每阶段完成跑对应 ACCEPTANCE 验收并更新 PLAN。
+1. 执行 AUDIT-1：`pick` 改用只读 open；`events.pending` 合并只在 `record` / TUI 启动路径执行；补“存在 pending 时 pick 不写 DB、不推进 tick”回归测试。验收见 ACCEPTANCE §26。
+2. 按 TASKS 顺序推进 AUDIT-9（CI 门禁增强）→ AUDIT-8 → AUDIT-2/3/4 → AUDIT-5 → 其余。
+3. AUDIT 批次完成后再按用户指令启动 M26-1（`:archive` 迁移 M13-8 Job 模型）。
+4. 全部任务完成后自动发布 0.9.0（无需人工决策）。
 
-## 阻塞与风险
+## 批次关闭记录
 
-- 无阻塞。
-- 环境风险：本地为 Windows Server 2016；Linux 验证交给 CI。
-- 预算风险：优先保证核心闭环；增强阶段按 SPEC SIMPLIFIED 从简。
+- M0–M6：核心浏览、多标签、`u` 撤销闭环、选择批量、搜索过滤、配置与 v0.1.0 发布。
+- M7–M11：只读归档 VFS、frecency（`pick`/`record`）、图标主题、声明式键位、预览与打开；M11-6 真实终端验证 deferred。
+- M12：操作级内联提权（`sudo -A` + `--askpass`）；M12-2 教训固化为 Linux target 检查门禁。
+- M13–M14：vifm 对齐增强（DD/tree/cw/:jobs/view）与双栏/标签栏；发布 0.4.0 / 0.5.0。
+- M15–M17：用户实测反馈、导航增强、递归搜索与查看器；发布 0.6.0。
+- M18–M20：排序与终端集成、SFTP 浏览/配置、远端写与跨 VFS。
+- M21：UI/UX 打磨（F1–F9 + E1–E8），273 单测；发布 0.7.0。
+- M22：SFTP 安全与远端体验补全（7 项），283 单测；发布 0.8.0。
+- M23：frecency 对齐增强与 Pane 模式（12 项），292 单测；0.8.0。
+- M24：交互增强与列表规范（9 项），318 单测 + 6 集成；列对齐、自然排序、行可视、计数前缀、命令历史、路径补全、`:compare`、`:jobs`。
+- M25：会话持久化、归档创建/校验、异步 git 状态列与 `gi`、frecency 通用化评估（M25-2 marks 重开）；336 单测 + 6 集成。
 
-## 预算
+## 质量门禁
 
-- 规划区间：约 **7500 万–1.1 亿 token**（数量级参考，非硬上限）。
-- 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`。
+- 本地：`cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test` → `--version` / `--help` 冒烟。
+- 含 `cfg(unix)` / `cfg(test)` 改动须额外跑 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（M12-2 教训）。
+- CI：`ubuntu-latest` + `windows-latest` 全绿；tag `v*` 触发三 target release 归档。
+- CI 增强建议（非违规）：clippy 未带 `--all-targets`；Linux target cross-check 目前只是本地门禁，已登记 AUDIT-9。
+
+## 预算与风险
+
+- 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`；一轮结束自动进入下一轮，无需人工确认（AGENTS §3）。
+- 主要风险：文档与实现漂移（本次评估发现，已部分修正）；`pick` 只读红线；`app.rs` 上帝文件。
+- 环境：本机以实际环境为准（Windows Server 2016 + `x86_64-pc-windows-msvc`），其它平台交给 CI（ubuntu-latest / windows-latest）。
 
 ## 环境
 
-- 本地：Windows Server 2016，目标 `x86_64-pc-windows-msvc`。
-- CI：`ubuntu-latest` + `windows-latest`（fmt --check / clippy --all-targets -D warnings / build --locked / test --locked；v* tag 触发 release 归档）。
-- 本地内循环：`cargo fmt` → `clippy --all-targets -D warnings` → `build` → `test` → `commit`。
-- 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → Release（crates.io 发布持久授权，沿用本机凭据）。
+- 本机：以实际环境为准（Windows Server 2016，目标 `x86_64-pc-windows-msvc`）。
+- CI：`ubuntu-latest` + `windows-latest`（fmt --check / clippy -D warnings / build --locked / test --locked / pdf-visual check）。
+- 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → Release（crates.io 发布沿用本机凭据）。
 
 ## 恢复方式
 
-1. 读本文件，确认当前阶段与任务。
+1. 读本文件确认当前阶段与任务。
 2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务。
-3. 读 [AGENTS.md](../AGENTS.md) 第 3 节执行循环（含自动续轮策略）。
+3. 读 [AGENTS.md](../AGENTS.md) §3 执行循环。
 4. 只读该任务相关的 [SPEC.md](SPEC.md) 片段与 [ACCEPTANCE.md](ACCEPTANCE.md) 条目。
-5. 开始实现；完成后更新本文件与 TASKS，再提交。
+5. 完成后更新本文件与 TASKS，再提交。

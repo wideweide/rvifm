@@ -10,6 +10,7 @@
 - `cargo clippy -- -D warnings` 通过。
 - `cargo build` 通过。
 - `cargo test` 通过。
+- 含 `#[cfg(unix)]` / `#[cfg(test)]` 改动时，`cargo check --target x86_64-unknown-linux-gnu --all-targets` 通过（本地门禁，AGENTS §6）。
 - 程序可启动、可退出、无 panic。
 - 本任务对应的阶段验收条目通过。
 - `docs/TASKS.md` 已勾选，`docs/STATE.md` 已更新。
@@ -165,7 +166,7 @@
 - compaction 后 `pick` 排名与 compaction 前一致。
 - 损坏的 redb 文件不会 panic，给出错误并重建。
 - bash 和 fish 下 `record` hook 不阻塞提示符。
-- 无后台守护进程；compaction 仅由读方启动惰性触发或手动执行。
+- 无后台守护进程；compaction 仅由 TUI 启动惰性触发（events > 5000）或 `rvifm maintenance compact` 手动执行；`pick` 不触发 compaction。
 
 ## 11. M9 — 图标与主题
 
@@ -741,3 +742,30 @@
 
 ### M26-5 文档
 - [ ] README 归档创建格式行为表与实现一致（内建/外部/不支持 + 校验默认）。
+
+## 26. AUDIT — 评估报告整改（AUDIT-1～12，见 SPEC AUDIT 段 / docs/REVIEW.md）
+
+### AUDIT-1 pick 只读性
+- [ ] 存在 `events.pending` 时执行 `rvifm pick`，数据库文件 mtime 与 `meta.global_tick` 均不变。
+### AUDIT-2 PDF 视觉探测链
+- [ ] 文本提取优先；启用 `pdf-visual` 后 exprim / 外部渲染器按序回退，缺失时可读提示，不 panic。
+### AUDIT-3 pick 预览同源
+- [ ] 若保留 pick 预览承诺，pick 与 TUI 对同一文件渲染一致；否则文档撤回该承诺。
+### AUDIT-4 惰性 compaction
+- [ ] 事件超过阈值时读方启动触发 compaction，或文档明确仅手动。
+### AUDIT-5 app.rs 拆分
+- [ ] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。
+### AUDIT-6 键位超时
+- [ ] 多键序列超时可配置，超时后清空 seq 且不吞后续按键。
+### AUDIT-7 opener 分层
+- [ ] `prepend_rules` / `append_rules` / `rules` 三层语义与键位系统一致。
+### AUDIT-8 错误上浮
+- [ ] 生产路径无新增 `unwrap/expect` panic；刷新/会话/known_hosts 权限失败有可读提示。
+### AUDIT-9 CI 门禁增强
+- [ ] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。
+### AUDIT-10 重复实现统一
+- [ ] glob 匹配与配置失败回退各只保留一份实现，行为测试通过。
+### AUDIT-11 帮助同步
+- [ ] `help.txt` 含 `:find` / `:grep` 等已实现命令，README 特性无失真。
+### AUDIT-12 测试补强
+- [ ] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。

@@ -15,7 +15,7 @@
 | Archive | 归档文件内部的虚拟路径，形如 `host:/inner/path` |
 | Tab | 一个独立的浏览上下文，持有自己的 `Location`、光标、滚动、搜索状态 |
 | tag | `t` 键标记文件，用于批量操作；**不是** marks |
-| mark | `m` + 字母标记路径、`'` + 字母跳转；**本项目不实现** |
+| mark | `m` + 字母标记路径、`'` + 字母跳转；由 frecency 实现并持久化（M25-2），与 bookmark 共用数据 |
 | Action | 文件操作语义的原子动作，如 `Yank`、`PutMove`、`PutCopy` |
 | UndoableOp | 可撤销操作的记录，带所属 tab 与路径 |
 | frecency | 基于访问频率与时间衰减的排序机制 |
@@ -63,7 +63,6 @@
 - Vim 脚本引擎、插件系统、用户自定义 Action 实现。
 - 完整 Vim 引擎（`narwhal-vim` / `vimcore` / `hjkl-engine`）。
 - FUSE、`archivemount`、fzf、SQLite、Überzug++、Chafa 作为必需依赖。
-- marks（`m` + 字母 / `'` + 字母）。
 - 写入、删除、重命名、移动归档内成员。
 - 嵌套归档（归档内的归档）递归浏览。
 - 内嵌视频播放。
@@ -126,7 +125,7 @@ struct AppState {
 
 - `/` 搜索当前视图，`n/N` 循环跳转。
 - 简单 glob 过滤。
-- **marks 不实现**；路径跳转由 frecency 的 `pick` 覆盖。
+- 路径跳转由 frecency 的 `pick` 覆盖；M25-2 marks 由 frecency 实现并持久化（见 §25），与 quickjump 共用 keyword 链路。
 - 归档内搜索复用同一套搜索链路。
 
 ### 4.5 归档浏览
@@ -190,7 +189,7 @@ redb 三表，无后台守护进程：
 **独立事件时钟（2026-11-14 增补）**：目录（`topic = dir`）与文件（`topic = file`）事件分别推进 `dir_tick` / `file_tick`，事件 JSON 携带其类型时钟值 `clock`；EMS aging 的 Δtick 一律取**同类型时钟差**——目录高频访问不得稀释文件条目的新鲜度，反之亦然。`global_tick` 退化为全局事件序号：仅作 events 表 key 与 compaction 增量游标，不参与 aging。兼容：旧库缺 `clock` 字段时以全局序号兜底（旧语义等价）；`dir_tick`/`file_tick` 缺失时以 `global_tick` 当前值初始化（新旧 aging 连续分叉）。
 - `pick` / TUI 启动时读取 `snapshot`，以 `meta.last_compaction` 为增量起点读取 `tick > last_compaction` 的事件，在内存中重放得到当前评分；`snapshot` 中每条记录的 `tick` 用于 aging。
 - TUI 运行中所有跳转先在内存中更新评分，不每次写盘；退出时把本次会话访问批量追加到 `events`。
-- compaction 在 `events` 超过阈值（建议默认 5000 条，具体值待定）时由 `pick` / TUI 启动惰性触发，或由 `rvifm maintenance compact` 手动执行；写 `snapshot` 后截断已合并事件。
+- compaction 在 `events` 超过阈值（默认 5000 条，2026-11-19 定稿）时由 **TUI 启动**惰性触发，或由 `rvifm maintenance compact` 手动执行；写 `snapshot` 后截断已合并事件。惰性触发由 AUDIT-4 实现。**不在 `pick` 路径触发**——`pick` 只读，不得写 snapshot/截断 events（见 AUDIT-1）。
 - 无定时器、无守护进程。
 
 #### 评分与分级
@@ -313,11 +312,13 @@ redb 三表，无后台守护进程：
 
 #### M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；来源：用户批次需求讨论稿蒸馏）
 
-**硬约束**：marks 为独立模块，不与 frecency 关联、不写 redb（AGENTS §5.1 已随本批次修订）；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
+**硬约束**：marks 由 frecency 模块实现，数据持久化在 frecency 的 redb 存储中（与 `keyword` bookmark 共用），带频率记录，不设独立 marks 存储/模块；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
 
 **MUST**
 - **M25-1 会话持久化**：TUI 退出（既有退出清理点）保存会话到配置目录 `session.toml`——tabs（物理 Location + cursor + on_parent_row + focus）+ active tab 索引；启动恢复（仅物理目录 tab；非物理 Location 的 tab 丢弃）；文件缺失/损坏/空 → 静默新会话；`[ui] session_restore` 默认开（false = 不读不写）。
-- **M25-2 marks 独立模块**：`m<char>` 记录当前光标条目（目录或文件；`..` 行 = 当前目录）到 `AppState.marks`（`HashMap<char, PathBuf>`，全局跨 tab）；`'<char>` 跳转——目录 cd（navigate_to 入历史）、文件父目录定位光标（M8-12 文件语义）；未命中提示不静默；合法字符 = 字母 + 数字；`'` 与 quickjump（NAV-1）冲突：`'` 归 marks，quickjump 迁移至反引号 `` ` ``（vifm 同款分工）。
+- **M25-2 marks（frecency 实现）**：`m<char>` 把当前光标条目（目录或文件；`..` 行 = 当前目录）以 keyword = `<char>` 写入 frecency redb（与 bookmark 共用 `EntryRecord.keyword`），带频率记录；`'<char>` 跳转复用 NAV-1 quickjump 链路——按该 keyword 的 frecency 评分选最高条目，目录 cd（navigate_to 入历史）、文件父目录定位光标（M8-12 文件语义）；未命中提示不静默；合法字符 = `[a-z][A-Z][0-9]`（vifm marks 口径）。
+  - **keyword 长度分工（2026-11-19 用户确认）**：**单字符** keyword 用于 `'<char>` 两键导航（marks 语义）；**多字符** keyword 用于 `o` / `:j` / `:J` 交互选择器搜索时的**高优先级匹配**——输入多字符 keyword（如 `rvifm`）时，该 keyword 命中的条目排在候选列表前面，Enter 后在当前 pane 跳转到对应路径或文件（`:j` 仅目录、`:J` 仅文件）。两种长度共用同一份 `EntryRecord.keyword` 数据与 frecency 评分，不建第二套索引。
+  - **命令视图**：`:bmark` / `:bmarks` / `:bmgo` / `:delbmarks` 为 vifm 对齐的 bookmark 命令，与 `m<char>` / `'<char>` 共用数据；既有 `:keyword <chars>` 保留为设置 keyword 的兼容命令（见 `help.txt`）。marks/bookmark 统一持久化于 frecency redb，不设独立数据文件。
 - **M25-3 归档创建**：`:archive [zip|tar|tar.gz] <名>` 将标记集合（tags；空 = 光标条目）打包为当前目录下 `<名>`；纯 Rust 写端（zip crate / tar + flate2 rust backend）；目标同名已存在报错不覆盖；入撤销栈（Create，`u` 可逆）；`.tar.xz` / `.tar.bz2` / `.tar.zst` 创建请求可读提示不支持（只读边界；**M26-4 起该三类格式改为外部 CLI 降级路径，见 §26**）。
 - **M25-4 归档对话框与校验文件**：`:archive` 无参 → 交互对话框（名称输入预填光标条目名；j/k/空格切换格式与校验；Enter 执行 Esc 取消）；归档完成后生成校验文件，默认 md5（`<名>.md5`，md5sum 兼容行格式），可选 sha256 / none（命令参数 + 配置 `[archive] checksum = "md5"`）；md5/sha2 纯 Rust crate。
 - **M25-5 git 状态列（异步）**：目录加载时探测仓库根（逐级 .git）；`git --no-optional-locks status --porcelain -z --untracked-files=normal -- <当前目录>/` 子进程查询（pathspec 限定当前目录；不加锁不写 index）；**后台线程异步执行、UI 不等待**——列表先渲染，状态列就绪后填充（gitui 同款体感策略）；per-目录缓存，导航与 watcher 事件触发刷新；文件列表追加状态字符列（M/A/D/R/?? 等，着色；非仓库或开关关闭时隐藏）；`[ui] git_column` 默认开。
@@ -326,7 +327,7 @@ redb 三表，无后台守护进程：
 
 **SIMPLIFIED**
 - M25-1：会话文件不存归档/远端视图、不存 marks；无备份/迁移机制。
-- M25-2：marks 不持久化（后续可并入 session.toml）；合法字符不含符号。
+- M25-2：marks 持久化在 frecency redb（与 bookmark 同源），不设 session.toml 存储；合法字符不含符号。
 - M25-3：目录递归打包，软链接按链接本身收录；打包条目数/总大小无上限护栏（用户显式发起）。
 - M25-5：状态映射仅对当前目录直接子项；异步结果未就绪时状态列暂空（不阻塞列表渲染）；超大仓库进一步提速建议用户侧开启 `core.fsmonitor` + `core.untrackedCache`（README 提示，rvifm 不代改配置）。
 - M25-6：diff 摘要仅工作区（staged 不分列）；gitui/ziggity/lazygit 为外部工具，用户自行安装。
@@ -419,7 +420,7 @@ redb 三表，无后台守护进程：
 
 #### M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐）
 
-**背景**：用户实测提出"两键直达"诉求（`'d` 对比 `o d <Enter>` 少一次确认，高频跳转可感知）。结论：**marks 不回归**（NOTES §4.3 决策维持），以 frecency 快速映射层补齐体验差异；history 对齐 vifm 的"菜单 + 可映射命令"机制（非单键跳转）。决策与调研结论见 NOTES 2026-11-15 条目。
+**背景**：用户实测提出"两键直达"诉求（`'d` 对比 `o d <Enter>` 少一次确认，高频跳转可感知）。M16 当时结论为 **marks 不回归**，以 frecency 快速映射层补齐体验差异；history 对齐 vifm 的"菜单 + 可映射命令"机制（非单键跳转）。**2026-11-19 用户指令反转**：marks 定案由 frecency 实现并持久化（M25-2），与 bookmark 统一，原结论仅作历史背景。决策与调研结论见 NOTES 2026-11-15 / 2026-11-19 条目。
 
 **MUST**
 
@@ -450,7 +451,7 @@ redb 三表，无后台守护进程：
 
 **OUT_OF_SCOPE**
 
-- marks（`m`+字母 / `'`+字母 路径标记）与 `''` 跳回——维持移除决策，`'` 不产生任何 marks 存储。
+- M16 阶段不实现 marks；2026-11-19 用户指令反转后定案由 frecency 实现并持久化（M25-2，见 §25），此处不再作为永久边界。
 - 命令行历史 / 搜索历史菜单（`:history` 的 c/s 变体）。
 - Ctrl-O / Ctrl-I 默认绑定（终端键码冲突，仅用户经 keymap 映射）。
 - 目录历史持久化到磁盘。
@@ -721,7 +722,7 @@ append_rules = [
 - 双栏布局（M14 起为默认，对齐 vifm）：左/右两个 pane 各自独立导航；M11–M13 时期的“单栏 + 常驻右预览窗格”模型由 M14 改造取代。
 
 **OUT_OF_SCOPE**
-- marks、文件修改、归档浏览。
+- 文件修改、归档浏览（marks 由 frecency 实现，见 M25-2）。
 
 ### M2 — 文件操作与 `u` 撤销
 
@@ -747,13 +748,13 @@ append_rules = [
 - `t` 标记文件（tag）。
 - 通过 `:tag` 命令对标记集合执行批量复制/移动/删除（如 `:tag copy` / `:tag move`）。
 - 批量操作后标记状态清空。
-- 明确区分 tag（文件标记）与 mark（路径标记）；mark 不实现。
+- 明确区分 tag（文件标记）与 mark（路径标记）；mark 由 frecency 实现并持久化（M25-2），不得混用。
 
 **SIMPLIFIED**
 - 可视选择可先支持行选择，再扩展矩形/块选择。
 
 **OUT_OF_SCOPE**
-- marks、跨目录持久化 tag。
+- 跨目录持久化 tag。
 
 ### M4 — 搜索、过滤与跳转
 
@@ -767,8 +768,8 @@ append_rules = [
 - 搜索可先做名称匹配，再扩展路径/内容匹配。
 
 **OUT_OF_SCOPE**
-- marks 路径跳转（由 frecency 的 `pick` 覆盖）。
-- 全文检索索引。
+- 持久化全文检索索引（`:grep` 为按需逐行扫描，不是 Elasticsearch 式倒排索引；后者不实现）。
+- marks 独立存储模块（marks 由 frecency 实现并持久化于其 redb，见 M25-2）。
 
 ### M5 — 配置与最小命令模式
 
@@ -935,6 +936,31 @@ append_rules = [
 - 不实现"重启一个 root rvifm 实例"的模式（vifm 的 `:!sudo vifm %c` 路线）。
 - 不将整个文件管理器进程以 root 身份运行。
 
+#### AUDIT — 评估报告整改（2026-11-19 增补；见 docs/REVIEW.md，已确认执行）
+
+**硬约束**：整改不得削弱 AGENTS §5 已定红线；`pick` 只读性优先于 `events.pending` 合并便利；文档声称的能力要么接线、要么降级表述，不得两头并存。
+
+**MUST**
+- **AUDIT-1 pick 只读性**：`pick` 路径不得写 redb、不得推进任何 tick；`events.pending` 合并移出 pick 路径或提供只读 open。与“下次启动合并”的冲突决策入 NOTES §8。
+- **AUDIT-2 PDF 视觉探测链**：按 `pdf-inspector` 文本提取 → `exprim`（仅 pdf-visual）→ `pdftoppm`/`mutool` → 提示 + opener 接线，或明确文档降级。
+- **AUDIT-3 pick 预览同源**：pick 接入 `PreviewRenderer`，或从 SPEC/README 删除“同源”承诺。
+- **AUDIT-4 惰性 compaction**：TUI 启动时按阈值（默认 5000 条）触发写 snapshot + 截断 events；`pick` 不触发（只读）；原“读方启动”表述已按 AUDIT-1 修正为“TUI 启动”。
+- **AUDIT-5 app.rs 拆分**：按 keys/exec/render/jobs/preview 分片，测试随迁，单文件生产代码降到可维护规模。
+- **AUDIT-6 键位超时**：多键序列支持可配置超时。
+- **AUDIT-7 opener 分层**：补齐 `rules` 完全替换层，与键位三层同构。
+- **AUDIT-8 错误上浮**：清理生产 `unwrap/expect/unreachable`，刷新/会话/known_hosts 权限失败不得静默。
+- **AUDIT-9 CI 增强**：clippy 覆盖 all-targets；将 AGENTS §6 现为本地门禁的 Linux target cross-check 纳入 CI（非现行规范违反）。
+- **AUDIT-10 重复实现统一**：glob 匹配与配置失败回退各保留一份实现。
+- **AUDIT-11 帮助与 README 同步**：`help.txt` 补齐 `:find`/`:grep` 等已实现命令。
+- **AUDIT-12 测试补强**：`keymap`/`state`/`session`/CLI 子命令分派补测，降低 `app.rs` 测试占比。
+
+**SIMPLIFIED**
+- 整改按 P0 → P1 → P2 分批提交；AUDIT-1 与 AUDIT-9 优先。
+- 不要求一次性完成全部 12 项，但每项必须独立可验收。
+
+**OUT_OF_SCOPE**
+- 不为整改引入新依赖或重写 TUI 框架。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
@@ -950,11 +976,14 @@ append_rules = [
   - **探测顺序**：`pdf-inspector =1.25.2` 文本提取 →（启用 `pdf-visual` 时）`exprim =0.4.0` 栅格化 → 可选 `pdftoppm`（Poppler）/ `mutool`（MuPDF）→ 提示 + 系统 opener。不得跳过文本提取直接进入视觉渲染。
   - **护栏**：`ExportOptions.max_pixels` 限制在预览窗格级别（**200 万–400 万像素**，覆盖 exprim 默认的 1 亿像素预算）；限制输入 PDF 文件大小；release profile 保持 `panic = "unwind"`（不得设为 `abort`，exprim 依赖 `catch_unwind` 隔离渲染错误）。
   - **转正复评条件**（不阻塞当前方案）：见 [NOTES.md](NOTES.md) §4.8。
+- **pending 合并职责（2026-11-19 定稿）**：`events.pending` 合并只在 `record` / TUI 启动路径执行；`pick` 走只读 open，不写 redb、不更新任何 tick。理由与放弃方案见 NOTES §10「AUDIT-1 方案拍板」；执行 AUDIT-1。
+- **keyword 长度分工（2026-11-19 定稿）**：单字符 keyword = marks 两键导航（`'<char>`）；多字符 keyword = `o` / `:j` / `:J` 搜索的高优先级匹配。`:bmark` 等 vifm 命令与 `:keyword` 共用 frecency 数据，后者保留为兼容命令。见 M25-2 与 NOTES §10。
+- **发布规则（2026-11-19 定稿）**：任务列表全部完成后自动发布 0.9.0；见 AGENTS §3 与 PLAN §4。
+- **compaction 阈值（2026-11-19 定稿）**：默认 5000 条事件触发 compaction；惰性触发机制由 AUDIT-4 实现，阈值配置面随该任务落地。
+- **短别名（2026-11-19 定稿）**：提供 `rv` 二进制别名，与 `rvifm` 并存；项目名、crate 名、主二进制名仍为 `rvifm`。
 
 ### 6.2 仍待定
 
-- **compaction 阈值**：建议默认 5000 条事件，具体值与可配置方式在 M8 定。
-- **M7 压缩 tar 变体**：`.tar.xz` / `.tar.bz2` / `.tar.zst` 的具体排期。
-- **主题备选**：若 `opaline` 不满足需求，是否切换 `tui-nuances`。
-- **键位库稳定性**：若 `keymap-rs` API 不满足，降级为 `keybindings` crate 或自写 Trie。
-- **性能阈值**：大目录“不阻塞退出”的具体量化标准未定，M6 验收时补充。
+（无。所有已知待定项均已定稿。）
+
+> 已定稿不再列此处：keymap-rs 降级（自写 Trie，NOTES 2026-11-13）、tar 变体排期（M7-8/M26-4）、大目录性能阈值（M6-4 已验收）、pending 合并职责、keyword 长度分工、发布规则、compaction 阈值、短别名 `rv`（均 2026-11-19）。

@@ -9,8 +9,8 @@
 - 任务对应的验收标准见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 - 需求边界见 [SPEC.md](SPEC.md)。
 
-图例：`[ ]` 待做，`[x]` 完成，`[~]` 进行中，`deferred` 已延期。
-节排序：按编号升序（2026-11-19 重排，仅调序不改内容）；"排队缺口"为补充段置于末尾。
+图例：`[ ]` 待做，`[x]` 完成，`[~]` 进行中/暂停（不参与“取第一个未勾选任务”），`deferred` 已延期。
+节排序：按编号升序（2026-11-19 重排）；AUDIT 为已确认的 P0 整改批次，置于 M26 之前以保证其为第一个未勾选任务（2026-11-19 用户确认）；"排队缺口"为补充段置于末尾。
 
 ## M0 — 骨架 + SPEC + 双平台 CI
 
@@ -57,7 +57,7 @@
 - [x] M4-1 搜索增强：在 M1 基础搜索上补充匹配规则（大小写、路径/内容按需）
 - [x] M4-2 简单 glob 过滤
 
-> 历史注：marks 曾移除由 frecency `pick` 覆盖；2026-11-19 用户指令反转，M25-2 立项为独立模块（当前暂停）。
+> 历史注：marks 曾移除由 frecency `pick` 覆盖；2026-11-19 用户指令反转后，最终确定由 frecency 实现并持久化（见 M25-2 重定义条目）。
 
 ## M5 — 配置与最小命令模式
 
@@ -291,17 +291,40 @@
 
 ## M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；见 SPEC §25）
 
-> 来源：用户批次需求讨论稿蒸馏。marks / 归档创建 / Git 状态列 / 会话持久化为范围重开（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks，暂停）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
+> 来源：用户批次需求讨论稿蒸馏。marks 由 frecency 实现并持久化（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
 
 - [x] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
-- [~] M25-2 marks 独立模块（**暂停**：用户指示 2026-11-19，`'` 键位归属待拍板；恢复待指令；见 SPEC §25）
+- [x] ~~M25-2 marks 独立模块（暂停）~~ **撤销原任务定义**：marks 改由 frecency 实现并持久化（见 AUDIT 之后新增的 M25-2 条目）
 - [x] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 走 M26-4 外部 CLI）
 - [x] M25-4 归档对话框与校验（无参交互对话框；校验文件默认 md5，sha256/none 可选；[archive] checksum）
 - [x] M25-5 git 状态列（porcelain 缓存映射 + 着色列；仓库根探测；git CLI 子进程零编译期依赖；[ui] git_column）
 - [x] M25-6 git 状态栏 + gi（分支 + diff 摘要缓存；PATH 优先级探测 gitui→ziggity→lazygit 挂起启动；:gitui 同语义）
 - [x] M25-7 frecency 通用化评估（命令历史/路径补全迁移可行性 + 命令书签；决策入 NOTES，不实现）
 
-## M26 — 归档创建扩展与外部工具降级（2026-11-19 增补；见 SPEC §26）
+## AUDIT — 评估报告整改（2026-11-19 增补；见 SPEC AUDIT 段 / docs/REVIEW.md，**已确认**）
+
+> 来源：全面评估报告，用户已确认批次（2026-11-19）。执行顺序：AUDIT-1 → AUDIT-9 → AUDIT-8 → AUDIT-2/3/4 → AUDIT-5 → 其余。AUDIT-1 方案（pending 合并移出 pick / 只读 open）已拍板，见 NOTES §10。
+
+- [ ] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1）
+- [ ] AUDIT-2 PDF 视觉探测链接线（exprim → pdftoppm/mutool → 提示，或文档降级，见 SPEC AUDIT-2）
+- [ ] AUDIT-3 pick 预览同源接线或撤回承诺（见 SPEC AUDIT-3）
+- [ ] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4）
+- [ ] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5）
+- [ ] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6）
+- [ ] AUDIT-7 opener 补齐 `rules` 完全替换层（见 SPEC AUDIT-7）
+- [ ] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8）
+- [ ] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9）
+- [ ] AUDIT-10 统一 glob 匹配与配置失败回退实现（见 SPEC AUDIT-10）
+- [ ] AUDIT-11 help.txt 与 README 功能同步（见 SPEC AUDIT-11）
+- [ ] AUDIT-12 keymap/state/session/CLI 子命令分派测试补强（见 SPEC AUDIT-12）
+
+## M25-2（重定义）— marks 由 frecency 实现（2026-11-19 用户指令；见 SPEC §25）
+
+> 原「独立模块 + 暂停」定义撤销（上方已划掉）。数据记录与导航均由 frecency 模块实现，marks/bookmark 统一持久化在 frecency redb；执行顺序排在 AUDIT 之后（用户已确认）。keyword 按长度分工（单字符 marks 导航 / 多字符搜索高优先级匹配）已确认，见 SPEC §25。
+
+- [ ] M25-2 marks/bookmark 由 frecency 实现（`m<char>` / `'<char>` + vifm 对齐 `:bmark` / `:bmarks` / `:bmgo` / `:delbmarks`，`:keyword` 保留兼容；keyword 持久化 redb + 频率记录；单字符 marks 导航 / 多字符 `o`/`:j`/`:J` 搜索高优先级匹配）
+
+## M26 — 归档创建扩展与外部工具降级（2026-11-19 增补；见 SPEC §26，已确认启动）
 
 > 来源：用户讨论稿蒸馏（纯 Rust 内建 + 外部 CLI 降级），与 M25-3/4 现状合并评估择优（命令名保持 :archive、否决 ArchiveWriter trait、采纳后台作业化、纯 Rust 编码器经 crates.io 核实仅 7z 可采——见 NOTES）。顺序：1（Job 化）→ 2（7z 创建）→ 3（7z 浏览）→ 4（外部 CLI）→ 5（文档收尾）。
 
@@ -310,6 +333,10 @@
 - [ ] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端；损坏/加密可读错误）
 - [ ] M26-4 外部 CLI 归档降级（rar/cab/lzh/tar.xz/tar.bz2/tar.zst：PATH 探测 7z/rar → Command 调用 → 缺失优雅终止；输出抑制；无半成品；入撤销栈）
 - [ ] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项）
+
+## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
+
+- [ ] MISC-1 提供 `rv` 短别名二进制（与 `rvifm` 并存；项目名/crate/主二进制名不变；Cargo `[[bin]]` + 安装产物 + README 说明）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
@@ -320,7 +347,6 @@
 
 以下内容明确不实现，不要为它们创建任务：
 
-- ~~marks（`m` + 字母 / `'` + 字母）~~（2026-11-19 用户指令反转，已立项 M25-2 为独立模块，当前暂停）
 - Vim 脚本引擎、插件系统
 - FUSE / `archivemount`
 - fzf / SQLite
