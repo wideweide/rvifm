@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.8.0 已发布；M0–M24 名义关闭，M25 主体完成（M25-2 marks 待实现），AUDIT 整改执行中（已完成 15/17），M26 归档创建扩展已确认启动。** 已具备核心浏览/撤销/批量、归档浏览与创建（zip/tar/tar.gz + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 第 1 页视觉链、`pick` 预览与 `--topic`。**尚未实现**：marks（M25-2，规划中）。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.8.0 已发布；M0–M25 全部完成（marks 已随 M25-2 落地），AUDIT 整改完成（18/18），M26 归档创建扩展完成（5/5），M27 视觉对齐按序排队。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 第 1 页视觉链、`pick` 预览与 `--topic`。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -37,7 +37,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 | 能力 | vifm 的做法 | rvifm 的做法 |
 |---|---|---|
-| **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.tar` / `.tar.gz` 直接当目录浏览，**无内核模块、无外部工具** |
+| **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.tar` / `.tar.gz` / `.7z` / `.tar.xz` / `.tar.bz2` / `.tar.zst` 直接当目录浏览，**无内核模块、无外部工具** |
 | **图标** | 装 Nerd Font + 装插件 + 改 `vifmrc` | 编译期集成 `devicons`，一行调用返回图标与颜色；**只需装字体** |
 | **主题** | 手动配置颜色方案 | 集成 `opaline`，内置 20 套主题、TOML 定义；`[ui] theme` 配置与 `:theme` 运行时切换已接线 |
 | **图片预览** | 调用外部 GUI 看图工具 | `ratatui-image` 统一协议适配，**原生协议 → halfblocks 无条件回退**，任何终端都有图可看 |
@@ -49,7 +49,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ### 关键提升逐条说明
 
-**归档即目录，不依赖 FUSE。** vifm 的归档浏览需要系统安装 FUSE 或 archivemount，这在许多受限环境（容器、Windows、无 root 的机器）里直接不可用。`rvifm` 在导航层引入 `Location` 抽象，把物理目录和归档内路径统一成同一种可浏览对象。`.zip` / `.tar` / `.tar.gz` 首批支持，`.tar.xz` / `.tar.bz2` / `.tar.zst` 随后；`.7z` / `.rar` 明确标记为不支持虚拟浏览并给出提示。归档内**只读**，不污染撤销栈。
+**归档即目录，不依赖 FUSE。** vifm 的归档浏览需要系统安装 FUSE 或 archivemount，这在许多受限环境（容器、Windows、无 root 的机器）里直接不可用。`rvifm` 在导航层引入 `Location` 抽象，把物理目录和归档内路径统一成同一种可浏览对象。`.zip` / `.tar` / `.tar.gz` 首批支持，`.tar.xz` / `.tar.bz2` / `.tar.zst` 随后；`.7z` 已升级为虚拟浏览（M26-3），`.rar` 保持"请解压后浏览"提示。归档内**只读**，不污染撤销栈。
 
 **图标与主题内建，不靠插件。** `devicons` 直接返回 glyph 和关联颜色，内置 Dark/Light 两套图标配色；`opaline` 提供 TOML 驱动的主题引擎和 20 套内置主题（`[ui] theme` 配置与 `:theme` 运行时切换已接线）。文件列表、预览窗格、归档浏览共享同一套视觉语义。用户仍然需要 Nerd Font，但**插件安装、配置片段、运行时外部进程全部消失**。
 
@@ -57,7 +57,21 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 **文件打开：零配置默认，分层定制。** 普通用户不写任何配置，按 Enter 就用系统关联程序打开文件；目录在 `rvifm` 内部进入。规则支持 `mime`（内置常见扩展名映射 + 通配）与 `name`（glob）匹配，按序取第一个命中；`prepend_rules`（覆盖默认）、`append_rules`（补充规则）、`rules`（完全替换默认规则表）的设计与键位系统**结构完全一致**；**TOML 规则层已接线（AUDIT-7）：规则命中执行 `use` 名单（`block=true` 挂起 TUI 执行），未命中回退系统 opener**。
 
-**原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持手动执行，惰性触发待 AUDIT-4。**`pick` 的设计契约是纯只读选择器**，选中后不写任何事件；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。当前 `events.pending` 合并路径仍会在 `pick` 中写库（AUDIT-1 修复中），`--topic` 参数也尚未实现（AUDIT-15）。
+## 归档创建
+
+`:archive [格式] <名> [checksum=md5|sha256|none]`（tags 优先、空 = 光标条目；无参打开交互对话框；后台线程执行，`:jobs` 可见可取消；产物与校验文件均可 `u` 撤销）。
+
+| 格式 | 创建方式 | 说明 |
+|---|---|---|
+| zip / tar / tar.gz / 7z | **内建**（纯 Rust：`zip` / `tar`+`flate2` / `sevenz-rust`） | 零配置可用；缺扩展名自动补齐；同名不覆盖 |
+| rar | 外部 CLI（`rar`） | PATH 探测；缺失时优雅终止（可读提示、无半成品） |
+| cab / lzh | 外部 CLI（`7z` 族） | 当前 7z 不支持 cab/lzh 打包——预期以可读错误终止（链路保留） |
+| tar.xz / tar.bz2 / tar.zst | 外部 CLI（`tar`） | 取决于平台 tar 的 xz/bz2/zstd 支持 |
+
+校验文件默认 md5（`md5sum -c` 兼容行），`checksum=sha256|none` 可选。
+**观察项**：`libarchive_oxide` / `OxiArc`（统一归档库成熟后再评估，见 [docs/NOTES.md](docs/NOTES.md)）。
+
+**原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持 `rvifm maintenance compact` 手动执行，并在 TUI 启动时按阈值惰性触发（AUDIT-4）。**`pick` 是纯只读选择器**（AUDIT-1：redb 只读句柄，不写任何事件、不推进时钟），支持 `--topic dir|file`（AUDIT-15）与同源预览窗格（AUDIT-3）；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。
 
 **多标签从 M1 开始。** 每个 tab 独立持有 `Location`、光标、滚动位置和搜索状态；撤销栈全局共享，`UndoableOp` 记录所属 tab 与路径，跨 tab 撤销能正确定位。这避免了后期再改“当前 tab 上下文”导致的大范围返工。
 
@@ -71,7 +85,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 - **会话与归档创建**：退出保存/启动恢复物理标签；`:archive` 创建 zip/tar/tar.gz 并生成校验文件，`u` 可逆
 - **git 集成**：异步状态列与分支/diff 摘要状态栏，`gi` / `:gitui` 启动外部 git TUI
 - **声明式键位**（M10 已落地，当前仅 `[normal]` 模式可配）：动作驱动 + TOML 分层定制
-- **路径 marks**（M25-2 待实现）：`m<char>` / `'<char>` 由 frecency 持久化；当前版本请用 `o` / `:j` / `:J` / `:keyword`
+- **路径 marks**（已落地）：`m<char>` 标记当前条目、`'<char>` 跳转到该 keyword 的最高排名条目（目录 cd / 文件定位光标）；`:bmark` / `:bmarks` / `:bmgo` / `:delbmarks` 命令族与 marks 共用 frecency 持久化数据；多字符 keyword 在 `o` / `:j` / `:J` 搜索中享有高优先级匹配
 
 ## 技术栈
 
@@ -209,7 +223,7 @@ append_rules = [
 | M22 | SFTP 安全与远端体验补全 | 已完成（0.8.0） |
 | M23 | Frecency 对齐增强与 Pane 模式 | 已完成（0.8.0） |
 | M24 | 交互增强与列表规范 | 已完成 |
-| M25 | 会话持久化、归档创建与 git 集成 | 主体完成；M25-2 marks 待实现 |
+| M25 | 会话持久化、归档创建与 git 集成（含 marks/bookmark） | 已完成（M25-2 marks 随 2026-11-20 整改落地） |
 | M26 | 归档创建扩展与外部工具降级 | 已确认启动 |
 | M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 首页图像） | 已确认，按序排队 |
 | AUDIT | 评估报告整改批次（17 项 + AUDIT-18，见 docs/REVIEW.md） | ✅ 已完成（2026-11-20，18/18） |
@@ -224,7 +238,7 @@ append_rules = [
 - **不实现 Vim 脚本引擎**。配置用 TOML，键位绑定到内置 Action。
 - **不嵌入完整 Vim 引擎**（`narwhal-vim` / `vimcore` / `hjkl-engine`）。文件管理器需要的是文件操作语义，不是文本缓冲区变异。
 - **不把 FUSE、archivemount、fzf、SQLite、Überzug++、Chafa 作为必需依赖**。
-- **marks 由 frecency 模块实现**（M25-2 规划：`m<char>` 记录、`'<char>` 跳转，数据持久化在 frecency redb，与 bookmark 共用）；不设独立 marks 存储模块。
+- **marks 由 frecency 模块实现**（M25-2 已落地：`m<char>` 记录、`'<char>` 跳转，数据持久化在 frecency redb，与 bookmark 共用）；不设独立 marks 存储模块。
 - **不实现插件系统**。
 - **不写入归档内成员**，不做嵌套归档递归浏览。
 - **不保证 PDF 的零配置视觉预览**，视觉预览需要可选的 exprim（`pdf-visual` feature）或 Poppler/MuPDF。
@@ -239,7 +253,7 @@ append_rules = [
 | 图片预览（无协议终端） | 无内嵌 | 外部工具链 | 需 Überzug++/Chafa | **halfblocks 内置回退** |
 | 文件打开默认体验 | 需写规则 | 需写脚本 | 较完善 | **系统 opener 零配置** |
 | frecency 跳转 | fzf 插件 + SQLite | 无 | 内建 | **原生 pick/record + redb** |
-| 路径标记 | marks | 书签 | 无 | **规划：`m<char>` + `'<char>`，由 frecency 持久化（频率排序；M25-2）** |
+| 路径标记 | marks | 书签 | 无 | **`m<char>` + `'<char>`，由 frecency 持久化（频率排序；已落地）** |
 | 定制学习成本 | 中 | 高 | 中 | **低（统一分层模型）** |
 
 ## 致谢
