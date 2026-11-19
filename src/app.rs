@@ -1885,6 +1885,23 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
                 _ => Err("archive: 参数过多（:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]）".to_owned()),
             }
         }
+        Some("gitui") => {
+            // M25-6：`:gitui` 同 gi 语义——PATH 优先级探测，复用 RunUserCommand
+            // 分流（terminal_in_new_window 一致）。
+            match crate::git::find_git_tui() {
+                Some(bin) => {
+                    let cfg = state.config.ui;
+                    match run_external_target(&cfg, bin) {
+                        ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
+                        ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
+                    }
+                }
+                None => Err(
+                    "gitui: 未找到 git TUI（PATH 探测 gitui / ziggity / lazygit 均失败）"
+                        .to_owned(),
+                ),
+            }
+        }
         Some("remote") => {
             // M19-4：进入远端（remotes.toml 覆盖 ssh config 别名）；无参列出。
             match parts.next() {
@@ -3062,6 +3079,29 @@ fn handle_key(
             }
             Some(Action::RunCommand(index)) => {
                 return Some(run_user_command(state, index as usize, msg));
+            }
+            Some(Action::GitUi) => {
+                // M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit；复用
+                // M18-4 分流（terminal_in_new_window 语义与 :! / 自定义命令一致）。
+                return Some(match crate::git::find_git_tui() {
+                    Some(bin) => {
+                        let ui = state.config.ui;
+                        match run_external_target(&ui, bin) {
+                            ExternalRun::Multiplexer(m) => {
+                                *msg = Some(m);
+                                Outcome::Continue
+                            }
+                            ExternalRun::CurrentPane(cmd) => Outcome::RunUserCommand { cmd },
+                        }
+                    }
+                    None => {
+                        *msg = Some(
+                            "gi: 未找到 git TUI（PATH 探测 gitui / ziggity / lazygit 均失败）"
+                                .to_owned(),
+                        );
+                        Outcome::Continue
+                    }
+                });
             }
             Some(Action::RenameStart) | Some(Action::RenameClear) | Some(Action::RenameAppend) => {
                 // M21-E4：I/A 保留原名（光标首/尾），cc 清空（光标归零）。
@@ -7002,6 +7042,18 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                     ))
                 });
             }
+            // M25-6：git 分支 + diff 摘要（per-dir 异步缓存；非仓库/未就绪隐藏）。
+            if state.config.ui.git_column
+                && let Location::Physical(dir) = &tab.location
+                && let Some(Some(st)) = state.git_cache.get(dir)
+                && let Some(branch) = &st.branch
+            {
+                let text = match st.diff_summary.as_deref() {
+                    Some(diff) if !diff.is_empty() => format!("  [{branch} {diff}]"),
+                    _ => format!("  [{branch}]"),
+                };
+                spans.push(Span::from(text).style(Style::new().add_modifier(Modifier::DIM)));
+            }
             if let Some(specs) = &tab.sort {
                 // M18-1/M18-2：排序指示（多字段 join）。
                 let text = specs
@@ -8524,6 +8576,101 @@ mod tests {
         assert_eq!(cfg2.archive.checksum, "sha256");
         let cfg3: config::Config = toml::from_str("[archive]\nchecksum = \"none\"\n").unwrap();
         assert_eq!(cfg3.archive.checksum, "none");
+    }
+
+    // ── M25-6：git 状态栏 + gi ───────────────────────────────────────────────
+
+    #[test]
+    fn m256_parse_shortstat_variants() {
+        assert_eq!(crate::git::parse_shortstat(""), None);
+        assert_eq!(crate::git::parse_shortstat("\n"), None);
+        assert_eq!(
+            crate::git::parse_shortstat(" 3 files changed, 2 insertions(+), 1 deletion(-)"),
+            Some("+2 -1".to_owned())
+        );
+        assert_eq!(
+            crate::git::parse_shortstat(" 1 file changed, 1 insertion(+)"),
+            Some("+1".to_owned())
+        );
+        assert_eq!(
+            crate::git::parse_shortstat(" 1 file changed, 3 deletions(-)"),
+            Some("-3".to_owned())
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn m256_find_git_tui_priority() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d1 = TempDir::new().unwrap();
+        let d2 = TempDir::new().unwrap();
+        // d1 有 lazygit、d2 有 gitui → 优先级取 gitui。
+        let mk = |dir: &TempDir, name: &str| {
+            let p = dir.path().join(name);
+            fs::write(&p, "#!/bin/sh\n").unwrap();
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        mk(&d1, "lazygit");
+        mk(&d2, "gitui");
+        assert_eq!(
+            crate::git::find_git_tui_in(&[d1.path().to_path_buf(), d2.path().to_path_buf()]),
+            Some("gitui"),
+            "优先级 gitui > ziggity > lazygit"
+        );
+        // 仅 ziggity → 命中中间档。
+        let d3 = TempDir::new().unwrap();
+        mk(&d3, "ziggity");
+        assert_eq!(
+            crate::git::find_git_tui_in(&[d3.path().to_path_buf()]),
+            Some("ziggity")
+        );
+        // 全部缺失 → None（空目录）。
+        let d4 = TempDir::new().unwrap();
+        assert_eq!(
+            crate::git::find_git_tui_in(&[d4.path().to_path_buf()]),
+            None
+        );
+    }
+
+    #[test]
+    fn m256_status_bar_shows_branch_and_diff() {
+        let (_tmp, state) = make_state(2);
+        let dir = state.active_tab().location.base_dir().to_path_buf();
+        let st = crate::git::GitDirStatus {
+            branch: Some("main".to_owned()),
+            diff_summary: Some("+2 -1".to_owned()),
+            ..Default::default()
+        };
+        let mut state = state;
+        state.git_cache.insert(dir, Some(st));
+        let backend = ratatui::backend::TestBackend::new(120, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let mode = InputMode::default();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let all: String = (0..10u16)
+            .map(|y| {
+                (0..120u16)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(all.contains("[main +2 -1]"), "状态栏分支+摘要: {all}");
+    }
+
+    #[test]
+    fn m256_exec_gitui_conditionally() {
+        let (_tmp, mut state) = make_state(1);
+        let r = exec_command_impl(&mut state, "gitui");
+        match crate::git::find_git_tui() {
+            // 本机无 git TUI → 可读报错。
+            None => {
+                assert!(r.is_err());
+                assert!(r.unwrap_err().contains("未找到 git TUI"));
+            }
+            // 装有 git TUI → RunExternal（当前 pane）或 Done（multiplexer 提示）。
+            Some(_) => assert!(r.is_ok()),
+        }
     }
 
     #[test]

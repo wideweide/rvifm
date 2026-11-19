@@ -57,6 +57,8 @@ impl GitStatus {
 pub struct GitDirStatus {
     /// 当前分支（`-b` 头行；M25-6 状态栏复用）。
     pub branch: Option<String>,
+    /// 工作区 diff 摘要（"+X -Y"；干净/失败 → None。SIMPLIFIED：staged 不分列）。
+    pub diff_summary: Option<String>,
     /// 直接子项名 → 状态（子目录取其内部条目聚合）。
     pub entries: HashMap<String, GitStatus>,
 }
@@ -101,7 +103,90 @@ pub fn query_status(root: &Path, dir: &Path) -> std::io::Result<GitDirStatus> {
         .to_string_lossy()
         .replace('\\', "/");
     let rel_dir = rel_dir.trim_matches('/').to_owned();
-    Ok(parse_status(&rel_dir, &out.stdout))
+    let mut status = parse_status(&rel_dir, &out.stdout);
+    // M25-6：diff 摘要（仅工作区；best-effort——失败保持 None 不影响状态列）。
+    if let Ok(o) = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["--no-optional-locks", "diff", "--shortstat"])
+        .output()
+        && o.status.success()
+    {
+        status.diff_summary = parse_shortstat(&String::from_utf8_lossy(&o.stdout));
+    }
+    Ok(status)
+}
+
+/// shortstat 行压缩为 "+X -Y"（SIMPLIFIED 仅工作区；无变更/无法解析 → None）。
+/// 输入形如 `" 3 files changed, 2 insertions(+), 1 deletion(-)"`。
+pub fn parse_shortstat(text: &str) -> Option<String> {
+    let mut add = 0u64;
+    let mut del = 0u64;
+    let mut any = false;
+    for part in text.split(',') {
+        let part = part.trim();
+        if let Some(n) = part
+            .strip_suffix("insertions(+)")
+            .or_else(|| part.strip_suffix("insertion(+)"))
+        {
+            add = n.trim().parse().unwrap_or(0);
+            any = true;
+        } else if let Some(n) = part
+            .strip_suffix("deletions(-)")
+            .or_else(|| part.strip_suffix("deletion(-)"))
+        {
+            del = n.trim().parse().unwrap_or(0);
+            any = true;
+        }
+    }
+    if !any {
+        return None;
+    }
+    Some(match (add, del) {
+        (0, d) if d > 0 => format!("-{d}"),
+        (a, 0) => format!("+{a}"),
+        (a, d) => format!("+{a} -{d}"),
+    })
+}
+
+/// git TUI 候选优先级（REQ 原文：gitui → ziggity → lazygit）。
+pub const GIT_TUI_PRIORITY: [&str; 3] = ["gitui", "ziggity", "lazygit"];
+
+/// 在给定目录列表中探测（unix 要求可执行位；Windows 追加 .exe/.bat/.cmd）。
+pub fn find_git_tui_in(dirs: &[PathBuf]) -> Option<&'static str> {
+    for name in GIT_TUI_PRIORITY {
+        for dir in dirs {
+            #[cfg(unix)]
+            {
+                let p = dir.join(name);
+                if p.is_file() {
+                    use std::os::unix::fs::PermissionsExt as _;
+                    if let Ok(md) = std::fs::metadata(&p)
+                        && md.permissions().mode() & 0o111 != 0
+                    {
+                        return Some(name);
+                    }
+                }
+            }
+            #[cfg(windows)]
+            {
+                for ext in [".exe", ".bat", ".cmd"] {
+                    let p = dir.join(format!("{name}{ext}"));
+                    if p.is_file() {
+                        return Some(name);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// PATH 探测入口（`gi` / `:gitui` 共用）。
+pub fn find_git_tui() -> Option<&'static str> {
+    let dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|v| std::env::split_paths(&v).collect())
+        .unwrap_or_default();
+    find_git_tui_in(&dirs)
 }
 
 /// porcelain -z 解析（纯函数）。`rel_dir` 为查询目录相对仓库根的路径

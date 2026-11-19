@@ -142,6 +142,7 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 # STATE —
+- `M25-6`（2026-11-19）：git 状态栏 + gi——状态栏 DIM span `  [branch +X -Y]`（干净/无 diff 只显分支；per-dir 异步缓存复用 M25-5 链路，git_column 关/非仓库/未就绪隐藏）；`GitDirStatus` 增 `diff_summary`（`git diff --shortstat` best-effort，`parse_shortstat` 纯函数压缩 +X/-Y/+X -Y）；`find_git_tui_in`（unix 可执行位 / Windows .exe/.bat/.cmd）+ `find_git_tui`（PATH；优先级常量 GIT_TUI_PRIORITY=gitui→ziggity→lazygit）；`Action::GitUi`（默认键 gi + run 名 gitui/git_tui）与 `:gitui` exec 臂——两路均复用 `run_external_target` 分流（terminal_in_new_window 与 :! 一致，Multiplexer 直接提示/CurrentPane 挂起 TUI 执行），全部未命中可读报错。336 单测 + 6 集成全绿（+4：shortstat 变体/PATH 优先级探测（unix 755 假二进制）/状态栏渲染/:gitui 条件守卫）。
 - `M25-5`（2026-11-19）：git 状态列（异步）——新模块 src/git.rs：`GitStatus` 7 态（porcelain 字母映射）+ `GitDirStatus{branch,entries}`（M25-6 复用 branch）+ `repo_root`（逐级 .git）+ `parse_status`（porcelain -z 纯函数：`## ` 分支行、XY 记录 NUL 分隔、rename orig 追加段跳过、untracked 目录尾 `/` 剥离；归并规则 未跟踪→冲突优先→Y 工作区优先 X 暂存兜底、双侧无映射跳过）+ `query_status`（`git --no-optional-locks status --porcelain -z -b --untracked-files=normal -- <dir>`；pathspec 限定当前目录）+ `spawn_status_query`（后台线程 + mpsc 回传，UI 不等待）。AppState 增 git_cache（dir→Some/None：None=在途或非仓库）+ git_pending + git_tx；run 循环回填 + `sync_status_trigger`（左右 pane 物理目录按需触发；非仓库记空缓存防重复探测）+ watcher 事件清缓存重查。渲染：左/右 pane 属性区内状态字符列（GIT_STATUS_WIDTH=3 占位对齐、M/D 红 A 绿 R/T 黄 ? 青 U 品红、`[ui] git_column` 默认开、树视图随属性列隐藏、name_budget 扣列宽）。332 单测 + 6 集成全绿（+4：porcelain 解析/子目录聚合/子目录前缀剥离/真实仓库 query——git 不可用自动跳过）。踩坑：X 空白的工作区变更不能先 from_code(x) 再 continue（Y 优先 X 兜底合并）；PathBuf::ends_with 是组件语义；`init -b main` 显式分支名防 master/main 环境差异。
 - `M25-4`（2026-11-19）：归档对话框与校验文件——ops.rs 增 `Checksum`（Md5/Sha256/None + parse/ext）与 `digest_hex`（64KiB 分块 read+update，md-5 0.11/sha2 0.11.1 纯 Rust 与 sha1 同 digest 核心）、`write_checksum`（`<名>.<ext>`，行格式 `<hex>  <文件名>` md5sum/sha256sum 兼容）；`[archive] checksum` 配置（默认 md5）；`archive_execute` 抽取共享（exec 臂与对话框同源，归档+校验各一条撤销记录 LIFO 双逆）；exec 臂改造——`checksum=` 第三参、无参 → `ExecOutcome::ShowArchiveDialog`（名称预填光标条目）；`InputMode::ArchiveDialog{input,field,format_idx,checksum_idx}` + `handle_archive_dialog_key`（Tab/↑↓ 切字段、←→/空格循环取值、名称字段字符输入/退格、Enter 执行空名报错留在对话框、失败留框可改）+ 居中遮罩渲染（M18-1 同款）；digest 0.11 的 hasher 无 io::Write 实现 → io::copy 改 read+update。328 单测 + 6 集成全绿（+5：checksum 写入/行格式/exec 参形式与双逆/对话框键流/无参预填/配置解析）。踩坑：PathBuf::ends_with 是路径组件语义非字符串后缀。
 - `M25-3`（2026-11-19）：归档创建——ops.rs 增 `ArchiveFormat`（Zip/Tar/TarGz + ext/parse/infer）与 `create_archive`（缺扩展名自动补齐；validate_new_name 同名报错不覆盖；任一源缺失整批中止；写入失败清理半成品——M20-3 教训；产物入撤销栈 Create `u` 可逆）；写端：zip crate ZipWriter（deflate，目录递归 add_directory/start_file+io::copy、软链接 add_symlink 按链接本身收录）+ tar Builder（目录 append_dir_all、文件 append_path_with_name、软链接 append_link）+ flate2 GzEncoder；exec 臂 `:archive [zip|tar|tar.gz] <名>`（2 参显式格式 / 1 参扩展名推断 / 0 参待 M25-4 对话框；tags 优先排序确定顺序、空 = 光标条目；xz/bz2/zst 经 parse/infer 失败可读提示）；产物经 open_dispatch 读端往返验证（rvifm 自身可浏览）。323 单测 + 6 集成全绿（+3：zip 往返+undo/tar-gz 推断+读端解包/守卫×7）。API 核对：zip 9.5.1 SimpleFileOptions 为 Copy（传 *opts）、ArchiveEntry 字段 path 非 name。
@@ -149,8 +150,8 @@
 - `M25 登记调整`（2026-11-19）：M25-2 marks 暂停（用户指示，`'` 键位归属待拍板，恢复待指令）；M25-5/6 SPEC 修订为**异步方案**（pathspec 限定当前目录 + `--no-optional-locks` + 后台线程 + per-目录缓存——回应 gitui 大仓库性能问题，分析见 NOTES）。执行顺序：1 → 3 → 4 → 5 → 6 → 7。
 - **更新时间**：2026-11-19
 - **当前阶段**：M25 会话持久化、marks、归档创建与 git 集成（执行中；M25-2 暂停）
-- **当前任务**：M25-6 git 状态栏 + gi
-- **阶段状态**：M0–M24 全部关闭；M25 进行中（M25-1/3/4/5 完成，M25-2 暂停待指令）
+- **当前任务**：M25-7 frecency 通用化评估
+- **阶段状态**：M0–M24 全部关闭；M25 进行中（M25-1/3/4/5/6 完成，M25-2 暂停待指令）
 
 ## 已完成
 

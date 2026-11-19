@@ -76,6 +76,8 @@ pub enum Action {
     EnterCommand,
     /// 打开合一跳转选择器（M8-12：o，全局统一时钟视角）。
     OpenJump,
+    /// 打开 git TUI（M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit）。
+    GitUi,
     Quit,
 }
 
@@ -119,6 +121,7 @@ impl Action {
             "open_jump" | "jump" => OpenJump,
             "quit" => Quit,
             "histprev" | "hist_prev" => HistPrev,
+            "gitui" | "git_tui" => GitUi,
             "histnext" | "hist_next" => HistNext,
             _ => return None,
         })
@@ -230,6 +233,7 @@ impl Keymap {
             (vec![k(Enter)], EnterSelected),
             (vec![k(Char('h'))], ReturnParent),
             (vec![k(Char('g')), k(Char('g'))], ToTop),
+            (vec![k(Char('g')), k(Char('i'))], GitUi),
             (vec![k(Char('G'))], ToBottom),
             (vec![kc(Char('d'))], HalfPageDown),
             (vec![kc(Char('u'))], HalfPageUp),
