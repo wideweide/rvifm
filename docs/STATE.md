@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-20
 - **当前阶段**：任务列表**全部完成** ✅（M0–M27、AUDIT 18/18、M25-2 marks、M26 归档扩展 5/5、M27 视觉对齐 3/3、MISC-1 rv 别名，均于 2026-11-20 落地）
-- **当前任务**：0.9.0 发布重跑中——首推 release job 全数失败于 smoke `cargo run`（MISC-1 双 bin 致目标歧义，已改 `--bin rvifm`），tag 重指向强推（既有处置口径）；test 双 job 绿；crates.io 凭据仅在 Windows 机器，待 Windows 侧执行
+- **当前任务**：0.9.0 发布完成（GitHub Release 侧）——CI run #271 五 job 全绿（test ×2 + release ×3），v0.9.0 Release 已发布并带三份归档（linux-gnu/musl/windows-x64，各含 `rvifm`+`rv` 双二进制）；**crates.io publish 待 Windows 机器凭据执行**（Linux 侧无凭据，非停止条件）
 - **阶段状态**：M0–M27 + AUDIT + MISC 全部完成（M9/M11 的"未接线"能力已随 AUDIT-13/7/2/3 整改落地，**计入实质完成**）；M11-6 真实终端验证 deferred；v0.8.0 已发布，0.9.0 发布中
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -15,8 +15,9 @@
 
 ## 下一步
 
-1. 0.9.0 发布重跑：tag 已重指向 `--bin rvifm` 修复提交，等待 CI release 三 job 绿、GitHub Release 归档齐全。
-2. crates.io publish 需 Windows 机器凭据——Linux 侧只做 tag/GitHub Release；发布完成后 `release: 0.9.0 verified` 记录。
+1. Windows 侧执行 `cargo publish`（0.9.0；凭据仅在该机器）→ 完成后提交 `release: 0.9.0 verified` 并勾掉本条。
+2. M11-6 真实终端图片显示验证（deferred，人工环境）。
+3. 任务列表无其它待办；后续新需求按 AGENTS §8.3 蒸馏登记。
 
 ## 批次关闭记录
 

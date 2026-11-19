@@ -792,3 +792,4 @@ rvifm record  → 静默记录访问
 - **平台边界**：crates.io 凭据仅在 Windows 机器（M8-13 起口径）——本机（Linux）只做 bump/tag/GitHub Release；crates.io publish 待 Windows 侧执行后补 `release: 0.9.0 verified` 记录。
 - **发布失败处置（已触发）**：首推 release 三 job 全数失败于 smoke 步——MISC-1 双 `[[bin]]` 后裸 `cargo run` 因目标歧义报错（"could not determine which binary to run"）；`--bin rvifm` 显式指明后 tag 重指向强推重跑。教训：新增第二 bin target 时，所有 `cargo run` 类步骤都要复查目标歧义。
 - **tag 重指向**：`git tag -f v0.9.0 <fix> && git push -f origin v0.9.0`（远端 tag 触发的 run 以重指向后的 commit 为准）。
+- **结果（2026-11-20）**：重跑 run #271 五 job 全绿；GitHub Release `v0.9.0` 已发布（linux-gnu / linux-musl / windows-x64 三归档，均含 `rvifm`+`rv`）。首推失败的 test job（#268）本就全绿——失败面仅 release smoke，与门禁结论一致。crates.io 留待 Windows 侧（凭据边界，非阻塞）。
