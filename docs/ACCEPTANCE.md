@@ -762,7 +762,7 @@
 ### AUDIT-4 惰性 compaction
 - [x] 事件超过阈值时 TUI 启动触发 compaction（写 snapshot + 截断 events）；`pick` 不触发；或文档明确仅手动。（2026-11-20：`lazy_compact_on_startup` 挂 run() 启动（merge pending 之后），阈值 5000；pick/跳转选择器结构上无写调用）
 ### AUDIT-5 app.rs 拆分
-- [ ] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。
+- [x] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。（2026-11-20：`src/app/{mod,keys,exec,jobs,render,preview,tests}.rs`——类型与 `run()` 留根模块（子模块可见父私有项），移动项 `pub(crate)` + 根重导出；help.txt 随 render 分片迁至 `src/app/`）
 ### AUDIT-6 键位超时
 - [ ] 多键序列超时可配置，超时后清空 seq 且不吞后续按键。
 ### AUDIT-7 opener 分层

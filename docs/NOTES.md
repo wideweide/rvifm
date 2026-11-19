@@ -754,3 +754,10 @@ rvifm record  → 静默记录访问
 - **决策：保留承诺并接线**（撤销"文档撤回"选项）。`draw_pick_ui` 抽出（TestBackend 可测）：查询行 + 候选列表 + 右侧预览窗格；≥60 列双栏（1:1），窄终端降级单栏。预览源与 TUI 完全一致——文本/目录/Office/PDF 文本走共享 `render_preview`，图像走 `ImageEngine::detect()`（协议探测 + halfblocks 回退）；同进程完成，不 fork/exec（SPEC §4.9）。
 - **PDF 视觉不入 pick**（M27-3 遗留决策点）：pick 是纯只读选择器（AGENTS §5.3），PDF 视觉需要临时文件 + 外部 spawn/exprim——选择器内做视觉渲染超出其职责；pick 的 PDF 预览保持文本层（同源 `render_preview`）。TUI viewer 已有视觉链（AUDIT-2）。
 - **测试可移植性**：候选全路径长度随宿主变化——宽终端用例 200 列（列表列 100）保证叶子名不截断；窄终端用例不断言列表内容（40 列必截断，列表渲染已由宽用例覆盖）。AUDIT-18 同款考量。
+
+### 2026-11-20 — AUDIT-5 实现：app.rs 上帝文件拆分（WHY）
+
+- **拆分法（零可见性改动）**：利用"子模块可见父模块私有项"——类型（`InputState`/`Outcome`/`InputMode`/`ExecOutcome` 等）与事件循环 `run()` 留在 `app/mod.rs`，函数按职责移入子模块 `keys/exec/jobs/render/preview`（子模块 `use super::*` 即可访问根的类型/字段/私有导入）；跨兄弟互访的移动项统一 `pub(crate)`，根 `pub(crate) use x::*;` 重导出（tests 与根代码经此引用）。测试整体随迁 `app/tests.rs`（原 `use super::*` 语义不变——tests 变为 app 的子模块）。
+- **脚本化切割**：awk 按顶层条目行号分组（122 项→5 组 + 根 + tests），条目归属按命名约定（handle_*/press_*→keys；exec_command_impl/远程/粘贴/重命名/删除撤销→exec；render_*/布局→render；作业与 watcher→jobs；`render_right_pane`（预览/查看器窗格）→preview）；区域边界上溯 `///`/`#[` 保证 doc comment 随项迁移。
+- **踩坑 2 个**：① tests 剥壳时残留 `mod tests {` 造成嵌套双 tests 模块、glob 失效（E0425 链）——剥净外壳行；② 根的私有 `use` 导入不经 glob 流向子模块——根 use 块改 `pub(crate) use` 重导出。`help.txt` 随 `HELP_TEXT` 迁至 `src/app/`（include_str 相对路径）。
+- **结果**：app.rs 15261 行 → mod 1364 / keys 1597 / exec 3020 / jobs 200 / render 1093 / preview 302 / tests 7692；`cargo test` 350+4 双环境全绿、clippy `-D warnings` 干净、`--version/--help` 冒烟通过——零行为变化。

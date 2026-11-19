@@ -1,0 +1,302 @@
+use super::*;
+
+/// 右 pane 渲染（M14-1；M21-F1 带路径标题与焦点边框）：view 模式 = 活动
+/// pane 光标文件的查看器/图片预览；默认 = 右 pane 独立目录列表（可导航）。
+pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let tab = state.active_tab();
+    let focused = tab.focus == crate::tab::Focus::Right;
+    // view 模式：M17 VIEW-1 交互式查看器（行号 + 滚动 + 搜索高亮）。
+    if tab.view_mode {
+        // M17 SRCH：预览源抽象——结果模式取命中文件，物理视图取 base.join。
+        let Some(path) = tab.preview_path() else {
+            let pane = ratatui::widgets::Block::bordered()
+                .title("view · 预览")
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
+            return;
+        };
+        // 图片仍走 ImageEngine（查看器针对文本）。
+        if matches!(
+            crate::preview::preview_kind(&path),
+            crate::preview::PreviewKind::Image
+        ) {
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!(
+                    "{} · 图片预览",
+                    path.display().to_string().replace('\\', "/")
+                ))
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            if state.image_engine.render_file(frame, inner, &path).is_err() {
+                frame.render_widget(Paragraph::new("图片渲染失败（损坏/超大）"), inner);
+            }
+            return;
+        }
+        // M21-F6：光标在目录上 → 浅层 tree（复用 M13-7 构建器，深度 2、
+        // 只读快照）——不走文本读取路径，杜绝"无法读取/非 UTF-8"误报。
+        if path.is_dir() {
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!(
+                    "{} · 目录",
+                    path.display().to_string().replace('\\', "/")
+                ))
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            let items = match crate::tab::Tab::build_tree_entries(&path, 2) {
+                Ok(items) => items,
+                Err(e) => {
+                    frame.render_widget(Paragraph::new(format!("目录读取失败: {e}")), inner);
+                    return;
+                }
+            };
+            let height = inner.height as usize;
+            let mut lines: Vec<Line> = Vec::with_capacity(height);
+            if items.is_empty() {
+                lines.push(Line::from("（空目录）"));
+            }
+            for item in items.iter().take(height) {
+                let depth = item.name.matches('/').count();
+                let leaf = item
+                    .name
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&item.name)
+                    .to_owned();
+                let label = if item.is_dir {
+                    format!("{}{}/", "  ".repeat(depth), leaf)
+                } else {
+                    format!("{}{}", "  ".repeat(depth), leaf)
+                };
+                let spans = vec![
+                    Span::from(format!("{} ", item.icon.glyph)),
+                    Span::styled(label, filetype_style(item.filetype_class())),
+                ];
+                lines.push(Line::from(spans));
+            }
+            frame.render_widget(Paragraph::new(lines), inner);
+            return;
+        }
+        let viewer = tab.viewer.clone().unwrap_or_default();
+        let shown = path.display().to_string().replace('\\', "/");
+        // M21-E3：大文件截断提示前置（路径长会被 pane 宽度裁掉，放行尾不可见）。
+        const VIEWER_MAX_LINES: usize = 100_000;
+        let trunc_hint = if viewer.total_lines > viewer.line_count {
+            format!("〔已截断 共 {} 行〕", viewer.total_lines)
+        } else {
+            String::new()
+        };
+        let title = match &viewer.query {
+            Some(q) => format!(
+                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
+                viewer.scroll + 1,
+                viewer.line_count,
+                q
+            ),
+            None => format!(
+                "{trunc_hint}{shown} · 行 {}/{}（w/Esc 退出 / 搜索）",
+                viewer.scroll + 1,
+                viewer.line_count
+            ),
+        };
+        let pane = ratatui::widgets::Block::bordered()
+            .title(title)
+            .border_style(pane_border_style(true));
+        let inner = pane.inner(area);
+        frame.render_widget(pane, area);
+        // M21-F7：PDF/Office 分流——走共享 PreviewRenderer（pdf-inspector
+        // 文本提取先行 / office_oxide 提取），失败按类型提示；不落文本读取
+        // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。
+        match crate::preview::preview_kind(&path) {
+            crate::preview::PreviewKind::Office => {
+                let pane = ratatui::widgets::Block::bordered()
+                    .title(format!("{shown} · Office 预览"))
+                    .border_style(pane_border_style(true));
+                let inner = pane.inner(area);
+                frame.render_widget(pane, area);
+                let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                frame.render_widget(preview.into_paragraph(), inner);
+                return;
+            }
+            crate::preview::PreviewKind::Pdf => {
+                // AUDIT-2：NeedsVisual → 第 1 页视觉链（exprim → pdftoppm →
+                // mutool，结果缓存），产出经 ImageEngine 渲染；Text/失败 →
+                // 文本/提示路径（文本提取先行不跳过，AGENTS §5.5）。
+                if let Some(png) = crate::pdf::cached_visual_png(&path) {
+                    let pane = ratatui::widgets::Block::bordered()
+                        .title(format!("{shown} · PDF 预览（第 1 页图像）"))
+                        .border_style(pane_border_style(true));
+                    let inner = pane.inner(area);
+                    frame.render_widget(pane, area);
+                    if state.image_engine.render_file(frame, inner, &png).is_err() {
+                        frame.render_widget(
+                            Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
+                            inner,
+                        );
+                    }
+                    return;
+                }
+                let pane = ratatui::widgets::Block::bordered()
+                    .title(format!("{shown} · PDF 预览"))
+                    .border_style(pane_border_style(true));
+                let inner = pane.inner(area);
+                frame.render_widget(pane, area);
+                let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                frame.render_widget(preview.into_paragraph(), inner);
+                return;
+            }
+            _ => {}
+        }
+        // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            frame.render_widget(Paragraph::new("无法读取（非 UTF-8 或已删除）"), inner);
+            return;
+        };
+        let height = inner.height as usize;
+        let width = inner.width as usize;
+        let lines: Vec<&str> = text.lines().take(VIEWER_MAX_LINES).collect();
+        // M21-E3：语法高亮——扩展名/shebang 推断，未命中或搜索模式下
+        // 降级纯文本（查询黄底叠加与语法着色互斥，SIMPLIFIED）。
+        let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
+        let mut highlighter = if viewer.query.is_none() {
+            crate::highlight::Highlighter::for_path(
+                &path,
+                lines.first().copied().unwrap_or(""),
+                dark,
+            )
+        } else {
+            None
+        };
+        let mut out: Vec<Line> = Vec::new();
+        for (i, line) in lines.iter().skip(viewer.scroll).take(height).enumerate() {
+            let lineno = viewer.scroll + i + 1;
+            let is_current = viewer.query.is_some() && viewer.scroll + i == viewer.match_line;
+            let gutter = if is_current {
+                format!("{lineno:>4} ▶ ")
+            } else {
+                format!("{lineno:>4} │ ")
+            };
+            let mut spans = vec![Span::styled(
+                gutter,
+                Style::new().add_modifier(Modifier::DIM),
+            )];
+            // 行内容按查询子串分段高亮（超宽截断由渲染器裁剪）。
+            let display: String = line.chars().take(width).collect();
+            match viewer
+                .query
+                .as_deref()
+                .and_then(|q| crate::tab::match_range(&display, q))
+            {
+                Some((start, end)) => {
+                    if start > 0 {
+                        spans.push(Span::from(display[..start].to_owned()));
+                    }
+                    spans.push(Span::styled(
+                        display[start..end].to_owned(),
+                        Style::new().fg(Color::Black).bg(Color::LightYellow),
+                    ));
+                    spans.push(Span::from(display[end..].to_owned()));
+                }
+                None => {
+                    if let Some(h) = highlighter.as_mut() {
+                        // 语法着色片段（宽超界由渲染器裁剪；解析失败降级纯文本）。
+                        let toks = h.highlight_line(line);
+                        if toks.is_empty() {
+                            spans.push(Span::from(display));
+                        } else {
+                            for (tok, st) in toks {
+                                spans.push(Span::styled(tok, st));
+                            }
+                        }
+                    } else {
+                        spans.push(Span::from(display));
+                    }
+                }
+            }
+            out.push(Line::from(spans));
+        }
+        frame.render_widget(Paragraph::new(out), inner);
+        return;
+    }
+    // 默认：右 pane 目录列表（独立导航；M21-F1 路径标题 + 类型着色，
+    // 焦点经边框高亮呈现，标题不再重复"焦点"文字）。
+    let title = tab.right.location.display_path().replace('\\', "/");
+    let pane = ratatui::widgets::Block::bordered()
+        .title(title)
+        .border_style(pane_border_style(focused));
+    let inner = pane.inner(area);
+    frame.render_widget(pane, area);
+    let items: Vec<ListItem> = tab
+        .right
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            // M21-E1：属性列自适应（与左 pane 同口径）。
+            let show_attrs =
+                state.config.ui.attrs_column && inner.width as usize >= MIN_ATTRS_INNER_WIDTH;
+            // M25-5：git 状态列（与左 pane 同口径；右 pane 独立目录缓存）。
+            let git_col = show_attrs && state.config.ui.git_column;
+            let git_map = if git_col {
+                match &tab.right.location {
+                    Location::Physical(p) => state.git_cache.get(p).and_then(|o| o.as_ref()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let name_budget = if show_attrs {
+                (inner.width as usize).saturating_sub(
+                    2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 },
+                )
+            } else {
+                (inner.width as usize).saturating_sub(4)
+            };
+            let display_name = clip_name(&item.name, name_budget);
+            let label = if item.is_dir {
+                format!("{display_name}/")
+            } else {
+                display_name.clone()
+            };
+            let mut spans = vec![
+                Span::from(format!("{} ", item.icon.glyph)),
+                Span::styled(label, filetype_style(item.filetype_class())),
+            ];
+            if show_attrs {
+                let name_width = display_name.chars().count() + (item.is_dir as usize);
+                let pad = name_budget.saturating_sub(name_width).max(1);
+                spans.push(Span::from(" ".repeat(pad)));
+                // M25-5：git 状态字符列（占位空格保持列对齐）。
+                match git_map.and_then(|m| m.entries.get(&item.name)) {
+                    Some(st) => spans.push(git_status_span(*st)),
+                    None => spans.push(Span::from(" ".repeat(GIT_STATUS_WIDTH))),
+                }
+                let size = if item.is_dir {
+                    "<DIR>".to_owned()
+                } else {
+                    crate::tab::format_size(item.size)
+                };
+                let attr = format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
+                spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
+            }
+            let mut li = ListItem::new(Line::from(spans));
+            if idx == tab.right.cursor {
+                // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
+                li = li.style(if focused {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new().add_modifier(Modifier::DIM)
+                });
+            }
+            li
+        })
+        .collect();
+    let mut list_state = ListState::default().with_selected(Some(tab.right.cursor));
+    frame.render_stateful_widget(ratatui::widgets::List::new(items), inner, &mut list_state);
+}
