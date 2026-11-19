@@ -971,23 +971,32 @@ impl Tab {
             if *truncated {
                 return;
             }
-            let mut items: Vec<(String, std::fs::FileType)> = match std::fs::read_dir(dir) {
+            let mut items: Vec<(String, bool, bool)> = match std::fs::read_dir(dir) {
                 Ok(rd) => rd
                     .filter_map(|e| e.ok())
                     .filter_map(|e| {
                         let ft = e.file_type().ok()?;
-                        Some((e.file_name().to_string_lossy().into_owned(), ft))
+                        let is_link = ft.is_symlink();
+                        // M27-1：符号链接跟随目标判定目录（同 load_entries）。
+                        let is_dir = if is_link {
+                            e.metadata().map(|m| m.is_dir()).unwrap_or(false)
+                        } else {
+                            ft.is_dir()
+                        };
+                        Some((
+                            e.file_name().to_string_lossy().into_owned(),
+                            is_dir,
+                            is_link,
+                        ))
                     })
                     .collect(),
                 Err(_) => return,
             };
             items.sort_by(|a, b| {
-                let ad = a.1.is_dir();
-                let bd = b.1.is_dir();
-                bd.cmp(&ad)
-                    .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+                let bd_cmp = b.1.cmp(&a.1);
+                bd_cmp.then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
             });
-            for (name, ft) in items {
+            for (name, is_dir, is_link) in items {
                 if *truncated {
                     return;
                 }
@@ -997,13 +1006,12 @@ impl Tab {
                     format!("{prefix}/{name}")
                 };
                 let full = dir.join(&name);
-                let is_dir = ft.is_dir();
                 if level < depth {
                     out.push(FileItem {
                         icon: crate::icons::icon_for_active(&full),
                         name: rel.clone(),
                         is_dir,
-                        is_link: ft.is_symlink(),
+                        is_link,
                         is_exec: !is_dir
                             && std::fs::metadata(&full)
                                 .map(|m| is_executable(&m, &name))
@@ -1534,13 +1542,25 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
     let mut items = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
-        let is_dir = entry.file_type()?.is_dir();
+        let ft = entry.file_type()?;
+        let is_link = ft.is_symlink();
+        // M27-1：符号链接跟随目标判定目录（file_type 是 lstat，link-to-dir
+        // 会误判为文件）——`l`/Enter 进入目标目录而非误开系统程序；
+        // 断链（目标不存在）回退链接自身语义（is_dir=false，列表不失败）。
+        let is_dir = if is_link {
+            entry.metadata().map(|m| m.is_dir()).unwrap_or(false)
+        } else {
+            ft.is_dir()
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
         // show_hidden = false 时跳过 `.` 开头的隐藏条目。
         if !config.show_hidden && name.starts_with('.') {
             continue;
         }
-        let meta = entry.metadata()?;
+        // 跟随目标取元数据；断链回退链接自身（列表加载不受断链影响）。
+        let meta = entry
+            .metadata()
+            .or_else(|_| std::fs::symlink_metadata(entry.path()))?;
         let size = meta.len();
         let perm = perm_string(&meta);
         let mtime = meta
@@ -1549,8 +1569,6 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let ft = entry.file_type()?;
-        let is_link = ft.is_symlink();
         let is_exec = !is_dir && is_executable(&meta, &name);
         let icon = crate::icons::icon_for_active(&entry.path());
         items.push(FileItem {

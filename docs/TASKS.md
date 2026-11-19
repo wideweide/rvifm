@@ -344,7 +344,7 @@
 
 > 来源：用户 0.8.0 实测反馈（符号链接目录、vifm 配色、PDF 首页图像）。用户 2026-11-19 确认撤销「暂不启动」标记，按 TASKS 顺序排队执行（AUDIT → M25-2 → M26 → M27）。依赖关系：M27-1 无前置；M27-2 依赖 AUDIT-13（主题接线）；M27-3 依赖 AUDIT-2（最小链接线）。
 
-- [ ] M27-1 符号链接目录 l/Enter 内部进入（跟随目标判定 is_dir、保留 is_link；断链可读；目录优先/树/预览一致；见 SPEC M27-1）
+- [x] M27-1 符号链接目录 l/Enter 内部进入（跟随目标判定 is_dir、保留 is_link；断链可读；目录优先/树/预览一致；见 SPEC M27-1；2026-11-20 完成）
 - [ ] M27-2 vifm 风格布局与配色（默认去 pane 边框，TabLine/TopLine/StatusLine/Border/CurrLine/OtherLine；`[ui] pane_borders`；见 SPEC M27-2）
 - [ ] M27-3 PDF 前 1–2 页图像预览可配置（`[preview] pdf_image_pages` / `pdf_prefer_image`；失败回退文本；见 SPEC M27-3）
 

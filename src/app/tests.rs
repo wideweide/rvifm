@@ -7971,3 +7971,79 @@ fn m261_archive_job_cancelled_before_start() {
     );
     assert!(!tmp.path().join("out.zip").exists(), "取消不产生产物");
 }
+
+#[cfg(unix)]
+#[test]
+fn m271_symlink_dir_follows_target_and_broken_link_degrades() {
+    // M27-1：link-to-dir 跟随目标判定 is_dir（列表/排序一致，is_link 保留
+    // 着色）；断链不使列表加载失败（is_dir=false、元数据回退链接自身）。
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir_all(tmp.path().join("real/sub")).unwrap();
+    fs::write(tmp.path().join("real/sub/b.txt"), "B").unwrap();
+    std::os::unix::fs::symlink(tmp.path().join("real"), tmp.path().join("link")).unwrap();
+    std::os::unix::fs::symlink(tmp.path().join("no-such-target"), tmp.path().join("broken"))
+        .unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let tab = state.active_tab();
+    let link = tab
+        .entries
+        .iter()
+        .find(|i| i.name == "link")
+        .expect("link 条目存在");
+    assert!(link.is_dir, "link-to-dir 跟随目标判定 is_dir");
+    assert!(link.is_link, "is_link 保留用于着色");
+    let broken = tab
+        .entries
+        .iter()
+        .find(|i| i.name == "broken")
+        .expect("断链条目存在");
+    assert!(!broken.is_dir, "断链不是目录");
+    assert!(broken.is_link);
+    assert!(
+        tab.entries.iter().any(|i| i.name == "real"),
+        "列表加载未因断链失败"
+    );
+
+    // l/Enter 进入 link → 列出目标内容（物理 Location，不调系统 opener）。
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "link")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert!(msg.is_none(), "进入成功无提示: {msg:?}");
+    let entered = state
+        .active_tab()
+        .location
+        .base_dir()
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR_STR, "/");
+    assert!(
+        entered.contains("real") || entered.contains("link"),
+        "进入 link 目录（链接路径或目标路径均可）: {entered}"
+    );
+    assert!(
+        state.active_tab().entries.iter().any(|i| i.name == "sub"),
+        "列出目标内容"
+    );
+
+    // 断链 Enter → 可读错误（系统 opener 失败上浮，不 panic）。
+    state.active_tab_mut().location = crate::tab::Location::Physical(tmp.path().to_path_buf());
+    crate::app::refresh_tab_panes(&mut state, 0);
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "broken")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert!(
+        msg.as_deref().map(|m| !m.is_empty()).unwrap_or(false),
+        "断链给出可读提示: {msg:?}"
+    );
+}
