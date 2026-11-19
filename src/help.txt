@@ -52,6 +52,8 @@ rvifm 帮助（vim 风格文件管理器）
   Tab             切换左右 pane 焦点（双栏均可导航）
   w               右 pane 在目录列表与预览间切换
   :tree           树视图（只读，depth 可选；再执行恢复平铺）
+  :archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]
+                  归档创建（tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
   :compare        左右 pane 目录对比（= 同 / ! 异 / < 仅左 / > 仅右；只读）
   :view           同 w
   Ctrl-G          文件详情对话框

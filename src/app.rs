@@ -184,6 +184,16 @@ enum InputMode {
     FileInfo { path: PathBuf, text: String },
     /// 后台作业菜单（M13-8：`:jobs`；M24-9 增选择游标与 x 取消）。
     Jobs { cursor: usize },
+    /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
+    ArchiveDialog {
+        input: String,
+        /// 当前字段：0=名称 1=格式 2=校验。
+        field: usize,
+        /// 格式下标（zip/tar/tar.gz）。
+        format_idx: usize,
+        /// 校验下标（md5/sha256/none）。
+        checksum_idx: usize,
+    },
     /// 暂存区菜单（M13-10：`:trash`，Enter 恢复选中项到原路径）。
     TrashMenu {
         cursor: usize,
@@ -441,6 +451,10 @@ enum ExecOutcome {
     },
     /// 打开后台作业菜单（M13-8：`:jobs`）。
     ShowJobs,
+    /// 打开归档创建对话框（M25-4：`:archive` 无参；input 预填光标条目名）。
+    ShowArchiveDialog {
+        input: String,
+    },
     /// 打开暂存区菜单（M13-10：`:trash`，条目已读好）。
     ShowTrash {
         items: Vec<crate::ops::TrashEntry>,
@@ -1827,57 +1841,49 @@ fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, St
             })
         }
         Some("archive") => {
-            // M25-3：归档创建——tags 优先（空 = 光标条目）；纯 Rust 写端
-            // zip/tar/tar.gz（xz/bz2/zst 经格式解析/推断失败可读提示不支持）。
-            let base = physical_base(state)?;
+            // M25-3/M25-4：归档创建——`[格式] <名> [checksum=md5|sha256|none]`；
+            // 无参 → 交互对话框（名称预填光标条目名）；缺格式从扩展名推断；
+            // 校验未显式给定时取 `[archive] checksum`（默认 md5）。
             let args: Vec<&str> = parts.collect();
-            let (format, name): (ops::ArchiveFormat, &str) = match args.as_slice() {
-                [fmt, name] => (
-                    ops::ArchiveFormat::parse(fmt)
-                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?,
-                    name,
-                ),
-                [name] => (
-                    ops::ArchiveFormat::infer(name).ok_or_else(|| {
-                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz）".to_owned()
-                    })?,
-                    name,
-                ),
-                [] => return Err("archive: 缺少参数（:archive [zip|tar|tar.gz] <名>）".to_owned()),
-                _ => return Err("archive: 参数过多（:archive [zip|tar|tar.gz] <名>）".to_owned()),
-            };
-            let tab = state.active_tab();
-            let names: Vec<String> = if tab.tags.is_empty() {
-                vec![
-                    tab.entries
-                        .get(tab.cursor)
-                        .ok_or_else(|| "archive: 无选中条目".to_owned())?
-                        .name
-                        .clone(),
-                ]
-            } else {
-                // HashSet 顺序不定 → 排序使打包条目顺序确定。
-                let mut names: Vec<String> = tab.tags.iter().cloned().collect();
-                names.sort();
-                names
-            };
-            let tab_id = state.active;
-            let op = ops::create_archive(tab_id, &base, name, format, &names)
-                .map_err(|e| format!("archive: {e}"))?;
-            let dest = match &op {
-                crate::state::UndoableOp::Create { path, .. } => {
-                    path.display().to_string().replace('\\', "/")
+            let default_checksum =
+                ops::Checksum::parse(&state.config.archive.checksum).unwrap_or(ops::Checksum::Md5);
+            match args.as_slice() {
+                [] => {
+                    // M25-4：无参 → 对话框（名称预填光标条目名）。
+                    let input = state
+                        .active_tab()
+                        .entries
+                        .get(state.active_tab().cursor)
+                        .map(|i| i.name.clone())
+                        .unwrap_or_default();
+                    Ok(ExecOutcome::ShowArchiveDialog { input })
                 }
-                _ => String::new(),
-            };
-            state.undo_stack.push(op);
-            refresh_tab_panes(state, tab_id);
-            Ok(ExecOutcome::Done {
-                msg: Some(format!(
-                    "archive: 已创建 {dest}（{} 项，u 可撤销）",
-                    names.len()
-                )),
-            })
+                [fmt, name] => {
+                    let format = ops::ArchiveFormat::parse(fmt)
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
+                    let msg = archive_execute(state, format, name, default_checksum)?;
+                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                }
+                [name] => {
+                    let format = ops::ArchiveFormat::infer(name).ok_or_else(|| {
+                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz）".to_owned()
+                    })?;
+                    let msg = archive_execute(state, format, name, default_checksum)?;
+                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                }
+                [fmt, name, kv] if kv.starts_with("checksum=") => {
+                    let format = ops::ArchiveFormat::parse(fmt)
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
+                    let checksum = ops::Checksum::parse(&kv["checksum=".len()..])
+                        .ok_or_else(|| "archive: 校验类型需 md5 / sha256 / none".to_owned())?;
+                    let msg = archive_execute(state, format, name, checksum)?;
+                    Ok(ExecOutcome::Done { msg: Some(msg) })
+                }
+                [_, _, _] => {
+                    Err("archive: 参数错误（:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]）".to_owned())
+                }
+                _ => Err("archive: 参数过多（:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]）".to_owned()),
+            }
         }
         Some("remote") => {
             // M19-4：进入远端（remotes.toml 覆盖 ssh config 别名）；无参列出。
@@ -4505,6 +4511,157 @@ fn spawn_job_thread(
     });
 }
 
+/// M25-4：归档对话框的字段/取值常量（与渲染同源）。
+const ARCHIVE_FORMATS: [ops::ArchiveFormat; 3] = [
+    ops::ArchiveFormat::Zip,
+    ops::ArchiveFormat::Tar,
+    ops::ArchiveFormat::TarGz,
+];
+const ARCHIVE_CHECKSUMS: [ops::Checksum; 3] = [
+    ops::Checksum::Md5,
+    ops::Checksum::Sha256,
+    ops::Checksum::None,
+];
+
+/// M25-4：归档对话框单键结果。
+#[derive(Debug, PartialEq, Eq)]
+enum ArchiveDialogOutcome {
+    None,
+    Close,
+    Exec,
+}
+
+/// M25-4：归档对话框单键——Tab/↑↓ 切字段、←→/空格 循环当前字段取值、
+/// 名称字段（field=0）接收字符输入/退格；Enter 执行（名称空 → 留在对话
+/// 框提示）；Esc 取消。执行失败留在对话框（名称保留可改）。
+fn handle_archive_dialog_key(
+    state: &mut AppState,
+    input: &mut String,
+    field: &mut usize,
+    format_idx: &mut usize,
+    checksum_idx: &mut usize,
+    code: KeyCode,
+    msg: &mut Option<String>,
+) -> ArchiveDialogOutcome {
+    match code {
+        KeyCode::Esc => ArchiveDialogOutcome::Close,
+        KeyCode::Enter => {
+            let name = input.trim().to_owned();
+            if name.is_empty() {
+                *msg = Some("archive: 名称不能为空".to_owned());
+                return ArchiveDialogOutcome::None;
+            }
+            match archive_execute(
+                state,
+                ARCHIVE_FORMATS[*format_idx],
+                &name,
+                ARCHIVE_CHECKSUMS[*checksum_idx],
+            ) {
+                Ok(m) => {
+                    *msg = Some(m);
+                    ArchiveDialogOutcome::Exec
+                }
+                Err(e) => {
+                    *msg = Some(e);
+                    ArchiveDialogOutcome::None
+                }
+            }
+        }
+        KeyCode::Tab | KeyCode::Down => {
+            *field = (*field + 1) % 3;
+            ArchiveDialogOutcome::None
+        }
+        KeyCode::Up => {
+            *field = (*field + 2) % 3;
+            ArchiveDialogOutcome::None
+        }
+        KeyCode::Right | KeyCode::Char(' ') => {
+            match *field {
+                1 => *format_idx = (*format_idx + 1) % 3,
+                2 => *checksum_idx = (*checksum_idx + 1) % 3,
+                _ => {} // 名称字段：空格不入名（名字不含空白）
+            }
+            ArchiveDialogOutcome::None
+        }
+        KeyCode::Left => {
+            match *field {
+                1 => *format_idx = (*format_idx + 2) % 3,
+                2 => *checksum_idx = (*checksum_idx + 2) % 3,
+                _ => {}
+            }
+            ArchiveDialogOutcome::None
+        }
+        KeyCode::Backspace => {
+            if *field == 0 {
+                input.pop();
+            }
+            ArchiveDialogOutcome::None
+        }
+        KeyCode::Char(c) => {
+            if *field == 0 {
+                input.push(c);
+            }
+            ArchiveDialogOutcome::None
+        }
+        _ => ArchiveDialogOutcome::None,
+    }
+}
+
+/// M25-3/M25-4：归档创建执行体（exec 臂与对话框共用）——tags 优先（排序
+/// 确定顺序）、空 = 光标条目；产物与校验文件各入一条撤销记录（u 可逆）。
+/// 返回状态栏消息；失败 Err（归档半成品已由 create_archive 清理）。
+fn archive_execute(
+    state: &mut AppState,
+    format: ops::ArchiveFormat,
+    name: &str,
+    checksum: ops::Checksum,
+) -> Result<String, String> {
+    let base = physical_base(state)?;
+    let tab = state.active_tab();
+    let names: Vec<String> = if tab.tags.is_empty() {
+        vec![
+            tab.entries
+                .get(tab.cursor)
+                .ok_or_else(|| "archive: 无选中条目".to_owned())?
+                .name
+                .clone(),
+        ]
+    } else {
+        // HashSet 顺序不定 → 排序使打包条目顺序确定。
+        let mut names: Vec<String> = tab.tags.iter().cloned().collect();
+        names.sort();
+        names
+    };
+    let tab_id = state.active;
+    let op = ops::create_archive(tab_id, &base, name, format, &names)
+        .map_err(|e| format!("archive: {e}"))?;
+    let dest = match &op {
+        crate::state::UndoableOp::Create { path, .. } => path.clone(),
+        _ => PathBuf::new(),
+    };
+    state.undo_stack.push(op);
+    // M25-4：校验文件（失败不回滚归档——归档已入撤销栈可 u 移除）。
+    let cpath = ops::write_checksum(&dest, checksum).map_err(|e| format!("archive: {e}"))?;
+    if let Some(c) = cpath {
+        state.undo_stack.push(crate::state::UndoableOp::Create {
+            tab_id,
+            path: c,
+            recursive: false,
+        });
+    }
+    refresh_tab_panes(state, tab_id);
+    let dest_display = dest.display().to_string().replace('\\', "/");
+    let cs = match checksum {
+        ops::Checksum::Md5 => "，已生成 .md5",
+        ops::Checksum::Sha256 => "，已生成 .sha256",
+        ops::Checksum::None => "",
+    };
+    Ok(format!(
+        "archive: 已创建 {dest_display}（{} 项{cs}，u 可撤销）",
+        names.len()
+    ))
+}
+
 /// 执行确认后的删除（M2-2）：移入应用内暂存、记录撤销栈、刷新所在 tab。
 /// `permanent = true`（M13-3，`DD`）：**跳过暂存直接删除**，不进撤销栈
 /// （不可逆——确认提示已强警示）。
@@ -5104,6 +5261,23 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Ok(ExecOutcome::ShowJobs) => {
                                     mode = InputMode::Jobs { cursor: 0 };
                                 }
+                                Ok(ExecOutcome::ShowArchiveDialog { input }) => {
+                                    // M25-4：格式缺省 zip；校验下标取 [archive] checksum。
+                                    let checksum_idx =
+                                        match ops::Checksum::parse(&state.config.archive.checksum)
+                                            .unwrap_or(ops::Checksum::Md5)
+                                        {
+                                            ops::Checksum::Sha256 => 1,
+                                            ops::Checksum::None => 2,
+                                            _ => 0,
+                                        };
+                                    mode = InputMode::ArchiveDialog {
+                                        input,
+                                        field: 0,
+                                        format_idx: 0,
+                                        checksum_idx,
+                                    };
+                                }
                                 Ok(ExecOutcome::ShowTrash { items }) => {
                                     mode = InputMode::TrashMenu { cursor: 0, items };
                                 }
@@ -5600,6 +5774,30 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         && jobs_menu_key(&mut state, cursor, key.code, &mut msg)
                     {
                         mode = InputMode::Normal;
+                    }
+                }
+                InputMode::ArchiveDialog {
+                    input,
+                    field,
+                    format_idx,
+                    checksum_idx,
+                } => {
+                    // M25-4：Tab/↑↓ 切字段、←→/空格 换值、名称字段直接输入、
+                    // Enter 执行、Esc 取消。
+                    if key.kind == KeyEventKind::Press {
+                        match handle_archive_dialog_key(
+                            &mut state,
+                            input,
+                            field,
+                            format_idx,
+                            checksum_idx,
+                            key.code,
+                            &mut msg,
+                        ) {
+                            ArchiveDialogOutcome::None => {}
+                            ArchiveDialogOutcome::Close => mode = InputMode::Normal,
+                            ArchiveDialogOutcome::Exec => mode = InputMode::Normal,
+                        }
                     }
                 }
                 InputMode::SortDialog { cursor, desc } => {
@@ -6403,6 +6601,78 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
         );
         return;
     }
+    if let InputMode::ArchiveDialog {
+        input,
+        field,
+        format_idx,
+        checksum_idx,
+    } = mode
+    {
+        // M25-4：归档创建对话框（居中遮罩，M18-1 SortDialog 同款）。
+        let area = frame.area();
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(
+            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
+            area,
+        );
+        let popup = context_menu_rect(area);
+        let fmt = ARCHIVE_FORMATS
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                if i == *format_idx {
+                    f.ext().trim_start_matches('.').to_owned()
+                } else {
+                    " ".to_owned() + f.ext().trim_start_matches('.')
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        let cks = ARCHIVE_CHECKSUMS
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let label = match c {
+                    ops::Checksum::Md5 => "md5",
+                    ops::Checksum::Sha256 => "sha256",
+                    ops::Checksum::None => "none",
+                };
+                if i == *checksum_idx {
+                    label.to_owned()
+                } else {
+                    format!(" {label}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        let line_name = if *field == 0 {
+            Line::from(format!("名称: {input}▏"))
+                .style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            Line::from(format!("名称: {input}"))
+        };
+        let line_fmt = if *field == 1 {
+            Line::from(format!("格式: {fmt}")).style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            Line::from(format!("格式: {fmt}"))
+        };
+        let line_cks = if *field == 2 {
+            Line::from(format!("校验: {cks}")).style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            Line::from(format!("校验: {cks}"))
+        };
+        let lines = vec![
+            line_name,
+            line_fmt,
+            line_cks,
+            Line::from("Tab=切字段 ←→/空格=换值 回车=创建 Esc=取消"),
+        ];
+        frame.render_widget(
+            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("归档创建")),
+            popup,
+        );
+        return;
+    }
     if let InputMode::HistoryMenu { cursor } = mode {
         // M16 NAV-2：历史菜单浮窗（居中遮罩；条目 live 取自 history[..=hist_pos]）。
         let area = frame.area();
@@ -6550,6 +6820,15 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     }
     let status = match mode {
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
+        InputMode::ArchiveDialog { input, field, .. } => {
+            // M25-4：对话框激活字段指示（覆盖层提前 return，实际不可达）。
+            let f = match field {
+                1 => "格式",
+                2 => "校验",
+                _ => "名称",
+            };
+            Line::from(format!(":{input}（{f}）"))
+        }
         InputMode::RemotePass { name, input, .. } => {
             // M22-3：masked 渲染（`*` 逐字符替换，同 AskPass）。
             let masked = "*".repeat(input.chars().count());
@@ -7894,10 +8173,15 @@ mod tests {
         assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
         assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
         assert!(fsx.read("/sub/b.txt").unwrap() == b"BBB", "目录内容被打包");
-        // u 撤销移除产物。
+        // u 撤销移除产物（M25-4 起默认生成 .md5——两条撤销记录，LIFO）。
         let mut msg = None;
         undo_last(&mut state, &mut msg);
-        assert!(!dest.exists(), "undo 移除归档");
+        assert!(
+            !tmp.path().join("out.zip.md5").exists(),
+            "第一次 undo 移除校验"
+        );
+        undo_last(&mut state, &mut msg);
+        assert!(!dest.exists(), "第二次 undo 移除归档");
     }
 
     #[test]
@@ -7936,9 +8220,13 @@ mod tests {
         assert!(exec_command_impl(&mut state, "archive tar.zst x.tar.zst").is_err());
         // 1 参数但扩展名不可推断。
         assert!(exec_command_impl(&mut state, "archive out.rar").is_err());
-        // 无参 / 参数过多。
-        assert!(exec_command_impl(&mut state, "archive").is_err());
+        // 无参 → M25-4 对话框（Ok）；3 参非 checksum / 4+ 参 → Err。
+        assert!(matches!(
+            exec_command_impl(&mut state, "archive"),
+            Ok(ExecOutcome::ShowArchiveDialog { .. })
+        ));
         assert!(exec_command_impl(&mut state, "archive zip a b").is_err());
+        assert!(exec_command_impl(&mut state, "archive zip a b c").is_err());
         // 同名已存在报错不覆盖。
         fs::write(tmp.path().join("dup.zip"), "old").unwrap();
         state.active_tab_mut().cursor = 0;
@@ -7949,6 +8237,230 @@ mod tests {
         state.active_tab_mut().tags.insert("ghost.txt".to_owned());
         assert!(exec_command_impl(&mut state, "archive zip ghost.zip").is_err());
         assert!(!tmp.path().join("ghost.zip").exists(), "失败无半成品");
+    }
+
+    // ── M25-4：归档对话框与校验文件 ──────────────────────────────────────────
+
+    #[test]
+    fn m254_checksum_parse_ext_and_write() {
+        assert_eq!(ops::Checksum::parse("md5"), Some(ops::Checksum::Md5));
+        assert_eq!(ops::Checksum::parse("sha256"), Some(ops::Checksum::Sha256));
+        assert_eq!(ops::Checksum::parse("none"), Some(ops::Checksum::None));
+        assert_eq!(ops::Checksum::parse("sha1"), None);
+        let tmp = TempDir::new().unwrap();
+        let f = tmp.path().join("data.bin");
+        fs::write(&f, b"AAA").unwrap();
+        // md5 默认：md5sum 兼容行 "<hex>  <名>"。
+        let c = ops::write_checksum(&f, ops::Checksum::Md5)
+            .unwrap()
+            .unwrap();
+        assert_eq!(c, tmp.path().join("data.bin.md5"));
+        let hex = ops::digest_hex(&f, ops::Checksum::Md5).unwrap();
+        assert_eq!(hex.len(), 32);
+        assert_eq!(
+            fs::read_to_string(&c).unwrap(),
+            format!("{hex}  data.bin\n"),
+            "md5sum -c 兼容行"
+        );
+        // sha256 → 64 位 hex + .sha256。
+        let c2 = ops::write_checksum(&f, ops::Checksum::Sha256)
+            .unwrap()
+            .unwrap();
+        assert!(c2.to_string_lossy().ends_with(".sha256"));
+        assert_eq!(
+            ops::digest_hex(&f, ops::Checksum::Sha256).unwrap().len(),
+            64
+        );
+        // none → 不生成。
+        assert_eq!(ops::write_checksum(&f, ops::Checksum::None).unwrap(), None);
+    }
+
+    #[test]
+    fn m254_exec_archive_checksum_arg_and_config() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().cursor = 0;
+        // 显式 sha256。
+        assert!(exec_command_impl(&mut state, "archive zip c1.zip checksum=sha256").is_ok());
+        assert!(tmp.path().join("c1.zip").exists());
+        assert!(tmp.path().join("c1.zip.sha256").exists());
+        // none 不生成。
+        assert!(exec_command_impl(&mut state, "archive zip c2.zip checksum=none").is_ok());
+        assert!(tmp.path().join("c2.zip").exists());
+        assert!(!tmp.path().join("c2.zip.md5").exists());
+        // 缺省（[archive] checksum 默认 md5）。
+        assert!(exec_command_impl(&mut state, "archive zip c3.zip").is_ok());
+        assert!(tmp.path().join("c3.zip.md5").exists());
+        // 非法 checksum 值。
+        assert!(exec_command_impl(&mut state, "archive zip c4.zip checksum=md4").is_err());
+        // 双重撤销：校验文件与归档各自可逆（LIFO——先校验后归档）。
+        let mut msg = None;
+        undo_last(&mut state, &mut msg);
+        undo_last(&mut state, &mut msg);
+        assert!(
+            !tmp.path().join("c3.zip.md5").exists(),
+            "第一次 undo 移除校验"
+        );
+        assert!(!tmp.path().join("c3.zip").exists(), "第二次 undo 移除归档");
+    }
+
+    #[test]
+    fn m254_dialog_keys_flow() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().cursor = 0;
+        let mut input = "out".to_owned();
+        let mut field = 0usize;
+        let mut format_idx = 0usize;
+        let mut checksum_idx = 0usize;
+        let mut msg = None;
+        // 名称字段：字符输入 / 退格；名称字段外字符忽略。
+        assert_eq!(
+            handle_archive_dialog_key(
+                &mut state,
+                &mut input,
+                &mut field,
+                &mut format_idx,
+                &mut checksum_idx,
+                KeyCode::Char('x'),
+                &mut msg
+            ),
+            ArchiveDialogOutcome::None
+        );
+        assert_eq!(input, "outx");
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Backspace,
+            &mut msg,
+        );
+        assert_eq!(input, "out");
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Char('x'),
+            &mut msg,
+        );
+        // Tab 切字段 → 格式；空格循环 zip→tar；← 反向回 zip。
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Tab,
+            &mut msg,
+        );
+        assert_eq!(field, 1);
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Char(' '),
+            &mut msg,
+        );
+        assert_eq!(format_idx, 1, "空格循环格式");
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Left,
+            &mut msg,
+        );
+        assert_eq!(format_idx, 0, "← 反向循环");
+        // Enter 执行（tar 格式 → out.tar 创建，Exec 关闭）。
+        handle_archive_dialog_key(
+            &mut state,
+            &mut input,
+            &mut field,
+            &mut format_idx,
+            &mut checksum_idx,
+            KeyCode::Char(' '),
+            &mut msg,
+        );
+        assert_eq!(
+            handle_archive_dialog_key(
+                &mut state,
+                &mut input,
+                &mut field,
+                &mut format_idx,
+                &mut checksum_idx,
+                KeyCode::Enter,
+                &mut msg
+            ),
+            ArchiveDialogOutcome::Exec
+        );
+        // 名称在名称字段曾再追加一个 x（outx）→ 产物 outx.tar。
+        assert!(tmp.path().join("outx.tar").exists());
+        // Esc 关闭；空名称 → 错误提示留在对话框。
+        assert_eq!(
+            handle_archive_dialog_key(
+                &mut state,
+                &mut input,
+                &mut field,
+                &mut format_idx,
+                &mut checksum_idx,
+                KeyCode::Esc,
+                &mut msg
+            ),
+            ArchiveDialogOutcome::Close
+        );
+        let mut empty = String::new();
+        assert_eq!(
+            handle_archive_dialog_key(
+                &mut state,
+                &mut empty,
+                &mut field,
+                &mut format_idx,
+                &mut checksum_idx,
+                KeyCode::Enter,
+                &mut msg
+            ),
+            ArchiveDialogOutcome::None
+        );
+        assert!(msg.as_deref().unwrap().contains("名称不能为空"));
+    }
+
+    #[test]
+    fn m254_exec_noargs_opens_dialog_prefilled() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.active_tab_mut().cursor = 0;
+        match exec_command_impl(&mut state, "archive") {
+            Ok(ExecOutcome::ShowArchiveDialog { input }) => assert_eq!(input, "a.txt"),
+            other => panic!("expected ShowArchiveDialog, got {other:?}"),
+        }
+        // 无条目 → 空名称。
+        let tmp2 = TempDir::new().unwrap();
+        let mut s2 = AppState::new(Tab::from_physical(tmp2.path(), Config::default()).unwrap());
+        match exec_command_impl(&mut s2, "archive") {
+            Ok(ExecOutcome::ShowArchiveDialog { input }) => assert_eq!(input, ""),
+            other => panic!("expected ShowArchiveDialog, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m254_archive_config_checksum() {
+        // 缺省 md5；显式 sha256/none 生效。
+        let cfg: config::Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.archive.checksum, "md5");
+        let cfg2: config::Config = toml::from_str("[archive]\nchecksum = \"sha256\"\n").unwrap();
+        assert_eq!(cfg2.archive.checksum, "sha256");
+        let cfg3: config::Config = toml::from_str("[archive]\nchecksum = \"none\"\n").unwrap();
+        assert_eq!(cfg3.archive.checksum, "none");
     }
 
     #[test]

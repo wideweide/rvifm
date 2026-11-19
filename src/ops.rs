@@ -418,6 +418,90 @@ pub fn create_archive(
     })
 }
 
+/// 校验文件类型（M25-4；md5 默认。md5sum/sha256sum 兼容行格式
+/// `<hex>  <文件名>`，`md5sum -c` / `sha256sum -c` 可直接校验）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Checksum {
+    Md5,
+    Sha256,
+    None,
+}
+
+impl Checksum {
+    /// 从配置/参数值解析（`[archive] checksum` 与 `checksum=` 参数同源）。
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "md5" => Some(Checksum::Md5),
+            "sha256" => Some(Checksum::Sha256),
+            "none" => Some(Checksum::None),
+            _ => None,
+        }
+    }
+
+    /// 校验文件扩展名（None → None，不生成文件）。
+    pub fn ext(self) -> Option<&'static str> {
+        match self {
+            Checksum::Md5 => Some("md5"),
+            Checksum::Sha256 => Some("sha256"),
+            Checksum::None => None,
+        }
+    }
+}
+
+/// 计算文件摘要十六进制串（M25-4；64KiB 分块喂入防大文件占内存）。
+pub fn digest_hex(path: &Path, kind: Checksum) -> std::io::Result<String> {
+    use md5::Digest as _;
+    use std::io::Read as _;
+    let mut file = fs::File::open(path)?;
+    let hex =
+        |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect::<String>() };
+    let mut buf = vec![0u8; 64 * 1024];
+    match kind {
+        Checksum::Md5 => {
+            let mut h = md5::Md5::new();
+            loop {
+                let n = file.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                h.update(&buf[..n]);
+            }
+            Ok(hex(&h.finalize()))
+        }
+        Checksum::Sha256 => {
+            let mut h = sha2::Sha256::new();
+            loop {
+                let n = file.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                h.update(&buf[..n]);
+            }
+            Ok(hex(&h.finalize()))
+        }
+        Checksum::None => Ok(String::new()),
+    }
+}
+
+/// 生成校验文件 `<归档名>.<ext>`（M25-4）。返回校验文件路径
+/// （[`Checksum::None`] → None）。失败时调用方已持有归档的撤销记录。
+pub fn write_checksum(path: &Path, kind: Checksum) -> std::io::Result<Option<PathBuf>> {
+    let Some(ext) = kind.ext() else {
+        return Ok(None);
+    };
+    let hex = digest_hex(path, kind)?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut cpath = path.to_string_lossy().into_owned();
+    cpath.push('.');
+    cpath.push_str(ext);
+    let cpath = PathBuf::from(cpath);
+    fs::write(&cpath, format!("{hex}  {name}\n"))?;
+    Ok(Some(cpath))
+}
+
 /// zip 打包（zip crate deflate；目录递归、软链接 add_symlink）。
 fn pack_zip(dest: &Path, sources: &[(String, PathBuf)]) -> std::io::Result<()> {
     let file = fs::File::create(dest)?;

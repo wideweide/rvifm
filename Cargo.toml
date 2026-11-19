@@ -19,6 +19,9 @@ flate2 = "1.1.11"
 hmac = "0.13"
 sha1 = "0.11"
 base64ct = "1.8"
+# M25-4：归档校验文件（md5 默认 / sha256 可选；RustCrypto 系纯 Rust，与 sha1 同 digest 核心）。
+md-5 = "0.11"
+sha2 = "0.11"
 ignore = "0.4.34"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # M21-F1：底部详情/属性列的时间格式化（本地时区；已在依赖树中，零新增传递依赖）。

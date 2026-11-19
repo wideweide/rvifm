@@ -22,6 +22,24 @@ pub struct Config {
     /// M23-4：frecency 选项（[frecency] 表）。
     #[serde(default)]
     pub frecency: FrecencyConfig,
+    /// M25-4：归档创建选项（[archive] 表）。
+    #[serde(default)]
+    pub archive: ArchiveConfig,
+}
+
+/// M25-4：[archive] 表——归档后校验文件类型（md5 默认 / sha256 / none）。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ArchiveConfig {
+    pub checksum: String,
+}
+
+impl Default for ArchiveConfig {
+    fn default() -> Self {
+        Self {
+            checksum: "md5".to_owned(),
+        }
+    }
 }
 
 /// M23-4：[frecency] 表——record 忽略模式（命中路径不写入事件）。
@@ -71,6 +89,7 @@ impl Default for Config {
             ignore_case_sort: true,
             ui: UiConfig::default(),
             frecency: FrecencyConfig::default(),
+            archive: ArchiveConfig::default(),
         }
     }
 }
