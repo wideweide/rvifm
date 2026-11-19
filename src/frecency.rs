@@ -873,19 +873,35 @@ fn replay_merge(
     map.into_values().collect()
 }
 
-/// `rvifm pick [query]`（M8-6）：stdin 读候选（每行一个路径）。
-/// stdout 为 TTY → 交互式选择器（ratatui 自绘，Esc/Ctrl-C 取消退出码 1）；
-/// stdout 非 TTY → fzf filter 语义（输出全部命中候选）。
-/// **纯只读：不写事件、不推进 tick。**
-pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
-    let initial_query = args.first().cloned().unwrap_or_default();
-    use std::io::{IsTerminal, Read as _, Write as _};
-    let mut candidates = String::new();
-    std::io::stdin().read_to_string(&mut candidates)?;
+/// AUDIT-15：`pick` 参数解析——`--topic dir|file`（与 `record` 对称，
+/// 缺省 `dir`）+ 可选位置查询词；多余位置参数报错。
+fn parse_pick_args(args: &[String]) -> std::io::Result<(String, String)> {
+    let mut topic = "dir".to_owned();
+    let mut query = String::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--topic" => {
+                topic = it
+                    .next()
+                    .ok_or_else(|| arg_err("pick: --topic 缺少值"))?
+                    .clone();
+            }
+            other => {
+                if !query.is_empty() {
+                    return Err(arg_err("pick: 多余的位置参数"));
+                }
+                query = other.to_owned();
+            }
+        }
+    }
+    Ok((topic, query))
+}
 
-    // AUDIT-1：pick 纯只读——不建表、不合并 pending、不推进任何 tick。
-    // 库缺失（无 frecency 数据）→ 空评分（AUDIT-15 细化 CLI 契约）。
-    let ranked_entries = match open_store_readonly()? {
+/// AUDIT-15：只读加载评分表——库缺失（数据目录不存在）→ 空表
+/// （全 0 分降级），不裸 `NotFound` 失败。`pick` 纯只读（AUDIT-1）。
+fn pick_ranked_entries_at(db_path: &Path) -> std::io::Result<Vec<ScoredEntry>> {
+    match open_store_readonly_at(db_path)? {
         Some(store) => {
             let snapshot = store.snapshot_all()?;
             let since = store.last_compaction()?;
@@ -893,29 +909,52 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
             let now_dir = store.type_tick("dir")?;
             let now_file = store.type_tick("file")?;
             let events = store.events_since(since)?;
-            replay(&snapshot, &events, now_dir, now_file)
+            Ok(replay(&snapshot, &events, now_dir, now_file))
         }
-        None => Vec::new(),
-    };
+        None => Ok(Vec::new()),
+    }
+}
 
-    // 候选 → 分数索引（path|topic 匹配 snapshot）。
+/// AUDIT-15：候选评分（纯函数，测试用）——每行候选按 `topic` 查分，
+/// 无对应条目 → 0.0，**不得以其他 topic 兜底**。
+fn pick_score_candidates(
+    ranked: &[ScoredEntry],
+    candidates: &str,
+    topic: &str,
+) -> Vec<(String, String, f64)> {
     let score_of = |path: &str, topic: &str| -> f64 {
-        ranked_entries
+        ranked
             .iter()
             .find(|e| e.path == path && e.topic == topic)
             .map(|e| e.score)
             .unwrap_or(0.0)
     };
+    candidates
+        .lines()
+        .filter_map(|line| {
+            let path = line.trim().replace('\\', "/");
+            if path.is_empty() {
+                None
+            } else {
+                Some((path.clone(), topic.to_owned(), score_of(&path, topic)))
+            }
+        })
+        .collect()
+}
 
-    let mut out: Vec<(String, String, f64)> = Vec::new();
-    for line in candidates.lines() {
-        let path = line.trim().replace('\\', "/");
-        if path.is_empty() {
-            continue;
-        }
-        let topic = "dir".to_owned();
-        out.push((path.clone(), topic.clone(), score_of(&path, &topic)));
-    }
+/// `rvifm pick [--topic dir|file] [query]`（M8-6；AUDIT-15 补 --topic）：
+/// stdin 读候选（每行一个路径）。
+/// stdout 为 TTY → 交互式选择器（ratatui 自绘，Esc/Ctrl-C 取消退出码 1）；
+/// stdout 非 TTY → fzf filter 语义（输出全部命中候选）。
+/// **纯只读：不写事件、不推进 tick。**
+pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
+    let (topic, initial_query) = parse_pick_args(&args)?;
+    use std::io::{IsTerminal, Read as _, Write as _};
+    let mut candidates = String::new();
+    std::io::stdin().read_to_string(&mut candidates)?;
+
+    let ranked_entries = pick_ranked_entries_at(&crate::config::frecency_db_path())?;
+    let out = pick_score_candidates(&ranked_entries, &candidates, &topic);
 
     // stdout 为 TTY → 交互式选择器；否则 fzf filter 语义。
     if !std::io::stdout().is_terminal() {
@@ -1560,6 +1599,85 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|(_, r)| r.path == "/pending/dir")
+        );
+    }
+
+    #[test]
+    fn pick_scores_by_requested_topic_without_dir_fallback() {
+        // AUDIT-15：候选按 --topic 评分；file 候选不得以 dir 分数兜底。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        {
+            let store = Store::open(&db).unwrap();
+            store.append_event(&rec("/data/proj", 1)).unwrap(); // dir
+            let mut f = rec("/data/proj/main.rs", 2);
+            f.topic = "file".to_owned();
+            f.kind = EntryKind::Open;
+            store.append_event(&f).unwrap();
+        }
+        let ranked = pick_ranked_entries_at(&db).unwrap();
+        let candidates = "/data/proj\n/data/proj/main.rs\n";
+        let as_dir = pick_score_candidates(&ranked, candidates, "dir");
+        let as_file = pick_score_candidates(&ranked, candidates, "file");
+        let dir_proj = as_dir.iter().find(|(p, ..)| p == "/data/proj").unwrap().2;
+        let dir_main = as_dir
+            .iter()
+            .find(|(p, ..)| p == "/data/proj/main.rs")
+            .unwrap()
+            .2;
+        let file_proj = as_file.iter().find(|(p, ..)| p == "/data/proj").unwrap().2;
+        let file_main = as_file
+            .iter()
+            .find(|(p, ..)| p == "/data/proj/main.rs")
+            .unwrap()
+            .2;
+        assert!(
+            dir_proj > 0.0 && dir_main == 0.0,
+            "dir 视角：目录有分、文件 0（{dir_proj}/{dir_main}）"
+        );
+        assert!(
+            file_main > 0.0 && file_proj == 0.0,
+            "file 视角：文件有分、目录 0（{file_main}/{file_proj}）"
+        );
+        assert!(as_dir.iter().all(|(_, t, _)| t == "dir"));
+        assert!(as_file.iter().all(|(_, t, _)| t == "file"));
+    }
+
+    #[test]
+    fn pick_missing_db_yields_empty_scores() {
+        // AUDIT-15：数据目录/库缺失 → 空评分表（全 0），不裸 NotFound。
+        let tmp = TempDir::new().unwrap();
+        let ranked = pick_ranked_entries_at(&tmp.path().join("none.redb")).unwrap();
+        assert!(ranked.is_empty());
+        let out = pick_score_candidates(&ranked, "/a\n/b\n", "dir");
+        assert_eq!(out.len(), 2);
+        assert!(out.iter().all(|(.., s)| *s == 0.0));
+    }
+
+    #[test]
+    fn pick_args_parse_topic_and_query() {
+        // AUDIT-15：--topic 与位置查询解析；缺省 dir；缺值/多参报错。
+        let a = |v: &[&str]| {
+            parse_pick_args(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap()
+        };
+        assert_eq!(a(&[]), ("dir".to_owned(), String::new()));
+        assert_eq!(a(&["proj"]), ("dir".to_owned(), "proj".to_owned()));
+        assert_eq!(a(&["--topic", "file"]), ("file".to_owned(), String::new()));
+        assert_eq!(
+            a(&["--topic", "file", "proj"]),
+            ("file".to_owned(), "proj".to_owned())
+        );
+        assert_eq!(
+            a(&["proj", "--topic", "file"]),
+            ("file".to_owned(), "proj".to_owned())
+        );
+        assert!(
+            parse_pick_args(&["--topic".to_owned()]).is_err(),
+            "--topic 缺值"
+        );
+        assert!(
+            parse_pick_args(&["a".to_owned(), "b".to_owned()]).is_err(),
+            "多余位置参数"
         );
     }
 

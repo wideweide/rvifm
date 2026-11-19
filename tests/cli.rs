@@ -118,3 +118,73 @@ fn askpass_without_arg_exits_two() {
         .expect("run askpass");
     assert_eq!(out.status.code(), Some(2));
 }
+
+// ── AUDIT-15：pick CLI 契约（--topic 对称评分 + 数据目录缺失降级） ──────────
+// SPEC §4.6 示例形态：`selected=$(rvifm pick --topic dir < <(fd -t d))`。
+
+use std::io::Write as _;
+use std::process::Stdio;
+
+/// 把 frecency 数据目录重定向到独立临时目录（LOCALAPPDATA / XDG_DATA_HOME
+/// 仅影响子进程，测试间互不干扰、不触宿主真实数据）。
+fn pick_command(data_root: &std::path::Path) -> Command {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_rvifm"));
+    if cfg!(windows) {
+        c.env("LOCALAPPDATA", data_root);
+    } else {
+        c.env("XDG_DATA_HOME", data_root);
+    }
+    c
+}
+
+fn run_pick(data_root: &std::path::Path, args: &[&str], stdin: &str) -> (i32, String) {
+    let mut child = pick_command(data_root)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn rvifm pick");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin piped")
+        .write_all(stdin.as_bytes())
+        .expect("write candidates");
+    let out = child.wait_with_output().expect("wait pick");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
+}
+
+#[test]
+fn pick_scores_by_topic_and_degrades_without_data_dir() {
+    // 验收②：数据目录缺失 → 空评分降级，filter 语义照常输出候选、退出 0。
+    let fresh = tempfile::tempdir().expect("tempdir");
+    let (code, stdout) = run_pick(fresh.path(), &["pick", "--topic", "dir"], "/some/dir\n");
+    assert_eq!(code, 0, "stdout: {stdout}");
+    assert!(stdout.contains("/some/dir"), "stdout: {stdout}");
+
+    // 播种：dir 事件 /data/proj + file 事件 /data/proj/main.rs。
+    let seeded = tempfile::tempdir().expect("tempdir");
+    for (topic, path) in [("dir", "/data/proj"), ("file", "/data/proj/main.rs")] {
+        let st = pick_command(seeded.path())
+            .args(["record", "--topic", topic, path])
+            .status()
+            .expect("run record");
+        assert!(st.success(), "record {topic} {path}");
+    }
+    let stdin = "/data/proj/main.rs\n/data/proj\n";
+    // 验收①③ dir 视角：目录条目排前；main.rs 无 dir 分数（0 分兜底排后）。
+    let (code, stdout) = run_pick(seeded.path(), &["pick", "--topic", "dir"], stdin);
+    assert_eq!(code, 0, "stdout: {stdout}");
+    let proj = stdout.find("/data/proj\n").expect("dir hit");
+    let main = stdout.find("/data/proj/main.rs").expect("file candidate");
+    assert!(proj < main, "dir 视角目录排前: {stdout}");
+    // 验收③ file 视角：文件条目排前，目录不得以 dir 分数兜底。
+    let (code, stdout) = run_pick(seeded.path(), &["pick", "--topic", "file"], stdin);
+    assert_eq!(code, 0, "stdout: {stdout}");
+    let main = stdout.find("/data/proj/main.rs").expect("file hit");
+    let proj = stdout.find("/data/proj\n").expect("dir candidate");
+    assert!(main < proj, "file 视角文件排前: {stdout}");
+}

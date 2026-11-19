@@ -789,9 +789,9 @@
 - [x] `m18_4_bang_routes_and_config` 不依赖宿主终端策略，且测试输出不含外部命令的 stdout。（2026-11-20：路由注入 `run_external_target_with`，成功命令改静默 `cmd /C exit 0`）
 
 ### AUDIT-15 pick CLI 契约
-- [ ] `rvifm pick --topic dir` 与 `rvifm pick --topic file` 均按对应 topic 评分；SPEC §4.6 示例可直接工作。
-- [ ] 数据目录不存在时 `pick` 正常退出（空评分或只读打开），不输出裸 `NotFound`。
-- [ ] 文件候选使用 file topic，不得以 dir 分数兜底。
+- [x] `rvifm pick --topic dir` 与 `rvifm pick --topic file` 均按对应 topic 评分；SPEC §4.6 示例可直接工作。（2026-11-20：CLI 集成测试 `pick_scores_by_topic_and_degrades_without_data_dir`）
+- [x] 数据目录不存在时 `pick` 正常退出（空评分或只读打开），不输出裸 `NotFound`。（2026-11-20：`pick_ranked_entries_at` 缺失 → 空表全 0 分）
+- [x] 文件候选使用 file topic，不得以 dir 分数兜底。（2026-11-20：`pick_scores_by_requested_topic_without_dir_fallback` 双视角断言）
 
 ### AUDIT-16 frecency 一致性
 - [ ] 配置 per-topic λ 后，手动 compaction 前后的查询排序保持一致（对照测试）。

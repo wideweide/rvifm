@@ -719,3 +719,9 @@ rvifm record  → 静默记录访问
 
 - **改动**：ci.yml `clippy` 步加 `--all-targets`（测试代码此前不在 clippy 覆盖内）；新增 `check linux target (all-targets)` 步，挂 `matrix.os == 'ubuntu-latest'`——ubuntu 上 host triple 即 `x86_64-unknown-linux-gnu`，等价原 AGENTS §6 本地门禁；Windows runner 无 linux-gnu 交叉 gcc，不挂该步。
 - **本机限制固化**：AGENTS §6 同步改为"该检查以 CI 为准，本地不再强行执行"——本机自 russh（M19-3b）起 aws-lc-sys 无法交叉构建（无 cross gcc），此前该门禁事实上已由 CI 承担（见当日 AUDIT-1 条目）。
+
+### 2026-11-20 — AUDIT-15 实现：pick CLI 契约（WHY）
+
+- **`--topic dir|file`（与 record 对称）**：原实现把所有候选硬编码为 dir topic（`score_of(path, "dir")`）——文件候选永远拿 dir 分数或 0。重构为 `parse_pick_args`（--topic + 位置查询，缺省 dir）+ `pick_score_candidates`（纯函数，按传入 topic 查分，无对应条目 0 分、不跨 topic 兜底）+ `pick_ranked_entries_at`（只读加载，库缺失 → 空表全 0 分——AUDIT-1 的 `open_store_readonly` 降级在此落成 CLI 契约）。
+- **测试分层**：单测覆盖解析/评分纯函数与缺失库降级；CLI 集成测试（tests/cli.rs）以 `LOCALAPPDATA`/`XDG_DATA_HOME` 子进程重定向数据目录，`record` 播种 dir+file 事件后断言双视角排序——宿主真实数据零接触。SPEC §4.6 示例（`rvifm pick --topic dir < <(fd -t d)`）自此真实可用。
+- **"与 AUDIT-3 的预览承诺统一"**：本任务只动评分与 CLI 契约，pick 预览留与 AUDIT-3 决定，无交叉改动。
