@@ -1538,7 +1538,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [fmt, name] => {
                     let format = ops::ArchiveFormat::parse(fmt)
-                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz / 7z）"))?;
                     let (op, names, target, base) =
                         archive_plan(state, format, name, default_checksum)?;
                     // M26-1：创建在后台线程执行（UI 不阻塞），完成回包入撤销栈。
@@ -1551,7 +1551,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [name] => {
                     let format = ops::ArchiveFormat::infer(name).ok_or_else(|| {
-                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz）".to_owned()
+                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz/7z）".to_owned()
                     })?;
                     let (op, names, target, base) =
                         archive_plan(state, format, name, default_checksum)?;
@@ -1564,7 +1564,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [fmt, name, kv] if kv.starts_with("checksum=") => {
                     let format = ops::ArchiveFormat::parse(fmt)
-                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz）"))?;
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz / 7z）"))?;
                     let checksum = ops::Checksum::parse(&kv["checksum=".len()..])
                         .ok_or_else(|| "archive: 校验类型需 md5 / sha256 / none".to_owned())?;
                     let (op, names, target, base) = archive_plan(state, format, name, checksum)?;
@@ -2674,10 +2674,13 @@ pub(crate) fn batch_rename_flow(
 }
 
 /// M25-4：归档对话框的字段/取值常量（与渲染同源）。
-pub(crate) const ARCHIVE_FORMATS: [ops::ArchiveFormat; 3] = [
+/// M26-2：对话框字段总数（名称/格式/校验）。
+pub(crate) const ARCHIVE_FIELDS_TOTAL: usize = 3;
+pub(crate) const ARCHIVE_FORMATS: [ops::ArchiveFormat; 4] = [
     ops::ArchiveFormat::Zip,
     ops::ArchiveFormat::Tar,
     ops::ArchiveFormat::TarGz,
+    ops::ArchiveFormat::SevenZ,
 ];
 pub(crate) const ARCHIVE_CHECKSUMS: [ops::Checksum; 3] = [
     ops::Checksum::Md5,
@@ -2725,25 +2728,30 @@ pub(crate) fn handle_archive_dialog_key(
             }
         }
         KeyCode::Tab | KeyCode::Down => {
-            *field = (*field + 1) % 3;
+            *field = (*field + 1) % ARCHIVE_FIELDS_TOTAL;
             ArchiveDialogOutcome::None
         }
         KeyCode::Up => {
-            *field = (*field + 2) % 3;
+            *field = (*field + ARCHIVE_FIELDS_TOTAL - 1) % ARCHIVE_FIELDS_TOTAL;
             ArchiveDialogOutcome::None
         }
         KeyCode::Right | KeyCode::Char(' ') => {
             match *field {
-                1 => *format_idx = (*format_idx + 1) % 3,
-                2 => *checksum_idx = (*checksum_idx + 1) % 3,
+                1 => *format_idx = (*format_idx + 1) % ARCHIVE_FORMATS.len(),
+                2 => *checksum_idx = (*checksum_idx + 1) % ARCHIVE_CHECKSUMS.len(),
                 _ => {} // 名称字段：空格不入名（名字不含空白）
             }
             ArchiveDialogOutcome::None
         }
         KeyCode::Left => {
             match *field {
-                1 => *format_idx = (*format_idx + 2) % 3,
-                2 => *checksum_idx = (*checksum_idx + 2) % 3,
+                1 => {
+                    *format_idx = (*format_idx + ARCHIVE_FORMATS.len() - 1) % ARCHIVE_FORMATS.len()
+                }
+                2 => {
+                    *checksum_idx =
+                        (*checksum_idx + ARCHIVE_CHECKSUMS.len() - 1) % ARCHIVE_CHECKSUMS.len()
+                }
                 _ => {}
             }
             ArchiveDialogOutcome::None
@@ -2806,6 +2814,7 @@ pub(crate) fn archive_plan(
         ops::ArchiveFormat::Zip => "zip",
         ops::ArchiveFormat::Tar => "tar",
         ops::ArchiveFormat::TarGz => "tar.gz",
+        ops::ArchiveFormat::SevenZ => "7z",
     };
     let cs_str = match checksum {
         ops::Checksum::Md5 => "md5",

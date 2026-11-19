@@ -333,14 +333,16 @@ pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<Un
     })
 }
 
-/// 归档创建格式（M25-3）。**纯 Rust 写端边界**：xz/bz2/zst 主流编码器均为
-/// C 绑定（违反零 C 编译期依赖原则），保持只读（M7-8 读端不变），创建请求
-/// 给出可读提示（WHY 见 NOTES M25 立项）。
+/// 归档创建格式（M25-3 + M26-2 扩展 7z）。**纯 Rust 写端边界**：xz/bz2/zst
+/// 主流编码器均为 C 绑定（违反零 C 编译期依赖原则），保持只读（M7-8 读端
+/// 不变），创建请求给出可读提示（WHY 见 NOTES M25 立项 / M26 立项）。
+/// 7z 编码器为纯 Rust（sevenz-rust 0.6，crates.io 核实 2026-11-19）→ M26-2 纳入。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
     Zip,
     Tar,
     TarGz,
+    SevenZ,
 }
 
 impl ArchiveFormat {
@@ -350,6 +352,7 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => ".zip",
             ArchiveFormat::Tar => ".tar",
             ArchiveFormat::TarGz => ".tar.gz",
+            ArchiveFormat::SevenZ => ".7z",
         }
     }
 
@@ -359,6 +362,7 @@ impl ArchiveFormat {
             "zip" => Some(ArchiveFormat::Zip),
             "tar" => Some(ArchiveFormat::Tar),
             "tar.gz" => Some(ArchiveFormat::TarGz),
+            "7z" => Some(ArchiveFormat::SevenZ),
             _ => None,
         }
     }
@@ -370,6 +374,8 @@ impl ArchiveFormat {
             Some(ArchiveFormat::Zip)
         } else if lower.ends_with(".tar.gz") {
             Some(ArchiveFormat::TarGz)
+        } else if lower.ends_with(".7z") {
+            Some(ArchiveFormat::SevenZ)
         } else if lower.ends_with(".tar") {
             Some(ArchiveFormat::Tar)
         } else {
@@ -406,6 +412,7 @@ pub fn create_archive(
         ArchiveFormat::Zip => pack_zip(&dest, &sources),
         ArchiveFormat::Tar => pack_tar(&dest, &sources, false),
         ArchiveFormat::TarGz => pack_tar(&dest, &sources, true),
+        ArchiveFormat::SevenZ => pack_7z(&dest, &sources),
     };
     if let Err(e) = result {
         let _ = fs::remove_file(&dest);
@@ -555,6 +562,55 @@ fn zip_err(e: zip::result::ZipError) -> std::io::Error {
 
 /// tar / tar.gz 打包（flate2 GzEncoder；目录 append_dir_all、
 /// 软链接 append_link 按链接本身收录）。
+/// 7z 编码错误 → 可读 io 错误（sevenz-rust Error 不带 io kind）。
+fn sevenz_err(e: sevenz_rust::Error) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+}
+
+/// 7z 单条目递归打包（M26-2）：目录 → `is_directory` 条目 + 子项递归；
+/// 文件/软链接 → 读内容为流（SIMPLIFIED：软链接按目标内容收录，
+/// zip 写端的"按链接本身收录"语义在 7z 写端不可表达）。
+fn pack_7z_entry<W: std::io::Write + std::io::Seek>(
+    w: &mut sevenz_rust::SevenZWriter<W>,
+    arc: String,
+    path: &Path,
+) -> std::io::Result<()> {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.is_dir() {
+        let mut e = sevenz_rust::SevenZArchiveEntry::new();
+        e.name = format!("{arc}/");
+        e.is_directory = true;
+        w.push_archive_entry(e, None::<std::io::Empty>)
+            .map_err(sevenz_err)?;
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let leaf = entry.file_name().to_string_lossy().into_owned();
+            let sub_arc = format!("{arc}/{leaf}");
+            pack_7z_entry(w, sub_arc, &entry.path())?;
+        }
+        Ok(())
+    } else {
+        // 软链接 fs::read 跟随目标（与 tar.gz 写端 read 语义一致）。
+        let data = fs::read(path)?;
+        let mut e = sevenz_rust::SevenZArchiveEntry::new();
+        e.name = arc;
+        w.push_archive_entry(e, Some(std::io::Cursor::new(data)))
+            .map_err(sevenz_err)?;
+        Ok(())
+    }
+}
+
+/// 7z 归档打包（M26-2，sevenz-rust 0.6 纯 Rust 写端；LZMA2 默认方法）。
+/// 任何失败：半成品文件由调用方清理（M20-3 教训）。
+fn pack_7z(dest: &Path, sources: &[(String, PathBuf)]) -> std::io::Result<()> {
+    let mut w = sevenz_rust::SevenZWriter::create(dest).map_err(sevenz_err)?;
+    for (name, path) in sources {
+        pack_7z_entry(&mut w, name.clone(), path)?;
+    }
+    w.finish()?; // finish 返回 io::Result（非 sevenz Error）
+    Ok(())
+}
+
 fn pack_tar(dest: &Path, sources: &[(String, PathBuf)], gzip: bool) -> std::io::Result<()> {
     let file = fs::File::create(dest)?;
     let buf = std::io::BufWriter::new(file);

@@ -961,6 +961,64 @@ fn m253_archive_tar_gz_roundtrip() {
 }
 
 #[test]
+fn m262_sevenz_create_roundtrip_and_undo() {
+    // M26-2：7z 内建创建（sevenz-rust 0.6 纯 Rust 写端）+ 读端往返一致 +
+    // 校验文件链路 + u 可逆。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "AAA").unwrap();
+    fs::create_dir(tmp.path().join("sub")).unwrap();
+    fs::write(tmp.path().join("sub/b.txt"), "BBB").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().tags.insert("a.txt".to_owned());
+    state.active_tab_mut().tags.insert("sub".to_owned());
+    let outcome = exec_command_impl(&mut state, "archive 7z out");
+    let (n, status) = run_job_from_outcome(&mut state, outcome);
+    assert!(
+        matches!(status, crate::state::JobStatus::Done { .. }),
+        "{status:?}"
+    );
+    assert_eq!(n, 2, "归档 + .md5 校验各一条撤销记录");
+    let dest = tmp.path().join("out.7z");
+    assert!(dest.exists());
+    // 读端往返：sevenz-rust 读端列出条目并核对内容。
+    // AUDIT-18 同款：读句柄在撤销前必须释放（Windows 共享冲突）。
+    let mut seen: Vec<(String, Vec<u8>)> = Vec::new();
+    {
+        let mut reader =
+            sevenz_rust::SevenZReader::open(&dest, sevenz_rust::Password::empty()).unwrap();
+        reader
+            .for_each_entries(|e, r| {
+                let mut data = Vec::new();
+                r.read_to_end(&mut data)
+                    .map_err(|e| sevenz_rust::Error::io_msg(e, "test read"))?;
+                seen.push((e.name().to_owned(), data));
+                Ok(true)
+            })
+            .unwrap();
+    }
+    let has = |n: &str| {
+        seen.iter()
+            .any(|(name, _)| name == n || name == &format!("{n}/"))
+    };
+    assert!(has("a.txt"), "names: {seen:?}");
+    assert!(has("sub"), "names: {seen:?}");
+    let b = seen
+        .iter()
+        .find(|(name, _)| name.ends_with("b.txt"))
+        .unwrap();
+    assert_eq!(b.1, b"BBB", "目录内容被打包");
+    // u 可逆（LIFO：先校验后归档）。
+    let mut msg = None;
+    undo_last(&mut state, &mut msg);
+    assert!(
+        !tmp.path().join("out.7z.md5").exists(),
+        "第一次 undo 移除校验"
+    );
+    undo_last(&mut state, &mut msg);
+    assert!(!dest.exists(), "第二次 undo 移除归档");
+}
+
+#[test]
 fn m253_archive_guards() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
