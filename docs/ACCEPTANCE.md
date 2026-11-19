@@ -823,9 +823,9 @@
 - [x] `NO_COLOR` 与无 Nerd Font 环境下布局仍正确、无乱码崩溃；README 的界面描述与实现一致。（2026-11-20：16 色回退不依赖主题/glyph；布局几何由 TestBackend 测试覆盖；README 界面段随 AUDIT-11/M26-5 同步）
 
 ### M27-3 PDF 前 1–2 页图像预览
-- [ ] `[preview] pdf_image_pages = 0` 时 PDF 仅走文本/提示路径，不生成图像。
-- [ ] `pdf_image_pages = 1` 且文本层不足（`NeedsVisual`）时，若 `exprim`/`pdftoppm`/`mutool` 可用，查看器显示第 1 页图像；工具缺失或失败时回退到文本/提示。
-- [ ] `pdf_image_pages = 2` 时生成前两页；预览区足够高时上下显示两页，不足时至少显示第 1 页并提示。
-- [ ] `pdf_prefer_image = true` 时，即使文本层可用也优先显示图像；但仍先执行文本提取（探测顺序不跳过文本层），图像失败回退到已提取文本。
-- [ ] 启用 `pdf-visual` 时优先走 `exprim`；未启用时走 `pdftoppm` → `mutool`；命令逐参数传递、不经 shell。
-- [ ] 超大输入/超页数/损坏 PDF 不 panic、不 OOM；预览切换或退出后临时图像文件被清理。
+- [x] `[preview] pdf_image_pages = 0` 时 PDF 仅走文本/提示路径，不生成图像。（2026-11-20：cached_visual_pngs pages=0 早退不写缓存；NeedsVisual+prefer 双形态测试）
+- [x] `pdf_image_pages = 1` 且文本层不足（`NeedsVisual`）时，若 `exprim`/`pdftoppm`/`mutool` 可用，查看器显示第 1 页图像；工具缺失或失败时回退到文本/提示。（2026-11-20：注入假工具生成断言 + 无工具 None 缓存回退 render_preview 文本路径；spawn 注入缺陷修正——原硬编码工具名使 ext 注入无效，见 NOTES）
+- [x] `pdf_image_pages = 2` 时生成前两页；预览区足够高时上下显示两页，不足时至少显示第 1 页并提示。（2026-11-20：Ratio(1,2) 上下布局 height≥12；pdf_overflow_note 纯函数区分"高度不足仅显示第 1 页"/"第 2 页未生成"双文案——原分支反逻辑，两页齐全高度不足时无提示）
+- [x] `pdf_prefer_image = true` 时，即使文本层可用也优先显示图像；但仍先执行文本提取（探测顺序不跳过文本层），图像失败回退到已提取文本。（2026-11-20：Text+prefer=true 生成测试；preview_pdf 先于生成调用结构保证；None 回退 render_preview 文本）
+- [x] 启用 `pdf-visual` 时优先走 `exprim`；未启用时走 `pdftoppm` → `mutool`；命令逐参数传递、不经 shell。（2026-11-20：render_page_png_with 顺序不变；假工具脚本按 $3/$5 取参成功即证逐参数传递；Command::args 无 shell）
+- [x] 超大输入/超页数/损坏 PDF 不 panic、不 OOM；预览切换或退出后临时图像文件被清理。（2026-11-20：损坏→Unavailable→None 既有测试；超页→该页失败 break 保留前页；切换 purge + 退出 cleanup 幂等测试；run 循环两退出点均接线）

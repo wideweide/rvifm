@@ -346,7 +346,7 @@
 
 - [x] M27-1 符号链接目录 l/Enter 内部进入（跟随目标判定 is_dir、保留 is_link；断链可读；目录优先/树/预览一致；见 SPEC M27-1；2026-11-20 完成）
 - [x] M27-2 vifm 风格布局与配色（默认去 pane 边框，TabLine/TopLine/StatusLine/Border/CurrLine/OtherLine；`[ui] pane_borders`；见 SPEC M27-2；2026-11-20 完成：vifm_style/vifm_fallback 16 色回退、pane_gap_area 分隔线、双模式渲染）
-- [ ] M27-3 PDF 前 1–2 页图像预览可配置（`[preview] pdf_image_pages` / `pdf_prefer_image`；失败回退文本；见 SPEC M27-3）
+- [x] M27-3 PDF 前 1–2 页图像预览可配置（`[preview] pdf_image_pages` / `pdf_prefer_image`；失败回退文本；见 SPEC M27-3；2026-11-20 完成：中断提交验证修正 spawn 注入/切换清理/提示分支 + M27-1 lstat 误判与 AUDIT-7 E0369 潜伏缺陷修复，见 NOTES）
 
 ## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
 

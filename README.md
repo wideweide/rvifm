@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.8.0 已发布；M0–M25 全部完成（marks 已随 M25-2 落地），AUDIT 整改完成（18/18），M26 归档创建扩展完成（5/5），M27 视觉对齐按序排队。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 第 1 页视觉链、`pick` 预览与 `--topic`。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.8.0 已发布；M0–M25 全部完成（marks 已随 M25-2 落地），AUDIT 整改完成（18/18），M26 归档创建扩展完成（5/5），M27 视觉对齐完成（3/3）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -161,7 +161,7 @@ Linux 与 Windows 为优先目标，macOS 尽力支持。Rust 对 `x86_64-pc-win
 ### 运行时依赖说明
 
 - **Nerd Font**：显示文件图标所需，由终端提供。
-- **PDF 预览**：文本提取内建（`pdf-inspector =1.25.2`，零配置、无外部依赖）；文本层不足时按链回退视觉渲染（`pdf-visual` feature 的 exprim → Poppler/MuPDF → 可读提示），第 1 页图像预览在查看器中已接线；均不可用时回退系统 opener。默认构建的依赖树不包含 `exprim`。
+- **PDF 预览**：文本提取内建（`pdf-inspector =1.25.2`，零配置、无外部依赖）；文本层不足时按链回退视觉渲染（`pdf-visual` feature 的 exprim → Poppler/MuPDF → 可读提示），前 1–2 页图像在查看器中已接线；均不可用时回退系统 opener。图像页数与展示优先级经 `[preview]` 表配置：`pdf_image_pages = 0|1|2`（缺省 1；0 关闭；2 = 前两页上下排列、高度不足仅显示第 1 页并提示）、`pdf_prefer_image = false|true`（缺省 false，仅文本层不足时走图像；true = 文本提取先行后仍优先展示图像，失败回退已提取文本）。默认构建的依赖树不包含 `exprim`。
 - **其余能力**（归档浏览、图片 halfblocks 回退、Office 预览、frecency）**无外部依赖**。
 
 ## 配置哲学
@@ -225,7 +225,7 @@ append_rules = [
 | M24 | 交互增强与列表规范 | 已完成 |
 | M25 | 会话持久化、归档创建与 git 集成（含 marks/bookmark） | 已完成（M25-2 marks 随 2026-11-20 整改落地） |
 | M26 | 归档创建扩展与外部工具降级 | 已确认启动 |
-| M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 首页图像） | 已确认，按序排队 |
+| M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 前 1–2 页图像） | 完成（2026-11-20） |
 | AUDIT | 评估报告整改批次（17 项 + AUDIT-18，见 docs/REVIEW.md） | ✅ 已完成（2026-11-20，18/18） |
 
 **优先保证 M0–M2 闭环**，尤其是 `u` 撤销的可逆语义。M0–M6 构成 v0.1.0 核心版本；M7–M11 是在核心可用之后逐步叠加的增强，不阻塞 v0.1.0 发布。

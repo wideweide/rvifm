@@ -129,12 +129,21 @@ fn cached_visual_pngs_with(
         PdfPreview::Text(_) if prefer_image => generate_page_pngs(path, pages, ext),
         _ => None,
     };
-    // M27-3"预览切换时清理"：换目标前删除旧临时文件（缓存整体替换）。
-    if let Ok(mut cache) = VISUAL_CACHE.lock()
-        && let Some(old) = cache.insert(key, outcome.clone())
-    {
-        for p in old.into_iter().flatten() {
-            let _ = std::fs::remove_file(p);
+    // M27-3"预览切换时清理"：查看器一次只展示一个目标——插入新 key 时
+    // 删除其它路径的临时文件并移除其缓存条目；同 key 重渲染替换旧文件。
+    if let Ok(mut cache) = VISUAL_CACHE.lock() {
+        for (k, v) in cache.iter() {
+            if k != &key {
+                for p in v.iter().flatten() {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+        }
+        cache.retain(|k, _| k == &key);
+        if let Some(old) = cache.insert(key, outcome.clone()) {
+            for p in old.into_iter().flatten() {
+                let _ = std::fs::remove_file(p);
+            }
         }
     }
     outcome
@@ -199,11 +208,12 @@ fn render_page_png_with(
         return encode_png(pixels, out_png);
     }
     // 2. 外部工具（pdftoppm → mutool，find_external_renderer 顺序保证）。
+    // 注入形态：cmd 为实际程序路径/名（测试用假工具由此生效）。
     if let Some((_name, cmd)) = ext {
         let page_no = (page + 1).to_string(); // 外部工具 1-based
         let out_stem = out_png.with_extension("");
         let spawn = if cmd == "pdftoppm" {
-            silent_command("pdftoppm").and_then(|mut c| {
+            silent_command(cmd).and_then(|mut c| {
                 c.args([
                     "-png",
                     "-f",
@@ -217,7 +227,7 @@ fn render_page_png_with(
                 .status()
             })
         } else {
-            silent_command("mutool").and_then(|mut c| {
+            silent_command(cmd).and_then(|mut c| {
                 c.args([
                     "draw",
                     "-o",
@@ -439,6 +449,38 @@ mod tests {
     use std::io::Write as _;
     use tempfile::TempDir;
 
+    /// VISUAL_CACHE 是进程级全局——缓存类测试串行化（M13-10 同款锁），
+    /// 避免 `cargo test` 并行下 cleanup/purge 互相破坏 len 断言。
+    fn cache_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 注入 ext 的第二元要求 &'static str——测试脚本路径泄漏进进程
+    /// （一次性测试进程，无回收需求）。
+    #[cfg(unix)]
+    fn leak_static(s: &str) -> &'static str {
+        Box::leak(s.to_owned().into_boxed_str())
+    }
+
+    /// 伪造 mutool（unix）：mutool 分支参数 $1=draw $2=-o $3=out_png
+    /// $4=pdf $5=页号；`fail_page2` 时页号 2 以非零退出退出。
+    /// 产物只要求"非空文件"（render_page_png_with 的成功判据），
+    /// 不要求合法 PNG——ImageEngine 解码层不在本模块测试范围。
+    #[cfg(unix)]
+    fn fake_mutool(dir: &Path, name: &str, fail_page2: bool) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let body = if fail_page2 {
+            "#!/bin/sh\n[ \"$5\" = \"2\" ] && exit 1\necho fake-png > \"$3\"\n"
+        } else {
+            "#!/bin/sh\necho fake-png > \"$3\"\n"
+        };
+        let p = dir.join(name);
+        std::fs::write(&p, body).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
     #[test]
     fn is_pdf_file_matches_extension() {
         assert!(is_pdf_file(Path::new("a/doc.pdf")));
@@ -480,6 +522,7 @@ mod tests {
         // 不跳过（AGENTS §5.5）。
         let tmp = TempDir::new().unwrap();
         let p = make_pdf(tmp.path(), "text-first.pdf", "Hello Audit2");
+        let _g = cache_lock();
         assert_eq!(cached_visual_pngs_with(&p, 1, false, None), None);
         assert!(visual_cache_len() >= 1, "结果入缓存（含失败缓存）");
     }
@@ -488,18 +531,118 @@ mod tests {
     fn cached_visual_png_needs_visual_no_tools_none_and_cached() {
         // AUDIT-2：NeedsVisual（空文本层）+ 无外部工具（注入 None）→
         // 全链失败缓存为 None（避免每帧 spawn）；二次调用命中缓存。
+        // 注：M27-3"预览切换清理"使缓存同时只保留当前目标条目，
+        // 计数断言不假设其它路径条目累积。
         let tmp = TempDir::new().unwrap();
         let p = make_pdf(tmp.path(), "scanned.pdf", "");
         assert!(matches!(preview_pdf(&p), PdfPreview::NeedsVisual));
-        let before = visual_cache_len();
+        let _g = cache_lock();
         assert_eq!(cached_visual_pngs_with(&p, 1, false, None), None);
-        assert_eq!(visual_cache_len(), before + 1, "失败结果入缓存");
+        let after_first = visual_cache_len();
+        assert!(after_first >= 1, "失败结果入缓存");
         assert_eq!(
             cached_visual_pngs_with(&p, 1, false, None),
             None,
             "二次命中缓存"
         );
-        assert_eq!(visual_cache_len(), before + 1, "缓存命中不新增条目");
+        assert_eq!(visual_cache_len(), after_first, "缓存命中不新增条目");
+    }
+
+    #[test]
+    fn cached_visual_pngs_pages_zero_disabled() {
+        // M27-3 验收：`pdf_image_pages = 0` → 仅文本/提示路径，不生成图像、
+        // 不写缓存（prefer_image 也不生效）。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "pages0.pdf", "");
+        assert!(matches!(preview_pdf(&p), PdfPreview::NeedsVisual));
+        let _g = cache_lock();
+        let before = visual_cache_len();
+        assert_eq!(cached_visual_pngs_with(&p, 0, false, None), None);
+        assert_eq!(cached_visual_pngs_with(&p, 0, true, None), None);
+        assert_eq!(visual_cache_len(), before, "pages=0 不写缓存");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_visual_pngs_two_pages_and_prefer_image_generated() {
+        // M27-3 验收：NeedsVisual + pages=2 + 工具可用 → 生成前两页 PNG；
+        // Text + prefer_image=true → 文本提取先行后仍生成图像
+        // （prefer=false 时不生成——见 text_pdf_short_circuits）。
+        let tmp = TempDir::new().unwrap();
+        let script = fake_mutool(tmp.path(), "fake-mutool-ok.sh", false);
+        let ext = Some(("mutool", leak_static(script.to_str().unwrap())));
+        let _g = cache_lock();
+        let scanned = make_pdf(tmp.path(), "scan-two.pdf", "");
+        let pngs = cached_visual_pngs_with(&scanned, 2, false, ext).expect("两页生成");
+        assert_eq!(pngs.len(), 2, "pages=2 → 两个 PNG");
+        for p in &pngs {
+            assert!(
+                p.is_file() && std::fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false),
+                "产物非空: {p:?}"
+            );
+        }
+        let texty = make_pdf(tmp.path(), "texty-prefer.pdf", "Hello M27-3");
+        let pngs2 = cached_visual_pngs_with(&texty, 1, true, ext).expect("prefer 生成");
+        assert_eq!(pngs2.len(), 1);
+        cleanup_visual_temps();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_visual_pngs_second_page_failure_keeps_first() {
+        // M27-3 验收：第 2 页渲染失败（工具非零退出）→ 保留第 1 页
+        // （"至少显示第 1 页"），不 panic。
+        let tmp = TempDir::new().unwrap();
+        let script = fake_mutool(tmp.path(), "fake-mutool-fail2.sh", true);
+        let ext = Some(("mutool", leak_static(script.to_str().unwrap())));
+        let _g = cache_lock();
+        let scanned = make_pdf(tmp.path(), "scan-fail2.pdf", "");
+        let pngs = cached_visual_pngs_with(&scanned, 2, false, ext).expect("第 1 页保留");
+        assert_eq!(pngs.len(), 1);
+        assert!(pngs[0].is_file());
+        cleanup_visual_temps();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_visual_temps_removes_files_and_clears_cache() {
+        // M27-3 验收：退出清理——缓存登记的全部临时 PNG 删除、缓存清空；
+        // 幂等（二次清理不 panic）。
+        let tmp = TempDir::new().unwrap();
+        let script = fake_mutool(tmp.path(), "fake-mutool-clean.sh", false);
+        let ext = Some(("mutool", leak_static(script.to_str().unwrap())));
+        let _g = cache_lock();
+        let scanned = make_pdf(tmp.path(), "scan-clean.pdf", "");
+        let pngs = cached_visual_pngs_with(&scanned, 2, false, ext).expect("生成");
+        assert_eq!(pngs.len(), 2);
+        assert!(visual_cache_len() >= 1);
+        cleanup_visual_temps();
+        assert_eq!(visual_cache_len(), 0, "缓存清空");
+        for p in &pngs {
+            assert!(!p.exists(), "临时 PNG 已删除: {p:?}");
+        }
+        cleanup_visual_temps();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_visual_pngs_switch_purges_previous_target_temps() {
+        // M27-3 验收：预览切换清理——A → B 时 A 的临时文件删除、A 缓存
+        // 条目移除（再次预览 A 重新生成）。
+        let tmp = TempDir::new().unwrap();
+        let script = fake_mutool(tmp.path(), "fake-mutool-switch.sh", false);
+        let ext = Some(("mutool", leak_static(script.to_str().unwrap())));
+        let _g = cache_lock();
+        let a = make_pdf(tmp.path(), "switch-a.pdf", "");
+        let b = make_pdf(tmp.path(), "switch-b.pdf", "");
+        let pngs_a = cached_visual_pngs_with(&a, 1, false, ext).expect("A 生成");
+        assert!(pngs_a[0].exists());
+        let pngs_b = cached_visual_pngs_with(&b, 1, false, ext).expect("B 生成");
+        assert!(pngs_b[0].exists());
+        assert!(!pngs_a[0].exists(), "切换后 A 的临时文件已清理");
+        let pngs_a2 = cached_visual_pngs_with(&a, 1, false, ext).expect("A 重新生成");
+        assert!(pngs_a2[0].exists(), "重生成产物存在");
+        cleanup_visual_temps();
     }
 
     #[test]

@@ -977,9 +977,13 @@ impl Tab {
                     .filter_map(|e| {
                         let ft = e.file_type().ok()?;
                         let is_link = ft.is_symlink();
-                        // M27-1：符号链接跟随目标判定目录（同 load_entries）。
+                        // M27-1：符号链接跟随目标判定目录（同 load_entries；
+                        // path 版 std::fs::metadata 穿越，e.metadata() 是
+                        // lstat——M27-3 验证修正）。
                         let is_dir = if is_link {
-                            e.metadata().map(|m| m.is_dir()).unwrap_or(false)
+                            std::fs::metadata(e.path())
+                                .map(|m| m.is_dir())
+                                .unwrap_or(false)
                         } else {
                             ft.is_dir()
                         };
@@ -1544,11 +1548,15 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
         let entry = entry?;
         let ft = entry.file_type()?;
         let is_link = ft.is_symlink();
-        // M27-1：符号链接跟随目标判定目录（file_type 是 lstat，link-to-dir
-        // 会误判为文件）——`l`/Enter 进入目标目录而非误开系统程序；
-        // 断链（目标不存在）回退链接自身语义（is_dir=false，列表不失败）。
+        // M27-1：符号链接跟随目标判定目录（file_type/DirEntry::metadata 均
+        // 是 lstat 语义、不穿越链接——link-to-dir 会误判为文件，M27-3 验证
+        // 修正为 path 版 std::fs::metadata 穿越）——`l`/Enter 进入目标目录
+        // 而非误开系统程序；断链（目标不存在）回退链接自身语义
+        // （is_dir=false，列表不失败）。
         let is_dir = if is_link {
-            entry.metadata().map(|m| m.is_dir()).unwrap_or(false)
+            std::fs::metadata(entry.path())
+                .map(|m| m.is_dir())
+                .unwrap_or(false)
         } else {
             ft.is_dir()
         };
@@ -1557,10 +1565,10 @@ fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
         if !config.show_hidden && name.starts_with('.') {
             continue;
         }
-        // 跟随目标取元数据；断链回退链接自身（列表加载不受断链影响）。
-        let meta = entry
-            .metadata()
-            .or_else(|_| std::fs::symlink_metadata(entry.path()))?;
+        // 跟随目标取元数据（path 版穿越链接）；断链回退链接自身
+        // （列表加载不受断链影响）。
+        let meta =
+            std::fs::metadata(entry.path()).or_else(|_| std::fs::symlink_metadata(entry.path()))?;
         let size = meta.len();
         let perm = perm_string(&meta);
         let mtime = meta

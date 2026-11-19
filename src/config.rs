@@ -480,6 +480,30 @@ append_rules = [
     }
 
     #[test]
+    fn preview_table_parse_and_defaults() {
+        // M27-3：[preview] 表解析——pdf_image_pages / pdf_prefer_image；
+        // 缺省 1 / false（NeedsVisual 才走图像）。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[preview]\npdf_image_pages = 2\npdf_prefer_image = true\n",
+        )
+        .unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.preview.pdf_image_pages, 2);
+        assert!(cfg.preview.pdf_prefer_image);
+
+        let tmp2 = TempDir::new().unwrap();
+        let path2 = tmp2.path().join("config.toml");
+        std::fs::write(&path2, "[ui]\nterminal_in_new_window = false\n").unwrap();
+        let cfg2 = load_from(&path2).unwrap();
+        assert_eq!(cfg2.preview, PreviewConfig::default());
+        assert_eq!(cfg2.preview.pdf_image_pages, 1);
+        assert!(!cfg2.preview.pdf_prefer_image);
+    }
+
+    #[test]
     fn keymap_seq_timeout_parses_with_default() {
         // AUDIT-6：[keymap] seq_timeout_ms 可配置；缺省 500。
         let tmp = TempDir::new().unwrap();

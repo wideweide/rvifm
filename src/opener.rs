@@ -529,7 +529,10 @@ mod tests {
         // 缺失时报错——仅断言返回形态，不断言成功）。
         let r = open_with_layers(&layers, &defs, Path::new("/w/notes.md"));
         #[cfg(unix)]
-        assert!(r.is_err() || r == Ok(None), "系统 opener 结果: {r:?}");
+        // io::Error 无 PartialEq——断言形态用模式匹配（M27-3 修正：
+        // 原 `r == Ok(None)` 在 Linux 下无法编译，Windows 门禁不编译
+        // cfg(unix) 测试代码故未发现，M12-2 教训再现）。
+        assert!(!matches!(r, Ok(Some(_))), "系统 opener 结果: {r:?}");
         #[cfg(not(unix))]
         let _ = r;
     }

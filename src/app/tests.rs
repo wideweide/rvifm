@@ -8095,10 +8095,30 @@ fn m271_symlink_dir_follows_target_and_broken_link_degrades() {
         .position(|i| i.name == "broken")
         .unwrap();
     state.active_tab_mut().cursor = idx;
+    // 手工置 location 等价 navigate_to 的状态复位——清 `..` 行标记
+    // （enter_selected 进入目录后落在 `..` 行，FEAT-2；生产路径由
+    // navigate_to/return_parent 维护，测试直改 location 须自行同步）。
+    state.active_tab_mut().on_parent_row = false;
     let mut msg = None;
     open_selected(&mut state, &mut msg);
     assert!(
         msg.as_deref().map(|m| !m.is_empty()).unwrap_or(false),
         "断链给出可读提示: {msg:?}"
+    );
+}
+
+#[test]
+fn m273_pdf_overflow_note_variants() {
+    // M27-3：pages=2 未进两页布局时的底部说明——两页齐全=高度不足；
+    // 仅第 1 页=未生成；pages<2 无说明。
+    assert_eq!(preview::pdf_overflow_note(1, 0), None);
+    assert_eq!(preview::pdf_overflow_note(0, 2), None);
+    assert_eq!(
+        preview::pdf_overflow_note(2, 2),
+        Some("（预览区高度不足，仅显示第 1 页）")
+    );
+    assert_eq!(
+        preview::pdf_overflow_note(2, 1),
+        Some("（第 2 页未生成：文档仅 1 页或第 2 页渲染失败）")
     );
 }
