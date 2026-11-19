@@ -16,6 +16,19 @@ fn run_flag(flag: &str) -> (i32, String, String) {
 }
 
 #[test]
+fn rv_alias_binary_prints_version_and_exits_zero() {
+    // MISC-1：`rv` 短别名与 `rvifm` 同源（同一 main.rs）——冒烟只验
+    // `--version` 形态一致，不进入交互模式（AGENTS §7）。
+    let output = Command::new(env!("CARGO_BIN_EXE_rv"))
+        .arg("--version")
+        .output()
+        .expect("rv 二进制可启动");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rvifm"), "版本输出: {stdout}");
+}
+
+#[test]
 fn version_flag_prints_version_and_exits_zero() {
     let (code, stdout, stderr) = run_flag("--version");
     assert_eq!(code, 0);

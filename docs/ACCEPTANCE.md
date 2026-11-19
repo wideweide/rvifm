@@ -829,3 +829,11 @@
 - [x] `pdf_prefer_image = true` 时，即使文本层可用也优先显示图像；但仍先执行文本提取（探测顺序不跳过文本层），图像失败回退到已提取文本。（2026-11-20：Text+prefer=true 生成测试；preview_pdf 先于生成调用结构保证；None 回退 render_preview 文本）
 - [x] 启用 `pdf-visual` 时优先走 `exprim`；未启用时走 `pdftoppm` → `mutool`；命令逐参数传递、不经 shell。（2026-11-20：render_page_png_with 顺序不变；假工具脚本按 $3/$5 取参成功即证逐参数传递；Command::args 无 shell）
 - [x] 超大输入/超页数/损坏 PDF 不 panic、不 OOM；预览切换或退出后临时图像文件被清理。（2026-11-20：损坏→Unavailable→None 既有测试；超页→该页失败 break 保留前页；切换 purge + 退出 cleanup 幂等测试；run 循环两退出点均接线）
+
+## MISC — 杂项定稿（见 SPEC §6.1）
+
+### MISC-1 rv 短别名二进制
+- [x] `rv` 二进制与 `rvifm` 并存、行为完全一致（同一 `src/main.rs`）；`--version` 冒烟通过。（2026-11-20：Cargo 双 `[[bin]]`，rv `test=false` 避免双份单测；`CARGO_BIN_EXE_rv` 冒烟测试）
+- [x] 发布归档包含双二进制。（2026-11-20：ci.yml release 矩阵 `binaries: rvifm rv`（windows 含 .exe），tar 打包同步）
+- [x] README 说明 rv 别名；项目名/crate 名/主二进制名仍为 `rvifm`。（2026-11-20：快速开始/二进制布局/运行段三处）
+- [x] 默认依赖树不变（无新增 crate；`cargo tree` 无 exprim）。（2026-11-20）

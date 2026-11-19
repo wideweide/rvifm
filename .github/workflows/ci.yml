@@ -91,15 +91,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             archive: rvifm-${{ github.ref_name }}-linux-x64-musl.tar.gz
-            binary: rvifm
+            binaries: rvifm rv
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             archive: rvifm-${{ github.ref_name }}-linux-x64-gnu.tar.gz
-            binary: rvifm
+            binaries: rvifm rv
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: rvifm-${{ github.ref_name }}-windows-x64.tar.gz
-            binary: rvifm.exe
+            binaries: rvifm.exe rv.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          tar czf dist/${{ matrix.archive }} -C target/${{ matrix.target }}/release ${{ matrix.binary }}
+          tar czf dist/${{ matrix.archive }} -C target/${{ matrix.target }}/release ${{ matrix.binaries }}
       - name: create GitHub Release
         shell: bash
         env:

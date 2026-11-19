@@ -47,6 +47,19 @@ sevenz-rust = "0.6"
 [features]
 pdf-visual = ["dep:exprim"]
 
+# MISC-1：`rv` 短别名——与 `rvifm` 同一 `src/main.rs`，行为完全一致；
+# 项目名/crate 名/主二进制名仍为 `rvifm`（AGENTS §5.1）。
+[[bin]]
+name = "rvifm"
+path = "src/main.rs"
+
+[[bin]]
+name = "rv"
+path = "src/main.rs"
+# 同一 main.rs——单元测试只随主二进制跑一次（避免双份测试时间）。
+test = false
+bench = false
+
 [dev-dependencies]
 tempfile = "3.27.0"
 

@@ -109,7 +109,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 ```text
 ┌─────────────────────────────────────────────┐
 │                  rvifm (binary)             │
-│  rvifm          → 文件管理器 TUI             │
+│  rvifm / rv    → 文件管理器 TUI（rv 为短别名）│
 │  rvifm pick     → 只读模糊选择器              │
 │  rvifm record   → 静默记录访问事件            │
 └─────────────────────────────────────────────┘
@@ -137,7 +137,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ## 快速开始
 
-> `cargo install rvifm` 可直接安装发布版本，本地开发用 `cargo run`。
+> `cargo install rvifm` 可直接安装发布版本（同时安装 `rvifm` 与短别名 `rv` 两个二进制），本地开发用 `cargo run`。
 
 ```bash
 # 构建
@@ -145,7 +145,7 @@ git clone https://github.com/wideweide/rvifm
 cd rvifm
 cargo build --release
 
-# 运行
+# 运行（`rv` 为等价短别名，行为与 rvifm 完全一致）
 ./target/release/rvifm
 
 # 帮助（应用内）

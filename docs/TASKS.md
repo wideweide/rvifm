@@ -352,7 +352,7 @@
 
 - [x] PROC-1 预算门控与断点落地协议（已写入 AGENTS §3 + ACCEPTANCE §1；无代码改动；用户 2026-11-19 复核蒸馏准确性后确认生效）
 
-- [ ] MISC-1 提供 `rv` 短别名二进制（与 `rvifm` 并存；项目名/crate/主二进制名不变；Cargo `[[bin]]` + 安装产物 + README 说明）
+- [x] MISC-1 提供 `rv` 短别名二进制（与 `rvifm` 并存；项目名/crate/主二进制名不变；Cargo `[[bin]]` + 安装产物 + README 说明；2026-11-20 完成：双 [[bin]] 同 main.rs、rv test=false、CI 归档双二进制、冒烟测试）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
