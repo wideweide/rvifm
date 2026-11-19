@@ -790,4 +790,5 @@ rvifm record  → 静默记录访问
 - **触发**：任务列表全部完成（M0–M27、AUDIT、M26、M27、MISC-1）——按 AGENTS §3 自动发布条款执行，不等待人工决策。
 - **归档内容变化**：0.9.0 起 release 归档含双二进制（`rvifm` + `rv`，MISC-1）——旧脚本/文档若只引用 `rvifm` 不受影响，`rv` 为等价别名。
 - **平台边界**：crates.io 凭据仅在 Windows 机器（M8-13 起口径）——本机（Linux）只做 bump/tag/GitHub Release；crates.io publish 待 Windows 侧执行后补 `release: 0.9.0 verified` 记录。
-- **发布失败处置**：沿用既有口径——CI release job 失败则 tag 重指向修复提交强推重跑。
+- **发布失败处置（已触发）**：首推 release 三 job 全数失败于 smoke 步——MISC-1 双 `[[bin]]` 后裸 `cargo run` 因目标歧义报错（"could not determine which binary to run"）；`--bin rvifm` 显式指明后 tag 重指向强推重跑。教训：新增第二 bin target 时，所有 `cargo run` 类步骤都要复查目标歧义。
+- **tag 重指向**：`git tag -f v0.9.0 <fix> && git push -f origin v0.9.0`（远端 tag 触发的 run 以重指向后的 commit 为准）。

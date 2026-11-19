@@ -113,7 +113,7 @@ jobs:
       - name: build --release
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: smoke --version
-        run: cargo run --release --locked --target ${{ matrix.target }} -- --version
+        run: cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
       - name: archive
         shell: bash
         run: |
