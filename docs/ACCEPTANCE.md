@@ -773,7 +773,7 @@
 ### AUDIT-9 CI 门禁增强
 - [x] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。（2026-11-20：ci.yml 增补两步；cross-check 挂 `matrix.os == 'ubuntu-latest'`——host triple 即该 target，Windows runner 无 linux-gnu 交叉 gcc）
 ### AUDIT-10 重复实现统一
-- [ ] glob 匹配与配置失败回退各只保留一份实现，行为测试通过（含 `*x*` 双星模式）。
+- [x] glob 匹配与配置失败回退各只保留一份实现，行为测试通过（含 `*x*` 双星模式）。（2026-11-20：opener 规则名匹配改走 `tab::glob_match`（M4-2/M23-4 同源单一实现，递归语义天然支持双星），`*ma*`/`*ai*n*`/`?` 行为测试）
 ### AUDIT-11 帮助同步
 - [ ] `help.txt` 含 `:find` / `:grep` 等已实现命令；README 的 keymap 路径、marks/主题/opener 状态与实现一致。
 ### AUDIT-12 测试补强

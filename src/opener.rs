@@ -182,7 +182,7 @@ fn rule_matches(rule: &OpenRule, mime: &str, name: &str) -> bool {
         return true;
     }
     if let Some(n) = &rule.name
-        && glob_match_simple(n, name)
+        && crate::tab::glob_match(n, name)
     {
         return true;
     }
@@ -297,24 +297,6 @@ pub fn open_with_layers(
     Err(last_err.unwrap_or_else(|| std::io::Error::other("无可用打开方式")))
 }
 
-/// 简化 glob 匹配（`*` 通配符，不区分大小写）。
-/// 已知缺陷（AUDIT-10 整改）：`*x*` 双星模式因 `strip_prefix` 分支先返回
-/// 而退化为 `ends_with("x*")` 永假；本任务（AUDIT-7）不改匹配语义。
-fn glob_match_simple(pattern: &str, name: &str) -> bool {
-    let p = pattern.to_lowercase();
-    let n = name.to_lowercase();
-    if let Some(prefix) = p.strip_suffix('*') {
-        return n.starts_with(prefix);
-    }
-    if let Some(suffix) = p.strip_prefix('*') {
-        return n.ends_with(suffix);
-    }
-    if p.starts_with('*') && p.ends_with('*') && p.len() > 1 {
-        return n.contains(&p[1..p.len() - 1]);
-    }
-    p == n
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,14 +316,22 @@ mod tests {
     }
 
     #[test]
-    fn glob_match_simple_patterns() {
-        assert!(glob_match_simple("*.txt", "readme.txt"));
-        assert!(glob_match_simple("*.TXT", "readme.txt"));
-        assert!(glob_match_simple("Makefile", "Makefile"));
-        assert!(glob_match_simple("*.rs", "main.rs"));
-        assert!(!glob_match_simple("*.rs", "main.go"));
+    fn glob_match_patterns() {
+        // AUDIT-10：opener 规则名匹配统一走 tab::glob_match（单一实现）。
+        assert!(crate::tab::glob_match("*.txt", "readme.txt"));
+        assert!(crate::tab::glob_match("*.TXT", "readme.txt"));
+        assert!(crate::tab::glob_match("Makefile", "Makefile"));
+        assert!(crate::tab::glob_match("*.rs", "main.rs"));
+        assert!(!crate::tab::glob_match("*.rs", "main.go"));
         // 不区分大小写（Windows 文件系统惯例）。
-        assert!(glob_match_simple("Makefile", "makefile"));
+        assert!(crate::tab::glob_match("Makefile", "makefile"));
+        // AUDIT-10：`*x*` 双星模式——旧 glob_match_simple 因分支顺序
+        // 永假；统一实现（tab::glob_match 递归语义）正确命中。
+        assert!(crate::tab::glob_match("*ma*", "main.rs"));
+        assert!(crate::tab::glob_match("*ai*n*", "main.rs"));
+        assert!(!crate::tab::glob_match("*zz*", "main.rs"));
+        // `?` 单字符通配（tab::glob_match 附加能力，与 M4-2 同语义）。
+        assert!(crate::tab::glob_match("m?in.rs", "main.rs"));
     }
 
     #[test]
