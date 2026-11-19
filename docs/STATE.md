@@ -142,6 +142,7 @@
 > 本文件是中断恢复的锚点。每轮任务完成后更新；开工前先读这里，再读 [TASKS.md](TASKS.md)。
 
 # STATE —
+- `M25 批次关闭`（2026-11-19）：M25-1/3/4/5/6/7 全部完成，M25-2 marks 暂停（用户指示，恢复待指令；PLAN 标注"基本完成"）。批次验收：336 单测 + 6 集成全绿；`--version`/`--help` 冒烟通过。批次亮点：会话持久化（session.toml 退出保存/启动恢复/损坏静默降级）、归档创建（:archive zip/tar/tar.gz 纯 Rust 写端 + md5/sha256 校验文件 + 交互对话框 + u 双重可逆）、git 集成（异步状态列 + 分支/diff 摘要状态栏 + gi/:gitui 按 gitui→ziggity→lazygit 优先级打开，git CLI 零编译期依赖——M23-12 路线）、frecency 通用化评估（可行结论入 NOTES，M26 候选）。批次新增依赖：md-5 0.11 / sha2 0.11（RustCrypto 纯 Rust）。git 异步方案（pathspec 限定 + --no-optional-locks + 后台线程）回应 gitui 性能问题（分析见 NOTES）。下一批次待用户指令（frecency 通用化迁移为候选）。
 - `M25-6`（2026-11-19）：git 状态栏 + gi——状态栏 DIM span `  [branch +X -Y]`（干净/无 diff 只显分支；per-dir 异步缓存复用 M25-5 链路，git_column 关/非仓库/未就绪隐藏）；`GitDirStatus` 增 `diff_summary`（`git diff --shortstat` best-effort，`parse_shortstat` 纯函数压缩 +X/-Y/+X -Y）；`find_git_tui_in`（unix 可执行位 / Windows .exe/.bat/.cmd）+ `find_git_tui`（PATH；优先级常量 GIT_TUI_PRIORITY=gitui→ziggity→lazygit）；`Action::GitUi`（默认键 gi + run 名 gitui/git_tui）与 `:gitui` exec 臂——两路均复用 `run_external_target` 分流（terminal_in_new_window 与 :! 一致，Multiplexer 直接提示/CurrentPane 挂起 TUI 执行），全部未命中可读报错。336 单测 + 6 集成全绿（+4：shortstat 变体/PATH 优先级探测（unix 755 假二进制）/状态栏渲染/:gitui 条件守卫）。
 - `M25-5`（2026-11-19）：git 状态列（异步）——新模块 src/git.rs：`GitStatus` 7 态（porcelain 字母映射）+ `GitDirStatus{branch,entries}`（M25-6 复用 branch）+ `repo_root`（逐级 .git）+ `parse_status`（porcelain -z 纯函数：`## ` 分支行、XY 记录 NUL 分隔、rename orig 追加段跳过、untracked 目录尾 `/` 剥离；归并规则 未跟踪→冲突优先→Y 工作区优先 X 暂存兜底、双侧无映射跳过）+ `query_status`（`git --no-optional-locks status --porcelain -z -b --untracked-files=normal -- <dir>`；pathspec 限定当前目录）+ `spawn_status_query`（后台线程 + mpsc 回传，UI 不等待）。AppState 增 git_cache（dir→Some/None：None=在途或非仓库）+ git_pending + git_tx；run 循环回填 + `sync_status_trigger`（左右 pane 物理目录按需触发；非仓库记空缓存防重复探测）+ watcher 事件清缓存重查。渲染：左/右 pane 属性区内状态字符列（GIT_STATUS_WIDTH=3 占位对齐、M/D 红 A 绿 R/T 黄 ? 青 U 品红、`[ui] git_column` 默认开、树视图随属性列隐藏、name_budget 扣列宽）。332 单测 + 6 集成全绿（+4：porcelain 解析/子目录聚合/子目录前缀剥离/真实仓库 query——git 不可用自动跳过）。踩坑：X 空白的工作区变更不能先 from_code(x) 再 continue（Y 优先 X 兜底合并）；PathBuf::ends_with 是组件语义；`init -b main` 显式分支名防 master/main 环境差异。
 - `M25-4`（2026-11-19）：归档对话框与校验文件——ops.rs 增 `Checksum`（Md5/Sha256/None + parse/ext）与 `digest_hex`（64KiB 分块 read+update，md-5 0.11/sha2 0.11.1 纯 Rust 与 sha1 同 digest 核心）、`write_checksum`（`<名>.<ext>`，行格式 `<hex>  <文件名>` md5sum/sha256sum 兼容）；`[archive] checksum` 配置（默认 md5）；`archive_execute` 抽取共享（exec 臂与对话框同源，归档+校验各一条撤销记录 LIFO 双逆）；exec 臂改造——`checksum=` 第三参、无参 → `ExecOutcome::ShowArchiveDialog`（名称预填光标条目）；`InputMode::ArchiveDialog{input,field,format_idx,checksum_idx}` + `handle_archive_dialog_key`（Tab/↑↓ 切字段、←→/空格循环取值、名称字段字符输入/退格、Enter 执行空名报错留在对话框、失败留框可改）+ 居中遮罩渲染（M18-1 同款）；digest 0.11 的 hasher 无 io::Write 实现 → io::copy 改 read+update。328 单测 + 6 集成全绿（+5：checksum 写入/行格式/exec 参形式与双逆/对话框键流/无参预填/配置解析）。踩坑：PathBuf::ends_with 是路径组件语义非字符串后缀。
@@ -149,9 +150,9 @@
 - `M25-1`（2026-11-19）：会话持久化——新模块 src/session.rs：退出保存（run 两处 Quit 点，flush_visits 后/cleanup 前；失败 eprintln 不阻塞退出，GAP-2 同模式）+ 启动恢复（run 初始化后）；仅物理 Location 的 tab 入会话（左 pane Location/cursor/on_parent_row/focus + active 索引；归档/远端丢弃）；TOML 结构 `SessionFile{active,tabs[{path,cursor,on_parent_row,focus}]}`；恢复钳制——目录不存在跳过、cursor 钳到条目数、active 钳到 tab 数、on_parent_row 需 has_parent_row、全部失败保持初始会话；`[ui] session_restore` 默认开（false 不读不写）。320 单测 + 6 集成全绿（+2：roundtrip 全字段还原/损坏与远端丢弃与钳制）。
 - `M25 登记调整`（2026-11-19）：M25-2 marks 暂停（用户指示，`'` 键位归属待拍板，恢复待指令）；M25-5/6 SPEC 修订为**异步方案**（pathspec 限定当前目录 + `--no-optional-locks` + 后台线程 + per-目录缓存——回应 gitui 大仓库性能问题，分析见 NOTES）。执行顺序：1 → 3 → 4 → 5 → 6 → 7。
 - **更新时间**：2026-11-19
-- **当前阶段**：M25 会话持久化、marks、归档创建与 git 集成（执行中；M25-2 暂停）
-- **当前任务**：M25-7 frecency 通用化评估
-- **阶段状态**：M0–M24 全部关闭；M25 进行中（M25-1/3/4/5/6 完成，M25-2 暂停待指令）
+- **当前阶段**：M25 会话持久化、marks、归档创建与 git 集成（批次已关闭；M25-2 marks 暂停待指令）
+- **当前任务**：无（等待用户指令——下一批次或发布决策；frecency 通用化迁移为 M26 候选，见 NOTES M25-7 评估）
+- **阶段状态**：M0–M25 关闭（M25-2 暂停）+ v0.8.0 已发布（0.9.0/0.10.0 待发布决策）
 
 ## 已完成
 
