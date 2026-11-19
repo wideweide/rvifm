@@ -313,7 +313,7 @@
 - [ ] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6）
 - [ ] AUDIT-7 opener 整层接线（TOML 加载 + mime/name + prepend/append/rules 三层 + 命令执行；见 SPEC AUDIT-7）
 - [ ] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8）
-- [ ] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9）
+- [x] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9；2026-11-20 完成：ci.yml 双步增补，cross-check 仅 ubuntu job——host triple 即该 target）
 - [ ] AUDIT-10 统一 glob 匹配（含 opener `*x*` 缺陷）与配置失败回退实现（见 SPEC AUDIT-10）
 - [ ] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11）
 - [ ] AUDIT-12 keymap/state/session/CLI 子命令分派测试补强（见 SPEC AUDIT-12）

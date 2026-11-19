@@ -24,13 +24,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: fmt
         run: cargo fmt --check
+      # AUDIT-9：clippy 覆盖测试代码（--all-targets）。
       - name: clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: build
         run: cargo build --locked
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
       - name: check pdf-visual feature
         run: cargo check --locked --features pdf-visual
+      # AUDIT-9：Linux target cross-check 入 CI（M12-2 教训：Windows 的
+      # clippy/build 不编译 cfg(unix) 测试代码；本机自 russh 起无法构建
+      # aws-lc-sys，由 ubuntu job 承担同款检查——host triple 即该 target）。
+      - name: check linux target (all-targets)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo check --locked --target x86_64-unknown-linux-gnu --all-targets
       - name: test
         shell: bash
         run: |

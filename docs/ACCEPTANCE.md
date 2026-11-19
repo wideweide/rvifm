@@ -771,7 +771,7 @@
 ### AUDIT-8 错误上浮
 - [ ] 生产路径无新增 `unwrap/expect` panic；刷新/会话/known_hosts 权限失败有可读提示。
 ### AUDIT-9 CI 门禁增强
-- [ ] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。
+- [x] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。（2026-11-20：ci.yml 增补两步；cross-check 挂 `matrix.os == 'ubuntu-latest'`——host triple 即该 target，Windows runner 无 linux-gnu 交叉 gcc）
 ### AUDIT-10 重复实现统一
 - [ ] glob 匹配与配置失败回退各只保留一份实现，行为测试通过（含 `*x*` 双星模式）。
 ### AUDIT-11 帮助同步

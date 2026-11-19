@@ -196,7 +196,7 @@
 - `cargo clippy -- -D warnings` 通过；
 - `cargo build` 通过；
 - `cargo test` 通过；
-- 跨平台测试代码检查（2026-11-14 增补）：含 `#[cfg(unix)]`/`#[cfg(test)]` 的改动必须跑 `cargo check --target x86_64-unknown-linux-gnu --all-targets`——Windows 的 clippy/build 均不编译 cfg(unix) 测试代码，错误只会在 CI 的 Linux 端暴露（M12-2 教训）；
+- 跨平台测试代码检查（2026-11-14 增补；AUDIT-9 起由 CI ubuntu job 执行）：含 `#[cfg(unix)]`/`#[cfg(test)]` 的改动须通过 `cargo check --target x86_64-unknown-linux-gnu --all-targets`——Windows 的 clippy/build 均不编译 cfg(unix) 测试代码（M12-2 教训）；本机自 russh（M19-3b）起无法交叉构建 aws-lc-sys，该检查以 CI 为准，本地不再强行执行；
 - 程序可启动、可退出、无 panic；
 - 本任务对应的 `ACCEPTANCE.md` 条目通过；
 - `docs/TASKS.md` 与 `docs/STATE.md` 已更新。

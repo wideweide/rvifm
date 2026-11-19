@@ -714,3 +714,8 @@ rvifm record  → 静默记录访问
 - **m249（长路径截断）**：作业行断言渲染 70 列，目标串用宿主临时路径（`ADMINI~1\...\Temp\2\.tmpXXXX` ≈54 字符）拼上"取消中"后越界截断。修复：`add_job` 第三参仅作展示串、不触 fs，测试改固定短标签 `d`——断言与宿主路径彻底解耦。生产行为不变（真实长路径的覆盖层截断属 UX 打磨，不在本任务）。
 - **m253（二次 undo 不删归档）**：根因是**测试**的 `open_dispatch(&dest)`（ZipFs 持有打开的 `std::fs::File`）跨 `undo_last` 存活——Windows 上打开句柄令 `fs::remove_file` 共享冲突失败，`undo_last` 失败回推（app.rs）→ 第二次 undo 重复弹同一记录再失败；Linux 允许删打开文件故 CI 绿。修复：读句柄在撤销前 drop（作用域块）。生产删除路径本就正确（失败回推 + "撤销失败" 可读提示），无需改动。
 - **结果**：全量 `cargo test` 无 skip 全绿（328 单测 + 3 集成），`TMUX`/`STY` 设/不设双验证；STATE 门禁偏差除 Linux cross-check（本机无法构建 aws-lc-sys，CI 承担）外全部解除。
+
+### 2026-11-20 — AUDIT-9 实现：CI 门禁增强（WHY）
+
+- **改动**：ci.yml `clippy` 步加 `--all-targets`（测试代码此前不在 clippy 覆盖内）；新增 `check linux target (all-targets)` 步，挂 `matrix.os == 'ubuntu-latest'`——ubuntu 上 host triple 即 `x86_64-unknown-linux-gnu`，等价原 AGENTS §6 本地门禁；Windows runner 无 linux-gnu 交叉 gcc，不挂该步。
+- **本机限制固化**：AGENTS §6 同步改为"该检查以 CI 为准，本地不再强行执行"——本机自 russh（M19-3b）起 aws-lc-sys 无法交叉构建（无 cross gcc），此前该门禁事实上已由 CI 承担（见当日 AUDIT-1 条目）。
