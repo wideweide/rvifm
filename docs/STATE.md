@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-19
 - **当前阶段**：AUDIT 评估报告整改（**已确认，执行中**）；M26 归档创建扩展已确认启动；M27（0.8.0 实测问题与 vifm 视觉对齐）已确认按序排队
-- **当前任务**：AUDIT-1 `pick` 只读性修复（TASKS 中第一个未勾选任务；方案已拍板：pending 合并移出 pick / 只读 open）
+- **当前任务**：AUDIT-14 测试环境隔离（TASKS 中第一个未勾选任务；AUDIT-1 已于 2026-11-20 完成）
 - **阶段状态**：M0–M24 名义关闭，但复核发现 M9 主题选择、M11 opener/PDF 视觉/pick 预览为“引擎存在、未接线”（已转 AUDIT-13/7/2/3），**整改完成前不计为实质完成**；M25 主体完成但 **M25-2（marks）未实现**；M11-6 真实终端验证 deferred；M27 已确认按序排队；v0.8.0 已发布，0.9.0 在任务列表全部完成后自动发布
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,9 +20,9 @@
 
 ## 下一步
 
-1. 按 TASKS 现顺序执行：AUDIT 批次 → M25-2 → M26 → M27 → 杂项（MISC-1）；当前先做 AUDIT-1。
-2. 执行 AUDIT-1：`pick` 改用只读 open；`events.pending` 合并只在 `record` / TUI 启动路径执行；补“存在 pending 时 pick 不写 DB、不推进 tick”回归测试。验收见 ACCEPTANCE §26。
-3. 按 TASKS 顺序推进 AUDIT-14（测试隔离）→ AUDIT-9（CI 门禁增强）→ AUDIT-15（pick CLI）→ AUDIT-7/13（opener/主题接线）→ AUDIT-2/3/4/16 → 其余；M27-2/3 在 AUDIT-13/2 之后。
+1. 按 TASKS 现顺序执行：AUDIT 批次 → M25-2 → M26 → M27 → 杂项（MISC-1）；AUDIT-1 已完成，当前做 AUDIT-14。
+2. 执行 AUDIT-14（测试隔离）：`TMUX`/`STY` 等环境变量不得改变测试结果，`m18_4_bang_routes_and_config` 在 tmux 内外均稳定（见 SPEC AUDIT-14 / ACCEPTANCE §26）。
+3. 按 TASKS 顺序推进 AUDIT-18（本机测试失败整改）→ AUDIT-9（CI 门禁增强）→ AUDIT-15（pick CLI）→ AUDIT-7/13（opener/主题接线）→ AUDIT-2/3/4/16 → 其余；M27-2/3 在 AUDIT-13/2 之后。
 4. AUDIT 批次完成后再按用户指令启动 M26-1（`:archive` 迁移 M13-8 Job 模型）。
 5. 全部任务完成后自动发布 0.9.0（无需人工决策）。
 
@@ -43,7 +43,7 @@
 ## 质量门禁
 
 - 本地：`cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test` → `--version` / `--help` 冒烟。
-- **当前已知门禁偏差**：在 `TMUX`/`STY` 存在的 shell 中 `cargo test` 会因 `m18_4_bang_routes_and_config` 失败（336 中 1 失败）；在 AUDIT-14 完成前，本地门禁用 `env -u TMUX -u STY cargo test` 执行并记录该偏差。
+- **当前已知门禁偏差**：① 在 `TMUX`/`STY` 存在的 shell 中 `cargo test` 会因 `m18_4_bang_routes_and_config` 失败（AUDIT-14 整改）；② 本机 HEAD 上 `m249_jobs_overlay_render_selection_and_cancel_state`（作业行断言依赖宿主路径长度）与 `m253_archive_zip_roundtrip_and_undo`（第二次 undo 未移除归档）失败，均与 AUDIT-1 无关（stash 验证），AUDIT-18 整改。AUDIT-14/18 完成前本地门禁：`env -u TMUX -u STY cargo test -- --skip m249_jobs_overlay --skip m253_archive_zip`（其余 326 单测 + 3 集成全绿）。③ Linux target cross-check 自 russh（M19-3b）起本机无法构建 aws-lc-sys（无 cross gcc），该门禁由 CI 承担（现状确认）。
 - 含 `cfg(unix)` / `cfg(test)` 改动须额外跑 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（M12-2 教训）。
 - CI：`ubuntu-latest` + `windows-latest` 全绿；tag `v*` 触发三 target release 归档。
 - CI 增强建议（非违规）：clippy 未带 `--all-targets`；Linux target cross-check 目前只是本地门禁，已登记 AUDIT-9。

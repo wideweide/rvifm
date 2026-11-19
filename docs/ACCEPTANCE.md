@@ -754,7 +754,7 @@
 ## 26. AUDIT — 评估报告整改（AUDIT-1～17，见 SPEC AUDIT 段 / docs/REVIEW.md）
 
 ### AUDIT-1 pick 只读性
-- [ ] 存在 `events.pending` 时执行 `rvifm pick`，数据库文件 mtime 与 `meta.global_tick` 均不变。
+- [x] 存在 `events.pending` 时执行 `rvifm pick`，数据库文件 mtime 与 `meta.global_tick` 均不变。（2026-11-20：回归测试 `pick_readonly_path_leaves_pending_and_db_untouched` + `open_readonly_does_not_write_db`）
 ### AUDIT-2 PDF 视觉探测链
 - [ ] 文本提取优先；启用 `pdf-visual` 后 exprim / 外部渲染器按序回退，缺失时可读提示，不 panic。
 ### AUDIT-3 pick 预览同源
@@ -799,6 +799,10 @@
 
 ### AUDIT-17 归档读取上限
 - [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。
+
+### AUDIT-18 本机测试失败整改
+- [ ] `m249_jobs_overlay_render_selection_and_cancel_state` 在长临时路径环境（如 8.3 短名/多级 Temp）下稳定通过：作业行断言不依赖宿主路径长度。
+- [ ] `m253_archive_zip_roundtrip_and_undo` 本机复现的"第二次 undo 未移除归档"根因修复或测试修正，本机与两端 CI 均绿。
 
 ## 27. M27 — 0.8.0 实测问题与 vifm 视觉对齐（见 SPEC §27）
 

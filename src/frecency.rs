@@ -455,12 +455,33 @@ fn pending_path() -> std::path::PathBuf {
     crate::config::data_dir().join("events.pending")
 }
 
-/// 打开 frecency 存储：先合并上次降级的 pending 事件（"下次启动合并"）。
-/// TUI 跳转选择器（M8-12）复用同一只读入口。
-pub fn open_store() -> std::io::Result<Store> {
-    let store = Store::open(&crate::config::frecency_db_path())?;
-    merge_pending(&store, &pending_path())?;
-    Ok(store)
+/// 只读打开 frecency 存储（AUDIT-1）：不建表、不合并 pending、不写任何事务。
+/// `pick`（红线：纯只读）与 TUI 跳转选择器共用。
+/// 库缺失 → `Ok(None)`（调用方按空库降级：全 0 分 / 空选择器）。
+pub fn open_store_readonly() -> std::io::Result<Option<Store>> {
+    open_store_readonly_at(&crate::config::frecency_db_path())
+}
+
+/// 注入路径形态（测试用）；语义同 `open_store_readonly`。
+fn open_store_readonly_at(db_path: &Path) -> std::io::Result<Option<Store>> {
+    match Store::open_readonly(db_path) {
+        Ok(store) => Ok(Some(store)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// TUI 启动合并钩子（AUDIT-1）：把上次降级的 `events.pending` 合并进库。
+/// 合并只发生在 `record` 写路径与 TUI 启动；`pick` / 跳转选择器纯只读。
+/// 打开失败静默跳过（保留 pending，下次启动或 record 再试）。
+pub fn merge_pending_startup() {
+    let _ = merge_pending_at(&crate::config::frecency_db_path(), &pending_path());
+}
+
+/// 注入路径形态的启动合并（`merge_pending_startup` 与测试共用）。
+fn merge_pending_at(db_path: &Path, pending: &Path) -> std::io::Result<()> {
+    let store = Store::open(db_path)?;
+    merge_pending(&store, pending)
 }
 
 /// 把 `events.pending`（每行一条 JSON `EntryRecord`）合并进数据库并删除文件。
@@ -794,7 +815,9 @@ fn arg_err(msg: &'static str) -> std::io::Error {
 /// `rvifm maintenance compact`（M8-5）：合并 `last_compaction` 之后的
 /// 事件进 snapshot 表，推进标记并裁剪已合并事件。幂等：无新事件时为 no-op。
 pub fn cmd_compact() -> std::io::Result<()> {
-    let store = open_store()?;
+    // 维护写命令：读写打开（负责建表）+ 先合并降级 pending，再压实。
+    let store = Store::open(&crate::config::frecency_db_path())?;
+    merge_pending(&store, &pending_path())?;
     let since = store.last_compaction()?;
     let now = store.global_tick()?;
     if now <= since {
@@ -860,14 +883,20 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
     let mut candidates = String::new();
     std::io::stdin().read_to_string(&mut candidates)?;
 
-    let store = open_store()?;
-    let snapshot = store.snapshot_all()?;
-    let since = store.last_compaction()?;
-    // M8-10：读方分别取类型时钟（dir/file 各自独立 aging）。
-    let now_dir = store.type_tick("dir")?;
-    let now_file = store.type_tick("file")?;
-    let events = store.events_since(since)?;
-    let ranked_entries = replay(&snapshot, &events, now_dir, now_file);
+    // AUDIT-1：pick 纯只读——不建表、不合并 pending、不推进任何 tick。
+    // 库缺失（无 frecency 数据）→ 空评分（AUDIT-15 细化 CLI 契约）。
+    let ranked_entries = match open_store_readonly()? {
+        Some(store) => {
+            let snapshot = store.snapshot_all()?;
+            let since = store.last_compaction()?;
+            // M8-10：读方分别取类型时钟（dir/file 各自独立 aging）。
+            let now_dir = store.type_tick("dir")?;
+            let now_file = store.type_tick("file")?;
+            let events = store.events_since(since)?;
+            replay(&snapshot, &events, now_dir, now_file)
+        }
+        None => Vec::new(),
+    };
 
     // 候选 → 分数索引（path|topic 匹配 snapshot）。
     let score_of = |path: &str, topic: &str| -> f64 {
@@ -1472,6 +1501,66 @@ mod tests {
         std::fs::write(&pending, format!("{line}\n")).unwrap();
         merge_pending(&store, &pending).unwrap();
         assert_eq!(store.global_tick().unwrap(), 3);
+    }
+
+    #[test]
+    fn pick_readonly_path_leaves_pending_and_db_untouched() {
+        // AUDIT-1（ACCEPTANCE §26）：存在 events.pending 时，pick 的只读
+        // 读取路径不得写库（mtime/global_tick 不变）、不得合并/删除 pending。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let pending = tmp.path().join("events.pending");
+        {
+            let store = Store::open(&db).unwrap();
+            store.append_event(&rec("/existing", 1)).unwrap();
+        }
+        let pending_line = serde_json::to_string(&rec("/pending/dir", 2)).unwrap();
+        std::fs::write(&pending, format!("{pending_line}\n")).unwrap();
+
+        let mtime_before = std::fs::metadata(&db).unwrap().modified().unwrap();
+        // 与 cmd_pick 一致的只读加载（open_store_readonly + 同款读序列）。
+        let store = open_store_readonly_at(&db).unwrap().unwrap();
+        let tick_before = store.global_tick().unwrap();
+        let snapshot = store.snapshot_all().unwrap();
+        let since = store.last_compaction().unwrap();
+        let now_dir = store.type_tick("dir").unwrap();
+        let now_file = store.type_tick("file").unwrap();
+        let events = store.events_since(since).unwrap();
+        let ranked = replay(&snapshot, &events, now_dir, now_file);
+        drop(store);
+
+        assert!(
+            ranked.iter().any(|e| e.path == "/existing"),
+            "已有条目参与评分"
+        );
+        assert!(
+            !ranked.iter().any(|e| e.path == "/pending/dir"),
+            "pending 事件不得被只读路径合并评分"
+        );
+        assert_eq!(
+            std::fs::metadata(&db).unwrap().modified().unwrap(),
+            mtime_before,
+            "pick 读取路径不得改数据库 mtime"
+        );
+        // tick 复核：重开只读句柄，meta 未被推进。
+        let store = open_store_readonly_at(&db).unwrap().unwrap();
+        assert_eq!(store.global_tick().unwrap(), tick_before, "tick 不得推进");
+        assert!(pending.exists(), "pending 不得被 pick 合并/删除");
+        drop(store); // 释放只读共享锁：RW 重开（redb 互斥）需要句柄先退出
+
+        // TUI 启动钩子（merge_pending_startup 的注入形态）执行后：pending
+        // 合并入库、文件删除、tick 推进——合并职责归启动/record 路径。
+        merge_pending_at(&db, &pending).unwrap();
+        assert!(!pending.exists(), "启动合并后 pending 应删除");
+        let store = open_store_readonly_at(&db).unwrap().unwrap();
+        assert_eq!(store.global_tick().unwrap(), tick_before + 1);
+        assert!(
+            store
+                .events_since(0)
+                .unwrap()
+                .iter()
+                .any(|(_, r)| r.path == "/pending/dir")
+        );
     }
 
     #[test]

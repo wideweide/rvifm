@@ -305,7 +305,7 @@
 
 > 来源：全面评估报告（第二轮复核新增 AUDIT-13～17），用户已确认批次（2026-11-19）。执行顺序：AUDIT-1 → AUDIT-14 → AUDIT-9 → AUDIT-15 → AUDIT-7/13 → AUDIT-2/3/4/16 → 其余。AUDIT-1 方案（pending 合并移出 pick / 只读 open）已拍板，见 NOTES §10。
 
-- [ ] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1）
+- [x] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1；2026-11-20 完成：redb ReadOnlyDatabase，合并归 record/TUI 启动）
 - [ ] AUDIT-2 PDF 视觉探测链最小接线（第 1 页：exprim → pdftoppm/mutool → 提示，或文档降级；1–2 页与 prefer 配置由 M27-3 扩展，见 SPEC AUDIT-2）
 - [ ] AUDIT-3 pick 预览同源接线或撤回承诺（见 SPEC AUDIT-3）
 - [ ] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4）
@@ -322,6 +322,7 @@
 - [ ] AUDIT-15 pick CLI 契约（`--topic`、文件 topic、数据目录缺失、与预览接线；见 SPEC AUDIT-15）
 - [ ] AUDIT-16 frecency 一致性（compaction per-topic λ、pick 初始化设置；见 SPEC AUDIT-16）
 - [ ] AUDIT-17 归档成员读取上限（超限可读错误、不 OOM；见 SPEC AUDIT-17）
+- [ ] AUDIT-18 本机测试失败整改（m249 作业行 70 列断言依赖宿主路径长度；m253 第二次 undo 未移除归档；均 HEAD 复现、与 AUDIT-1 无关，见 NOTES 2026-11-20）
 
 ## M25-2（重定义）— marks 由 frecency 实现（2026-11-19 用户指令；见 SPEC §25）
 

@@ -1471,7 +1471,13 @@ fn load_jump_entries(
     state: &AppState,
     kind: JumpKind,
 ) -> Result<Vec<crate::frecency::ScoredEntry>, String> {
-    let store = crate::frecency::open_store().map_err(|e| format!("frecency 存储打开失败: {e}"))?;
+    // AUDIT-1：跳转选择器与 pick 同源只读（不合并 pending、不写库）；
+    // 库缺失（无 frecency 数据）→ 空选择器。
+    let store = match crate::frecency::open_store_readonly() {
+        Ok(Some(store)) => store,
+        Ok(None) => return Ok(Vec::new()),
+        Err(e) => return Err(format!("frecency 存储打开失败: {e}")),
+    };
     let snapshot = store
         .snapshot_all()
         .map_err(|e| format!("snapshot 读取失败: {e}"))?;
@@ -5127,6 +5133,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     config::init_quickjump();
     // M23-5：加载 [frecency] per-topic 设置（λ/容量上限）。
     crate::frecency::init_settings(&config.frecency);
+    // AUDIT-1：TUI 启动合并上次降级的 pending（合并只发生在 record/TUI 启动）。
+    crate::frecency::merge_pending_startup();
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
     let mut state = AppState::new(Tab::from_physical(
@@ -11111,8 +11119,8 @@ mod tests {
 
     #[test]
     fn exec_j_and_big_j_open_jump_selectors() {
-        // M8-12：:j → 仅目录；:J → 仅文件。open_store 读全局 config 路径
-        //（测试机 DB 可能为空——entries 数量不参与断言，只验证 kind 与形态）。
+        // M8-12：:j → 仅目录；:J → 仅文件。open_store_readonly 读全局
+        // config 路径（测试机 DB 可能为空/缺失——entries 数量不参与断言）。
         let _guard = STORE_TEST_LOCK.lock().unwrap();
         let mut state = make_state(1).1;
         let r = exec_command_impl(&mut state, "j");
@@ -11791,8 +11799,8 @@ mod tests {
     #[test]
     fn nav1_quote_seq_miss_hints_without_navigation() {
         // ' + d：无 keyword 条目（全局 store 可能为空）→ 提示 + 光标不变。
-        // 注：open_store 读全局路径（M8-12 同款约束），只断言提示形态与
-        // 无副作用，不断言 entries 数量。
+        // 注：open_store_readonly 读全局路径（M8-12 同款约束），只断言提示
+        // 形态与无副作用，不断言 entries 数量。
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.txt"), "A").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());

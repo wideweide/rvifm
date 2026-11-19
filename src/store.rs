@@ -30,9 +30,16 @@ const META_LAST_COMPACTION: &str = "last_compaction";
 /// snapshot key 分隔符（unit separator，路径中不出现）。
 const KEY_SEP: char = '\u{1f}';
 
+/// 数据库句柄：`Rw` 供建表与写路径；`Ro` 供 `pick` / 跳转选择器只读打开
+/// （AUDIT-1：类型层面禁止写事务，保证 mtime 与 tick 不变）。
+enum DbHandle {
+    Rw(redb::Database),
+    Ro(redb::ReadOnlyDatabase),
+}
+
 /// redb 数据库句柄（多读单写由 redb 保证）。
 pub struct Store {
-    db: redb::Database,
+    db: DbHandle,
     path: PathBuf,
 }
 
@@ -50,9 +57,46 @@ impl Store {
         }
         tx.commit().map_err(io_err("建表提交失败"))?;
         Ok(Self {
-            db,
+            db: DbHandle::Rw(db),
             path: path.to_path_buf(),
         })
+    }
+
+    /// 只读打开（AUDIT-1）：库必须已存在（建表由写路径负责）；不 `begin_write`、
+    /// 不建表、不写任何事务。库缺失返回 `ErrorKind::NotFound`（调用方按空库降级）。
+    pub fn open_readonly(path: &Path) -> std::io::Result<Self> {
+        let db = redb::ReadOnlyDatabase::open(path).map_err(|e| {
+            let kind = if path.exists() {
+                std::io::ErrorKind::InvalidData
+            } else {
+                std::io::ErrorKind::NotFound
+            };
+            std::io::Error::new(kind, e)
+        })?;
+        Ok(Self {
+            db: DbHandle::Ro(db),
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// 读事务入口：Rw/Ro 均支持（redb 4 两类句柄的 `begin_read` 同型）。
+    fn begin_read(&self, ctx: &'static str) -> std::io::Result<redb::ReadTransaction> {
+        match &self.db {
+            DbHandle::Rw(db) => db.begin_read(),
+            DbHandle::Ro(db) => db.begin_read(),
+        }
+        .map_err(io_err(ctx))
+    }
+
+    /// 写事务入口：只读句柄在此拒绝（pick 路径误写的类型层防护）。
+    fn begin_write(&self, ctx: &'static str) -> std::io::Result<redb::WriteTransaction> {
+        match &self.db {
+            DbHandle::Rw(db) => db.begin_write().map_err(io_err(ctx)),
+            DbHandle::Ro(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("{ctx}: 只读库不可写（AUDIT-1）"),
+            )),
+        }
     }
 
     /// 数据库文件路径（测试与降级提示用）。
@@ -67,7 +111,7 @@ impl Store {
 
     /// 当前 `global_tick`（无 meta 表数据时为 0）。
     pub fn global_tick(&self) -> std::io::Result<u64> {
-        let rx = self.db.begin_read().map_err(io_err("meta 读事务失败"))?;
+        let rx = self.begin_read("meta 读事务失败")?;
         let table = rx.open_table(META).map_err(io_err("meta 表打开失败"))?;
         Ok(table
             .get(META_GLOBAL_TICK)
@@ -85,7 +129,7 @@ impl Store {
         } else {
             META_FILE_TICK
         };
-        let rx = self.db.begin_read().map_err(io_err("meta 读事务失败"))?;
+        let rx = self.begin_read("meta 读事务失败")?;
         let table = rx.open_table(META).map_err(io_err("meta 表打开失败"))?;
         if let Some(v) = table.get(key).map_err(io_err("meta 读取失败"))? {
             return Ok(v.value());
@@ -101,7 +145,7 @@ impl Store {
     ///
     /// 返回全局序号（compaction 游标用）。record 是唯一写入入口（M8-3 封装）。
     pub fn append_event(&self, record: &EntryRecord) -> std::io::Result<u64> {
-        let tx = self.db.begin_write().map_err(io_err("events 写事务失败"))?;
+        let tx = self.begin_write("events 写事务失败")?;
         let new_seq = {
             let mut meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
             let cur = meta
@@ -141,7 +185,7 @@ impl Store {
 
     /// 读取 `seq > since` 的全部事件（按全局序号升序；重放评分用）。
     pub fn events_since(&self, since: u64) -> std::io::Result<Vec<(u64, EntryRecord)>> {
-        let rx = self.db.begin_read().map_err(io_err("events 读事务失败"))?;
+        let rx = self.begin_read("events 读事务失败")?;
         let table = rx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
         let mut out = Vec::new();
         for pair in table
@@ -160,10 +204,7 @@ impl Store {
     pub fn snapshot_upsert(&self, entry: &SnapshotEntry) -> std::io::Result<()> {
         let json = serde_json::to_vec(entry).map_err(io_err("snapshot 序列化失败"))?;
         let key = Self::snapshot_key(&entry.topic, &entry.path);
-        let tx = self
-            .db
-            .begin_write()
-            .map_err(io_err("snapshot 写事务失败"))?;
+        let tx = self.begin_write("snapshot 写事务失败")?;
         {
             let mut table = tx
                 .open_table(SNAPSHOT)
@@ -178,10 +219,7 @@ impl Store {
 
     /// 读取全部 snapshot 条目（重放起点）。
     pub fn snapshot_all(&self) -> std::io::Result<Vec<SnapshotEntry>> {
-        let rx = self
-            .db
-            .begin_read()
-            .map_err(io_err("snapshot 读事务失败"))?;
+        let rx = self.begin_read("snapshot 读事务失败")?;
         let table = rx
             .open_table(SNAPSHOT)
             .map_err(io_err("snapshot 表打开失败"))?;
@@ -197,7 +235,7 @@ impl Store {
 
     /// 上次 compaction 时已重放的 tick（惰性 compaction 起点，M8-5 用）。
     pub fn last_compaction(&self) -> std::io::Result<u64> {
-        let rx = self.db.begin_read().map_err(io_err("meta 读事务失败"))?;
+        let rx = self.begin_read("meta 读事务失败")?;
         let table = rx.open_table(META).map_err(io_err("meta 表打开失败"))?;
         Ok(table
             .get(META_LAST_COMPACTION)
@@ -208,7 +246,7 @@ impl Store {
 
     /// 记录 last_compaction（M8-5）。
     pub fn set_last_compaction(&self, tick: u64) -> std::io::Result<()> {
-        let tx = self.db.begin_write().map_err(io_err("meta 写事务失败"))?;
+        let tx = self.begin_write("meta 写事务失败")?;
         {
             let mut meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
             meta.insert(META_LAST_COMPACTION, tick)
@@ -220,10 +258,7 @@ impl Store {
 
     /// 删除 `tick <= upto` 的已合并事件（compaction 裁剪，M8-5）。
     pub fn prune_events_le(&self, upto: u64) -> std::io::Result<()> {
-        let tx = self
-            .db
-            .begin_write()
-            .map_err(io_err("events 裁剪事务失败"))?;
+        let tx = self.begin_write("events 裁剪事务失败")?;
         {
             let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
             let keys: Vec<u64> = events
@@ -356,5 +391,59 @@ mod tests {
         assert_eq!(store.global_tick().unwrap(), 1);
         assert_eq!(store.events_since(0).unwrap().len(), 1);
         assert_eq!(store.snapshot_all().unwrap().len(), 1);
+    }
+
+    /// AUDIT-1：只读打开不改库——mtime 与 `global_tick` 均不变。
+    /// 读序列与 `cmd_pick` 一致（snapshot / 游标 / 类型时钟 / 增量事件）。
+    #[test]
+    fn open_readonly_does_not_write_db() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("f.redb");
+        {
+            let store = Store::open(&p).unwrap();
+            store.append_event(&rec("/a", 1)).unwrap();
+        }
+        let mtime_before = std::fs::metadata(&p).unwrap().modified().unwrap();
+        let ro = Store::open_readonly(&p).unwrap();
+        let tick_before = ro.global_tick().unwrap();
+        let since = ro.last_compaction().unwrap();
+        let _ = ro.snapshot_all().unwrap();
+        let _ = ro.type_tick("dir").unwrap();
+        let _ = ro.type_tick("file").unwrap();
+        let _ = ro.events_since(since).unwrap();
+        drop(ro);
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().modified().unwrap(),
+            mtime_before,
+            "只读打开不得改数据库 mtime"
+        );
+        let ro2 = Store::open_readonly(&p).unwrap();
+        assert_eq!(
+            ro2.global_tick().unwrap(),
+            tick_before,
+            "只读打开不得推进 tick"
+        );
+    }
+
+    /// AUDIT-1：库缺失时只读打开报 `NotFound`（调用方按空库降级，不裸失败）。
+    #[test]
+    fn open_readonly_missing_db_is_notfound() {
+        let tmp = TempDir::new().unwrap();
+        let err = match Store::open_readonly(&tmp.path().join("none.redb")) {
+            Err(e) => e,
+            Ok(_) => panic!("缺失库不应成功打开"),
+        };
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    /// AUDIT-1：只读句柄在类型层拒绝写事务（pick 路径误写防护）。
+    #[test]
+    fn readonly_store_rejects_writes() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("f.redb");
+        drop(Store::open(&p).unwrap());
+        let ro = Store::open_readonly(&p).unwrap();
+        let err = ro.append_event(&rec("/a", 1)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

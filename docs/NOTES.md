@@ -692,3 +692,12 @@ rvifm record  → 静默记录访问
 
 - **PROC-1**：用户复核预算门控协议蒸馏准确性（逐条对照源规则与 AGENTS §3 / ACCEPTANCE §1）后确认生效。「自动续轮」停止条件 3（剩余 token / Credits 不足以完成最小可落地成果 MDO）即时生效；断点落地流程见 AGENTS §3，命中暂停时的验收自检见 ACCEPTANCE §1。
 - **M27**：撤销「已登记，暂不启动」标记，按 TASKS 顺序排队（AUDIT → M25-2 → M26 → M27 → MISC-1）；TASKS / STATE / PLAN 状态已同步。执行仍从 AUDIT-1 开始，M27 不插队。
+
+### 2026-11-20 — AUDIT-1 实现：pick 真只读 open（WHY）
+
+- **只读打开选型**：`Store` 改持 `DbHandle` 枚举（`Rw`=redb `Database` / `Ro`=redb `ReadOnlyDatabase`，redb 4.5 两类句柄 `begin_read` 同型）。仅移除 pending 合并不够——`Store::open` 的建表写事务本身会触碰文件，mtime 验收过不了；RO 句柄还在类型层拒绝 `begin_write`（pick 误写的编译期防护）。
+- **合并归属（方案①落地）**：删除 `open_store()`；pending 合并只在 record 写路径（原样）与 TUI 启动钩子 `merge_pending_startup()`（新增，`app::run` 初始化时静默执行）。`cmd_pick` 与 `load_jump_entries`（o/:j/:J/quickjump/Recent 共用）改走 `open_store_readonly()`。
+- **库缺失降级**：RO 打开缺失库报 NotFound → pick 全 0 分、跳转选择器空列表（AUDIT-15 再细化 CLI 契约）。此前 pick 会**创建**库文件——同样是写行为，一并消除。
+- **cmd_compact 保留"读写打开 + 先合并"**：维护写命令，建表与合并属其职责，行为不变。
+- **并发语义变化（良性）**：pick 由独占锁（RW）变共享锁（RO）。record 与 pick 并发时 record 得 `DatabaseAlreadyOpen` → 降级 `events.pending`（与改动前一致）；多个 pick 现在可并发（改进）。
+- **门禁偏差（登记 AUDIT-18）**：本机 HEAD 上 `m249_jobs_overlay_render_selection_and_cancel_state` 失败——作业行拼接宿主长临时路径（`ADMINI~1\...\Temp\2\`）超 70 列被截断丢"取消中"，测试违反 AGENTS §7 路径可移植规则；`m253_archive_zip_roundtrip_and_undo` 失败——第二次 undo 未移除归档（根因待查）。`git stash` 验证两项在干净 HEAD 同样失败，与 AUDIT-1 无关。本地门禁暂用 skip 命令（见 STATE §质量门禁），其余 326 单测 + 3 集成全绿。Linux cross-check 自 russh（M19-3b）起本机无法构建 aws-lc-sys，由 CI 承担（现状确认）。
