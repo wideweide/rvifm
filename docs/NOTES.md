@@ -793,3 +793,17 @@ rvifm record  → 静默记录访问
 - **发布失败处置（已触发）**：首推 release 三 job 全数失败于 smoke 步——MISC-1 双 `[[bin]]` 后裸 `cargo run` 因目标歧义报错（"could not determine which binary to run"）；`--bin rvifm` 显式指明后 tag 重指向强推重跑。教训：新增第二 bin target 时，所有 `cargo run` 类步骤都要复查目标歧义。
 - **tag 重指向**：`git tag -f v0.9.0 <fix> && git push -f origin v0.9.0`（远端 tag 触发的 run 以重指向后的 commit 为准）。
 - **结果（2026-11-20）**：重跑 run #271 五 job 全绿；GitHub Release `v0.9.0` 已发布（linux-gnu / linux-musl / windows-x64 三归档，均含 `rvifm`+`rv`）。首推失败的 test job（#268）本就全绿——失败面仅 release smoke，与门禁结论一致。crates.io 留待 Windows 侧（凭据边界，非阻塞）。
+
+### 2026-11-20 — 评估蒸馏登记 M28–M31（WHY / CUT / 观察项）
+
+- **来源**：2026-11-20 运维/开发视角评估报告（基于 harness 文档核验版），用户指令"蒸馏 P1/P2 + 第四/五节建议；P3 按建议；frecency 通用化对齐同级项目"。参考报告（README-only）勘误已并入登记口径：`:compare` 已有 M24-8 基座（M29 定位为增强而非新建）；M26 已完成（能力矩阵探测降为 M31 验收视角）；`:jobs` 已有选择/取消（M28-3 定位为暂停/详情增强）。
+- **批次划分**：M28 运维操作补齐（:link/:rename/:jobs 增强）、M29 对比增强（bycontents+dp/do）、M30 frecency 通用化、M31 文档与验收补齐；统一目标 **0.10.0**（PLAN §4 自动发布规则沿用）。
+- **同级 frecency 项目对齐（用户指令；HEAD `d7e03d0`，2026-11-19）**：
+  - **topic 命名用 `cmd`**（其架构注释 dir/file/cmd/自定义 topic 口径）——M30-1 采纳。
+  - **清理无分数下限是不变量**：其 2026-11-18 引入 per-topic score floor 当日撤销（分数是序数、绝对值跨使用模式无意义、阈值是 MAX_ENTRIES 的不可预测替身、低分重要条目必须可达），REGRESSION 固化 "no score-threshold cleanup"。rvifm M23-3 本就只用容量裁剪——**登记为 CUT：不引入分数下限清理**（SPEC M30 OUT_OF_SCOPE）。
+  - **书签=keyword 事件、unbook 保留历史、pick 只读、选择不计访问**：两边同构（rvifm M25-2/M23-2/AUDIT-1 既有），无改动。
+  - **picker `g` action**（gitui→ziggity→lazygit 优先级探测）与 rvifm M25-6 `gi` 同源，无需改动；其 `c/v/e` picker 动作键——rvifm M23-7 修订已定"键位与 Normal 一致"，**不复开**（嵌入式 pane 与 fzf 弹窗交互模型不同）。
+  - **SIMPLIFIED 边界维持**：第一期 pick 不加命令视角（其 picker 已含 command preview——列为后续增强，不阻塞）；shell 侧命令自动记录（PROMPT_COMMAND）不在 rvifm 职责内（CUT）。
+- **P3 观察项决策（不立任务）**：① `:du` 磁盘用量分析——方案已明确（后台扫描 + 分批追加虚拟结果目录），等用户高频清盘需求再立项；② git 列内暂存/取消暂存——**维持只读**（M23-12 CLI 路线可行但 FM 职责有张力，观察用户反馈）；③ 插件系统——维持非目标，rhai 成熟度观察；④ libarchive_oxide/OxiArc——README 既有观察项继续。
+- **横切纪律（AGENTS §6 增补）**：任务关闭声明"双环境绿"前以最近一次 CI run 结论为准——cfg(unix) 测试代码 Windows 本机不编译（M12-2/M27-3 两度教训，本周 M27-3 验证连续暴露 5 缺陷的根因）。
+- **pdf-visual 实测边界**：本 Linux 机 rustc 1.95 < exprim@0.4.0 要求 1.97，M31-5 须在 CI ubuntu 或 Windows 本机执行；只测不改护栏。

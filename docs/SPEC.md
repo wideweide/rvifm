@@ -329,6 +329,76 @@ redb 三表，无后台守护进程：
 - vifmrc/完整 vifm 颜色方案解析、运行时 `:highlight` 命令。
 - PDF 全页渲染、文本层重建、OCR、PDF 编辑。
 
+#### M28 — 运维操作补齐（2026-11-20 增补；来源：评估报告蒸馏，用户确认 P1；对标 ranger/Total Commander/Double Commander/vifm）
+
+**硬约束**：新建链接/批量重命名均为可逆写操作——必须入撤销栈且失败无半成品；`M27` 曾把"符号链接创建"列为该里程碑 OUT_OF_SCOPE，本批次以独立任务将其转入范围；Windows 平台差异（符号链接权限）只做回退与可读提示，不引入提权路径。
+
+**MUST**
+- **M28-1 `:link` 符号链接创建**：`:link <dest>`（作用域 = tags / `v` 选择 / 光标条目，与 `:archive` 同口径；dest 相对当前目录或绝对路径）为条目创建符号链接；Windows 目录条目在符号链接权限不足时回退目录联接（junction），文件条目无回退、可读提示；成功入撤销栈（`u` = 删除新建链接）；失败（已存在/权限/非法路径）可读提示、不覆盖、无半成品。
+- **M28-2 `:rename` 结构化批量重命名**：`:rename s/<pat>/<repl>/[i]`（regex 替换，`i` 大小写不敏感标志可选）、`:rename prefix=<str>`、`:rename suffix=<str>`、`:rename seq=<start>,<step>,<width>`（序号插入）；作用域同 `:archive`；执行前在虚拟结果目录预览 `旧名 → 新名`（M24-8 结果前缀语义复用），确认后整批应用、取消不动；不符规则条目跳过并列出（沿用 M13-6 cw 的"同名/非法跳过"口径）；整批经既有 rename 撤销链路（`u` 一次逆序恢复全部）。
+- **M28-3 `:jobs` 任务视图增强**：`p` 暂停/恢复运行中作业（`Job` 增 paused 协作式标志，检查点在条目循环边界，与 cancel_requested 同模式）；Enter 打开作业详情覆盖层（类型/源/目标/已处理条目数/传输字节数/速率滑动平均/已运行时长），Esc 返回；`:jobs` 列表增状态列（running/paused/done/cancelled）；暂停期间事件循环不阻塞（导航/`:q` 照常响应）。
+- **M28-4 M28 文档收尾**：help.txt 补 `:link` / `:rename` / `:jobs` 增强键位；README 核心特性段同步；ACCEPTANCE §28 全部勾选后批次方可关闭。
+
+**SIMPLIFIED**
+- `:rename` 第一期仅上述结构化形态；大小写转换/扩展名专用子命令不做（`s///` 已覆盖）；预览仅确认/取消，不可逐行编辑。
+- `:jobs` 详情速率用滑动平均估算，不做精确 ETA；暂停粒度为作业级。
+- `:link` 不做硬链接；链接目标按用户输入原样（不做相对化/绝对化选项）。
+
+**OUT_OF_SCOPE**
+- 硬链接创建与硬链接计数列、符号链接循环检测。
+- 作业优先级、多作业并行暂停编排。
+
+#### M29 — 对比增强（2026-11-20 增补；来源：评估报告蒸馏，用户确认 P1；对标 vifm `:compare bycontents` + `dp`/`do`）
+
+**硬约束**：`dp`/`do` 是写操作——复制走既有确认与撤销链路，删除走可恢复路径；内容对比必须有单文件体积上限（沿用 M11/AUDIT-17 护栏口径），不 OOM、不 panic。
+
+**MUST**
+- **M29-1 `:compare bycontents`**：`:compare bycontents` 对比左右 pane 目录内容（无参 `:compare` 保持 M24-8 按名+大小行为）；内容判定 = SHA-256（现有 `sha2` 依赖）；单文件读取超护栏上限的条目标注跳过、不 OOM；结果复用 `Tab.results` 虚拟目录前缀（`=` 相同 / `!` 不同 / `<` 仅左 / `>` 仅右）；不递归（与 M24-8 同口径）。
+- **M29-2 对比结果 `dp`/`do` 同步**：`dp` = 将另一侧差异条目复制到当前侧（覆盖已存在走既有确认提示）；`do` = 删除当前侧多出条目（走可恢复路径）；均入撤销栈（`u` 可逆）；操作后对比结果自动刷新（前缀变化正确）。
+- **M29-3 M29 文档收尾**：help.txt / README 补对比增强条目；ACCEPTANCE §29 逐项勾选后批次关闭。
+
+**SIMPLIFIED**
+- 内容对比为顶层条目级；`!` 条目预览显示大小/哈希差异信息行，不做逐字节 diff 视图。
+- `dp`/`do` 仅顶层条目；不做目录树合并与双向自动 sync。
+
+**OUT_OF_SCOPE**
+- 时间戳比较策略切换（内容哈希判定已足够）；递归目录树对比。
+
+#### M30 — frecency 通用化（2026-11-20 增补；来源：M25-7 评估立项（NOTES"可行、迁移成本低"）+ 用户指令"对齐同级 frecency 项目最近更新"）
+
+**对齐基线**（同级项目 `frecency`（bash+SQLite+fzf），2026-11-19 HEAD `d7e03d0`）：topic 命名用 `cmd`（其架构注释 dir/file/cmd/自定义 topic）；清理仅容量裁剪、**无分数下限**——同级项目 2026-11-18 引入 per-topic score floor 当日撤销（理由：分数是序数、绝对值跨使用模式无意义、阈值是 MAX_ENTRIES 的不可预测替身、低分重要条目必须可达），REGRESSION 固化 "no score-threshold cleanup" 不变量；书签 = keyword 事件、unbook 保留历史（rvifm M25-2/M23-2 已同构）；pick 只读、选择不计访问（rvifm AUDIT-1 已同构）；其 picker `g` action（gitui/ziggity/lazygit 优先级探测）与 rvifm M25-6 `gi` 同源，无需改动。
+
+**MUST**
+- **M30-1 cmd 事件 schema 与记录链路**：`EntryKind` 增 `Command` 变体（serde 新变体，旧数据零迁移兼容）；topic = `"cmd"`；`:` 命令 Enter 执行成功后 record（M24-6"成功才记录"语义扩展到写命令路径，失败不记录）；`IGNORE_PATTERNS` 扩展到 cmd topic（glob 匹配命令文本，命中静默跳过）；`[frecency]` per-topic λ / max_entries 增 cmd 档（λ 缺省 0.01，与 dir/file 同；compaction/pick 一致性沿用 AUDIT-16 口径）。
+- **M30-2 `:` 命令历史迁移**：↑/↓ 数据源从会话内存 Vec 切换为 replay cmd topic 顶层 N 条（跨会话持久；排序 = 前缀分级 M23-1 + EMS 分数）；当前会话未落盘命令并入显示（NAV-4 会话合并语义）；↑/↓ 交互形态与 Esc/Enter 行为不变。
+- **M30-3 路径补全加权**：`:` 模式 Tab 补全候选排序 = frecency 分数（Navigate/Open 事件，TUI 启动 replay 只读读取）优先、无记录条目字典序兜底；store 缺失/空时零成本降级（行为与现状一致）；候选来源仍为焦点 pane 条目（不引入全库模糊搜索）。
+- **M30-4 命令书签**：命令文本可设为 keyword 书签（设置入口实现时定——历史菜单标记或 `:cmdmark <chars>`；消费 = `:` 模式内展开为命令文本供编辑/执行）；unbook 保留历史（M23-2 语义）；多字符书签在 `o` 搜索享高优先级（M23-1 既有，cmd topic 验证）。
+- **M30-5 文档与隐私收尾**：README / help 明示"命令文本持久化写入 frecency redb（IGNORE_PATTERNS 可排除）"；对齐结论入 NOTES；ACCEPTANCE §30 勾选后批次关闭。
+
+**SIMPLIFIED**
+- 第一期 pick 不加命令视角（仅 TUI 命令行消费；同级项目 picker 已含 command preview——列为后续增强，不阻塞本期）。
+- 命令书签设置/消费键位在实现批次内定，help 记录即可。
+
+**OUT_OF_SCOPE**
+- 不引入分数下限清理（对齐同级项目不变量）；清理仅容量裁剪（M23-3 既有语义）。
+- shell 集成级命令自动记录（bash `PROMPT_COMMAND` 等）——rvifm 只记录 TUI `:` 内命令，同级项目的 shell 侧记录不属于 rvifm 职责。
+
+#### M31 — 文档与验收补齐（2026-11-20 增补；来源：评估报告第四/五节建议，用户确认采纳）
+
+**MUST**
+- **M31-1 README 状态与边界同步**：开发路线表 M26 行"已确认启动"→ 已完成（漂移修正）；归档创建行为表补加密 7z / 分卷 7z 支持边界两行（措辞以 M26-3 实际行为为准——加密与损坏均给可读错误、分卷不支持虚拟浏览）；提权/运行时依赖段补 Windows UAC 边界句（M12 为 `sudo -A` 口径，Windows 尽力而为）。
+- **M31-2 ACCEPTANCE 补可执行条目**：`:jobs` 取消响应时延条目（长传输作业中途 `x` 的终止时延上限，数值实现时定并写入条目）；外部 CLI 归档"安装/不安装"双环境验收（未装工具 → 可读错误；装 7z 但不支持 cab 打包 → 精确提示）。
+- **M31-3 M11-6 手工验证清单**：ACCEPTANCE 独立小节列出真实终端逐项清单（Alacritty halfblocks / tmux passthrough / Kitty 原生协议 / 无协议降级链），M11-6 条目引用该清单——使 deferred 项可在任意真实终端 10 分钟补验。
+- **M31-4 ACCEPTANCE M0–M13 复选框化**：普通 bullet 转 `- [ ]` 复选框（零语义、机械转换；REVIEW P2-3 既有建议）；转完后以 grep 核验无残留裸 bullet。
+- **M31-5 pdf-visual 护栏实测**：在 rustc ≥ 1.97 环境（CI ubuntu 或 Windows 本机）跑 pdf-visual 语料回归 + `cargo check --features pdf-visual`，记录 exprim 渲染耗时与内存峰值（含 100MB 级输入语料）到 NOTES；本任务只测不改护栏，若超预期则另行登记收紧任务。
+
+**SIMPLIFIED**
+- M31-4 一次提交内完成机械转换，不重写条目文字。
+- M31-5 实测环境二选一（CI 临时 job 或 Windows 本机），一组数据即结论。
+
+**OUT_OF_SCOPE**
+- 不为实测引入新语料生成工具；护栏数值调整不在本任务范围。
+
 #### M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；来源：用户批次需求讨论稿蒸馏）
 
 **硬约束**：marks 由 frecency 模块实现，数据持久化在 frecency 的 redb 存储中（与 `keyword` bookmark 共用），带频率记录，不设独立 marks 存储/模块；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。

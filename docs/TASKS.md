@@ -348,6 +348,43 @@
 - [x] M27-2 vifm 风格布局与配色（默认去 pane 边框，TabLine/TopLine/StatusLine/Border/CurrLine/OtherLine；`[ui] pane_borders`；见 SPEC M27-2；2026-11-20 完成：vifm_style/vifm_fallback 16 色回退、pane_gap_area 分隔线、双模式渲染）
 - [x] M27-3 PDF 前 1–2 页图像预览可配置（`[preview] pdf_image_pages` / `pdf_prefer_image`；失败回退文本；见 SPEC M27-3；2026-11-20 完成：中断提交验证修正 spawn 注入/切换清理/提示分支 + M27-1 lstat 误判与 AUDIT-7 E0369 潜伏缺陷修复，见 NOTES）
 
+## M28 — 运维操作补齐（2026-11-20 增补；见 SPEC M28 节，已确认登记）
+
+> 来源：2026-11-20 评估报告蒸馏（P1），用户确认。对标 ranger/Total Commander/Double Commander/vifm。顺序：1（链接）→ 2（重命名）→ 3（任务视图）→ 4（文档收尾）。
+
+- [ ] M28-1 `:link` 符号链接创建（tags/选择优先；Windows 目录 junction 回退；入撤销栈；见 SPEC M28-1）
+- [ ] M28-2 `:rename` 结构化批量重命名（s///、prefix/suffix/seq；预览虚拟目录；整批撤销；见 SPEC M28-2）
+- [ ] M28-3 `:jobs` 任务视图增强（`p` 暂停/恢复 + Enter 详情覆盖层 + 状态列；见 SPEC M28-3）
+- [ ] M28-4 M28 文档收尾（help/README/ACCEPTANCE §28 同步；见 SPEC M28-4）
+
+## M29 — 对比增强（2026-11-20 增补；见 SPEC M29 节，已确认登记）
+
+> 来源：同上（P1）。依赖 M24-8（已完成）。顺序：1（bycontents）→ 2（dp/do）→ 3（文档收尾）。
+
+- [ ] M29-1 `:compare bycontents` 内容对比（SHA-256；体积护栏沿用；虚拟目录前缀；见 SPEC M29-1）
+- [ ] M29-2 对比结果 `dp`/`do` 同步（入撤销栈；覆盖确认；操作后刷新；见 SPEC M29-2）
+- [ ] M29-3 M29 文档收尾（help/README/ACCEPTANCE §29 同步；见 SPEC M29-3）
+
+## M30 — frecency 通用化（2026-11-20 增补；M25-7 评估立项；见 SPEC M30 节，已确认登记）
+
+> 来源：M25-7 评估（NOTES：可行、迁移成本低）+ 用户指令"对齐同级 frecency 项目最近更新"（对齐基线见 SPEC M30：topic=cmd、无分数下限清理、书签=keyword 事件、pick 只读）。顺序：1（schema+record）→ 2（历史迁移）→ 3（补全加权）→ 4（命令书签）→ 5（文档收尾）。
+
+- [ ] M30-1 cmd 事件 schema 与 record 链路（EntryKind::Command、IGNORE_PATTERNS 扩展 cmd、cmd 档配置；见 SPEC M30-1）
+- [ ] M30-2 `:` 命令历史迁移（↑/↓ replay 顶层 N + 会话合并、跨会话持久；见 SPEC M30-2）
+- [ ] M30-3 路径补全加权（frecency 分数优先、字典序兜底、缺失零成本降级；见 SPEC M30-3）
+- [ ] M30-4 命令书签（设置 + `:` 模式消费展开；unbook 保留历史；见 SPEC M30-4）
+- [ ] M30-5 M30 文档与隐私收尾（README/help 明示命令文本入库 + IGNORE_PATTERNS 排除；见 SPEC M30-5）
+
+## M31 — 文档与验收补齐（2026-11-20 增补；见 SPEC M31 节，已确认登记）
+
+> 来源：评估报告第四（现有功能提升）/第五（横切建议）节落地。顺序：1（README）→ 2（验收条目）→ 3（M11-6 清单）→ 4（复选框化）→ 5（pdf-visual 实测）。
+
+- [ ] M31-1 README 状态与边界同步（M26 行漂移修正、.7z 加密/分卷边界、Windows UAC 边界；见 SPEC M31-1）
+- [ ] M31-2 ACCEPTANCE 补条目（:jobs 取消时延、外部 CLI 双环境验收；见 SPEC M31-2）
+- [ ] M31-3 M11-6 手工验证清单（ACCEPTANCE 独立小节；见 SPEC M31-3）
+- [ ] M31-4 ACCEPTANCE M0–M13 复选框化（零语义机械转换 + grep 核验；见 SPEC M31-4）
+- [ ] M31-5 pdf-visual 护栏实测（rustc≥1.97 环境语料耗时/内存数据入 NOTES；见 SPEC M31-5）
+
 ## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
 
 - [x] PROC-1 预算门控与断点落地协议（已写入 AGENTS §3 + ACCEPTANCE §1；无代码改动；用户 2026-11-19 复核蒸馏准确性后确认生效）

@@ -198,6 +198,7 @@
 - `cargo test` 通过；
 - 跨平台测试代码检查（2026-11-14 增补；AUDIT-9 起由 CI ubuntu job 执行）：含 `#[cfg(unix)]`/`#[cfg(test)]` 的改动须通过 `cargo check --target x86_64-unknown-linux-gnu --all-targets`——Windows 的 clippy/build 均不编译 cfg(unix) 测试代码（M12-2 教训）；本机自 russh（M19-3b）起无法交叉构建 aws-lc-sys，该检查以 CI 为准，本地不再强行执行；
 - 程序可启动、可退出、无 panic；
+- 任务关闭声明"双环境绿"前，以最近一次 CI run 结论为准——`cfg(unix)` 测试代码在 Windows 本机不编译（M12-2/M27-3 两度教训），本地全绿不等于 ubuntu 侧可编译；（2026-11-20 增补）
 - 本任务对应的 `ACCEPTANCE.md` 条目通过；
 - `docs/TASKS.md` 与 `docs/STATE.md` 已更新。
 
