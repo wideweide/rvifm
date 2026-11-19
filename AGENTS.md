@@ -176,6 +176,7 @@
 - **ZCode 是 Electron 应用，官方要求 Windows 10/11，在 Win2016 上可能无法启动**。优先使用 VS Code + `rust-analyzer`，或纯命令行 + 任意编辑器；这不影响项目内容。
 - M0 就配置双平台 CI（`ubuntu-latest` + `windows-latest`），不要等到发布前才加。
 - CI 无 TTY：**集成测试禁止依赖真实终端**，TUI 渲染使用 `ratatui` 的 `TestBackend`；冒烟测试只跑 `--version` / `--help`，不进入交互模式。
+- **测试不得由宿主环境变量改变结果**：`TMUX`、`STY`、`EDITOR`、`SHELL`、`NO_COLOR` 等影响行为的变量必须在测试内显式隔离（清除或注入），禁止让“本机 tmux 内失败、CI 通过”的情况存在。
 - 路径内部统一用 `/`；`Location::Archive { inner }` 在渲染、比较、索引前必须规范化，避免 `a\b` 与 `a/b` 分叉。
 - 测试 fixture 不要硬编码 `/tmp`，使用 `tempfile` crate。
 - 注意 Windows 行为差异：文件名大小写不敏感、符号链接权限、`trash` crate 的回收站行为、CRLF/LF。

@@ -294,7 +294,7 @@
 > 来源：用户批次需求讨论稿蒸馏。marks 由 frecency 实现并持久化（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
 
 - [x] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
-- [x] ~~M25-2 marks 独立模块（暂停）~~ **撤销原任务定义**：marks 改由 frecency 实现并持久化（见 AUDIT 之后新增的 M25-2 条目）
+- [x] M25-2a（原定义，已撤销）~~marks 独立模块（暂停）~~ **撤销原任务定义**：marks 改由 frecency 实现并持久化（见 AUDIT 之后重定义的 M25-2 条目；编号加 `a` 避免重复）
 - [x] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 走 M26-4 外部 CLI）
 - [x] M25-4 归档对话框与校验（无参交互对话框；校验文件默认 md5，sha256/none 可选；[archive] checksum）
 - [x] M25-5 git 状态列（porcelain 缓存映射 + 着色列；仓库根探测；git CLI 子进程零编译期依赖；[ui] git_column）
@@ -303,7 +303,7 @@
 
 ## AUDIT — 评估报告整改（2026-11-19 增补；见 SPEC AUDIT 段 / docs/REVIEW.md，**已确认**）
 
-> 来源：全面评估报告，用户已确认批次（2026-11-19）。执行顺序：AUDIT-1 → AUDIT-9 → AUDIT-8 → AUDIT-2/3/4 → AUDIT-5 → 其余。AUDIT-1 方案（pending 合并移出 pick / 只读 open）已拍板，见 NOTES §10。
+> 来源：全面评估报告（第二轮复核新增 AUDIT-13～17），用户已确认批次（2026-11-19）。执行顺序：AUDIT-1 → AUDIT-14 → AUDIT-9 → AUDIT-15 → AUDIT-7/13 → AUDIT-2/3/4/16 → 其余。AUDIT-1 方案（pending 合并移出 pick / 只读 open）已拍板，见 NOTES §10。
 
 - [ ] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1）
 - [ ] AUDIT-2 PDF 视觉探测链接线（exprim → pdftoppm/mutool → 提示，或文档降级，见 SPEC AUDIT-2）
@@ -311,12 +311,17 @@
 - [ ] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4）
 - [ ] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5）
 - [ ] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6）
-- [ ] AUDIT-7 opener 补齐 `rules` 完全替换层（见 SPEC AUDIT-7）
+- [ ] AUDIT-7 opener 整层接线（TOML 加载 + mime/name + prepend/append/rules 三层 + 命令执行；见 SPEC AUDIT-7）
 - [ ] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8）
 - [ ] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9）
-- [ ] AUDIT-10 统一 glob 匹配与配置失败回退实现（见 SPEC AUDIT-10）
-- [ ] AUDIT-11 help.txt 与 README 功能同步（见 SPEC AUDIT-11）
+- [ ] AUDIT-10 统一 glob 匹配（含 opener `*x*` 缺陷）与配置失败回退实现（见 SPEC AUDIT-10）
+- [ ] AUDIT-11 help.txt 与 README 功能同步（`:find`/`:grep`、marks/主题/opener 状态、keymap 路径；见 SPEC AUDIT-11）
 - [ ] AUDIT-12 keymap/state/session/CLI 子命令分派测试补强（见 SPEC AUDIT-12）
+- [ ] AUDIT-13 主题选择接线（内置/用户 TOML/`:theme`/明暗与图标对齐；见 SPEC AUDIT-13）
+- [ ] AUDIT-14 测试环境隔离（`TMUX`/`STY` 依赖修复；见 SPEC AUDIT-14）
+- [ ] AUDIT-15 pick CLI 契约（`--topic`、文件 topic、数据目录缺失、与预览接线；见 SPEC AUDIT-15）
+- [ ] AUDIT-16 frecency 一致性（compaction per-topic λ、pick 初始化设置；见 SPEC AUDIT-16）
+- [ ] AUDIT-17 归档成员读取上限（超限可读错误、不 OOM；见 SPEC AUDIT-17）
 
 ## M25-2（重定义）— marks 由 frecency 实现（2026-11-19 用户指令；见 SPEC §25）
 

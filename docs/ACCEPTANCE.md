@@ -743,7 +743,7 @@
 ### M26-5 文档
 - [ ] README 归档创建格式行为表与实现一致（内建/外部/不支持 + 校验默认）。
 
-## 26. AUDIT — 评估报告整改（AUDIT-1～12，见 SPEC AUDIT 段 / docs/REVIEW.md）
+## 26. AUDIT — 评估报告整改（AUDIT-1～17，见 SPEC AUDIT 段 / docs/REVIEW.md）
 
 ### AUDIT-1 pick 只读性
 - [ ] 存在 `events.pending` 时执行 `rvifm pick`，数据库文件 mtime 与 `meta.global_tick` 均不变。
@@ -752,20 +752,42 @@
 ### AUDIT-3 pick 预览同源
 - [ ] 若保留 pick 预览承诺，pick 与 TUI 对同一文件渲染一致；否则文档撤回该承诺。
 ### AUDIT-4 惰性 compaction
-- [ ] 事件超过阈值时读方启动触发 compaction，或文档明确仅手动。
+- [ ] 事件超过阈值时 TUI 启动触发 compaction（写 snapshot + 截断 events）；`pick` 不触发；或文档明确仅手动。
 ### AUDIT-5 app.rs 拆分
 - [ ] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。
 ### AUDIT-6 键位超时
 - [ ] 多键序列超时可配置，超时后清空 seq 且不吞后续按键。
 ### AUDIT-7 opener 分层
-- [ ] `prepend_rules` / `append_rules` / `rules` 三层语义与键位系统一致。
+- [ ] opener TOML 被实际读取；`prepend_rules` / `append_rules` / `rules` 三层语义与键位系统一致。
+- [ ] `mime` 与 `name` 匹配按顺序命中；命中规则执行 `use`/`run` 命令；未命中回退系统 opener。
 ### AUDIT-8 错误上浮
 - [ ] 生产路径无新增 `unwrap/expect` panic；刷新/会话/known_hosts 权限失败有可读提示。
 ### AUDIT-9 CI 门禁增强
 - [ ] CI 步骤含 `clippy --all-targets -D warnings` 与 `cargo check --target x86_64-unknown-linux-gnu --all-targets`（增强项，现行 AGENTS 未要求 CI 执行 cross-check）。
 ### AUDIT-10 重复实现统一
-- [ ] glob 匹配与配置失败回退各只保留一份实现，行为测试通过。
+- [ ] glob 匹配与配置失败回退各只保留一份实现，行为测试通过（含 `*x*` 双星模式）。
 ### AUDIT-11 帮助同步
-- [ ] `help.txt` 含 `:find` / `:grep` 等已实现命令，README 特性无失真。
+- [ ] `help.txt` 含 `:find` / `:grep` 等已实现命令；README 的 keymap 路径、marks/主题/opener 状态与实现一致。
 ### AUDIT-12 测试补强
 - [ ] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。
+
+### AUDIT-13 主题选择
+- [ ] 可通过 `:theme` 或 `[ui] theme` 选择 `opaline` 内置主题，切换后文件列表/预览/归档配色即时变化。
+- [ ] `~/.config/rvifm/themes/` 下的用户 TOML 主题可被发现并加载；损坏主题文件给出可读提示，不 panic。
+- [ ] 图标 Dark/Light 随主题 variant 变化（含远端列表路径）；未选主题时默认 Dark。
+
+### AUDIT-14 测试环境隔离
+- [ ] 在 `TMUX` 与 `STY` 均设置的 shell 中运行 `cargo test -- --test-threads=1` 全绿；清除两个变量后同样全绿。
+- [ ] `m18_4_bang_routes_and_config` 不依赖宿主终端策略，且测试输出不含外部命令的 stdout。
+
+### AUDIT-15 pick CLI 契约
+- [ ] `rvifm pick --topic dir` 与 `rvifm pick --topic file` 均按对应 topic 评分；SPEC §4.6 示例可直接工作。
+- [ ] 数据目录不存在时 `pick` 正常退出（空评分或只读打开），不输出裸 `NotFound`。
+- [ ] 文件候选使用 file topic，不得以 dir 分数兜底。
+
+### AUDIT-16 frecency 一致性
+- [ ] 配置 per-topic λ 后，手动 compaction 前后的查询排序保持一致（对照测试）。
+- [ ] `pick` 读取 `[frecency]` 的 λ / max_entries 配置，与 TUI 行为一致。
+
+### AUDIT-17 归档读取上限
+- [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。

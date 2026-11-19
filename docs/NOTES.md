@@ -662,3 +662,16 @@ rvifm record  → 静默记录访问
 - **结论**：采纳方案①——`events.pending` 合并只在 `record` 与 TUI 启动路径执行；`pick` 改用只读 open，不写 redb、不更新任何 tick。方案②（保留合并、削弱只读承诺）放弃。
 - **WHY**：只读红线是 frecency 语义正确性的基础（记录的是“已发生的访问”）；合并是可用性降级路径，不能反过来破坏只读契约。
 - **执行**：AUDIT-1 为 AUDIT 批次首个任务，验收见 ACCEPTANCE §26（存在 pending 时执行 `pick`，DB mtime 与 `global_tick` 不变）。状态已同步至 SPEC §6.1、TASKS、STATE、PLAN、AGENTS §10。
+
+### 2026-11-19 — 第二轮复核：AUDIT 扩至 17 项（WHY）
+
+- **来源**：用户要求对 harness 与代码做第二轮严肃评估；上一轮报告已归档 `docs/reviews/REVIEW-2026-11-19.md`，新结论见 `docs/REVIEW.md`（基线 `9532cd0`）。本轮不采信上一轮结论，全部重新核验。
+- **为什么新增 AUDIT-13（主题接线）**：`theme::set_builtin` / `set_user_theme` / `discover_user_themes` 有零个生产调用方，`ACTIVE` 从未写入；`style()` 恒返回默认样式。M9 只完成了“引擎 + 单测”，而 ACCEPTANCE §11 的“内置主题可加载、运行时切换、用户主题可发现”均不成立。把它当作“文档改小”会掩盖真实功能缺口，故登记为代码任务。
+- **为什么把 AUDIT-7 从“补 rules 层”扩为“整层接线”**：代码事实是 `OpenerConfig` 无 TOML 来源、无 `mime`、无执行器，`resolve_opener` 仅测试可达；只补一个字段仍然不会生效。另发现 `glob_match_simple` 的 `*x*` 分支先返回，永远无法命中，归入 AUDIT-10。
+- **为什么新增 AUDIT-14（测试隔离）**：`run_external_target` 读取 `TMUX`/`STY`，测试未隔离；本机 tmux 内 `cargo test` 336 项中 1 项失败，清除变量后全绿。CI 无 `TMUX` 因而长期看不见，属于“门禁失真”而非单纯 flaky。AGENTS §7 已同步固化“环境变量影响行为的测试必须隔离”。
+- **为什么新增 AUDIT-15（pick CLI）**：SPEC §4.6 的示例 `rvifm pick --topic dir` 当前会把 `--topic` 当查询词（已复现无输出、退出码 1）；所有候选仍按 `dir` topic 评分；数据目录不存在时直接返回裸 `NotFound`。这是对外契约，不是内部实现细节。
+- **为什么新增 AUDIT-16/17**：`cmd_compact` 的 `replay_merge` 硬编码 `AGING_LAMBDA=0.01`，与 unified 默认 0.005 冲突；`cmd_pick` 不初始化 `[frecency]` 设置。归档读取无成员大小上限、tar.xz 全量解压，与“内存受最大单成员约束”的注释/SPEC 不符。
+- **为什么把 M0–M25 改成 M0–M24 + M25 主体完成**：State/TASKS 中 M25-2 仍未勾选；继续写“全部关闭”会让下一轮 Agent 跳过 marks。M9/M11 同样改为“部分完成/引擎完成”，并指向具体 AUDIT 项。
+- **编号修正**：原已撤销的 `M25-2` 改名 `M25-2a`，重定义条目保留 `M25-2`；避免提交信息与任务检索歧义。
+- **未做**：未改任何代码、未改 CI、未动依赖；本轮只做文档与任务登记，等用户确认后再按 AUDIT 顺序执行（AUDIT-1 → 14 → 9 → 15 → 7/13 → 2/3/4/16 → 其余）。
+- **风险**：文档现在把“未接线”写在明面上，短期会显得完成度下降；这是为了避免第三轮继续在错误前提上排期。若用户希望保留“已完成”口径，应改为“引擎完成、接线待办”，不得恢复“能力已完成”的表述。

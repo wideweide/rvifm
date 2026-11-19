@@ -23,9 +23,9 @@
 | M6 | 打磨与发布 | 帮助、README、性能检查、`v0.1.0` | M0–M5 | 已完成 | **v0.1.0** |
 | M7 | 归档浏览（只读 VFS） | `Location` / `ArchiveFs` / Zip/Tar 虚拟目录 | M1、M4 | 已完成 | 后续版本 |
 | M8 | 原生 frecency 选择器 | `pick` / `record`、redb 三表、compaction | M1、M7 | 已完成 | 后续版本 |
-| M9 | 图标与主题 | `devicons` + `opaline` 内建 | M1、M7、M8 | 已完成 | 后续版本 |
+| M9 | 图标与主题 | `devicons` + `opaline` 内建 | M1、M7、M8 | 引擎完成；主题选择/用户主题/明暗接线缺口见 AUDIT-13 | 后续版本 |
 | M10 | 声明式键位系统 | `Action`、序列、模式、TOML 分层 | M1–M5 | 已完成 | 后续版本 |
-| M11 | 预览与文件打开 | `ratatui-image` 回退链、系统 opener、Office/PDF | M7–M10 | 已完成（M11-6 真实终端验证 deferred；PDF 视觉链与 pick 预览同源缺口感见 AUDIT） | 0.2.0 |
+| M11 | 预览与文件打开 | `ratatui-image` 回退链、系统 opener、Office/PDF | M7–M10 | 部分完成（M11-6 真实终端验证 deferred；opener 整层未接线、PDF 视觉链与 pick 预览同源缺口见 AUDIT-2/3/7） | 0.2.0 |
 | M12 | 权限不足内联提权（2026-11-12 增补） | `sudo -A` + `rvifm --askpass` | M2 | 已完成 | 0.5.0 |
 | M13–M14 | vifm 对齐增强 + 双栏模型（2026-11-14/15） | f/F、cw、:tree、后台作业、双 pane、标签栏 | M6–M11 | 已完成 | 0.4.0/0.5.0 |
 | M15–M17 | 反馈批次 + 导航增强 + 递归搜索查看器（2026-11-15） | FIX/FEAT、NAV、:find/:grep/查看器 | M6–M14 | 已完成 | 0.6.0 |
@@ -37,7 +37,7 @@
 | M23 | Frecency 对齐增强与 Pane 模式（2026-11-17 增补；11-18 追加调整） | 多词匹配分级/unbook 保留历史/容量清理/IGNORE_PATTERNS/per-topic 配置/Frecency Pane 模式（键位与 Normal 一致）/y* 复制与 e 编辑器/自定义命令快捷键/git 评估/远端跟踪上传/选择器删除撤销 | M8, M21 | ✅ 已完成（2026-11-18，12 任务，292 单测） | 0.8.0 |
 | M24 | 交互增强与列表规范（2026-11-19 增补） | 列对齐规范/自然排序/行可视 V/可视操作扩展/计数前缀扩展/命令历史/路径补全/目录对比/任务视图增强 | M1–M23 | 已完成（2026-11-19 批次关闭） | 0.9.0 |
 | M25 | 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补） | 会话持久化/marks 由 frecency 实现并持久化/归档创建+校验文件/git 状态列+gi 打开 git TUI/frecency 通用化评估 | M1–M24 | 主体完成（M25-2 已重开为 frecency 实现，见 TASKS） | 0.9.0 |
-| AUDIT | 评估报告整改（2026-11-19，见 docs/REVIEW.md） | pick 只读红线/PDF 视觉链/pick 预览同源/惰性 compaction/app.rs 拆分/键位超时/opener 分层/错误上浮/CI 门禁/重复实现/help 与 README 同步/测试补强 | 无前置；先于 M26 处理 P0 项 | **已确认（执行中）**；AUDIT-1 方案已拍板 | 随确认批次 |
+| AUDIT | 评估报告整改（2026-11-19，第二轮复核扩至 17 项，见 docs/REVIEW.md） | pick 只读红线/PDF 视觉链/pick 预览同源/惰性 compaction/app.rs 拆分/键位超时/opener 整层接线/错误上浮/CI 门禁/glob 统一/help 与 README 同步/测试补强/主题接线/测试隔离/pick CLI/frecency 一致性/归档上限 | 无前置；先于 M26 处理 P0 项 | **已确认（执行中）**；AUDIT-1 方案已拍板 | 随确认批次 |
 | M26 | 归档创建扩展与外部工具降级（2026-11-19 增补） | :archive 后台作业化/7z 内建创建/7z 只读浏览/外部 CLI 降级（xz-bz2-zst-rar-cab-lzh）/README 格式行为表 | M7, M24-9, M25-3/4 | 已确认启动 | 0.9.0 |
 > 里程碑顺序以本表为准。早期讨论中曾提出把 M7 插到 M4/M5 之间、把 M8/M11 放到 M6 之前；最终收敛为“先交付 v0.1.0 核心，再叠加增强”，早期插入位置不再使用。M12 为 2026-11-12 增补的增强里程碑（操作级内联提权，见 NOTES.md）。
 
@@ -110,6 +110,8 @@
 | `exprim =0.4.0` 供应链风险 | 仅作非默认 `pdf-visual` feature；固定 `=0.4.0` + `Cargo.lock` 入库；按 NOTES.md §4.8 复评 |
 | 文档与实现漂移（本次评估发现） | 以 `SPEC` / `STATE` 为单一事实源，AUDIT 批次整改；`REVIEW.md` 记录结论 |
 | `app.rs` 上帝文件（15k 行） | AUDIT-5 按职责拆分，测试随迁 |
+| 主题/opener 整层未接线（第二轮复核发现） | AUDIT-13 / AUDIT-7：接入生产路径后再关闭对应阶段 |
+| 测试受宿主 `TMUX`/`STY` 影响（第二轮复核发现） | AUDIT-14：隔离环境变量，CI 与本地均需稳定 |
 | CI 覆盖增强（非违规，本次评估建议） | AUDIT-9：clippy all-targets + Linux cross-check 入 CI |
 | Win2016 上 ZCode 可能无法启动 | 改用 VS Code + `rust-analyzer` 或纯命令行；不影响项目内容 |
 | CI 无 TTY 导致 TUI 测试失败 | 使用 `TestBackend`，冒烟只跑 `--version` / `--help` |

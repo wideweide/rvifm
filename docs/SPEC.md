@@ -936,7 +936,7 @@ append_rules = [
 - 不实现"重启一个 root rvifm 实例"的模式（vifm 的 `:!sudo vifm %c` 路线）。
 - 不将整个文件管理器进程以 root 身份运行。
 
-#### AUDIT — 评估报告整改（2026-11-19 增补；见 docs/REVIEW.md，已确认执行）
+#### AUDIT — 评估报告整改（2026-11-19 增补；第二轮复核扩充至 17 项；见 docs/REVIEW.md，已确认执行）
 
 **硬约束**：整改不得削弱 AGENTS §5 已定红线；`pick` 只读性优先于 `events.pending` 合并便利；文档声称的能力要么接线、要么降级表述，不得两头并存。
 
@@ -947,16 +947,22 @@ append_rules = [
 - **AUDIT-4 惰性 compaction**：TUI 启动时按阈值（默认 5000 条）触发写 snapshot + 截断 events；`pick` 不触发（只读）；原“读方启动”表述已按 AUDIT-1 修正为“TUI 启动”。
 - **AUDIT-5 app.rs 拆分**：按 keys/exec/render/jobs/preview 分片，测试随迁，单文件生产代码降到可维护规模。
 - **AUDIT-6 键位超时**：多键序列支持可配置超时。
-- **AUDIT-7 opener 分层**：补齐 `rules` 完全替换层，与键位三层同构。
+- **AUDIT-7 opener 分层**：整层接线——读取 opener TOML（`prepend_rules` / `append_rules` / `rules`）、支持 `mime` 与 `name` 匹配、执行 `use`/`run` 命令；当前 `OpenerConfig` 无 TOML 来源、无 mime、无 `rules`、无执行器，仅测试可达。
 - **AUDIT-8 错误上浮**：清理生产 `unwrap/expect/unreachable`，刷新/会话/known_hosts 权限失败不得静默。
 - **AUDIT-9 CI 增强**：clippy 覆盖 all-targets；将 AGENTS §6 现为本地门禁的 Linux target cross-check 纳入 CI（非现行规范违反）。
-- **AUDIT-10 重复实现统一**：glob 匹配与配置失败回退各保留一份实现。
-- **AUDIT-11 帮助与 README 同步**：`help.txt` 补齐 `:find`/`:grep` 等已实现命令。
+- **AUDIT-10 重复实现统一**：glob 匹配与配置失败回退各保留一份实现；修复 `opener::glob_match_simple` 对 `*x*` 的匹配缺陷（`strip_prefix('*')` 分支先返回导致双星模式失效）。
+- **AUDIT-11 帮助与 README 同步**：`help.txt` 补齐 `:find`/`:grep` 等已实现命令；README 修正 keymap 配置路径（`config.toml` 的 `[normal]`，非 `keymap.toml`）、marks/主题/opener 的实施状态、致谢去 `skim`。
 - **AUDIT-12 测试补强**：`keymap`/`state`/`session`/CLI 子命令分派补测，降低 `app.rs` 测试占比。
+- **AUDIT-13 主题选择接线**：`theme::set_builtin` / 用户主题发现与加载必须有生产调用方（`:theme` 命令或 `[ui] theme` 配置）；切换后列表/预览/归档共用样式立即生效；图标 Dark/Light 跟随主题 variant；无主题文件时默认 Dark 且不 panic。
+- **AUDIT-14 测试环境隔离**：测试不得由宿主的 `TMUX` / `STY` 等环境变量改变结果；`m18_4_bang_routes_and_config` 在 tmux 内、外均须稳定通过，且不向测试 stdout 泄漏外部命令输出。
+- **AUDIT-15 pick CLI 契约**：支持 `--topic dir|file`（与 `record` 对称）；候选按对应 topic 评分；数据目录缺失时 `pick` 不得以裸 `NotFound` 失败（空评分或只读打开）；与 AUDIT-3 的预览承诺统一。
+- **AUDIT-16 frecency 一致性**：`cmd_pick` 初始化 `[frecency]` 设置；`compaction` 使用 per-topic λ（不得硬编码 `AGING_LAMBDA`），与实时查询结果一致。
+- **AUDIT-17 归档读取上限**：单成员读取与 tar.xz 整体解压设置体积上限；超限返回可读错误，不 OOM、不 panic。
 
 **SIMPLIFIED**
-- 整改按 P0 → P1 → P2 分批提交；AUDIT-1 与 AUDIT-9 优先。
-- 不要求一次性完成全部 12 项，但每项必须独立可验收。
+- 整改按 P0 → P1 → P2 分批提交；AUDIT-1、AUDIT-14 与 AUDIT-9 优先。
+- 不要求一次性完成全部 17 项，但每项必须独立可验收。
+- 主题接线仅要求“可选择 + 可加载 + 即时生效”，不要求完整设置界面（沿用 `opaline` 内置列表即可）。
 
 **OUT_OF_SCOPE**
 - 不为整改引入新依赖或重写 TUI 框架。
