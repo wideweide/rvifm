@@ -798,6 +798,7 @@ rvifm record  → 静默记录访问
 
 - **来源**：2026-11-20 运维/开发视角评估报告（基于 harness 文档核验版），用户指令"蒸馏 P1/P2 + 第四/五节建议；P3 按建议；frecency 通用化对齐同级项目"。参考报告（README-only）勘误已并入登记口径：`:compare` 已有 M24-8 基座（M29 定位为增强而非新建）；M26 已完成（能力矩阵探测降为 M31 验收视角）；`:jobs` 已有选择/取消（M28-3 定位为暂停/详情增强）。
 - **批次划分**：M28 运维操作补齐（:link/:rename/:jobs 增强）、M29 对比增强（bycontents+dp/do）、M30 frecency 通用化、M31 文档与验收补齐；统一目标 **0.10.0**（PLAN §4 自动发布规则沿用）。
+- **P2 补登（用户确认"先补登 P2 三项再执行"）**：M32 远端健壮性与会话扩展（SFTP 重连 / .part+偏移续传 / 会话持久化扩展）、M33 键位模式分层扩展（[visual]/[view]/[command]）。要点：续传与 M20-3"显式取消清理半成品"并存——中断保留 `.part`、取消清理；重连为操作触发式一次（不做后台心跳）；M33 未配置模式必须零行为变化；command-line 可映射集合用白名单（实现时定、help 记录）。
 - **同级 frecency 项目对齐（用户指令；HEAD `d7e03d0`，2026-11-19）**：
   - **topic 命名用 `cmd`**（其架构注释 dir/file/cmd/自定义 topic 口径）——M30-1 采纳。
   - **清理无分数下限是不变量**：其 2026-11-18 引入 per-topic score floor 当日撤销（分数是序数、绝对值跨使用模式无意义、阈值是 MAX_ENTRIES 的不可预测替身、低分重要条目必须可达），REGRESSION 固化 "no score-threshold cleanup"。rvifm M23-3 本就只用容量裁剪——**登记为 CUT：不引入分数下限清理**（SPEC M30 OUT_OF_SCOPE）。
