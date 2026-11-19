@@ -4430,15 +4430,22 @@ fn nav1_quickjump_target_picks_top_ranked_dir_by_keyword() {
     let entries = vec![
         mk("/low", "dir", "dl", 1.0),
         mk("/high", "dir", "dl", 9.0),
-        mk("/file", "file", "dl", 99.0), // file topic 不参与
+        mk("/file", "file", "dl", 99.0),
         mk("/other", "dir", "xx", 50.0),
     ];
+    // M25-2：目录与文件都参与（file 高分 99 → 跳转语义由 jump_to 分派）。
     assert_eq!(
-        quickjump_target(&entries, "dl"),
-        Some("/high".to_owned()),
-        "keyword 精确匹配的 dir 最高分"
+        quickjump_target(&entries, "dl").map(|e| e.path.as_str()),
+        Some("/file"),
+        "keyword 精确匹配的最高分条目（不限 topic）"
     );
     assert_eq!(quickjump_target(&entries, "zz"), None);
+    // 纯 dir 集（无 file 竞争）仍取最高分。
+    let dirs = vec![mk("/low", "dir", "dl", 1.0), mk("/high", "dir", "dl", 9.0)];
+    assert_eq!(
+        quickjump_target(&dirs, "dl").map(|e| e.path.as_str()),
+        Some("/high")
+    );
 }
 
 #[test]
@@ -7688,4 +7695,101 @@ fn m21f2_focus_switch_sets_no_status_message() {
     );
     assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
     assert!(msg.is_none(), "切回焦点不应有状态栏提示: {msg:?}");
+}
+
+#[test]
+fn m252_mark_set_validation_no_db_touch() {
+    // M25-2：marks 非法字符 / 非物理视图 → 可读提示且不触 frecency 存储
+    // （写入路径由 frecency 模块注入式测试覆盖）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut msg = None;
+    mark_set(&mut state, '-', &mut msg);
+    assert!(msg.unwrap().contains("限字母与数字"), "非法字符提示");
+    // 远端视图 → 拒绝。
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().location = crate::tab::Location::Remote {
+        remote: "test".to_owned(),
+        path: PathBuf::from("/"),
+    };
+    let mut msg: Option<String> = None;
+    mark_set(&mut state, 'a', &mut msg);
+    assert!(
+        msg.as_deref().unwrap().contains("仅物理视图"),
+        "远端视图拒绝: {msg:?}"
+    );
+    match exec_command_impl(&mut state, "bmark home") {
+        // 远端守卫先于物理视图校验（"远端不支持: bmark"）——两者都是拒绝。
+        Err(e) => assert!(e.contains("bmark"), "bmark 远端拒绝: {e}"),
+        Ok(_) => panic!("bmark 远端视图应拒绝"),
+    }
+}
+
+#[test]
+fn m252_bmark_tag_validation() {
+    // M25-2：tag 限字母与数字（不触 DB——校验先于写入）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    match exec_command_impl(&mut state, "bmark home!") {
+        Err(e) => assert!(e.contains("限字母与数字"), "{e}"),
+        Ok(_) => panic!("非法 tag 应拒绝"),
+    }
+    match exec_command_impl(&mut state, "bmark") {
+        Err(e) => assert!(e.contains("缺少 tag"), "{e}"),
+        Ok(_) => panic!("缺 tag 应拒绝"),
+    }
+}
+
+#[test]
+fn m252_bmgo_missing_tag_errors() {
+    // M25-2：:bmgo 未知 tag → 可读错误不静默（读全局 store，串行锁）。
+    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    match exec_command_impl(&mut state, "bmgo") {
+        Err(e) => assert!(e.contains("缺少 tag"), "{e}"),
+        Ok(_) => panic!("缺 tag 应拒绝"),
+    }
+    match exec_command_impl(&mut state, "bmgo no-such-mark-xyz") {
+        Err(e) => assert!(e.contains("no-such-mark-xyz"), "{e}"),
+        Ok(_) => panic!("未知 tag 应报错"),
+    }
+}
+
+#[test]
+fn m252_jump_to_file_semantics_locates_cursor() {
+    // M25-2：`'<char>` 命中文件条目 → 父目录 cd + 光标定位（jump_to
+    // M8-12 语义；纯 fixture，不触 frecency 存储）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("target.txt"), "T").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let entry = crate::frecency::ScoredEntry {
+        path: tmp
+            .path()
+            .join("target.txt")
+            .to_string_lossy()
+            .replace('\\', "/"),
+        topic: "file".to_owned(),
+        keyword: "t".to_owned(),
+        score: 9.0,
+        grade: crate::frecency::Grade::None,
+        last_visit: 0,
+    };
+    let m = jump_to(&mut state, &entry).expect("文件跳转成功");
+    assert!(m.contains("定位"), "msg: {m}");
+    assert_eq!(state.active_tab().cursor, 0, "定位到 target.txt");
+    let expected_parent = tmp.path().to_string_lossy().replace('\\', "/");
+    assert_eq!(
+        state
+            .active_tab()
+            .location
+            .base_dir()
+            .to_string_lossy()
+            .replace('\\', "/"),
+        expected_parent,
+        "cd 到父目录"
+    );
 }

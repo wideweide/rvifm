@@ -585,9 +585,21 @@ pub fn set_keyword_at(
     path: &str,
     keyword: &str,
 ) -> std::io::Result<()> {
+    set_keyword_topic_at(db_path, pending, path, "dir", keyword)
+}
+
+/// M25-2：topic 感知形态——marks 支持 file 条目（dir/file 各自评分链）。
+/// `keyword` 为空 = 清除书签（保留累积分数正常衰减，SPEC §4.6）。
+pub fn set_keyword_topic_at(
+    db_path: &Path,
+    pending: &Path,
+    path: &str,
+    topic: &str,
+    keyword: &str,
+) -> std::io::Result<()> {
     let record = EntryRecord {
         path: path.replace('\\', "/"),
-        topic: "dir".to_owned(),
+        topic: topic.to_owned(),
         kind: EntryKind::Keyword,
         clock: 0,
         keyword: keyword.trim().to_owned(),
@@ -601,12 +613,17 @@ pub fn set_keyword_at(
 
 /// M16 NAV-1：按平台默认存储路径设置 keyword（TUI `:keyword` 入口）。
 pub fn set_keyword_now(path: &str, keyword: &str) -> std::io::Result<()> {
+    set_keyword_topic_now(path, "dir", keyword)
+}
+
+/// M25-2：全局路径 + topic 形态（`m<char>` / `:bmark` TUI 入口）。
+pub fn set_keyword_topic_now(path: &str, topic: &str, keyword: &str) -> std::io::Result<()> {
     let db_path = crate::config::frecency_db_path();
     let pending = db_path
         .parent()
         .unwrap_or(Path::new("."))
         .join("events.pending");
-    set_keyword_at(&db_path, &pending, path, keyword)
+    set_keyword_topic_at(&db_path, &pending, path, topic, keyword)
 }
 
 /// M8 收尾（GAP-2）：TUI 退出时批量追加会话访问事件——与 record 同链

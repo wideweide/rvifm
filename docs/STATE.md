@@ -3,23 +3,23 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-20
-- **当前阶段**：AUDIT 整改批次 ✅ **全部完成（18/18，2026-11-20）**；下一阶段 M25-2（marks）→ M26 → M27 按序执行
-- **当前任务**：M25-2 marks/bookmark 由 frecency 实现（AUDIT 批次 18 项已于 2026-11-20 全部完成）
-- **阶段状态**：M0–M24 + AUDIT 完成（M9/M11 的"未接线"能力已随 AUDIT-13/7/2/3 整改落地，**计入实质完成**）；M25 主体完成但 **M25-2（marks）未实现**；M11-6 真实终端验证 deferred；M27 已确认按序排队；v0.8.0 已发布，0.9.0 在任务列表全部完成后自动发布
+- **更新时间**：2026-11-20
+- **当前阶段**：M0–M25 + AUDIT ✅ 全部完成（AUDIT 18/18、M25-2 marks 均于 2026-11-20 落地）；下一阶段 M26（归档创建扩展）→ M27 按序执行
+- **当前任务**：M26-1 `:archive` 后台作业化（M25-2 已于 2026-11-20 完成）
+- **阶段状态**：M0–M25 + AUDIT 完成（M9/M11 的"未接线"能力已随 AUDIT-13/7/2/3 整改落地，**计入实质完成**；M25-2 marks 落地）；M11-6 真实终端验证 deferred；M27 已确认按序排队；v0.8.0 已发布，0.9.0 在任务列表全部完成后自动发布
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
 ## 进行中 / 暂停 / 延期
 
-- M25-2（重定义）marks/bookmark 由 frecency 实现：AUDIT 之后首个任务；keyword 长度分工已确认（单字符 `'<char>` 导航 / 多字符 `o`/`:j`/`:J` 搜索高优先级匹配）。
-- M26-1～M26-5：已确认启动，排在 M25-2 之后。
+- M26-1～M26-5：已确认启动（当前 M26-1：`:archive` 迁移 M13-8 Job 模型）。
 - M27-1～M27-3：0.8.0 实测问题与 vifm 视觉对齐，**已确认按序排队**（M27-1 无前置；M27-2 依赖 AUDIT-13（已完成）；M27-3 依赖 AUDIT-2（已完成））。
 - PROC-1：预算门控与断点落地协议已写入 `AGENTS.md` §3 与 `ACCEPTANCE.md` §1，**已生效（用户 2026-11-19 确认）**，为「自动续轮」第 3 条停止条件。
 - M11-6：Alacritty 真实终端图片显示验证，需人工环境，deferred。
 
 ## 下一步
 
-1. 执行 M25-2（marks/bookmark 由 frecency 实现）：`m<char>` / `'<char>` + vifm 对齐 `:bmark` 系列；keyword 持久化 redb；单字符 marks 导航 / 多字符搜索高优先级匹配（见 SPEC §25 / ACCEPTANCE 对应条目）。
-2. 之后按序推进 M26-1～5（归档创建扩展）→ M27-1～3（实测问题与视觉对齐）→ MISC-1。
+1. 执行 M26-1（`:archive` 后台作业化）：迁移 M13-8 Job 模型；大目录不阻塞 UI；完成回包入撤销栈；`:jobs` 可见可取消（见 SPEC §26 / ACCEPTANCE §25）。
+2. 之后按序推进 M26-2～5 → M27-1～3 → MISC-1（rv 别名）。
 3. 全部任务完成后自动发布 0.9.0（无需人工决策）。
 
 ## 批次关闭记录
@@ -34,7 +34,7 @@
 - M22：SFTP 安全与远端体验补全（7 项），283 单测；发布 0.8.0。
 - M23：frecency 对齐增强与 Pane 模式（12 项），292 单测；0.8.0。
 - M24：交互增强与列表规范（9 项），318 单测 + 6 集成；列对齐、自然排序、行可视、计数前缀、命令历史、路径补全、`:compare`、`:jobs`。
-- M25：会话持久化、归档创建/校验、异步 git 状态列与 `gi`、frecency 通用化评估（M25-2 marks 重开）；336 单测 + 6 集成。
+- M25：会话持久化、归档创建/校验、异步 git 状态列与 `gi`、frecency 通用化评估；**M25-2 marks/bookmark 由 frecency 实现补齐（2026-11-20）**——`m<char>` 写入 keyword 事件（dir/file topic、`..` 行=当前目录）、`'<char>` 经 jump_to 支持 file 语义、`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks` 命令族（`:delbmarks` 清除 = 空 keyword 事件保留累积分数）、多字符 keyword 搜索高优先级（M23-1 既有）。**M25 批次自此全部完成**；361 单测 + 5 集成。
 - AUDIT：评估整改 18 项全部完成（2026-11-20）——pick 只读红线（redb ReadOnlyDatabase）、opener/主题/预览整层接线、app.rs 拆分 `src/app/` 7 模块、CI 门禁增强（clippy all-targets + Linux cross-check）、测试隔离与可移植性整改（含 Store::open 数据目录自动创建）、生产 panic 面清零、glob 统一修 `*x*`、help/README 同步、惰性 compaction 与 per-topic λ 一致性、归档成员/xz 解压上限；357 单测 + 5 集成双环境绿。
 
 ## 质量门禁

@@ -893,25 +893,26 @@ pub(crate) fn physical_base(state: &AppState) -> Result<PathBuf, String> {
     Ok(tab.focus_base().to_path_buf())
 }
 
-// ── M16 NAV-1：' 快速跳转（keyword 直达） ──────────────────────────────
+// ── M16 NAV-1 / M25-2：' 快速跳转与 marks/bookmark（frecency keyword） ──────
 
-/// NAV-1 纯函数：从重放条目中取 keyword 精确匹配的**目录**最高排名路径。
-/// 候选 keyword 相同 → 档位相同（Grade 6 书签）→ 分数即唯一区分；
-/// 平分按路径字典序取前（确定性）。注意 cmp_ranked 是降序比较器，
-/// 不能直接喂 max_by。
-pub(crate) fn quickjump_target(
-    entries: &[crate::frecency::ScoredEntry],
+/// NAV-1/M25-2 纯函数：从重放条目中取 keyword 精确匹配的**最高排名条目**
+/// （目录与文件都参与——跳转语义由 `jump_to` 按 topic 分派：目录 cd、
+/// 文件父目录定位光标）。候选 keyword 相同 → 档位相同（Grade 6 书签）
+/// → 分数即唯一区分；平分按路径字典序取前（确定性）。注意 cmp_ranked
+/// 是降序比较器，不能直接喂 max_by。
+pub(crate) fn quickjump_target<'a>(
+    entries: &'a [crate::frecency::ScoredEntry],
     keyword: &str,
-) -> Option<String> {
+) -> Option<&'a crate::frecency::ScoredEntry> {
     entries
         .iter()
-        .filter(|e| e.topic == "dir" && e.keyword == keyword)
+        .filter(|e| e.keyword == keyword)
         .max_by(|a, b| a.score.total_cmp(&b.score).then(b.path.cmp(&a.path)))
-        .map(|e| e.path.clone())
 }
 
-/// `'`+字符：keyword 直达——配置别名优先，缺省即字符本身；
-/// 命中目录即 cd（等价 :cd：history 入栈 + 刷新）；未命中提示不静默。
+/// `'`+字符：keyword 直达——配置别名优先，缺省即字符本身。
+/// 跳转语义由 `jump_to` 分派：目录 cd（等价 :cd）、文件父目录定位光标
+/// （M8-12 语义）；未命中提示不静默。
 pub(crate) fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>) {
     let target_kw = config::quickjump_alias(c).unwrap_or_else(|| c.to_string());
     let entries = match load_jump_entries(state, JumpKind::Unified) {
@@ -921,19 +922,162 @@ pub(crate) fn quickjump(state: &mut AppState, c: char, msg: &mut Option<String>)
             return;
         }
     };
-    let Some(target) = quickjump_target(&entries, &target_kw) else {
+    let Some(entry) = quickjump_target(&entries, &target_kw) else {
         *msg = Some(format!(
-            "无 keyword {target_kw} 的条目（:keyword {target_kw} 设置）"
+            "无 keyword {target_kw} 的条目（m<char> / :keyword / :bmark 设置）"
         ));
         return;
     };
-    let cfg = state.config.clone();
-    let tab = state.active_tab_mut();
-    if let Err(e) = tab.navigate_to(Location::Physical(PathBuf::from(&target)), cfg) {
-        *msg = Some(format!("跳转失败: {e}"));
+    let entry = entry.clone();
+    match jump_to(state, &entry) {
+        Ok(m) => *msg = Some(m),
+        Err(e) => *msg = Some(e),
+    }
+}
+
+// ── M25-2：marks / bookmark（frecency keyword 数据的命令视图） ───────────────
+
+/// marks 合法字符：字母与数字（vifm marks 口径；多字符 tag 亦限字母数字，
+/// 多字符 keyword 在 `o`/`:j`/`:J` 搜索中享有高优先级匹配）。
+pub(crate) fn valid_mark_keyword(kw: &str) -> bool {
+    !kw.is_empty() && kw.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// M25-2：`m<char>`——当前光标条目以 keyword=<char> 写入 frecency redb
+/// （与 bookmark/keyword 共用 `EntryRecord.keyword`；`..` 行 = 当前目录）。
+/// 仅物理视图（归档/远端/结果/树视图不记录）。
+pub(crate) fn mark_set(state: &mut AppState, c: char, msg: &mut Option<String>) {
+    if !c.is_ascii_alphanumeric() {
+        *msg = Some(format!("marks 字符限字母与数字（收到 {c}）"));
         return;
     }
-    *msg = Some(format!("已跳转: {target}"));
+    let tab = state.active_tab();
+    if !matches!(tab.location, crate::tab::Location::Physical(_)) {
+        *msg = Some("marks 仅物理视图可用（归档/远端/结果/树视图不记录）".to_owned());
+        return;
+    }
+    let path = if tab.on_parent_row {
+        tab.location.base_dir().to_path_buf()
+    } else if let Some(item) = tab.entries.get(tab.cursor) {
+        tab.location.base_dir().join(&item.name)
+    } else {
+        *msg = Some("无选中条目".to_owned());
+        return;
+    };
+    let is_dir = tab.on_parent_row
+        || tab
+            .entries
+            .get(tab.cursor)
+            .map(|i| i.is_dir)
+            .unwrap_or(true);
+    let topic = if is_dir { "dir" } else { "file" };
+    let path_str = path.to_string_lossy().replace('\\', "/");
+    match crate::frecency::set_keyword_topic_now(&path_str, topic, &c.to_string()) {
+        Ok(()) => *msg = Some(format!("已标记 {c}: {path_str}")),
+        Err(e) => *msg = Some(format!("标记失败: {e}")),
+    }
+}
+
+/// M25-2：`:bmark <tag> [tag2...]`——为当前目录设置书签 tag（物理视图限定）。
+pub(crate) fn bmark_set(state: &mut AppState, tags: &[String]) -> Result<String, String> {
+    if tags.is_empty() {
+        return Err("bmark: 缺少 tag（:bmark <tag> [tag2...]）".to_owned());
+    }
+    for t in tags {
+        if !valid_mark_keyword(t) {
+            return Err(format!("bmark: tag `{t}` 限字母与数字"));
+        }
+    }
+    let tab = state.active_tab();
+    if !matches!(tab.location, crate::tab::Location::Physical(_)) {
+        return Err("bmark 仅物理视图可用（远端/归档不记录）".to_owned());
+    }
+    let path = tab.location.base_dir().to_string_lossy().replace('\\', "/");
+    for t in tags {
+        crate::frecency::set_keyword_topic_now(&path, "dir", t)
+            .map_err(|e| format!("bmark 失败: {e}"))?;
+    }
+    Ok(format!("已标记 {}: {}", tags.join(" "), path))
+}
+
+/// M25-2：`:bmarks [tag...]`——列出书签（无参 = 全部；有参 = 指定 tag）。
+pub(crate) fn bmarks_list(state: &mut AppState, tags: &[String]) -> Result<String, String> {
+    let entries = load_jump_entries(state, JumpKind::Unified)?;
+    let mut lines: Vec<String> = Vec::new();
+    for e in &entries {
+        if e.keyword.is_empty() {
+            continue;
+        }
+        if !tags.is_empty() && !tags.contains(&e.keyword) {
+            continue;
+        }
+        lines.push(format!("{} {}", e.keyword, e.path));
+    }
+    if lines.is_empty() {
+        return Ok("无书签（m<char> / :bmark 设置）".to_owned());
+    }
+    Ok(lines.join("；"))
+}
+
+/// M25-2：`:bmgo <tag> [tag2...]`——按序取首个有书签条目的最高排名项跳转
+/// （目录 cd / 文件定位，同 `'<char>` 语义）。
+pub(crate) fn bmgo(state: &mut AppState, tags: &[String]) -> Result<String, String> {
+    if tags.is_empty() {
+        return Err("bmgo: 缺少 tag（:bmgo <tag> [tag2...]）".to_owned());
+    }
+    let entries = load_jump_entries(state, JumpKind::Unified)?;
+    for t in tags {
+        if let Some(entry) = quickjump_target(&entries, t) {
+            let entry = entry.clone();
+            return jump_to(state, &entry);
+        }
+    }
+    Err(format!(
+        "无 tag {} 的书签（:bmarks 查看；m<char> / :bmark 设置）",
+        tags.join(" ")
+    ))
+}
+
+/// M25-2：`:delbmarks [tag...]`（无参 = 全部书签）/ `:delbmarks! <path...>`
+/// （按路径清除）。清除 = 追加空 keyword 事件（保留累积分数，M23-2 语义）。
+pub(crate) fn delbmarks(
+    state: &mut AppState,
+    force_paths: &[String],
+    tags: &[String],
+) -> Result<String, String> {
+    let entries = load_jump_entries(state, JumpKind::Unified)?;
+    if !force_paths.is_empty() {
+        let mut cleared = 0usize;
+        for p in force_paths {
+            for e in entries
+                .iter()
+                .filter(|e| &e.path == p && !e.keyword.is_empty())
+            {
+                crate::frecency::set_keyword_topic_now(&e.path, &e.topic, "")
+                    .map_err(|err| format!("delbmarks 失败: {err}"))?;
+                cleared += 1;
+            }
+        }
+        if cleared == 0 {
+            return Err(format!("路径无书签: {}", force_paths.join(" ")));
+        }
+        return Ok(format!("已清除 {cleared} 条书签"));
+    }
+    let targets: Vec<crate::frecency::ScoredEntry> = entries
+        .iter()
+        .filter(|e| !e.keyword.is_empty() && (tags.is_empty() || tags.contains(&e.keyword)))
+        .cloned()
+        .collect();
+    if targets.is_empty() {
+        return Err("无书签可清除".to_owned());
+    }
+    let mut cleared = 0usize;
+    for e in &targets {
+        crate::frecency::set_keyword_topic_now(&e.path, &e.topic, "")
+            .map_err(|err| format!("delbmarks 失败: {err}"))?;
+        cleared += 1;
+    }
+    Ok(format!("已清除 {cleared} 条书签"))
 }
 
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────────
@@ -1150,7 +1294,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
-                | "compare" | "theme",
+                | "compare" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
@@ -1212,6 +1356,34 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Ok(ExecOutcome::Done {
                 msg: Some(format!("主题已切换: {name}（{variant}）")),
             })
+        }
+        Some("bmark") => {
+            // M25-2：为当前目录设置书签 tag（vifm 对齐；与 marks 共用数据）。
+            let tags: Vec<String> = parts.map(|s| s.to_owned()).collect();
+            let m = bmark_set(state, &tags)?;
+            Ok(ExecOutcome::Done { msg: Some(m) })
+        }
+        Some("bmarks") => {
+            // M25-2：列出书签（无参 = 全部；有参 = 指定 tag）。
+            let tags: Vec<String> = parts.map(|s| s.to_owned()).collect();
+            let m = bmarks_list(state, &tags)?;
+            Ok(ExecOutcome::Done { msg: Some(m) })
+        }
+        Some("bmgo") => {
+            // M25-2：按 tag 跳转（首个命中 tag 的最高排名条目）。
+            let tags: Vec<String> = parts.map(|s| s.to_owned()).collect();
+            let m = bmgo(state, &tags)?;
+            Ok(ExecOutcome::Done { msg: Some(m) })
+        }
+        Some("delbmarks") => {
+            // M25-2：`:delbmarks [tag...]` / `:delbmarks! <path...>`。
+            let args: Vec<String> = parts.map(|s| s.to_owned()).collect();
+            let (force_paths, tags) = match args.split_first() {
+                Some((bang, rest)) if bang == "!" => (rest.to_vec(), Vec::new()),
+                _ => (Vec::new(), args),
+            };
+            let m = delbmarks(state, &force_paths, &tags)?;
+            Ok(ExecOutcome::Done { msg: Some(m) })
         }
         Some("sort") => {
             // M18-2：多字段排序（:sort name,size desc）。

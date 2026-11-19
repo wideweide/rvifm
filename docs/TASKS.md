@@ -328,7 +328,7 @@
 
 > 原「独立模块 + 暂停」定义撤销（上方已划掉）。数据记录与导航均由 frecency 模块实现，marks/bookmark 统一持久化在 frecency redb；执行顺序排在 AUDIT 之后（用户已确认）。keyword 按长度分工（单字符 marks 导航 / 多字符搜索高优先级匹配）已确认，见 SPEC §25。
 
-- [ ] M25-2 marks/bookmark 由 frecency 实现（`m<char>` / `'<char>` + vifm 对齐 `:bmark` / `:bmarks` / `:bmgo` / `:delbmarks`，`:keyword` 保留兼容；keyword 持久化 redb + 频率记录；单字符 marks 导航 / 多字符 `o`/`:j`/`:J` 搜索高优先级匹配）
+- [x] M25-2 marks/bookmark 由 frecency 实现（`m<char>` / `'<char>` + vifm 对齐 `:bmark` / `:bmarks` / `:bmgo` / `:delbmarks`，`:keyword` 保留兼容；keyword 持久化 redb + 频率记录；单字符 marks 导航 / 多字符 `o`/`:j`/`:J` 搜索高优先级匹配；2026-11-20 完成：quickjump 扩展 file 语义，bmark 命令族共用 keyword 数据）
 
 ## M26 — 归档创建扩展与外部工具降级（2026-11-19 增补；见 SPEC §26，已确认启动）
 

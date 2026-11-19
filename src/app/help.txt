@@ -20,8 +20,19 @@ rvifm 帮助（vim 风格文件管理器）
   o               跳转选择器（frecency 合一视角）
   :j / :J         仅目录 / 仅文件的跳转选择器
   :recent         近期视角（全部条目按最后访问时间倒序，含会话内跳转）
-  '{字符}         keyword 直达（如 'd 跳到 keyword=d 的最高排名目录；
-                  :keyword <chars> 设置书签，config.toml [quickjump] 可配别名）
+  '{字符}         marks/bookmark 跳转（跳到该 keyword 的最高排名条目：
+                  目录 cd、文件父目录定位光标；多字符 keyword 在
+                  o/:j/:J 搜索中享有高优先级匹配）
+
+== marks 与书签 ==
+  m{字符}         标记当前条目（字母/数字；".." 行 = 当前目录）写入
+                  frecency 持久化存储（与书签共用数据）
+  :bmark <tag> [tag2...]
+                  为当前目录设置书签 tag（与 marks 共用数据）
+  :bmarks [tag...]  列出书签（无参 = 全部）
+  :bmgo <tag> [tag2...]   按 tag 跳转（首个命中的最高排名条目）
+  :delbmarks [tag...] / :delbmarks! <path...>
+                  清除书签（保留累积分数；! 按路径清除）
 
 == 选择、标记与批量 ==
   v               可视选择（j/k 扩选，Esc 退出）

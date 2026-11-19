@@ -717,7 +717,7 @@
 - [x] 退出重启后 tabs/光标/活动标签还原；损坏文件静默新会话；`session_restore=false` 不读不写。
 
 ### M25-2 marks
-- [ ] `m<char>` 记录（目录/文件/`..` 行=当前目录）；`'<char>` 跳转（目录 cd / 文件定位光标）；未命中提示；无 frecency store 写入；quickjump 迁移反引号生效。
+- [x] `m<char>` 记录（目录/文件/`..` 行=当前目录）写入 frecency redb keyword 事件（`..` 行=当前目录；合法字符=字母数字；仅物理视图）；`'<char>` 跳转（目录 cd / 文件定位光标，M8-12 语义）；未命中提示；`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks` 命令族与 marks 共用数据；多字符 keyword 在 `o`/`:j`/`:J` 高优先级匹配（M23-1）。（2026-11-20；验收行按 2026-11-19 反转后的 SPEC §25 修订——原"无 frecency store 写入"为反转前旧定义残留）
 
 ### M25-3 归档创建
 - [x] zip/tar/tar.gz 产物可被 rvifm 自身浏览；xz/bz2/zst 可读提示不支持；`u` 可逆；同名不覆盖。

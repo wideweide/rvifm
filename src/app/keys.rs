@@ -678,6 +678,15 @@ pub(crate) fn handle_key(
             }
             return Outcome::Continue;
         }
+        // M25-2：m 序列的第二键 = marks 字符（写入 frecency keyword）。
+        if input.seq.len() == 1 && input.seq[0].code == KeyCode::Char('m') {
+            input.seq.clear();
+            input.count = None;
+            if let KeyCode::Char(c) = key.code {
+                mark_set(state, c, msg);
+            }
+            return Outcome::Continue;
+        }
         input.seq.push(crate::keymap::Key::plain(key.code));
         let count = input.count.take();
         input.count = None;
@@ -1370,6 +1379,11 @@ pub(crate) fn handle_key(
         }
         KeyCode::Char('\'') => {
             // M16 NAV-1：' 进入快速跳转序列（第二键为 keyword 字符）。
+            input.count = None;
+            input.seq.push(crate::keymap::Key::plain(key.code));
+        }
+        KeyCode::Char('m') => {
+            // M25-2：m 进入标记序列（第二键为 marks 字符，字母与数字）。
             input.count = None;
             input.seq.push(crate::keymap::Key::plain(key.code));
         }

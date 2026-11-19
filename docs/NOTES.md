@@ -755,6 +755,15 @@ rvifm record  → 静默记录访问
 - **批次关闭**：AUDIT 18 项全部完成（2026-11-20，17 个整改项 + 门禁复现新增的 AUDIT-18）。9 项"未接线"能力（opener/主题/PDF 视觉/pick 预览+CLI/惰性 compaction）全部落地；两个真 bug 随整改修复（ACTIVE OnceLock 二次切换失效 → RwLock；Store::open 数据目录缺失 → 自动创建）；357 单测 + 5 集成双环境绿。M9/M11 的"引擎存在、未接线"状态自此**计入实质完成**（STATE/PLAN/README 已同步）。
 - **下一阶段**：M25-2（marks 由 frecency 实现）→ M26（归档创建扩展 5 项）→ M27（实测问题与视觉对齐 3 项）→ MISC-1（rv 别名）→ 全部完成后自动发布 0.9.0（PLAN §4）。
 
+### 2026-11-20 — M25-2 实现：marks/bookmark 由 frecency 承载（WHY）
+
+- **数据层**：keyword 事件（EntryKind::Keyword）本就是 marks 的持久化形态——新增 `set_keyword_topic_at/now`（topic 参数，marks 支持 file 条目；旧 `set_keyword_at` = dir 委托保持兼容）。
+- **键位**：`m<char>` 经 `'` 同款"通配序列"机制（handle_key 特判 + 第二键分支）；合法字符 = 字母数字（vifm 口径）；`..` 行 = 当前目录；仅物理视图（归档/远端/结果/树视图不记录——keyword 事件写本地路径）。
+- **跳转**：`quickjump_target` 扩展为**不限 topic**（dir/file 都参与，最高分）；`'<char>` 经 `jump_to` 分派——目录 cd、文件父目录定位光标（M8-12 语义复用）。旧实现只取 dir 且直接 navigate_to，文件条目被排除。
+- **命令族**：`:bmark <tag>...`（当前目录设 tag，tag 限字母数字——多字符 tag 即"多字符 keyword"，在 o/:j/:J 搜索享高优先级，M23-1 既有）；`:bmarks [tag...]` 列表；`:bmgo <tag>...` 按序跳转；`:delbmarks [tag...]` / `:delbmarks! <path...>`——清除 = 空 keyword 事件（保留累积分数，与 `:keyword -`/M23-2 同语义）。
+- **验收勘正**：ACCEPTANCE M25-2 原文"无 frecency store 写入"为 2026-11-19 反转前的旧定义残留（marks 曾计划只读），已按反转后的 SPEC §25 修订并注记。
+- **测试边界**：marks/bmark 写路径触全局 redb——单测只覆盖校验与非物理拒绝（不触 DB），写入语义由 frecency 模块注入式测试覆盖；`m252_jump_to_file_semantics` 纯 fixture。
+
 ### 2026-11-20 — AUDIT-3 实现：pick 同源预览（决策 + WHY）
 
 - **决策：保留承诺并接线**（撤销"文档撤回"选项）。`draw_pick_ui` 抽出（TestBackend 可测）：查询行 + 候选列表 + 右侧预览窗格；≥60 列双栏（1:1），窄终端降级单栏。预览源与 TUI 完全一致——文本/目录/Office/PDF 文本走共享 `render_preview`，图像走 `ImageEngine::detect()`（协议探测 + halfblocks 回退）；同进程完成，不 fork/exec（SPEC §4.9）。
