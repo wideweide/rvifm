@@ -9,6 +9,7 @@ mod app;
 mod archive;
 mod config;
 mod frecency;
+mod git;
 mod highlight;
 mod icons;
 mod image;

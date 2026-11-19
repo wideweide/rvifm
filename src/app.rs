@@ -3866,6 +3866,21 @@ const ATTRS_WIDTH: usize = 10 + 2 + 16;
 /// 属性列显示所需的最小 pane 内区宽度（窄终端隐藏属性列，文件名优先）。
 const MIN_ATTRS_INNER_WIDTH: usize = 55;
 
+/// M25-5：git 状态列宽（状态字符 + 2 空格间隔）。
+const GIT_STATUS_WIDTH: usize = 3;
+
+/// M25-5：git 状态显示 span（着色；M/D 红、A 绿、R/T 黄、? 青、U 品红）。
+fn git_status_span(st: crate::git::GitStatus) -> Span<'static> {
+    let color = match st {
+        crate::git::GitStatus::Modified | crate::git::GitStatus::Deleted => Color::Red,
+        crate::git::GitStatus::Added => Color::Green,
+        crate::git::GitStatus::Renamed | crate::git::GitStatus::Typechange => Color::Yellow,
+        crate::git::GitStatus::Untracked => Color::Cyan,
+        crate::git::GitStatus::Conflicted => Color::Magenta,
+    };
+    Span::styled(format!("{}  ", st.marker()), Style::new().fg(color))
+}
+
 /// M21-E1：按显示预算截断名称（字符数近似；CJK 全角按 1 计——与查看器
 /// 显示口径一致，SIMPLIFIED）。搜索/定位逻辑不受影响（仅显示层裁剪）。
 fn clip_name(name: &str, budget: usize) -> String {
@@ -5091,6 +5106,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let (upload_tx, upload_rx) =
         std::sync::mpsc::channel::<(String, std::path::PathBuf, std::path::PathBuf)>();
     state.upload_tx = Some(upload_tx);
+    // M25-5：git 状态查询回传通道（后台线程 → run 循环回填缓存）。
+    let (git_tx, git_rx) = std::sync::mpsc::channel::<(
+        std::path::PathBuf,
+        std::io::Result<crate::git::GitDirStatus>,
+    )>();
+    state.git_tx = Some(git_tx);
     loop {
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
@@ -5130,7 +5151,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         }
         if fs_dirty {
             refresh_on_fs_change(&mut state);
+            // M25-5：外部变更 → git 状态缓存整体失效（触发器按可见目录重查）。
+            state.git_cache.clear();
+            state.git_pending.clear();
         }
+        // M25-5：收割 git 状态查询结果（回填缓存）+ 按需触发新查询。
+        while let Ok((dir, res)) = git_rx.try_recv() {
+            state.git_pending.remove(&dir);
+            state.git_cache.insert(dir, res.ok());
+        }
+        crate::git::sync_status_trigger(&mut state);
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞。
         let polled = event::poll(std::time::Duration::from_millis(100))?;
         let key_ev = if polled { event::read().ok() } else { None };
@@ -6344,8 +6374,19 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
     let show_attrs = state.config.ui.attrs_column
         && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
         && tab.tree.is_none(); // 树视图相对路径较长，不挤属性列
+    // M25-5：git 状态列（属性区内；开关 + 就绪数据，否则占位对齐）。
+    let git_col = show_attrs && state.config.ui.git_column;
+    let git_map = if git_col {
+        match &tab.location {
+            Location::Physical(p) => state.git_cache.get(p).and_then(|o| o.as_ref()),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let name_budget = if show_attrs {
-        (left_inner.width as usize).saturating_sub(2 + ATTRS_WIDTH + 2)
+        (left_inner.width as usize)
+            .saturating_sub(2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 })
     } else {
         (left_inner.width as usize).saturating_sub(4)
     };
@@ -6407,6 +6448,11 @@ fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&st
                 let name_width = display_name.chars().count() + (item.is_dir as usize);
                 let pad = name_budget.saturating_sub(name_width).max(1);
                 spans.push(Span::from(" ".repeat(pad)));
+                // M25-5：git 状态字符列（占位空格保持列对齐）。
+                match git_map.and_then(|m| m.entries.get(&item.name)) {
+                    Some(st) => spans.push(git_status_span(*st)),
+                    None => spans.push(Span::from(" ".repeat(GIT_STATUS_WIDTH))),
+                }
                 let size = if item.is_dir {
                     "<DIR>".to_owned()
                 } else {
@@ -7237,8 +7283,20 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
             // M21-E1：属性列自适应（与左 pane 同口径）。
             let show_attrs =
                 state.config.ui.attrs_column && inner.width as usize >= MIN_ATTRS_INNER_WIDTH;
+            // M25-5：git 状态列（与左 pane 同口径；右 pane 独立目录缓存）。
+            let git_col = show_attrs && state.config.ui.git_column;
+            let git_map = if git_col {
+                match &tab.right.location {
+                    Location::Physical(p) => state.git_cache.get(p).and_then(|o| o.as_ref()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let name_budget = if show_attrs {
-                (inner.width as usize).saturating_sub(2 + ATTRS_WIDTH + 2)
+                (inner.width as usize).saturating_sub(
+                    2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 },
+                )
             } else {
                 (inner.width as usize).saturating_sub(4)
             };
@@ -7256,6 +7314,11 @@ fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout:
                 let name_width = display_name.chars().count() + (item.is_dir as usize);
                 let pad = name_budget.saturating_sub(name_width).max(1);
                 spans.push(Span::from(" ".repeat(pad)));
+                // M25-5：git 状态字符列（占位空格保持列对齐）。
+                match git_map.and_then(|m| m.entries.get(&item.name)) {
+                    Some(st) => spans.push(git_status_span(*st)),
+                    None => spans.push(Span::from(" ".repeat(GIT_STATUS_WIDTH))),
+                }
                 let size = if item.is_dir {
                     "<DIR>".to_owned()
                 } else {

@@ -63,12 +63,14 @@ pub struct FrecencyConfig {
 /// 窄终端自动隐藏（文件名优先）。
 /// `session_restore`（M25-1）：退出保存/启动恢复会话（tabs），默认开；
 /// false = 不读不写。
+/// `git_column`（M25-5）：文件列表 git 状态字符列，默认开；非仓库隐藏。
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
     pub terminal_in_new_window: bool,
     pub attrs_column: bool,
     pub session_restore: bool,
+    pub git_column: bool,
 }
 
 impl Default for UiConfig {
@@ -77,6 +79,7 @@ impl Default for UiConfig {
             terminal_in_new_window: true,
             attrs_column: true,
             session_restore: true,
+            git_column: true,
         }
     }
 }

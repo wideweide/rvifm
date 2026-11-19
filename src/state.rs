@@ -226,6 +226,13 @@ pub struct AppState {
         Option<std::sync::mpsc::Sender<(String, std::path::PathBuf, std::path::PathBuf)>>,
     /// M24-6：命令行历史（会话内存，仅成功执行的命令；上限 [`CMD_HISTORY_MAX`]）。
     pub cmd_history: Vec<String>,
+    /// M25-5：git 状态缓存（目录 → Some(快照) 就绪 / None 在途或非仓库）。
+    pub git_cache: std::collections::HashMap<PathBuf, Option<crate::git::GitDirStatus>>,
+    /// M25-5：在途查询目录（防重复 spawn）。
+    pub git_pending: std::collections::HashSet<PathBuf>,
+    /// M25-5：git 查询回传通道（后台线程 → run 循环）。
+    pub git_tx:
+        Option<std::sync::mpsc::Sender<(PathBuf, std::io::Result<crate::git::GitDirStatus>)>>,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -259,6 +266,9 @@ impl AppState {
             temp_opens: Vec::new(),
             upload_tx: None,
             cmd_history: Vec::new(),
+            git_cache: std::collections::HashMap::new(),
+            git_pending: std::collections::HashSet::new(),
+            git_tx: None,
         }
     }
 
