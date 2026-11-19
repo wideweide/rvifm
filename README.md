@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.8.0 已发布；M0–M25 全部完成（marks 已随 M25-2 落地），AUDIT 整改完成（18/18），M26 归档创建扩展完成（5/5），M27 视觉对齐完成（3/3）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。0.9.0 将在任务列表全部完成后自动发布；双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.9.0 已发布；任务列表全部完成（M0–M27、AUDIT 18/18、M26 归档创建扩展 5/5、M27 视觉对齐 3/3、MISC-1 rv 别名）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 

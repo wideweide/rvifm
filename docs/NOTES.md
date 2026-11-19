@@ -784,3 +784,10 @@ rvifm record  → 静默记录访问
 - **潜伏缺陷（更早批次）**：① AUDIT-7 的 `open_with_layers_falls_through_use_list_on_spawn_failure` 断言 `r == Ok(None)`——`io::Error` 无 PartialEq，Linux 下 E0369 编译失败（cfg(unix) 行在 Windows 从未编译）；改 `!matches!(r, Ok(Some(_)))` 同语义。② **M27-1 的符号链接跟随判定实际无效**：`DirEntry::metadata()` 与 `file_type()` 同为 lstat 语义（不穿越链接），`entry.metadata().is_dir()` 对 link-to-dir 恒 false——M27-1 的 unix 测试从未编译运行故未发现；改 path 版 `std::fs::metadata(entry.path())`（load_entries + build_tree_entries 两处 + meta 跟随取值），本机独立程序复现后修复，m271 测试随修复通过。该测试另有一处自伤：测试直改 `location` 绕过 navigate_to，残留 `on_parent_row=true` 使第二次 open_selected 正确走了 `..` 返回分支——测试补 `on_parent_row=false`（模拟 navigate_to 复位，生产行为无误）。
 - **测试补齐（对照 ACCEPTANCE §27 M27-3 六项）**：pages=0 关闭不写缓存 / 假工具注入生成两页 / 第 2 页失败保留第 1 页 / Text+prefer_image=true 仍生成 / 切换 purge / 退出 cleanup（幂等）/ overflow 文案三分支 / [preview] 表解析与缺省。假工具 = 注入路径的 sh 脚本（mutool 分支 $3=输出 $5=页号，顺带验证逐参数传递）；VISUAL_CACHE 进程级全局——pdf.rs 缓存类测试统一 `cache_lock()` 串行（M13-10 同款）；AUDIT-2 旧 len 断言改 purge 无关形态。
 - **环境边界**：本机 rustc 1.95.0，`exprim@0.4.0` 需 1.97——`cargo check --features pdf-visual` 本机不可执行，维持 CI 门禁（AGENTS §7 口径）；本轮未改动 `cfg(feature="pdf-visual")` 代码。门禁实测：385 单测 + 8 集成全绿（连续 4 次全量稳定）、clippy all-targets 干净、fmt 无改动、`--version/--help` 通过。
+
+### 2026-11-20 — 0.9.0 自动发布（WHY + 边界）
+
+- **触发**：任务列表全部完成（M0–M27、AUDIT、M26、M27、MISC-1）——按 AGENTS §3 自动发布条款执行，不等待人工决策。
+- **归档内容变化**：0.9.0 起 release 归档含双二进制（`rvifm` + `rv`，MISC-1）——旧脚本/文档若只引用 `rvifm` 不受影响，`rv` 为等价别名。
+- **平台边界**：crates.io 凭据仅在 Windows 机器（M8-13 起口径）——本机（Linux）只做 bump/tag/GitHub Release；crates.io publish 待 Windows 侧执行后补 `release: 0.9.0 verified` 记录。
+- **发布失败处置**：沿用既有口径——CI release job 失败则 tag 重指向修复提交强推重跑。
