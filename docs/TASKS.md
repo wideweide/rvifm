@@ -336,8 +336,7 @@
 
 - [x] M26-1 :archive 后台作业化（迁移 M13-8 Job 模型；大目录不阻塞 UI；完成回包入撤销栈；:jobs 可见可取消；2026-11-20 完成：archive_plan/execute_archive_job 分离，SpawnJob 与对话框双入口共用 spawn_job_from_plan）
 - [x] M26-2 7z 内建创建（sevenz-rust 0.6 写端；ArchiveFormat::SevenZ 分派；校验文件与对话框格式扩展；2026-11-20 完成：pack_7z 递归打包，roundtrip 读端测试，对话框 4 格式循环）
-- [ ] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端；损坏/加密可读错误）
-- [ ] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端；损坏/加密可读错误）
+- [x] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端 SevenZFs；损坏/加密可读错误；2026-11-20 完成：open_dispatch/is_archive_file 更新，roundtrip+损坏+空归档测试，FIX-3 测试改写 .rar/.7z 双语义）
 - [ ] M26-4 外部 CLI 归档降级（rar/cab/lzh/tar.xz/tar.bz2/tar.zst：PATH 探测 7z/rar → Command 调用 → 缺失优雅终止；输出抑制；无半成品；入撤销栈）
 - [ ] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项）
 

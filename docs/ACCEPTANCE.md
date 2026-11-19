@@ -743,6 +743,7 @@
 - [x] 内建 7z 产物可被外部工具识别（或 sevenz-rust 读端往返一致）；校验文件与对话框格式生效；`u` 可逆。（2026-11-20：sevenz-rust 0.6 纯 Rust 写端 `pack_7z`（LZMA2 默认），`ArchiveFormat::SevenZ` parse/infer/ext ".7z"，对话框格式列表 4 项；roundtrip 测试读端核对内容 + undo 链）
 
 ### M26-3 7z 浏览
+- [x] `.7z` 进入 ArchiveFs 虚拟浏览（zip/tar 同款 list/read/metadata 语义）；损坏 → 可读错误（含 7z 字样）；空归档空列表；加密归档按提示细分；`.rar` 保持 M7-9 解压提示。（2026-11-20：`SevenZFs`（SevenZReader 索引+二次遍历提取，AUDIT-17 尺寸守卫），open_dispatch/is_archive_file/is_unsupported_archive 更新，FIX-3 测试改写）
 - [ ] `.7z` 虚拟浏览可用（l/Enter 进入、列表/读取内容）；损坏/加密可读错误；M7 只读边界不变。
 
 ### M26-4 外部 CLI

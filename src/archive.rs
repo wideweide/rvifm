@@ -239,6 +239,150 @@ impl ArchiveFs for ZipFs {
     }
 }
 
+/// 7z 只读 VFS（M26-3，sevenz-rust 读端复用 M26-2 写端依赖）。
+/// 索引在开档时遍历一次建立（solid 归档需顺序解码）；读取按名二次遍历
+/// 提取（每次新开读端——7z solid 模型无随机访问）。加密归档（空密码
+/// 无法解密）与损坏归档均给出可读错误（M7-7 语义）。
+pub struct SevenZFs {
+    host: PathBuf,
+    index: BTreeMap<String, u64>,
+    dirs: BTreeSet<String>,
+}
+
+/// 7z 打开/读取错误 → 可读 io 错误；加密归档按提示细分。
+fn sevenz_open_err(e: sevenz_rust::Error) -> std::io::Error {
+    let msg = e.to_string();
+    let lower = msg.to_lowercase();
+    let kind_msg = if lower.contains("password") || lower.contains("encrypt") {
+        format!("7z 归档已加密（暂不支持密码解锁）: {msg}")
+    } else {
+        format!("7z 归档打开失败（可能损坏）: {msg}")
+    };
+    std::io::Error::new(std::io::ErrorKind::InvalidData, kind_msg)
+}
+
+impl SevenZFs {
+    /// 打开 7z 归档并建立索引（目录条目 + 隐式父目录补全，同 ZipFs 语义）。
+    pub(crate) fn open(host: &Path) -> std::io::Result<Self> {
+        let mut reader = sevenz_rust::SevenZReader::open(host, sevenz_rust::Password::empty())
+            .map_err(sevenz_open_err)?;
+        let mut index = BTreeMap::new();
+        let mut dirs = BTreeSet::new();
+        reader
+            .for_each_entries(|e, _r| {
+                let norm = normalize_inner(e.name());
+                if e.is_directory() {
+                    dirs.insert(norm);
+                } else {
+                    index.insert(norm.clone(), e.size());
+                    let parts: Vec<&str> = norm.split('/').collect();
+                    for i in 0..parts.len().saturating_sub(1) {
+                        dirs.insert(parts[..=i].join("/"));
+                    }
+                }
+                Ok(true)
+            })
+            .map_err(sevenz_open_err)?;
+        Ok(Self {
+            host: host.to_path_buf(),
+            index,
+            dirs,
+        })
+    }
+}
+
+impl ArchiveFs for SevenZFs {
+    fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
+        let dir = normalize_inner(dir);
+        let mut out = Children::new();
+        for name in &self.dirs {
+            let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
+            if parent == dir {
+                out.insert(leaf.to_owned(), (true, 0, name.clone()));
+            }
+        }
+        for (name, &size) in &self.index {
+            let (parent, leaf) = split_parent(name).unwrap_or(("", name.as_str()));
+            if parent == dir {
+                out.insert(leaf.to_owned(), (false, size, name.clone()));
+            }
+        }
+        Ok(out
+            .into_values()
+            .map(|(is_dir, size, path)| ArchiveEntry { path, is_dir, size })
+            .collect())
+    }
+
+    fn read(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        let path = normalize_inner(path);
+        let &size = self
+            .index
+            .get(&path)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))?;
+        // AUDIT-17：声明尺寸守卫先于缓冲分配；读取途中二次守卫
+        // （恶意 size 谎报时按实际读入量拦截）。
+        check_member_size(size, MAX_MEMBER_READ_BYTES)?;
+        let mut reader =
+            sevenz_rust::SevenZReader::open(&self.host, sevenz_rust::Password::empty())
+                .map_err(sevenz_open_err)?;
+        let mut out: Option<Vec<u8>> = None;
+        reader
+            .for_each_entries(|e, r| {
+                if normalize_inner(e.name()) == path {
+                    let mut data = Vec::new();
+                    let mut buf = [0u8; 8192];
+                    let mut total = 0u64;
+                    loop {
+                        let n = r
+                            .read(&mut buf)
+                            .map_err(|err| sevenz_rust::Error::io_msg(err, "read entry"))?;
+                        if n == 0 {
+                            break;
+                        }
+                        total += n as u64;
+                        if total > MAX_MEMBER_READ_BYTES {
+                            return Err(sevenz_rust::Error::io_msg(
+                                check_member_size(total, MAX_MEMBER_READ_BYTES).expect_err("超限"),
+                                "read entry",
+                            ));
+                        }
+                        data.extend_from_slice(&buf[..n]);
+                    }
+                    out = Some(data);
+                    Ok(false) // 命中：停止遍历
+                } else {
+                    Ok(true)
+                }
+            })
+            .map_err(sevenz_open_err)?;
+        out.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))
+    }
+
+    fn metadata(&self, path: &str) -> std::io::Result<ArchiveEntry> {
+        let path = normalize_inner(path);
+        if self.dirs.contains(&path) {
+            return Ok(ArchiveEntry {
+                path,
+                is_dir: true,
+                size: 0,
+            });
+        }
+        let &size = self
+            .index
+            .get(&path)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "条目不存在"))?;
+        Ok(ArchiveEntry {
+            path,
+            is_dir: false,
+            size,
+        })
+    }
+
+    fn host(&self) -> &Path {
+        &self.host
+    }
+}
+
 /// tar 归档实现（M7-3，基于 `tar` + `flate2`），覆盖 `.tar` 与 `.tar.gz`/`.tgz`。
 /// tar 无中央目录：开档时流式扫描一遍建立
 /// `路径 → (数据块在解码流中的偏移, 大小, 是否目录)` 索引。
@@ -487,8 +631,8 @@ impl ArchiveFs for TarFs {
     }
 }
 
-/// 判断文件名是否为支持虚拟浏览的归档（M7-4）。
-/// `.7z`/`.rar` 不在内——按 M7-9 提示解压（调用方负责）。
+/// 判断文件名是否为支持虚拟浏览的归档（M7-4 + M26-3 扩展 `.7z`）。
+/// `.rar` 不在内——按 M7-9 提示解压（调用方负责）。
 pub fn is_archive_file(name: &str) -> bool {
     let n = name.to_lowercase();
     n.ends_with(".zip")
@@ -498,13 +642,14 @@ pub fn is_archive_file(name: &str) -> bool {
         || n.ends_with(".tar.bz2")
         || n.ends_with(".tar.zst")
         || n.ends_with(".tar.xz")
+        || n.ends_with(".7z")
 }
 
-/// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）：`.7z` / `.rar`。
-/// 命中时调用方给出"请解压后浏览"提示。
+/// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）：`.rar`（M26-3 起
+/// `.7z` 升级为可浏览，移出本列表）。
 pub fn is_unsupported_archive(name: &str) -> bool {
     let n = name.to_lowercase();
-    n.ends_with(".7z") || n.ends_with(".rar")
+    n.ends_with(".rar")
 }
 
 /// 按扩展名分派到对应实现（M7-2 ZipFs / M7-3 TarFs）。
@@ -525,6 +670,9 @@ pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
         || n.ends_with(".tar.zst")
     {
         Ok(Box::new(TarFs::open(host)?))
+    } else if n.ends_with(".7z") {
+        // M26-3：7z 升级为 ArchiveFs 虚拟浏览（M7-9 的"解压提示"退役）。
+        Ok(Box::new(SevenZFs::open(host)?))
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -935,5 +1083,51 @@ mod tests {
         assert!(err.to_string().contains("超过上限"), "err: {err}");
         // 正常上限：同文件解码成功（64B ≤ 256MB）。
         Decoder::open_with_xz_cap(&xz_path, TarKind::Xz, MAX_XZ_DECODED_BYTES).unwrap();
+    }
+
+    #[test]
+    fn m263_sevenz_fs_roundtrip_dispatch_and_errors() {
+        // M26-3：.7z 升级为 ArchiveFs 虚拟浏览——分派、list/read/metadata
+        // 往返、损坏可读错误、空归档空列表（M7-7 语义）。
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "AAA").unwrap();
+        std::fs::write(tmp.path().join("sub/b.txt"), "BBB").unwrap();
+        let z7 = tmp.path().join("t.7z");
+        crate::ops::create_archive(
+            0,
+            tmp.path(),
+            "t.7z",
+            crate::ops::ArchiveFormat::SevenZ,
+            &["a.txt".to_owned(), "sub".to_owned()],
+        )
+        .unwrap();
+        // is_archive_file / is_unsupported_archive 语义更新。
+        assert!(is_archive_file("t.7z"));
+        assert!(!is_unsupported_archive("t.7z"));
+        assert!(is_unsupported_archive("t.rar"));
+        // open_dispatch 分派（M7-4 公共导航路径）。
+        let mut fsx = open_dispatch(&z7).unwrap();
+        let names: Vec<String> = fsx
+            .list("/")
+            .unwrap()
+            .iter()
+            .map(|i| i.path.clone())
+            .collect();
+        assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
+        assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
+        assert!(fsx.read("/a.txt").unwrap() == b"AAA");
+        assert!(fsx.read("/sub/b.txt").unwrap() == b"BBB");
+        let meta = fsx.metadata("/sub/b.txt").unwrap();
+        assert_eq!(meta.size, 3);
+        assert!(fsx.list("/nowhere").unwrap().is_empty());
+        // 损坏归档 → 可读错误（含 7z 字样，不 panic）。
+        let bad = tmp.path().join("bad.7z");
+        std::fs::write(&bad, b"not 7z").unwrap();
+        let err = match open_dispatch(&bad) {
+            Err(e) => e,
+            Ok(_) => panic!("损坏 7z 应打开失败"),
+        };
+        assert!(err.to_string().contains("7z"), "err: {err}");
     }
 }

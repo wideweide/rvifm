@@ -1919,14 +1919,18 @@ fn fix3_corrupt_archive_reports_error_and_stays() {
 
 #[test]
 fn fix3_unsupported_archive_prompts_extract() {
+    // M7-9/M26-3：`.rar` 仍为"解压提示"（无读端依赖）；`.7z` 升级为
+    // ArchiveFs 虚拟浏览——损坏归档 → 可读错误（不 panic、不误开系统程序）。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.7z"), b"7z fake").unwrap();
+    fs::write(tmp.path().join("a.rar"), b"rar fake").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_keymap(keymap);
     let mut msg = None;
 
+    // 光标序：a.7z(0) < a.rar(1)——先损坏 7z，后 rar。
     press_msg(
         &mut state,
         &mut input,
@@ -1935,7 +1939,23 @@ fn fix3_unsupported_archive_prompts_extract() {
         KeyModifiers::NONE,
     );
     let m = msg.as_deref().unwrap();
-    assert!(m.contains("解压"), "msg: {m:?}");
+    assert!(
+        m.contains("进入失败") && m.contains("7z"),
+        "损坏 7z 可读错误: {m:?}"
+    );
+    assert!(matches!(state.active_tab().location, Location::Physical(_)));
+
+    state.active_tab_mut().cursor = 1;
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('l'),
+        KeyModifiers::NONE,
+    );
+    let m = msg.as_deref().unwrap();
+    assert!(m.contains("解压"), "rar 提示解压: {m:?}");
     assert!(matches!(state.active_tab().location, Location::Physical(_)));
 }
 
