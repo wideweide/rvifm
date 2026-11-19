@@ -10,6 +10,7 @@
 - 需求边界见 [SPEC.md](SPEC.md)。
 
 图例：`[ ]` 待做，`[x]` 完成，`[~]` 进行中，`deferred` 已延期。
+节排序：按编号升序（2026-11-19 重排，仅调序不改内容）；"排队缺口"为补充段置于末尾。
 
 ## M0 — 骨架 + SPEC + 双平台 CI
 
@@ -56,7 +57,7 @@
 - [x] M4-1 搜索增强：在 M1 基础搜索上补充匹配规则（大小写、路径/内容按需）
 - [x] M4-2 简单 glob 过滤
 
-> marks 已移除，由 frecency 的 `pick` 覆盖；不要新增 marks 任务。
+> 历史注：marks 曾移除由 frecency `pick` 覆盖；2026-11-19 用户指令反转，M25-2 立项为独立模块（当前暂停）。
 
 ## M5 — 配置与最小命令模式
 
@@ -83,7 +84,7 @@
 - [x] M7-6 归档内搜索复用 M4 的搜索链路
 - [x] M7-7 错误处理：损坏、加密、空、超大归档索引
 - [x] M7-8 第二阶段：`.tar.xz` / `.tar.bz2` / `.tar.zst`
-- [x] M7-9 `.7z` / `.rar` 不支持虚拟浏览，给出解压提示
+- [x] M7-9 `.7z` / `.rar` 不支持虚拟浏览，给出解压提示（7z 部分由 M26-3 升级）
 
 ## M8 — 原生 frecency / bookmark 选择器
 
@@ -167,6 +168,28 @@
 - [x] M14-3 ACCEPTANCE §16 修订（0.5.0 语义：双栏描述/标签栏可见性验收）
 - [x] M14-4 发布 0.5.0：crates.io（API 验证 0.5.0）+ tag `v0.5.0` → GitHub Release（双平台归档已上传；tag 重指向测试修复提交后由 release job 产出）
 
+## M15 — 用户实测反馈批次（2026-11-15 增补；基线 0.5.0，见 SPEC M15 节）
+
+> 来源：用户实测反馈。先缺陷修复（FIX-1～4），后新增（FEAT-1～4），按序执行。
+
+- [x] FIX-1 搜索高亮与实时索引（`/` 为高亮+跳转语义：匹配子串高亮 + 输入实时跳第一匹配 + 状态栏计数 i/N；n/N 同步；清空还原；不隐藏非匹配项）
+- [x] FIX-2 yy/p 复制链路修复（yank 缓冲区→PutCopy 接线；成功/失败状态栏提示；入撤销栈 u 可逆；目标同名报错不覆盖）
+- [x] FIX-3 归档浏览回归修复（l/Enter 进入 zip/tar/tar.gz 虚拟目录；归档根 h 返回物理目录；host:/inner/path 面包屑；只读守卫；损坏/加密/空可读错误）
+- [x] FIX-4 o 选择器居中与遮罩（水平垂直居中 + 尺寸上限 + 背景清除；关闭恢复光标/滚动）
+- [x] FEAT-1 鼠标支持（单击聚焦/已聚焦再击打开/双击直接打开；列表外不响应；滚轮滚动；Visual 按 SIMPLIFIED 处理）
+- [x] FEAT-2 列表顶部 ".." 上级目录项（视觉区分；根目录置灰/隐藏；归档根返回物理目录；渲染层虚拟条目不进搜索/过滤/标记）
+- [x] FEAT-3 :file 命令与右键上下文菜单（六项动作 Open/File Info/Copy/Move/Rename/Delete；Esc/外部点击关闭；与 Ctrl-G 信息同源）
+- [x] FEAT-4 :help 全屏帮助视图（j/k 滚动、/ 搜索 n/N、q/Esc 关闭恢复原状态；include_str! 内嵌文本）
+
+## M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐，见 SPEC M16 节）
+
+> 来源：用户实测讨论蒸馏。执行顺序 NAV-1 → NAV-3 → NAV-2 → NAV-4（栈先定型，菜单消费最终结构）。
+
+- [x] NAV-1 frecency 快速映射层（`'`+单字符 → keyword 最高排名条目直达 cd；keyword 设置入口 `:keyword <chars>` + `record --keyword` 走 append-only keyword 事件；`'` 未命中提示不静默；`[quickjump]` char→keyword 可选别名；跳转走既有 record 链）
+- [x] NAV-3 :histprev/:histnext（Tab.history 改 back/forward 游标、新导航截断 forward；无默认键，help + keymap.toml 示例注明 Ctrl-I==Tab 冲突；跨 tab 独立）
+- [x] NAV-2 :history 菜单（当前 tab back 栈菜单：j/k、Enter/l 导航、dd 移除内存记录；按 tab 独立；Esc/q 关闭）
+- [x] NAV-4 o 选择器"近期"视角（JumpKind::Recent：last_visit 倒序 + 会话内存评分合并；复用 JumpSelect 交互，入口命令名实现时定）
+
 ## M17 — 递归搜索与查看器批次（2026-11-15 增补；结果=虚拟目录 + 交互式查看器，见 SPEC M17 节）
 
 > 来源：用户设计（替代 frecency picker 方案）。依赖：ignore（新，理由见 NOTES）+ regex（升直接）。
@@ -174,6 +197,30 @@
 - [x] SRCH-1 :find 递归文件名查找（ignore 遍历 + gitignore/show_hidden；结果虚拟目录沿 :tree 同构：Tab.results + items/entries 平行表；全路径显示；j/k/gg/G/yy/预览=目录语义；l/Enter=定位目录+光标；Esc/h=退出；只读守卫；上限 1 万）
 - [x] SRCH-2 :grep 内容搜索（ignore + regex 行匹配；条目 路径:行号: 内容；二进制/非 UTF-8 跳过；regex 非法可读报错；l/Enter=定位文件）
 - [x] VIEW-1 预览查看器（w 激活：行号 + 滚动 + / 搜索定位 + 匹配高亮 + n/N；grep 命中定位命中行；q/Esc/w 退出）
+
+## M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐，见 SPEC M18 节）
+
+> 来源：用户设计。编号说明：原提案 M16/M17 与已完成批次冲突，按下一空闲号重编（内容不变，见 NOTES）。
+
+- [x] M18-1 `S` 排序对话框（列出字段与当前状态；对话框内 n/N/m/M/s/S/e/E 直接应用并关闭（小写升/大写降）；j/k 浏览 + 空格切换高亮字段升降（不立即应用）+ 回车应用；应用后重排且光标跟随原文件；对话框内 `s` 不触发 shell、空格不切窗格；无多字段组合）
+- [x] M18-2 多字段排序仅命令参数（`:sort name,size desc` 逗号分隔 + asc/desc 后缀；解析失败可读错误；无 TUI 字段栈）
+- [x] M18-3 `s` 进入 shell（$SHELL；raw mode/alternate screen 退出恢复；光标与滚动不变；失败可读提示）
+- [x] M18-4 `:!<cmd>` + `[ui] terminal_in_new_window`（默认 true；$TMUX/$STY 检测新窗口执行，否则当前 pane；false 始终当前 pane；同时作用于 `s` 与 `:!`；退出后 TUI 状态一致）+ Space=切换活动窗格（vifm 语义，与 Tab 并存）
+
+## M19 — SFTP 远端 VFS：浏览与配置（2026-11-15 增补，见 SPEC M19 节）
+
+- [x] M19-1 定义 RemoteFs trait（list/read/metadata + 错误分类：连接/认证/不存在/权限/超时；协议无关；预留 write/remove/rename/create_dir 签名默认未实现）
+- [x] M19-2 `Location::Remote { remote, path }` 与导航接入（j/k/l/h 同 Physical；h 远端根返回本地目录；面包屑 remote:/path；排序/列表内搜索/预览复用本地实现；:find/:grep 不作用远端——后续增强）
+- [x] M19-3a SFTP 选型 spike（examples/sftp_spike.rs：russh+justsftp 或 remotefs-rs 连 127.0.0.1 list 根目录；记录编译/依赖/认证/异步模型/集成难度 + 写操作支持；结论入 NOTES 后暂停等确认；dev-dependencies 不进正式依赖）
+- [x] M19-3b SFTP 后端正式实现（依赖 3a 结论；密钥认证为主；超时/错误映射；网络 IO 不阻塞事件循环；仅 list/read/metadata）
+- [x] M19-4 浏览与配置（~/.ssh/config Host 别名 + remotes.toml 覆盖（protocol/host/port/user/key/root）；`:remote <name>` 进入；`:remote` 列出全部；连接/认证/超时可读提示）
+
+## M20 — SFTP 远端 VFS：写操作与本地体验对齐（2026-11-15 增补，见 SPEC M20 节；依赖 M19 验收）
+
+- [x] M20-1 远端写操作基础（write/remove/rename/create_dir；UndoableOp::Remote 变体（remote/路径/类型）入既有撤销栈；dd/yy/p/P/重命名/:mkdir 与本地同键；失败可读错误）
+- [x] M20-2 确认与不可逆边界（覆盖/删非空目录确认文案同本地；远端删除走可恢复路径否则显式"不可撤销"并标记；取消后状态不变）
+- [x] M20-3 跨 VFS 复制/移动（本地 yy → 远端 p/P 及反向；同进度提示与撤销语义；大文件传输状态/进度不阻塞 UI；失败清理半成品）
+- [x] M20-4 验收边界（上传→列表→重命名→删除→撤销删除 全链路可重复；覆盖确认取消不变；断网写操作可读错误不留半成品）
 
 ## M21 — UI/UX 打磨批次（2026-11-17 增补；缺陷修复×9 + 体验增强×8，见 SPEC M21 节）
 
@@ -211,7 +258,7 @@
 
 ## M23 — Frecency 对齐增强与 Pane 模式（2026-11-17 增补；见 SPEC M23 节）
 
-> 来源：DeepSeek 分享讨论蒸馏（对照 wideweide/frecency 差距分析 + Frecency Pane 模式设计）。讨论稿建议编号 M19 已被 SFTP 批次占用，按下一空闲号 M23 登记（见 NOTES）。顺序：1–5（评分外语义）→ 6/7（Pane 模式）→ 8（可 defer）。
+> 来源：DeepSeek 分享讨论蒸馏（对照 wideweide/frecency 差距分析 + Frecency Pane 模式设计）。讨论稿建议编号 M19 已被 SFTP 批次占用，按下一空闲号 M23 登记（见 NOTES）。顺序：1–5（评分外语义）→ 6/7（Pane 模式）→ 8（可 defer）→ 9～12（2026-11-18 追加）。
 
 - [x] M23-1 多词搜索与匹配分级（Keyword/LastSegment/Substring 三级排序；ordered/any-order 多词；o/pick 共用）
 - [x] M23-2 keyword unbook 保留累积历史（`:keyword -` 只清元数据；现状核对登记）
@@ -221,6 +268,12 @@
 - [x] M23-6 Frecency Pane 模式（o 进入焦点 pane 内嵌搜索；对侧 PreviewRenderer 预览 100–200 行+截断标记；Esc 三级退出；键位见 M23-7 修订）
 - [x] ~~M23-7 c/v/e 模式内重映射~~ **修订**：c/v 移除、键位与 Normal 一致（见 M23-9/10 与 SPEC M23-7 修订）
 - [x] M23-8 选择器内 d 删除 + trash 表 + u 撤销（中优先级；超 3 轮即 deferred）
+- [x] M23-9 远端文件跟踪上传（notify 监听副本；防抖 2s 自动上传；失败状态栏提示）
+- [x] M23-10 y 复制序列与 e 编辑器（yn 名称/yf 全路径/yc 内容；目录/文件/多选；OSC52 优先）
+- [x] M23-11 自定义命令快捷键与内置变量（%d/%f/%F/%D；,g lazygit 仓库判定优先级；terminal 分流复用）
+- [x] M23-12 git 集成评估（git2/gitoxide 与 FM 集成点调研；决策入 NOTES，不实现）
+
+> 2026-11-18 追加调整：M23-7 修订（cve 移除、Frecency 键位与 Normal 一致）+ 新增 M23-9～12（远端跟踪上传/y*/e/自定义命令/git 评估）。执行顺序：M23-9 → 10 → 11 → 12 → 6（含修订后的 7）→ 8。
 
 ## M24 — 交互增强与列表规范（2026-11-19 增补；见 SPEC M24 节）
 
@@ -235,81 +288,39 @@
 - [x] M24-7 路径补全（: 模式 Tab 补全文件/目录名；前缀匹配循环；~ 展开 HOME）
 - [x] M24-8 目录对比 :compare（按名+大小；结果虚拟目录 =/!/</> 前缀；只读）
 - [x] M24-9 任务视图增强（:jobs j/k 选择/x 取消/Esc 关闭；Job cancel_requested）
-- [x] M23-9 远端文件跟踪上传（notify 监听副本；防抖 2s 自动上传；失败状态栏提示）
-- [x] M23-10 y 复制序列与 e 编辑器（yn 名称/yf 全路径/yc 内容；目录/文件/多选；OSC52 优先）
-- [x] M23-11 自定义命令快捷键与内置变量（%d/%f/%F/%D；,g lazygit 仓库判定优先级；terminal 分流复用）
-- [x] M23-12 git 集成评估（git2/gitoxide 与 FM 集成点调研；决策入 NOTES，不实现）
-
-> 2026-11-18 追加调整：M23-7 修订（cve 移除、Frecency 键位与 Normal 一致）+ 新增 M23-9～12（远端跟踪上传/y*/e/自定义命令/git 评估）。执行顺序：M23-9 → 10 → 11 → 12 → 6（含修订后的 7）→ 8。
 
 ## M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；见 SPEC §25）
 
-> 来源：用户批次需求讨论稿蒸馏。marks / 归档创建 / Git 状态列 / 会话持久化为范围重开（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
+> 来源：用户批次需求讨论稿蒸馏。marks / 归档创建 / Git 状态列 / 会话持久化为范围重开（决策反转见 NOTES）；git 走 M23-12 已评估的 CLI 子进程路线。顺序：1（会话）→ 2（marks，暂停）→ 3/4（归档）→ 5/6（git）→ 7（评估）。
 
 - [x] M25-1 会话持久化（退出保存/启动恢复 tabs；物理 Location；配置目录 session.toml；损坏静默降级；[ui] session_restore）
 - [~] M25-2 marks 独立模块（**暂停**：用户指示 2026-11-19，`'` 键位归属待拍板；恢复待指令；见 SPEC §25）
-- [x] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 只读提示）
+- [x] M25-3 归档创建（:archive zip|tar|tar.gz；纯 Rust 写端；tags/光标集合；入撤销栈；同名不覆盖；xz/bz2/zst 走 M26-4 外部 CLI）
 - [x] M25-4 归档对话框与校验（无参交互对话框；校验文件默认 md5，sha256/none 可选；[archive] checksum）
 - [x] M25-5 git 状态列（porcelain 缓存映射 + 着色列；仓库根探测；git CLI 子进程零编译期依赖；[ui] git_column）
 - [x] M25-6 git 状态栏 + gi（分支 + diff 摘要缓存；PATH 优先级探测 gitui→ziggity→lazygit 挂起启动；:gitui 同语义）
 - [x] M25-7 frecency 通用化评估（命令历史/路径补全迁移可行性 + 命令书签；决策入 NOTES，不实现）
 
-## M18 — 排序系统与终端集成（2026-11-15 增补；vifm 排序对齐，见 SPEC M18 节）
+## M26 — 归档创建扩展与外部工具降级（2026-11-19 增补；见 SPEC §26）
 
-> 来源：用户设计。编号说明：原提案 M16/M17 与已完成批次冲突，按下一空闲号重编（内容不变，见 NOTES）。
+> 来源：用户讨论稿蒸馏（纯 Rust 内建 + 外部 CLI 降级），与 M25-3/4 现状合并评估择优（命令名保持 :archive、否决 ArchiveWriter trait、采纳后台作业化、纯 Rust 编码器经 crates.io 核实仅 7z 可采——见 NOTES）。顺序：1（Job 化）→ 2（7z 创建）→ 3（7z 浏览）→ 4（外部 CLI）→ 5（文档收尾）。
 
-- [x] M18-1 `S` 排序对话框（列出字段与当前状态；对话框内 n/N/m/M/s/S/e/E 直接应用并关闭（小写升/大写降）；j/k 浏览 + 空格切换高亮字段升降（不立即应用）+ 回车应用；应用后重排且光标跟随原文件；对话框内 `s` 不触发 shell、空格不切窗格；无多字段组合）
-- [x] M18-2 多字段排序仅命令参数（`:sort name,size desc` 逗号分隔 + asc/desc 后缀；解析失败可读错误；无 TUI 字段栈）
-- [x] M18-3 `s` 进入 shell（$SHELL；raw mode/alternate screen 退出恢复；光标与滚动不变；失败可读提示）
-- [x] M18-4 `:!<cmd>` + `[ui] terminal_in_new_window`（默认 true；$TMUX/$STY 检测新窗口执行，否则当前 pane；false 始终当前 pane；同时作用于 `s` 与 `:!`；退出后 TUI 状态一致）+ Space=切换活动窗格（vifm 语义，与 Tab 并存）
-
-## M19 — SFTP 远端 VFS：浏览与配置（2026-11-15 增补，见 SPEC M19 节）
-
-- [x] M19-1 定义 RemoteFs trait（list/read/metadata + 错误分类：连接/认证/不存在/权限/超时；协议无关；预留 write/remove/rename/create_dir 签名默认未实现）
-- [x] M19-2 `Location::Remote { remote, path }` 与导航接入（j/k/l/h 同 Physical；h 远端根返回本地目录；面包屑 remote:/path；排序/列表内搜索/预览复用本地实现；:find/:grep 不作用远端——后续增强）
-- [x] M19-3a SFTP 选型 spike（examples/sftp_spike.rs：russh+justsftp 或 remotefs-rs 连 127.0.0.1 list 根目录；记录编译/依赖/认证/异步模型/集成难度 + 写操作支持；结论入 NOTES 后暂停等确认；dev-dependencies 不进正式依赖）
-- [x] M19-3b SFTP 后端正式实现（依赖 3a 结论；密钥认证为主；超时/错误映射；网络 IO 不阻塞事件循环；仅 list/read/metadata）
-- [x] M19-4 浏览与配置（~/.ssh/config Host 别名 + remotes.toml 覆盖（protocol/host/port/user/key/root）；`:remote <name>` 进入；`:remote` 列出全部；连接/认证/超时可读提示）
-
-## M20 — SFTP 远端 VFS：写操作与本地体验对齐（2026-11-15 增补，见 SPEC M20 节；依赖 M19 验收）
-
-- [x] M20-1 远端写操作基础（write/remove/rename/create_dir；UndoableOp::Remote 变体（remote/路径/类型）入既有撤销栈；dd/yy/p/P/重命名/:mkdir 与本地同键；失败可读错误）
-- [x] M20-2 确认与不可逆边界（覆盖/删非空目录确认文案同本地；远端删除走可恢复路径否则显式"不可撤销"并标记；取消后状态不变）
-- [x] M20-3 跨 VFS 复制/移动（本地 yy → 远端 p/P 及反向；同进度提示与撤销语义；大文件传输状态/进度不阻塞 UI；失败清理半成品）
-- [x] M20-4 验收边界（上传→列表→重命名→删除→撤销删除 全链路可重复；覆盖确认取消不变；断网写操作可读错误不留半成品）
+- [ ] M26-1 :archive 后台作业化（迁移 M13-8 Job 模型；大目录不阻塞 UI；完成回包入撤销栈；:jobs 可见可取消）
+- [ ] M26-2 7z 内建创建（sevenz-rust 0.6 写端；ArchiveFormat::SevenZ 分派；校验文件与对话框格式扩展）
+- [ ] M26-3 7z 只读浏览升级（M7-9 的"解压提示"→ ArchiveFs 新后端；损坏/加密可读错误）
+- [ ] M26-4 外部 CLI 归档降级（rar/cab/lzh/tar.xz/tar.bz2/tar.zst：PATH 探测 7z/rar → Command 调用 → 缺失优雅终止；输出抑制；无半成品；入撤销栈）
+- [ ] M26-5 README 归档创建段（内建/外部/不支持格式行为表；libarchive_oxide 列观察项）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
 - [x] GAP-1 M10-5 收尾：keymap TOML 分层接线（config.rs 解析 prepend/append/replace 并合并进 InputState.keymap——当前仅默认表，用户绑定不可用；NAV-3 的推荐映射示例依赖此项）
 - [x] GAP-2 M8 收尾：TUI 退出时批量追加会话访问事件（SPEC §4.6"退出时批量追加"未实现——会话访问退出即丢，drain 各 tab history → append_events；NAV-4 的会话合并只覆盖即时可见性）
 
-## M16 — 导航增强批次（2026-11-15 增补；marks 替代方案 + vifm history 对齐，见 SPEC M16 节）
-
-> 来源：用户实测讨论蒸馏。marks 不回归（决策维持）；执行顺序 NAV-1 → NAV-3 → NAV-2 → NAV-4（栈先定型，菜单消费最终结构）。
-
-- [x] NAV-1 frecency 快速映射层（`'`+单字符 → keyword 最高排名条目直达 cd；keyword 设置入口 `:keyword <chars>` + `record --keyword` 走 append-only keyword 事件；`'` 未命中提示不静默；`[quickjump]` char→keyword 可选别名；跳转走既有 record 链）
-- [x] NAV-3 :histprev/:histnext（Tab.history 改 back/forward 游标、新导航截断 forward；无默认键，help + keymap.toml 示例注明 Ctrl-I==Tab 冲突；跨 tab 独立）
-- [x] NAV-2 :history 菜单（当前 tab back 栈菜单：j/k、Enter/l 导航、dd 移除内存记录；按 tab 独立；Esc/q 关闭）
-- [x] NAV-4 o 选择器"近期"视角（JumpKind::Recent：last_visit 倒序 + 会话内存评分合并；复用 JumpSelect 交互，入口命令名实现时定）
-
-## M15 — 用户实测反馈批次（2026-11-15 增补；基线 0.5.0，见 SPEC M15 节）
-
-> 来源：用户实测反馈。先缺陷修复（FIX-1～4），后新增（FEAT-1～4），按序执行。
-
-- [x] FIX-1 搜索高亮与实时索引（`/` 为高亮+跳转语义：匹配子串高亮 + 输入实时跳第一匹配 + 状态栏计数 i/N；n/N 同步；清空还原；不隐藏非匹配项）
-- [x] FIX-2 yy/p 复制链路修复（yank 缓冲区→PutCopy 接线；成功/失败状态栏提示；入撤销栈 u 可逆；目标同名报错不覆盖）
-- [x] FIX-3 归档浏览回归修复（l/Enter 进入 zip/tar/tar.gz 虚拟目录；归档根 h 返回物理目录；host:/inner/path 面包屑；只读守卫；损坏/加密/空可读错误）
-- [x] FIX-4 o 选择器居中与遮罩（水平垂直居中 + 尺寸上限 + 背景清除；关闭恢复光标/滚动）
-- [x] FEAT-1 鼠标支持（单击聚焦/已聚焦再击打开/双击直接打开；列表外不响应；滚轮滚动；Visual 按 SIMPLIFIED 处理）
-- [x] FEAT-2 列表顶部 ".." 上级目录项（视觉区分；根目录置灰/隐藏；归档根返回物理目录；渲染层虚拟条目不进搜索/过滤/标记）
-- [x] FEAT-3 :file 命令与右键上下文菜单（六项动作 Open/File Info/Copy/Move/Rename/Delete；Esc/外部点击关闭；与 Ctrl-G 信息同源）
-- [x] FEAT-4 :help 全屏帮助视图（j/k 滚动、/ 搜索 n/N、q/Esc 关闭恢复原状态；include_str! 内嵌文本）
-
 ## 不在任务清单中的事项
 
 以下内容明确不实现，不要为它们创建任务：
 
-- ~~marks（`m` + 字母 / `'` + 字母）~~（2026-11-19 用户指令反转，已立项 M25-2 为独立模块）
+- ~~marks（`m` + 字母 / `'` + 字母）~~（2026-11-19 用户指令反转，已立项 M25-2 为独立模块，当前暂停）
 - Vim 脚本引擎、插件系统
 - FUSE / `archivemount`
 - fzf / SQLite

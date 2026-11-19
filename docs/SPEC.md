@@ -291,14 +291,34 @@ redb 三表，无后台守护进程：
 **OUT_OF_SCOPE**
 - 块可视模式 Ctrl-v；命令别名（% 变量已有）；符号链接创建（deferred）；磁盘用量 :du（deferred）；过滤历史循环（= 已有实时过滤）。会话持久化 / 归档创建 / Git 状态列已于 2026-11-19 经用户指令重新立项为 M25（见 §25），不再属于本节范围。
 
+#### M26 — 归档创建扩展与外部工具降级（2026-11-19 增补；来源：用户讨论稿蒸馏，与 M25-3/4 现状合并评估择优）
+
+**硬约束**：内建写端仅纯 Rust crate（零 C 编译期依赖原则不变）；外部 CLI 仅显式探测后调用，缺失优雅终止（可读提示、不生成半成品、不 panic）；不改写已有归档、不做嵌套归档递归浏览（AGENTS §5.1 边界维持）；产物与校验文件入撤销栈（`u` 可逆）；外部命令参数逐项传递不经 shell 解释（防注入）。
+
+**MUST**
+- **M26-1 :archive 后台作业化**：迁移 M13-8 Job 模型（同 :tag copy/move）——创建过程后台线程执行，UI 不阻塞；完成回包（撤销栈入栈 + 刷新 + 提示）；:jobs 可见、x 可取消（M24-9 cancel_requested）。
+- **M26-2 7z 内建创建**：`sevenz-rust 0.6`（纯 Rust，crates.io 核实 2026-11-19）`ArchiveFormat::SevenZ` 分派；缺扩展名补齐、同名不覆盖、校验文件链路（M25-4）与对话框格式列表同步扩展。
+- **M26-3 7z 只读浏览升级**：M7-9 的 7z"解压提示"升级为 ArchiveFs 虚拟浏览（sevenz-rust 读端复用同一依赖；损坏/加密/空可读错误；M7 只读边界不变）。
+- **M26-4 外部 CLI 归档降级**：rar / cab / lzh / tar.xz / tar.bz2 / tar.zst 创建——PATH 探测（7z/7za/7zr、rar；M25-6 find_git_tui 同款探测模式）→ `std::process::Command` 调用 → 输出抑制（M21-F8 同款）→ 缺失优雅终止（"创建 .rar 需要 rar/7z，未在系统中找到"）；CLI 失败按退出码/stderr 给可读错误；不生成半成品；产物入撤销栈。
+- **M26-5 README 归档创建文档**：格式行为表（内建：zip/tar/tar.gz/7z；外部 CLI：xz/bz2/zst/rar/cab/lzh；校验默认 md5）；libarchive_oxide / OxiArc 列观察项（统一归档库成熟后再评估，见 NOTES）。
+
+**SIMPLIFIED**
+- M26-1：作业粒度 = 单次 :archive 命令（无进度百分比，完成/失败二元提示 + :jobs 状态）。
+- M26-2：7z 压缩方法缺省 LZMA2 默认参数（不暴露压缩级别配置）。
+- M26-4：外部 CLI 命令模板按格式硬编码（`7z a <归档> <条目...>` / `rar a ...`）；探测在首次创建该格式时执行（不缓存启动态）。
+- 通用：M25-4 的对话框/校验/撤销语义对所有新格式透明复用，不新增配置面。
+
+**OUT_OF_SCOPE**
+- ArchiveWriter trait 抽象层（评估否决：枚举分派 + pack_* 函数已满足，格式数少不值得间接层——见 NOTES M26 立项）；归档内写入；7z 加密归档创建；分卷（multi-volume）；xz/bz2/zst 纯 Rust 编码器（crates.io 核实不可用/不成熟——lzma-rust 不产出 .xz 容器、bzip2 纯编码器不存在、yolowzstd 0.1.x 过年轻，走 M26-4 外部 CLI）。
+
 #### M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；来源：用户批次需求讨论稿蒸馏）
 
-**硬约束**：marks 为独立模块，不与 frecency 关联、不写 redb（AGENTS §5.1 已随本批次修订）；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
+**硬约束**：marks 为独立模块，不与 frecency 关联、不写 redb（AGENTS §5.1 已随本批次修订）；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
 
 **MUST**
 - **M25-1 会话持久化**：TUI 退出（既有退出清理点）保存会话到配置目录 `session.toml`——tabs（物理 Location + cursor + on_parent_row + focus）+ active tab 索引；启动恢复（仅物理目录 tab；非物理 Location 的 tab 丢弃）；文件缺失/损坏/空 → 静默新会话；`[ui] session_restore` 默认开（false = 不读不写）。
 - **M25-2 marks 独立模块**：`m<char>` 记录当前光标条目（目录或文件；`..` 行 = 当前目录）到 `AppState.marks`（`HashMap<char, PathBuf>`，全局跨 tab）；`'<char>` 跳转——目录 cd（navigate_to 入历史）、文件父目录定位光标（M8-12 文件语义）；未命中提示不静默；合法字符 = 字母 + 数字；`'` 与 quickjump（NAV-1）冲突：`'` 归 marks，quickjump 迁移至反引号 `` ` ``（vifm 同款分工）。
-- **M25-3 归档创建**：`:archive [zip|tar|tar.gz] <名>` 将标记集合（tags；空 = 光标条目）打包为当前目录下 `<名>`；纯 Rust 写端（zip crate / tar + flate2 rust backend）；目标同名已存在报错不覆盖；入撤销栈（Create，`u` 可逆）；`.tar.xz` / `.tar.bz2` / `.tar.zst` 创建请求可读提示不支持（只读边界）。
+- **M25-3 归档创建**：`:archive [zip|tar|tar.gz] <名>` 将标记集合（tags；空 = 光标条目）打包为当前目录下 `<名>`；纯 Rust 写端（zip crate / tar + flate2 rust backend）；目标同名已存在报错不覆盖；入撤销栈（Create，`u` 可逆）；`.tar.xz` / `.tar.bz2` / `.tar.zst` 创建请求可读提示不支持（只读边界；**M26-4 起该三类格式改为外部 CLI 降级路径，见 §26**）。
 - **M25-4 归档对话框与校验文件**：`:archive` 无参 → 交互对话框（名称输入预填光标条目名；j/k/空格切换格式与校验；Enter 执行 Esc 取消）；归档完成后生成校验文件，默认 md5（`<名>.md5`，md5sum 兼容行格式），可选 sha256 / none（命令参数 + 配置 `[archive] checksum = "md5"`）；md5/sha2 纯 Rust crate。
 - **M25-5 git 状态列（异步）**：目录加载时探测仓库根（逐级 .git）；`git --no-optional-locks status --porcelain -z --untracked-files=normal -- <当前目录>/` 子进程查询（pathspec 限定当前目录；不加锁不写 index）；**后台线程异步执行、UI 不等待**——列表先渲染，状态列就绪后填充（gitui 同款体感策略）；per-目录缓存，导航与 watcher 事件触发刷新；文件列表追加状态字符列（M/A/D/R/?? 等，着色；非仓库或开关关闭时隐藏）；`[ui] git_column` 默认开。
 - **M25-6 git 状态栏与 gi 快捷键**：状态栏显示分支名 + diff 摘要（porcelain `-b` / `git diff --shortstat`）——**per-仓库缓存 + 异步刷新**（同 M25-5 线程模式，非每键重算）；`gi`（Action::GitUi）按优先级探测 PATH：gitui → ziggity → lazygit，首个命中挂起 TUI 启动（M18-4/M23-11 分流复用）；全部未命中可读报错；`:gitui` 命令同语义。
