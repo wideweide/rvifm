@@ -794,8 +794,8 @@
 - [x] 文件候选使用 file topic，不得以 dir 分数兜底。（2026-11-20：`pick_scores_by_requested_topic_without_dir_fallback` 双视角断言）
 
 ### AUDIT-16 frecency 一致性
-- [ ] 配置 per-topic λ 后，手动 compaction 前后的查询排序保持一致（对照测试）。
-- [ ] `pick` 读取 `[frecency]` 的 λ / max_entries 配置，与 TUI 行为一致。
+- [x] 配置 per-topic λ 后，手动 compaction 前后的查询排序保持一致（对照测试）。（2026-11-20：replay_merge 按事件 topic 取 λ（同 replay_inner），`compaction_per_topic_lambda_consistent_with_live_replay` 对照断言）
+- [x] `pick` 读取 `[frecency]` 的 λ / max_entries 配置，与 TUI 行为一致。（2026-11-20：cmd_pick 头部 init_settings（与 cmd_record 同款））
 
 ### AUDIT-17 归档读取上限
 - [ ] 单成员声明尺寸或 tar.xz 解压尺寸超过上限时返回可读错误，进程不 OOM、不 panic。

@@ -870,7 +870,17 @@ fn replay_merge(
     events: &[(u64, EntryRecord)],
     _since: u64,
 ) -> Vec<SnapshotEntry> {
-    let lambda = AGING_LAMBDA;
+    // AUDIT-16：per-topic λ（与 replay_inner 同语义——分型时钟按事件
+    // topic 取 λ；不得硬编码 AGING_LAMBDA，否则配置 per-topic λ 后
+    // compaction 前后评分漂移、排序不一致）。
+    let st = settings();
+    let lambda_for_topic = |topic: &str| {
+        if topic == "file" {
+            st.lambda_file
+        } else {
+            st.lambda_dir
+        }
+    };
     let mut map: std::collections::BTreeMap<(String, String), SnapshotEntry> =
         std::collections::BTreeMap::new();
     for s in snapshot {
@@ -896,7 +906,7 @@ fn replay_merge(
                 clock,
             });
         let delta = clock.saturating_sub(entry.clock);
-        entry.score = aged(entry.score, lambda, delta) + 1.0;
+        entry.score = aged(entry.score, lambda_for_topic(&ev.topic), delta) + 1.0;
         entry.tick = *seq;
         entry.clock = clock;
     }
@@ -978,6 +988,9 @@ fn pick_score_candidates(
 /// stdout 非 TTY → fzf filter 语义（输出全部命中候选）。
 /// **纯只读：不写事件、不推进 tick。**
 pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
+    // AUDIT-16：加载 [frecency] 设置（λ/容量上限）——与 record/TUI 一致，
+    // 否则 pick 的评分衰减永远用缺省 λ，与 TUI 排序漂移。
+    init_settings(&crate::config::load().unwrap_or_default().frecency);
     let (topic, initial_query) = parse_pick_args(&args)?;
     use std::io::{IsTerminal, Read as _, Write as _};
     let mut candidates = String::new();
@@ -1729,6 +1742,72 @@ mod tests {
         let out = pick_score_candidates(&ranked, "/a\n/b\n", "dir");
         assert_eq!(out.len(), 2);
         assert!(out.iter().all(|(.., s)| *s == 0.0));
+    }
+
+    #[test]
+    fn compaction_per_topic_lambda_consistent_with_live_replay() {
+        // AUDIT-16：配置差异化 per-topic λ（dir 慢衰减 / file 快衰减）后，
+        // 手动 compaction 的合并结果（replay_merge）与实时重放（replay，
+        // TUI/pick 同款）对相同 snapshot+events 的评分一致——排序不漂移。
+        init_settings(&crate::config::FrecencyConfig {
+            lambda_dir: Some(0.001),
+            lambda_file: Some(0.5),
+            ..Default::default()
+        });
+        // snapshot：dir 条目（clock 90, score 5）+ file 条目（clock 50, score 8）。
+        let snapshot = vec![
+            SnapshotEntry {
+                path: "/d/alpha".to_owned(),
+                topic: "dir".to_owned(),
+                keyword: String::new(),
+                score: 5.0,
+                tick: 90,
+                clock: 90,
+            },
+            SnapshotEntry {
+                path: "/f/beta.rs".to_owned(),
+                topic: "file".to_owned(),
+                keyword: String::new(),
+                score: 8.0,
+                tick: 50,
+                clock: 50,
+            },
+        ];
+        // 事件：dir@100、file@60（与 snapshot 时钟各差 10 tick）。
+        let mut ev_dir = rec("/d/alpha", 1_000);
+        ev_dir.clock = 100;
+        let mut ev_file = rec("/f/beta.rs", 1_100);
+        ev_file.topic = "file".to_owned();
+        ev_file.kind = EntryKind::Open;
+        ev_file.clock = 60;
+        let events = vec![(100u64, ev_dir), (60u64, ev_file)];
+
+        let live = replay(&snapshot, &events, 100, 60);
+        let merged = replay_merge(&snapshot, &events, 0);
+        for m in &merged {
+            let l = live
+                .iter()
+                .find(|e| e.path == m.path && e.topic == m.topic)
+                .unwrap_or_else(|| panic!("live 缺条目 {}", m.path));
+            assert!(
+                (l.score - m.score).abs() < 1e-9,
+                "{} live={} merged={}（per-topic λ 不一致）",
+                m.path,
+                l.score,
+                m.score
+            );
+        }
+        // 差异化 λ 生效的 sanity：file 条目经快衰减后分值远低于慢衰减 dir。
+        let d = merged.iter().find(|m| m.topic == "dir").unwrap();
+        let f = merged.iter().find(|m| m.topic == "file").unwrap();
+        assert!(
+            d.score > f.score,
+            "dir={} file={}（λ 差异应拉开分差）",
+            d.score,
+            f.score
+        );
+        // 复位缺省（避免污染并行测试的 SETTINGS）。
+        init_settings(&crate::config::FrecencyConfig::default());
     }
 
     #[test]
