@@ -31,6 +31,9 @@ pub struct Config {
     /// AUDIT-7：[open] 表——打开规则分层（prepend/append/rules）。
     #[serde(default)]
     pub open: crate::opener::OpenLayers,
+    /// AUDIT-6：[keymap] 表——键位解析选项（多键序列超时）。
+    #[serde(default)]
+    pub keymap: KeymapConfig,
 }
 
 /// M25-4：[archive] 表——归档后校验文件类型（md5 默认 / sha256 / none）。
@@ -94,6 +97,22 @@ impl Default for UiConfig {
     }
 }
 
+/// AUDIT-6：[keymap] 表——多键序列待决超时（毫秒）。超时清空待决 seq，
+/// 后续按键按全新序列解析（不被旧前缀吞掉）。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct KeymapConfig {
+    pub seq_timeout_ms: u64,
+}
+
+impl Default for KeymapConfig {
+    fn default() -> Self {
+        Self {
+            seq_timeout_ms: 500,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -105,6 +124,7 @@ impl Default for Config {
             archive: ArchiveConfig::default(),
             opener: std::collections::BTreeMap::new(),
             open: crate::opener::OpenLayers::default(),
+            keymap: KeymapConfig::default(),
         }
     }
 }
@@ -428,6 +448,18 @@ append_rules = [
         std::fs::write(&path, "[ui]\ntheme = \"ayu-dark\"\n").unwrap();
         let cfg = load_from(&path).unwrap();
         assert_eq!(cfg.ui.theme.as_deref(), Some("ayu-dark"));
+    }
+
+    #[test]
+    fn keymap_seq_timeout_parses_with_default() {
+        // AUDIT-6：[keymap] seq_timeout_ms 可配置；缺省 500。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[keymap]\nseq_timeout_ms = 200\n").unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.keymap.seq_timeout_ms, 200);
+        let cfg2 = load_from(&tmp.path().join("nope.toml")).unwrap();
+        assert_eq!(cfg2.keymap.seq_timeout_ms, 500, "缺省 500ms");
     }
 
     #[test]

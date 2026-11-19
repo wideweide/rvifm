@@ -401,6 +401,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_keymap(keymap);
     let mut mode = InputMode::default();
+    // AUDIT-6：多键序列可配置超时（`[keymap] seq_timeout_ms`，缺省 500）。
+    // 待决 seq 的截止时刻：seq 变化时重置，空时清除；超时清空 seq
+    // （不吞后续按键）。`seq_len` 变化检测用于区分"同一段待决"与"新键"。
+    let seq_timeout_ms = state.config.keymap.seq_timeout_ms;
+    let mut seq_deadline: Option<std::time::Instant> = None;
+    let mut last_seq_len = 0usize;
     // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
     let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
     // M23-9：副本修改防抖后的上传请求通道（监听线程回传，run 循环消费）。
@@ -467,8 +473,26 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             state.git_cache.insert(dir, res.ok());
         }
         crate::git::sync_status_trigger(&mut state);
-        // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞。
-        let polled = event::poll(std::time::Duration::from_millis(100))?;
+        // AUDIT-6：待决序列超时——poll 预算按截止时刻收缩；到期清空 seq
+        // （下一次按键按全新序列解析，不被旧前缀吞掉）。
+        let now = std::time::Instant::now();
+        seq_deadline = seq_deadline_after(
+            input.seq.len(),
+            last_seq_len,
+            seq_deadline,
+            now,
+            seq_timeout_ms,
+        );
+        last_seq_len = input.seq.len();
+        let (poll_ms, expired) = seq_poll_plan(seq_deadline, now);
+        if expired {
+            input.seq.clear();
+            seq_deadline = None;
+            last_seq_len = 0;
+        }
+        // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞；
+        // 有待决序列时预算收缩到超时余量（AUDIT-6）。
+        let polled = event::poll(std::time::Duration::from_millis(poll_ms))?;
         let key_ev = if polled { event::read().ok() } else { None };
         if let Some(Event::Key(key)) = key_ev {
             match &mut mode {

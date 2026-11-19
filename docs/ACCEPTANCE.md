@@ -764,7 +764,7 @@
 ### AUDIT-5 app.rs 拆分
 - [x] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。（2026-11-20：`src/app/{mod,keys,exec,jobs,render,preview,tests}.rs`——类型与 `run()` 留根模块（子模块可见父私有项），移动项 `pub(crate)` + 根重导出；help.txt 随 render 分片迁至 `src/app/`）
 ### AUDIT-6 键位超时
-- [ ] 多键序列超时可配置，超时后清空 seq 且不吞后续按键。
+- [x] 多键序列超时可配置，超时后清空 seq 且不吞后续按键。（2026-11-20：`[keymap] seq_timeout_ms`；run 循环按截止收缩 poll 预算，到期清空——后续键按全新序列解析；纯函数层测试）
 ### AUDIT-7 opener 分层
 - [x] opener TOML 被实际读取；`prepend_rules` / `append_rules` / `rules` 三层语义与键位系统一致。（2026-11-20：Config 增 [opener]/[open] 表，`resolve_open_actions` 链序 prepend→(rules 替换默认空表)→append）
 - [x] `mime` 与 `name` 匹配按顺序命中；命中规则执行 `use`/`run` 命令；未命中回退系统 opener。（2026-11-20：内建 ext→mime 表 + 通配匹配；`use` 名单按序执行、`open`=系统、未知名跳过；`open_selected` 生产接线）

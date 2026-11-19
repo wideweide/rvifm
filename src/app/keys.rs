@@ -1,5 +1,43 @@
 use super::*;
 
+/// AUDIT-6：待决序列截止时刻推导——seq 清空 → 无截止；seq 长度变化
+/// （新键入/前缀推进）→ 重置截止；同一段待决 → 保持原截止（避免
+/// 每帧顺延导致永不超时）。
+pub(crate) fn seq_deadline_after(
+    seq_len: usize,
+    prev_len: usize,
+    prev_deadline: Option<std::time::Instant>,
+    now: std::time::Instant,
+    timeout_ms: u64,
+) -> Option<std::time::Instant> {
+    if seq_len == 0 {
+        return None;
+    }
+    if seq_len != prev_len {
+        return Some(now + std::time::Duration::from_millis(timeout_ms));
+    }
+    prev_deadline
+}
+
+/// AUDIT-6：poll 预算与到期判定——有待决序列时预算收缩到超时余量
+/// （不超过 100ms 空转粒度），到期返回 `(0, true)`（调用方清空 seq）。
+pub(crate) fn seq_poll_plan(
+    deadline: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> (u64, bool) {
+    match deadline {
+        None => (100, false),
+        Some(d) => {
+            let remaining = d.saturating_duration_since(now);
+            if remaining.is_zero() {
+                (0, true)
+            } else {
+                (remaining.as_millis().min(100) as u64, false)
+            }
+        }
+    }
+}
+
 pub(crate) fn is_quit_key(key: KeyEvent) -> bool {
     key.kind == KeyEventKind::Press
         && (key.code == KeyCode::Char('q')
@@ -1593,5 +1631,43 @@ pub(crate) fn jump_key(
             JumpKey::Continue
         }
         _ => JumpKey::Continue,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn seq_timeout_deadline_and_expiry() {
+        // AUDIT-6：多键序列可配置超时——纯函数层验证。超时后 run 循环
+        // 清空 seq（不吞后续按键）；seq 清空 → 无截止。
+        let now = std::time::Instant::now();
+        // 无待决 → 预算 100（空转粒度）、不超时。
+        assert_eq!(seq_poll_plan(None, now), (100, false));
+        // 新待决（g）→ 截止 = now + timeout。
+        let d1 = seq_deadline_after(1, 0, None, now, 500);
+        assert_eq!(d1, Some(now + Duration::from_millis(500)));
+        // 同一段待决（长度不变）→ 保持截止（不每帧顺延，否则永不超时）。
+        assert_eq!(seq_deadline_after(1, 1, d1, now, 500), d1);
+        // 前缀推进（g → gg）→ 重置截止。
+        let later = now + Duration::from_millis(100);
+        assert_eq!(
+            seq_deadline_after(2, 1, d1, later, 500),
+            Some(later + Duration::from_millis(500))
+        );
+        // 未到期 → 预算收缩（499ms 余量 → 预算封顶 100）。
+        assert_eq!(
+            seq_poll_plan(d1, now + Duration::from_millis(1)),
+            (100, false)
+        );
+        // 到期 → (0, true)（调用方清空 seq，后续按键不被吞）。
+        assert_eq!(
+            seq_poll_plan(d1, now + Duration::from_millis(500)),
+            (0, true)
+        );
+        // seq 清空 → 无截止。
+        assert_eq!(seq_deadline_after(0, 0, d1, now, 500), None);
     }
 }

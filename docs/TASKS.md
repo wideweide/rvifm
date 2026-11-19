@@ -310,7 +310,7 @@
 - [x] AUDIT-3 pick 预览同源接线或撤回承诺（见 SPEC AUDIT-3；2026-11-20 完成：pick 交互式选择器接同源预览窗格——render_preview/ImageEngine，窄终端降级单栏）
 - [x] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4；2026-11-20 完成：`lazy_compact_on_startup` 钩子 + `compact_store` 核心抽出，手动命令共用）
 - [x] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5；2026-11-20 完成：15261 行上帝文件 → `src/app/` 7 模块，测试独立 `tests.rs`，零行为变化 350+4 全绿）
-- [ ] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6）
+- [x] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6；2026-11-20 完成：`[keymap] seq_timeout_ms`（缺省 500）+ run 循环待决 seq 超时清空——原实现无超时、被弃前缀吞后续键）
 - [x] AUDIT-7 opener 整层接线（TOML 加载 + mime/name + prepend/append/rules 三层 + 命令执行；见 SPEC AUDIT-7；2026-11-20 完成：`open_with_layers` 生产接线 `open_selected`，block=true 经 pending_external 挂起执行）
 - [ ] AUDIT-8 生产 panic 面清理与错误上浮（见 SPEC AUDIT-8）
 - [x] AUDIT-9 CI 门禁增强（clippy all-targets + Linux cross-check 入 CI，见 SPEC AUDIT-9；2026-11-20 完成：ci.yml 双步增补，cross-check 仅 ubuntu job——host triple 即该 target）
