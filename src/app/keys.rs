@@ -1524,7 +1524,7 @@ pub(crate) fn handle_mouse(
     // 列表几何：与 render 同源（M21-F1）——pane_layout 左 pane 的边框内区；
     // FEAT-2：`..` 行占用内区首行（有父行时条目从第 2 行开始）。
     let [_, left, _, _] = pane_layout(area);
-    let inner = left_list_area(left);
+    let inner = left_list_area(state.config.ui.pane_borders, left);
     let has_parent = state.active_tab().has_parent_row() as usize;
     let in_columns = mouse.column >= inner.x
         && mouse.column < inner.x + inner.width

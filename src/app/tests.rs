@@ -2961,11 +2961,12 @@ fn render_highlights_cursor_row() {
         .draw(|frame| render(frame, &state, &InputMode::Normal, None))
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
-    // M21-F1 几何（40x6）：tab 栏行 0、pane 边框行 1、`..` 行占行 2，
-    // 条目视口 1 行（内区高 2）→ 光标行 1 滚动显示在行 3；条目文本列 1 起。
-    assert!(buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
+    // M27-2 vifm 几何（40x6）：tab 栏行 0、路径行（TopLine）行 1、
+    // `..` 行占行 2，条目视口 2 行（pane 1-4，无边框）→ 条目 0 在行 3、
+    // 光标行 1（第 2 条目）在行 4；条目文本列 1 起。
+    assert!(buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
+    assert!(!buffer[(1, 3)].modifier.contains(Modifier::REVERSED));
     assert!(!buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
-    assert!(!buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
 }
 
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
@@ -3331,11 +3332,14 @@ fn tab_bar_visible_and_updates_on_tabnew() {
         tab_row.push_str(c.symbol());
     }
     assert!(tab_row.contains("2:"), "tabnew 后 tab bar: {tab_row}");
-    // 高亮（REVERSED）应落在 "2:" 起始处（第二个 tab 为当前）。
+    // 激活标签（M27-2 TabLineSel：黑字加粗回退）落在 "2:" 起始处。
     let two_x = tab_row.find("2:").unwrap_or(0) as u16;
+    let cell = &buf[(two_x, 0)];
     assert!(
-        buf[(two_x, 0)].modifier.contains(Modifier::REVERSED),
-        "2: 段应高亮"
+        cell.modifier.contains(Modifier::BOLD) && cell.fg == Color::Black,
+        "2: 段应高亮（TabLineSel 回退）: fg={:?} mods={:?}",
+        cell.fg,
+        cell.modifier
     );
 }
 
@@ -3881,9 +3885,18 @@ fn m21e8_jump_selector_80_percent_rect_panes_visible() {
     assert_eq!(buffer[(8, 2)].symbol(), "┌", "popup 左上角应居中");
     assert_eq!(buffer[(71, 2)].symbol(), "┐");
     assert_eq!(buffer[(8, 20)].symbol(), "└");
-    // 双 pane 不被遮罩：(0,1) 左 pane 顶边框、(79,1) 右 pane 顶边框可见。
-    assert_eq!(buffer[(0, 1)].symbol(), "┌", "左 pane 边框可见（无遮罩）");
-    assert_eq!(buffer[(79, 1)].symbol(), "┐", "右 pane 边框可见");
+    // 双 pane 不被遮罩（M27-2 vifm 模式：pane 顶部路径行可见 = TopLine
+    // 白底；popup 无遮罩仍成立）。
+    // 焦点 pane = TopLineSel（黑字加粗、默认底）；非焦点 = TopLine（黑字白底）。
+    assert!(
+        buffer[(0, 1)].modifier.contains(Modifier::BOLD) && buffer[(0, 1)].fg == Color::Black,
+        "左 pane TopLineSel（焦点）"
+    );
+    assert_eq!(
+        buffer[(79, 1)].bg,
+        Color::White,
+        "右 pane TopLine（非焦点白底）"
+    );
 
     // 160×48：popup = 128×38 @ (16,5)。
     let backend2 = ratatui::backend::TestBackend::new(160, 48);
@@ -3894,7 +3907,11 @@ fn m21e8_jump_selector_80_percent_rect_panes_visible() {
     let buffer2 = terminal2.backend().buffer().clone();
     assert_eq!(buffer2[(16, 5)].symbol(), "┌", "160×48 下 popup 左上角");
     assert_eq!(buffer2[(143, 5)].symbol(), "┐");
-    assert_eq!(buffer2[(0, 1)].symbol(), "┌", "大终端 pane 同样可见");
+    // 大终端左 pane 焦点 = TopLineSel（黑字加粗，默认底）。
+    assert!(
+        buffer2[(0, 1)].modifier.contains(Modifier::BOLD) && buffer2[(0, 1)].fg == Color::Black,
+        "大终端 pane TopLineSel（焦点）"
+    );
 }
 
 #[test]
@@ -5899,18 +5916,29 @@ fn renders_active_tab_list_and_status_bar() {
             .collect::<String>()
     };
 
-    // 目录在前并带 `/` 后缀（M21-F1：pane 边框行 1，`..` 行占行 2，条目行 3 起）。
-    assert!(row(1).contains("┌"), "左 pane 顶部边框: {}", row(1));
-    assert!(row(2).contains("../"));
-    assert!(row(3).contains("sub/"));
-    assert!(row(4).contains("hello.txt"));
-    // M21-F1：路径在 pane 顶部标题，状态栏不再显示路径；详情含条目数。
+    // 目录在前并带 `/` 后缀（M27-2 vifm 模式：pane 顶部路径行占行 1
+    // （TopLine 白底），`..` 行占行 2，条目行 3 起）。
     let dir_name = tmp
         .path()
         .file_name()
         .unwrap()
         .to_string_lossy()
         .into_owned();
+    assert!(row(1).contains(&dir_name), "左 pane 顶部路径行: {}", row(1));
+    // 左 pane 焦点 = TopLineSel（黑字加粗、默认底）；右 pane 非焦点 = 白底。
+    assert!(
+        buffer[(0, 1)].modifier.contains(Modifier::BOLD),
+        "焦点 TopLineSel 加粗"
+    );
+    assert_eq!(
+        buffer[(81, 1)].bg,
+        Color::White,
+        "右 pane TopLine 白底（非焦点）"
+    );
+    assert!(row(2).contains("../"));
+    assert!(row(3).contains("sub/"));
+    assert!(row(4).contains("hello.txt"));
+    // M21-F1：路径在 pane 顶部路径行，状态栏不再显示路径；详情含条目数。
     assert!(row(1).contains(&dir_name), "pane 顶部路径: {}", row(1));
     let status = row(9).trim().to_owned();
     assert!(!status.contains(&dir_name), "状态栏不应显示路径: {status}");
@@ -6004,13 +6032,15 @@ fn renders_command_line_and_message() {
 #[test]
 fn m21f1_panes_bordered_and_path_in_title_at_two_sizes() {
     // ACCEPTANCE §20 M21-F1：80x24 与 160x48 下左右 pane 有可见边框，
-    // 路径在 pane 顶部，状态栏无路径。
+    // 路径在 pane 顶部，状态栏无路径。M27-2：边框外观经
+    // `[ui] pane_borders = true` 启用（旧外观保留可恢复）。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     // 注入短路径：真实 tempdir 深层路径在 80 宽 pane 内必然截断，
     // 无法断言"路径完整可见"；Location 直接构造与渲染无关。
     state.active_tab_mut().location = Location::Physical(std::path::PathBuf::from("/w/proj"));
+    state.config.ui.pane_borders = true;
     let dir_name = "proj".to_owned();
     for (w, h) in [(80u16, 24u16), (160u16, 48u16)] {
         let backend = ratatui::backend::TestBackend::new(w, h);
@@ -6028,6 +6058,31 @@ fn m21f1_panes_bordered_and_path_in_title_at_two_sizes() {
         assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
         assert!(status.contains("1 items"), "状态栏保留条目数: {status}");
     }
+    // M27-2 vifm 模式（pane_borders=false，默认）：无整框、顶部路径行
+    // TopLine 白底（非焦点）、间隔列分隔线。
+    state.config.ui.pane_borders = false;
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row = |y: u16| (0..80u16).map(|x| buf[(x, y)].symbol()).collect::<String>();
+    assert_ne!(buf[(0, 1)].symbol(), "┌", "vifm 模式无整框左上角");
+    assert!(
+        row(1).contains(&dir_name),
+        "路径行仍在 pane 顶部（TopLine）"
+    );
+    // 左 pane 焦点 = TopLineSel（黑字加粗、默认底）；右 pane 非焦点 = 白底。
+    assert!(
+        buf[(0, 1)].modifier.contains(Modifier::BOLD),
+        "焦点 TopLineSel 加粗"
+    );
+    assert_eq!(buf[(40, 1)].bg, Color::White, "右 pane TopLine 白底");
+    let gap_x = 39u16; // 80 宽居中分开：间隔列 = 39..40
+    assert_eq!(buf[(gap_x, 4)].symbol(), "│", "间隔列分隔线");
+    let status = row(23);
+    assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
 }
 
 #[test]

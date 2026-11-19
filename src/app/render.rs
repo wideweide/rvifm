@@ -44,8 +44,59 @@ pub(crate) fn pane_layout(area: ratatui::layout::Rect) -> [ratatui::layout::Rect
 
 /// M21-F1：左 pane 列表内容区（边框内减去 `..` 行）。
 /// 渲染与鼠标命中测试共用；`has_parent` 由调用方决定是否再减 1 行。
-pub(crate) fn left_list_area(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
-    ratatui::widgets::Block::bordered().inner(area)
+/// M27-2：`borders=false` 时为 pane 区减去顶部路径行（vifm TopLine）。
+pub(crate) fn left_list_area(borders: bool, area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    if borders {
+        ratatui::widgets::Block::bordered().inner(area)
+    } else {
+        let [_topline, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+        rest
+    }
+}
+
+/// M27-2：pane 间隔列（1 列；vifm Border 分隔线渲染区）。
+pub(crate) fn pane_gap_area(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    let [_, main, _] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    let [_, gap, _] = Layout::horizontal([
+        Constraint::Ratio(1, 2),
+        Constraint::Length(1),
+        Constraint::Ratio(1, 2),
+    ])
+    .areas(main);
+    gap
+}
+
+/// M27-2：vifm 命名样式（TabLine/TopLine/StatusLine/Border/Selected…）——
+/// 主题（激活 opaline 主题）提供该命名样式时优先；未激活/缺失时回退
+/// vifm Default 风格的 16 色（vifm_fallback）。
+pub(crate) fn vifm_style(name: &str) -> Style {
+    let s = crate::theme::style(name);
+    if s.fg.is_some() || s.bg.is_some() {
+        s
+    } else {
+        vifm_fallback(name)
+    }
+}
+
+/// M27-2：vifm Default 风格回退值（NOTES M27-2 调研口径）。
+fn vifm_fallback(name: &str) -> Style {
+    match name {
+        // 非焦点路径行 / 标签底 / 分隔线 / 状态行：黑字白底。
+        "TopLine" | "TabLine" | "Border" | "StatusLine" => {
+            Style::new().fg(Color::Black).bg(Color::White)
+        }
+        // 焦点路径行 / 激活标签：黑字默认底加粗。
+        "TopLineSel" | "TabLineSel" => Style::new().fg(Color::Black).add_modifier(Modifier::BOLD),
+        // 选中项：品红加粗。
+        "Selected" => Style::new().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        _ => Style::new(),
+    }
 }
 
 /// M21-F1：pane 边框焦点态——主题命名样式（focused_border/unfocused_border）
@@ -160,7 +211,7 @@ pub(crate) fn hit_entry_index(
     area: ratatui::layout::Rect,
 ) -> Option<usize> {
     let [_, left, _, _] = pane_layout(area);
-    let inner = left_list_area(left);
+    let inner = left_list_area(state.config.ui.pane_borders, left);
     let has_parent = state.active_tab().has_parent_row() as usize;
     let view_h = inner.height.saturating_sub(has_parent as u16) as usize;
     if mouse.column < inner.x
@@ -324,6 +375,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         render_frecency_panes(frame, state);
         return;
     }
+    // M27-2：vifm 风格（pane_borders=false，默认）与旧整框外观（true）双模式。
+    let borders = state.config.ui.pane_borders;
     let tab_spans: Vec<Span> = state
         .tabs
         .iter()
@@ -337,24 +390,56 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 .unwrap_or_else(|| t.location.display_path());
             let label = format!("{}:{} ", idx + 1, dir);
             if idx == state.active {
-                Span::styled(
-                    label,
-                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                )
-            } else {
+                if borders {
+                    Span::styled(
+                        label,
+                        Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                    )
+                } else {
+                    // TabLineSel：激活标签黑字默认底加粗（16 色回退）。
+                    Span::styled(label, vifm_style("TabLineSel"))
+                }
+            } else if borders {
                 Span::from(label)
+            } else {
+                // TabLine：非激活标签黑字白底。
+                Span::styled(label, vifm_style("TabLine"))
             }
         })
         .collect();
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
-    // M21-F1：左右 pane 各带边框（焦点态高亮）、居中分开（间隔 1 列），
-    // pane 顶部显示各自路径——状态栏不再显示路径。
+    // M21-F1：左右 pane——pane_borders=true 走旧整框外观（焦点边框高亮）；
+    // false（默认，M27-2）为 vifm 式：无整框、pane 顶部路径行（TopLine/
+    // TopLineSel 背景色区分焦点）、间隔列 Border 分隔线。
     let left_focused = tab.focus == crate::tab::Focus::Left;
-    let left_pane = ratatui::widgets::Block::bordered()
-        .title(tab.location.display_path().replace('\\', "/"))
-        .border_style(pane_border_style(left_focused));
-    let left_inner = left_pane.inner(left_area);
-    frame.render_widget(left_pane, left_area);
+    let left_inner = if borders {
+        let left_pane = ratatui::widgets::Block::bordered()
+            .title(tab.location.display_path().replace('\\', "/"))
+            .border_style(pane_border_style(left_focused));
+        let inner = left_pane.inner(left_area);
+        frame.render_widget(left_pane, left_area);
+        inner
+    } else {
+        let [topline, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_area);
+        let path_style = if left_focused {
+            vifm_style("TopLineSel")
+        } else {
+            vifm_style("TopLine")
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(tab.location.display_path().replace('\\', "/")))
+                .style(path_style),
+            topline,
+        );
+        rest
+    };
+    // M27-2：pane 间隔列——Border 分隔线（vifm 模式）。
+    if !borders {
+        let gap = pane_gap_area(frame.area());
+        let lines: Vec<Line> = (0..gap.height).map(|_| Line::from("│")).collect();
+        frame.render_widget(Paragraph::new(lines).style(vifm_style("Border")), gap);
+    }
 
     // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
     // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
@@ -1089,5 +1174,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             Line::from(spans)
         }
     };
-    frame.render_widget(Paragraph::new(status), status_area);
+    // M27-2：状态行——vifm 模式套 StatusLine 样式（黑字白底回退）。
+    let status_para = if state.config.ui.pane_borders {
+        Paragraph::new(status)
+    } else {
+        Paragraph::new(status).style(vifm_style("StatusLine"))
+    };
+    frame.render_widget(status_para, status_area);
 }

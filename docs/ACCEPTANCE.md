@@ -815,12 +815,12 @@
 - [x] 目录树/预览中的符号链接目录与列表判定一致（至少不把可进入的链接目录显示为普通文件）。（2026-11-20：build_tree_entries 同款跟随判定）
 
 ### M27-2 vifm 风格布局与配色
-- [ ] 默认启动无左右 pane 整框边框；双 pane 之间为 1 列分隔线；标签栏与每个 pane 顶部路径行各占 1 行。
-- [ ] 当前/非当前 pane 的顶部路径行使用不同背景色（`TopLineSel` / `TopLine`），焦点切换时颜色随之切换。
-- [ ] 标签栏（`TabLine`/`TabLineSel`）、状态行（`StatusLine`/`CmdLine`）、分隔线（`Border`）、当前行（`CurrLine`/`OtherLine`）、选中项（`Selected`）均有可区分的样式。
-- [ ] `[ui] pane_borders = true` 可恢复旧的整框边框外观；默认 `false`。
-- [ ] 主题提供对应命名样式时优先使用；未激活主题/样式缺失时回退到 vifm Default 风格的 16 色，不 panic。
-- [ ] `NO_COLOR` 与无 Nerd Font 环境下布局仍正确、无乱码崩溃；README 的界面描述与实现一致。
+- [x] 默认启动无左右 pane 整框边框；双 pane 之间为 1 列分隔线；标签栏与每个 pane 顶部路径行各占 1 行。（2026-11-20：`[ui] pane_borders` 默认 false；pane_gap_area 渲染 Border 分隔线；m21f1 测试双模式断言）
+- [x] 当前/非当前 pane 的顶部路径行使用不同背景色（`TopLineSel` / `TopLine`），焦点切换时颜色随之切换。（2026-11-20：焦点=黑字加粗默认底（TopLineSel 回退），非焦点=黑字白底（TopLine 回退），TestBackend bg 断言）
+- [x] 标签栏（`TabLine`/`TabLineSel`）、状态行（`StatusLine`/`CmdLine`）、分隔线（`Border`）、当前行（`CurrLine`/`OtherLine`）、选中项（`Selected`）均有可区分的样式。（2026-11-20：vifm_style 命名样式 + 16 色回退；CurrLine=反显（焦点）/DIM（非焦点）沿用 M21-F2 既有区分；Selected 主题样式优先、视觉行反显兜底）
+- [x] `[ui] pane_borders = true` 可恢复旧的整框边框外观；默认 `false`。（2026-11-20：m21f1 测试以 pane_borders=true 覆盖旧外观 + vifm 断言并存）
+- [x] 主题提供对应命名样式时优先使用；未激活主题/样式缺失时回退到 vifm Default 风格的 16 色，不 panic。（2026-11-20：`vifm_style`（fg/bg 任一存在即主题样式优先，否则 vifm_fallback 16 色））
+- [x] `NO_COLOR` 与无 Nerd Font 环境下布局仍正确、无乱码崩溃；README 的界面描述与实现一致。（2026-11-20：16 色回退不依赖主题/glyph；布局几何由 TestBackend 测试覆盖；README 界面段随 AUDIT-11/M26-5 同步）
 
 ### M27-3 PDF 前 1–2 页图像预览
 - [ ] `[preview] pdf_image_pages = 0` 时 PDF 仅走文本/提示路径，不生成图像。

@@ -224,14 +224,34 @@ pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratat
         frame.render_widget(Paragraph::new(out), inner);
         return;
     }
-    // 默认：右 pane 目录列表（独立导航；M21-F1 路径标题 + 类型着色，
-    // 焦点经边框高亮呈现，标题不再重复"焦点"文字）。
-    let title = tab.right.location.display_path().replace('\\', "/");
-    let pane = ratatui::widgets::Block::bordered()
-        .title(title)
-        .border_style(pane_border_style(focused));
-    let inner = pane.inner(area);
-    frame.render_widget(pane, area);
+    // 默认：右 pane 目录列表（独立导航；M21-F1 路径标题 + 类型着色）。
+    // M27-2：vifm 模式（pane_borders=false）——顶部路径行（TopLine/
+    // TopLineSel 背景色区分焦点），无整框边框。
+    let borders = state.config.ui.pane_borders;
+    let inner = if borders {
+        let pane = ratatui::widgets::Block::bordered()
+            .title(tab.right.location.display_path().replace('\\', "/"))
+            .border_style(pane_border_style(focused));
+        let inner = pane.inner(area);
+        frame.render_widget(pane, area);
+        inner
+    } else {
+        let [topline, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+        let path_style = if focused {
+            vifm_style("TopLineSel")
+        } else {
+            vifm_style("TopLine")
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(
+                tab.right.location.display_path().replace('\\', "/"),
+            ))
+            .style(path_style),
+            topline,
+        );
+        rest
+    };
     let items: Vec<ListItem> = tab
         .right
         .entries

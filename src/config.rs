@@ -75,6 +75,8 @@ pub struct FrecencyConfig {
 /// `git_column`（M25-5）：文件列表 git 状态字符列，默认开；非仓库隐藏。
 /// `theme`（AUDIT-13）：opaline 内置主题名或用户主题文件名；None = 不激活
 /// （图标默认 Dark、样式走 16 色回退）。
+/// `pane_borders`（M27-2）：true = 旧整框边框外观；false（默认）= vifm
+/// 风格布局（无整框、pane 顶部路径行 TopLine/TopLineSel、间隔列分隔线）。
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
@@ -83,6 +85,7 @@ pub struct UiConfig {
     pub session_restore: bool,
     pub git_column: bool,
     pub theme: Option<String>,
+    pub pane_borders: bool,
 }
 
 impl Default for UiConfig {
@@ -93,6 +96,7 @@ impl Default for UiConfig {
             session_restore: true,
             git_column: true,
             theme: None,
+            pane_borders: false,
         }
     }
 }
