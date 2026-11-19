@@ -777,7 +777,7 @@
 ### AUDIT-11 帮助同步
 - [x] `help.txt` 含 `:find` / `:grep` 等已实现命令；README 的 keymap 路径、marks/主题/opener 状态与实现一致。（2026-11-20：help 补 `:find`/`:grep`/`:theme`/`:sort`/`S`/`:remote`/`s`/`:!`/`V`/`y` 序列/计数前缀，keymap.toml→config.toml [normal] 修正；README 状态句/对比表/三层示例（opener 归入 config.toml）/里程碑表同步，唯一保留的待实现项 = M25-2 marks）
 ### AUDIT-12 测试补强
-- [ ] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。
+- [x] keymap/state/session/CLI 子命令分派有针对性测试，`app.rs` 测试占比下降。（2026-11-20：keymap 分层合并/replace、state 作业回包、CLI maintenance 臂；顺带修复 Store::open 数据目录自动创建）
 
 ### AUDIT-13 主题选择
 - [x] 可通过 `:theme` 或 `[ui] theme` 选择 `opaline` 内置主题，切换后文件列表/预览/归档配色即时变化。（2026-11-20：启动激活 + 运行时切换臂；渲染经既有 `filetype_style`/`theme::style` 消费即时跟随；ACTIVE 由 OnceLock 升级 RwLock——原实现二次切换静默失效）
