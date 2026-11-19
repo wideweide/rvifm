@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-19
 - **当前阶段**：AUDIT 评估报告整改（**已确认，执行中**）；M26 归档创建扩展已确认启动；M27（0.8.0 实测问题与 vifm 视觉对齐）已确认按序排队
-- **当前任务**：AUDIT-4 惰性 compaction（AUDIT-1/14/18/9/15/7/13/2/3 已于 2026-11-20 完成；按 TASKS AUDIT 批次头注顺序）
+- **当前任务**：AUDIT-16 frecency 一致性（AUDIT-1/14/18/9/15/7/13/2/3/4 已于 2026-11-20 完成；按 TASKS AUDIT 批次头注顺序）
 - **阶段状态**：M0–M24 名义关闭，但复核发现 M9 主题选择、M11 opener/PDF 视觉/pick 预览为“引擎存在、未接线”（已转 AUDIT-13/7/2/3），**整改完成前不计为实质完成**；M25 主体完成但 **M25-2（marks）未实现**；M11-6 真实终端验证 deferred；M27 已确认按序排队；v0.8.0 已发布，0.9.0 在任务列表全部完成后自动发布
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -21,8 +21,8 @@
 ## 下一步
 
 1. 按 TASKS 现顺序执行：AUDIT 批次 → M25-2 → M26 → M27 → 杂项（MISC-1）；AUDIT-1 已完成，当前做 AUDIT-14。
-2. 执行 AUDIT-4（惰性 compaction）：TUI 启动阈值 5000 触发写 snapshot + 截断 events；pick 不触发（见 SPEC AUDIT-4 / ACCEPTANCE §26）。
-3. 按 TASKS 顺序推进 AUDIT-16 → 其余；M27-2/3 在 AUDIT-13/2 之后。
+2. 执行 AUDIT-16（frecency 一致性）：cmd_pick 初始化 `[frecency]` 设置；compaction 用 per-topic λ 不硬编码（见 SPEC AUDIT-16 / ACCEPTANCE §26）。
+3. 按 TASKS 顺序推进其余 AUDIT（5/6/8/10/11/12/17）→ M25-2 → M26 → M27；M27-2/3 在 AUDIT-13/2 之后。
 4. AUDIT 批次完成后再按用户指令启动 M26-1（`:archive` 迁移 M13-8 Job 模型）。
 5. 全部任务完成后自动发布 0.9.0（无需人工决策）。
 

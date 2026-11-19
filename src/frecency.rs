@@ -818,10 +818,17 @@ pub fn cmd_compact() -> std::io::Result<()> {
     // 维护写命令：读写打开（负责建表）+ 先合并降级 pending，再压实。
     let store = Store::open(&crate::config::frecency_db_path())?;
     merge_pending(&store, &pending_path())?;
+    compact_store(&store).map(|_| ())
+}
+
+/// compaction 核心（AUDIT-4 自 `cmd_compact` 抽出，手动命令与 TUI 启动
+/// 钩子共用）：合并 `last_compaction` 之后的事件进 snapshot、推进标记并
+/// 裁剪。返回合并条数（0 = 无新事件 no-op）。
+pub(crate) fn compact_store(store: &Store) -> std::io::Result<usize> {
     let since = store.last_compaction()?;
     let now = store.global_tick()?;
     if now <= since {
-        return Ok(()); // 无新事件：no-op
+        return Ok(0); // 无新事件：no-op
     }
     let events = store.events_since(since)?;
     let snapshot = store.snapshot_all()?;
@@ -831,7 +838,30 @@ pub fn cmd_compact() -> std::io::Result<()> {
     }
     store.set_last_compaction(now)?;
     store.prune_events_le(now)?;
-    Ok(())
+    Ok(merged.len())
+}
+
+/// AUDIT-4：TUI 启动惰性 compaction 阈值（events 自上次压实起的增量；
+/// 2026-11-19 定稿 5000 条，见 SPEC §4.6）。
+pub const COMPACTION_THRESHOLD: u64 = 5000;
+
+/// AUDIT-4：TUI 启动惰性 compaction——events 超阈值时写 snapshot + 截断；
+/// `pick` / 跳转选择器不触发（只读红线）。打开失败静默（下次启动再试）。
+/// 调用顺序：在 `merge_pending_startup` 之后（pending 先落 events 再压实）。
+pub fn lazy_compact_on_startup() {
+    let _ = lazy_compact_at(&crate::config::frecency_db_path(), COMPACTION_THRESHOLD);
+}
+
+/// 注入路径形态（测试用）；语义同 [`lazy_compact_on_startup`]。
+/// 返回合并条数（0 = 阈值内 no-op）。
+fn lazy_compact_at(db_path: &Path, threshold: u64) -> std::io::Result<usize> {
+    let store = Store::open(db_path)?;
+    let since = store.last_compaction()?;
+    let now = store.global_tick()?;
+    if now.saturating_sub(since) <= threshold {
+        return Ok(0);
+    }
+    compact_store(&store)
 }
 
 /// compaction 合并（与 `replay` 同规则，但返回更新后的 snapshot 表）。
@@ -1699,6 +1729,39 @@ mod tests {
         let out = pick_score_candidates(&ranked, "/a\n/b\n", "dir");
         assert_eq!(out.len(), 2);
         assert!(out.iter().all(|(.., s)| *s == 0.0));
+    }
+
+    #[test]
+    fn lazy_compact_threshold_and_pick_never_triggers() {
+        // AUDIT-4：超阈值 → 写 snapshot + 截断 events + 推进游标；
+        // 阈值内 no-op（游标不动）。pick/跳转选择器不触发 compaction——
+        // 结构性保证：cached_visual_png/cmd_pick 无任何写调用（AUDIT-1
+        // 只读 open），compaction 只挂在 TUI 启动钩子与本命令。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        {
+            let store = Store::open(&db).unwrap();
+            for i in 0..6 {
+                store.append_event(&rec(&format!("/d{i}"), i)).unwrap();
+            }
+        }
+        // 阈值 5：6 条 → 触发。
+        let merged = lazy_compact_at(&db, 5).unwrap();
+        assert_eq!(merged, 6, "全部事件合并进 snapshot");
+        {
+            let ro = Store::open_readonly(&db).unwrap();
+            assert!(!ro.snapshot_all().unwrap().is_empty(), "snapshot 已写");
+            assert!(ro.events_since(6).unwrap().is_empty(), "≤ 游标事件已裁剪");
+            assert_eq!(ro.last_compaction().unwrap(), 6, "游标推进");
+        }
+        // 阈值内：no-op（游标保持）。
+        {
+            let store = Store::open(&db).unwrap();
+            store.append_event(&rec("/more", 9)).unwrap();
+        }
+        assert_eq!(lazy_compact_at(&db, 5).unwrap(), 0, "1 ≤ 5 → no-op");
+        let ro = Store::open_readonly(&db).unwrap();
+        assert_eq!(ro.last_compaction().unwrap(), 6, "游标未动");
     }
 
     #[test]

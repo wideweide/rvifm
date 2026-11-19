@@ -308,7 +308,7 @@
 - [x] AUDIT-1 pick 只读性修复（pending 合并移出 pick 或只读 open；写 tick 回归测试，见 SPEC AUDIT-1；2026-11-20 完成：redb ReadOnlyDatabase，合并归 record/TUI 启动）
 - [x] AUDIT-2 PDF 视觉探测链最小接线（第 1 页：exprim → pdftoppm/mutool → 提示，或文档降级；1–2 页与 prefer 配置由 M27-3 扩展，见 SPEC AUDIT-2；2026-11-20 完成：`cached_visual_png` 结果缓存 + viewer 接线 ImageEngine）
 - [x] AUDIT-3 pick 预览同源接线或撤回承诺（见 SPEC AUDIT-3；2026-11-20 完成：pick 交互式选择器接同源预览窗格——render_preview/ImageEngine，窄终端降级单栏）
-- [ ] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4）
+- [x] AUDIT-4 惰性 compaction（TUI 启动阈值 5000 触发，pick 不触发，见 SPEC AUDIT-4；2026-11-20 完成：`lazy_compact_on_startup` 钩子 + `compact_store` 核心抽出，手动命令共用）
 - [ ] AUDIT-5 app.rs 按 keys/exec/render/jobs/preview 拆分，测试随迁（见 SPEC AUDIT-5）
 - [ ] AUDIT-6 多键序列可配置超时（见 SPEC AUDIT-6）
 - [x] AUDIT-7 opener 整层接线（TOML 加载 + mime/name + prepend/append/rules 三层 + 命令执行；见 SPEC AUDIT-7；2026-11-20 完成：`open_with_layers` 生产接线 `open_selected`，block=true 经 pending_external 挂起执行）

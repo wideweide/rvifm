@@ -760,7 +760,7 @@
 ### AUDIT-3 pick 预览同源
 - [x] 若保留 pick 预览承诺，pick 与 TUI 对同一文件渲染一致；否则文档撤回该承诺。（2026-11-20：保留承诺并接线——`draw_pick_ui` 预览窗格走共享 `render_preview`/`ImageEngine`，同进程无 fork/exec；TestBackend 验证宽/窄终端）
 ### AUDIT-4 惰性 compaction
-- [ ] 事件超过阈值时 TUI 启动触发 compaction（写 snapshot + 截断 events）；`pick` 不触发；或文档明确仅手动。
+- [x] 事件超过阈值时 TUI 启动触发 compaction（写 snapshot + 截断 events）；`pick` 不触发；或文档明确仅手动。（2026-11-20：`lazy_compact_on_startup` 挂 run() 启动（merge pending 之后），阈值 5000；pick/跳转选择器结构上无写调用）
 ### AUDIT-5 app.rs 拆分
 - [ ] 生产代码按职责分片，测试随迁，`cargo test` 全绿且无行为变化。
 ### AUDIT-6 键位超时

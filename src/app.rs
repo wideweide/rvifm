@@ -5223,6 +5223,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     crate::frecency::init_settings(&config.frecency);
     // AUDIT-1：TUI 启动合并上次降级的 pending（合并只发生在 record/TUI 启动）。
     crate::frecency::merge_pending_startup();
+    // AUDIT-4：TUI 启动惰性 compaction（events 超阈值 → snapshot + 截断；
+    // pick 不触发——只读红线）。
+    crate::frecency::lazy_compact_on_startup();
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
     let mut state = AppState::new(Tab::from_physical(
