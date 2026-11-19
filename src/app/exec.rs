@@ -1538,7 +1538,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [fmt, name] => {
                     let format = ops::ArchiveFormat::parse(fmt)
-                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz / 7z）"))?;
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（内建 zip/tar/tar.gz/7z；CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst）"))?;
                     let (op, names, target, base) =
                         archive_plan(state, format, name, default_checksum)?;
                     // M26-1：创建在后台线程执行（UI 不阻塞），完成回包入撤销栈。
@@ -1551,7 +1551,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [name] => {
                     let format = ops::ArchiveFormat::infer(name).ok_or_else(|| {
-                        "archive: 无法从扩展名推断格式（需 zip/tar/tar.gz/7z）".to_owned()
+                        "archive: 无法从扩展名推断格式（内建 zip/tar/tar.gz/7z；CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst）".to_owned()
                     })?;
                     let (op, names, target, base) =
                         archive_plan(state, format, name, default_checksum)?;
@@ -1564,7 +1564,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 [fmt, name, kv] if kv.starts_with("checksum=") => {
                     let format = ops::ArchiveFormat::parse(fmt)
-                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（zip / tar / tar.gz / 7z）"))?;
+                        .ok_or_else(|| format!("archive: 未知格式 {fmt}（内建 zip/tar/tar.gz/7z；CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst）"))?;
                     let checksum = ops::Checksum::parse(&kv["checksum=".len()..])
                         .ok_or_else(|| "archive: 校验类型需 md5 / sha256 / none".to_owned())?;
                     let (op, names, target, base) = archive_plan(state, format, name, checksum)?;
@@ -2815,6 +2815,12 @@ pub(crate) fn archive_plan(
         ops::ArchiveFormat::Tar => "tar",
         ops::ArchiveFormat::TarGz => "tar.gz",
         ops::ArchiveFormat::SevenZ => "7z",
+        ops::ArchiveFormat::Rar => "rar",
+        ops::ArchiveFormat::Cab => "cab",
+        ops::ArchiveFormat::Lzh => "lzh",
+        ops::ArchiveFormat::TarXz => "tar.xz",
+        ops::ArchiveFormat::TarBz2 => "tar.bz2",
+        ops::ArchiveFormat::TarZst => "tar.zst",
     };
     let cs_str = match checksum {
         ops::Checksum::Md5 => "md5",

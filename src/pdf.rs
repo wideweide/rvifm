@@ -73,7 +73,7 @@ pub fn find_external_renderer() -> Option<(&'static str, &'static str)> {
 }
 
 /// PATH 探测（避免引入 which crate）。
-fn which_ok(cmd: &str) -> bool {
+pub(crate) fn which_ok(cmd: &str) -> bool {
     let path_env = std::env::var_os("PATH").unwrap_or_default();
     let ext = if cfg!(windows) { ".exe" } else { "" };
     std::env::split_paths(&path_env).any(|dir| {

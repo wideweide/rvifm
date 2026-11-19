@@ -333,16 +333,22 @@ pub fn create_file(tab_id: usize, base: &Path, name: &str) -> std::io::Result<Un
     })
 }
 
-/// 归档创建格式（M25-3 + M26-2 扩展 7z）。**纯 Rust 写端边界**：xz/bz2/zst
-/// 主流编码器均为 C 绑定（违反零 C 编译期依赖原则），保持只读（M7-8 读端
-/// 不变），创建请求给出可读提示（WHY 见 NOTES M25 立项 / M26 立项）。
-/// 7z 编码器为纯 Rust（sevenz-rust 0.6，crates.io 核实 2026-11-19）→ M26-2 纳入。
+/// 归档创建格式（M25-3 + M26-2 7z + M26-4 外部 CLI 六形态）。**写端边界**：
+/// zip/tar/tar.gz/7z 为纯 Rust 内建；rar/cab/lzh/tar.xz/tar.bz2/tar.zst 的
+/// 主流编码器为 C 绑定或专有工具 → M26-4 经外部 CLI 降级创建（PATH 探测
+/// 7z/rar/tar，缺失优雅终止）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
     Zip,
     Tar,
     TarGz,
     SevenZ,
+    Rar,
+    Cab,
+    Lzh,
+    TarXz,
+    TarBz2,
+    TarZst,
 }
 
 impl ArchiveFormat {
@@ -353,6 +359,12 @@ impl ArchiveFormat {
             ArchiveFormat::Tar => ".tar",
             ArchiveFormat::TarGz => ".tar.gz",
             ArchiveFormat::SevenZ => ".7z",
+            ArchiveFormat::Rar => ".rar",
+            ArchiveFormat::Cab => ".cab",
+            ArchiveFormat::Lzh => ".lzh",
+            ArchiveFormat::TarXz => ".tar.xz",
+            ArchiveFormat::TarBz2 => ".tar.bz2",
+            ArchiveFormat::TarZst => ".tar.zst",
         }
     }
 
@@ -363,6 +375,12 @@ impl ArchiveFormat {
             "tar" => Some(ArchiveFormat::Tar),
             "tar.gz" => Some(ArchiveFormat::TarGz),
             "7z" => Some(ArchiveFormat::SevenZ),
+            "rar" => Some(ArchiveFormat::Rar),
+            "cab" => Some(ArchiveFormat::Cab),
+            "lzh" => Some(ArchiveFormat::Lzh),
+            "tar.xz" => Some(ArchiveFormat::TarXz),
+            "tar.bz2" => Some(ArchiveFormat::TarBz2),
+            "tar.zst" => Some(ArchiveFormat::TarZst),
             _ => None,
         }
     }
@@ -376,6 +394,18 @@ impl ArchiveFormat {
             Some(ArchiveFormat::TarGz)
         } else if lower.ends_with(".7z") {
             Some(ArchiveFormat::SevenZ)
+        } else if lower.ends_with(".rar") {
+            Some(ArchiveFormat::Rar)
+        } else if lower.ends_with(".cab") {
+            Some(ArchiveFormat::Cab)
+        } else if lower.ends_with(".lzh") {
+            Some(ArchiveFormat::Lzh)
+        } else if lower.ends_with(".tar.xz") {
+            Some(ArchiveFormat::TarXz)
+        } else if lower.ends_with(".tar.bz2") {
+            Some(ArchiveFormat::TarBz2)
+        } else if lower.ends_with(".tar.zst") {
+            Some(ArchiveFormat::TarZst)
         } else if lower.ends_with(".tar") {
             Some(ArchiveFormat::Tar)
         } else {
@@ -413,6 +443,14 @@ pub fn create_archive(
         ArchiveFormat::Tar => pack_tar(&dest, &sources, false),
         ArchiveFormat::TarGz => pack_tar(&dest, &sources, true),
         ArchiveFormat::SevenZ => pack_7z(&dest, &sources),
+        // M26-4：外部 CLI 降级（PATH 探测 → Command → 失败按退出码/stderr
+        // 可读错误；输出 .output() 捕获不进 TUI；失败由下方统一清理半成品）。
+        ArchiveFormat::Rar
+        | ArchiveFormat::Cab
+        | ArchiveFormat::Lzh
+        | ArchiveFormat::TarXz
+        | ArchiveFormat::TarBz2
+        | ArchiveFormat::TarZst => pack_cli(format, &dest, &sources, base),
     };
     if let Err(e) = result {
         let _ = fs::remove_file(&dest);
@@ -565,6 +603,100 @@ fn zip_err(e: zip::result::ZipError) -> std::io::Error {
 /// 7z 编码错误 → 可读 io 错误（sevenz-rust Error 不带 io kind）。
 fn sevenz_err(e: sevenz_rust::Error) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+}
+
+// ── M26-4：外部 CLI 归档创建降级 ──────────────────────────────────────────
+
+/// 各 CLI 格式的候选工具（按优先序 PATH 探测；M25-6 find_git_tui 同款模式）。
+/// cab/lzh 由 7z 尝试创建——7z 实际不支持 cab/lzh 打包时会给出自身错误，
+/// 经 M26-4 的错误上浮为可读提示（工具探测与失败链路按 SPEC 落实）。
+pub(crate) fn cli_tool_candidates(format: ArchiveFormat) -> &'static [&'static str] {
+    match format {
+        ArchiveFormat::Rar => &["rar"],
+        ArchiveFormat::Cab | ArchiveFormat::Lzh => &["7z", "7za", "7zr"],
+        ArchiveFormat::TarXz | ArchiveFormat::TarBz2 | ArchiveFormat::TarZst => &["tar"],
+        _ => &[],
+    }
+}
+
+/// 构造 CLI 参数（纯函数，测试用）。`dest` 为绝对路径，`names` 相对 base；
+/// 调用方以 `current_dir(base)` 执行，`.output()` 捕获输出（不进 TUI）。
+pub(crate) fn cli_create_args(format: ArchiveFormat, dest: &Path, names: &[String]) -> Vec<String> {
+    let dest_str = dest.to_string_lossy().into_owned();
+    let mut args: Vec<String> = match format {
+        ArchiveFormat::Rar => vec!["a".to_owned(), "-ep1".to_owned(), dest_str],
+        ArchiveFormat::Cab | ArchiveFormat::Lzh => vec!["a".to_owned(), dest_str],
+        ArchiveFormat::TarXz => vec!["-cJf".to_owned(), dest_str],
+        ArchiveFormat::TarBz2 => vec!["-cjf".to_owned(), dest_str],
+        ArchiveFormat::TarZst => vec!["--zstd".to_owned(), "-cf".to_owned(), dest_str],
+        _ => Vec::new(),
+    };
+    args.extend(names.iter().cloned());
+    args
+}
+
+/// 外部 CLI 归档创建（M26-4）：PATH 探测候选工具 → Command（cwd=base，
+/// 输出捕获）→ 非零退出取 stderr 尾部给可读错误；目标缺失/失败由调用方
+/// 清理半成品。
+fn pack_cli(
+    format: ArchiveFormat,
+    dest: &Path,
+    sources: &[(String, PathBuf)],
+    base: &Path,
+) -> std::io::Result<()> {
+    let candidates = cli_tool_candidates(format);
+    let Some(tool) = candidates.iter().find(|t| crate::pdf::which_ok(t)) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "创建 {} 需要 {}（按 PATH 探测），均未在系统中找到",
+                format.ext(),
+                candidates.join("/")
+            ),
+        ));
+    };
+    let names: Vec<String> = sources.iter().map(|(n, _)| n.clone()).collect();
+    let args = cli_create_args(format, dest, &names);
+    let out = std::process::Command::new(tool)
+        .args(&args)
+        .current_dir(base)
+        .output()
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{tool} 执行失败: {e}")))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let tail: Vec<&str> = stderr
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .rev()
+            .take(3)
+            .collect();
+        let tail = tail.into_iter().rev().collect::<Vec<_>>().join("; ");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "{tool} 退出码 {}{}",
+                out.status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "信号终止".to_owned()),
+                if tail.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {tail}")
+                }
+            ),
+        ));
+    }
+    if !dest.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "{tool} 未产出目标文件（退出码 {}）",
+                out.status.code().map(|c| c.to_string()).unwrap_or_default()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// 7z 单条目递归打包（M26-2）：目录 → `is_directory` 条目 + 子项递归；
@@ -983,5 +1115,44 @@ mod tests {
         })
         .unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "V");
+    }
+
+    #[test]
+    fn m264_cli_tool_candidates_and_args() {
+        // M26-4：CLI 降级——候选工具表与参数构造（纯函数；探测注入在
+        // pack_cli 之前的 PATH which_ok）。
+        assert_eq!(cli_tool_candidates(ArchiveFormat::Rar), &["rar"]);
+        assert_eq!(
+            cli_tool_candidates(ArchiveFormat::Cab),
+            &["7z", "7za", "7zr"]
+        );
+        assert_eq!(
+            cli_tool_candidates(ArchiveFormat::Lzh),
+            &["7z", "7za", "7zr"]
+        );
+        assert_eq!(cli_tool_candidates(ArchiveFormat::TarXz), &["tar"]);
+        assert_eq!(
+            cli_tool_candidates(ArchiveFormat::Zip),
+            &[] as &[&str],
+            "内建格式无 CLI 候选"
+        );
+        let args = cli_create_args(
+            ArchiveFormat::Rar,
+            Path::new("C:/t/o.rar"),
+            &["a.txt".to_owned()],
+        );
+        assert_eq!(args, vec!["a", "-ep1", "C:/t/o.rar", "a.txt"]);
+        let args = cli_create_args(
+            ArchiveFormat::TarXz,
+            Path::new("/t/o.tar.xz"),
+            &["a.txt".to_owned()],
+        );
+        assert_eq!(args, vec!["-cJf", "/t/o.tar.xz", "a.txt"]);
+        let args = cli_create_args(
+            ArchiveFormat::TarZst,
+            Path::new("/t/o.tar.zst"),
+            &["b".to_owned()],
+        );
+        assert_eq!(args, vec!["--zstd", "-cf", "/t/o.tar.zst", "b"]);
     }
 }

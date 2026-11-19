@@ -1023,12 +1023,19 @@ fn m253_archive_guards() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-    // xz/bz2/zst：格式解析拒绝（纯 Rust 写端边界）。
-    assert!(exec_command_impl(&mut state, "archive tar.xz x.tar.xz").is_err());
-    assert!(exec_command_impl(&mut state, "archive tar.bz2 x.tar.bz2").is_err());
-    assert!(exec_command_impl(&mut state, "archive tar.zst x.tar.zst").is_err());
+    // M26-4：xz/bz2/zst/rar/cab/lzh 解析为 CLI 降级格式（SpawnJob）；
+    // 探测/失败链路由纯函数测试与 execute_job_body 终态覆盖（CLI 工具
+    // 可用性随平台/环境，不在此断言成败）。
+    assert!(matches!(
+        exec_command_impl(&mut state, "archive tar.xz x.tar.xz"),
+        Ok(ExecOutcome::SpawnJob { .. })
+    ));
+    assert!(matches!(
+        exec_command_impl(&mut state, "archive rar x.rar"),
+        Ok(ExecOutcome::SpawnJob { .. })
+    ));
     // 1 参数但扩展名不可推断。
-    assert!(exec_command_impl(&mut state, "archive out.rar").is_err());
+    assert!(exec_command_impl(&mut state, "archive out.abc").is_err());
     // 无参 → M25-4 对话框（Ok）；3 参非 checksum / 4+ 参 → Err。
     assert!(matches!(
         exec_command_impl(&mut state, "archive"),
