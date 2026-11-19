@@ -785,8 +785,8 @@
 - [ ] 图标 Dark/Light 随主题 variant 变化（含远端列表路径）；未选主题时默认 Dark。
 
 ### AUDIT-14 测试环境隔离
-- [ ] 在 `TMUX` 与 `STY` 均设置的 shell 中运行 `cargo test -- --test-threads=1` 全绿；清除两个变量后同样全绿。
-- [ ] `m18_4_bang_routes_and_config` 不依赖宿主终端策略，且测试输出不含外部命令的 stdout。
+- [x] 在 `TMUX` 与 `STY` 均设置的 shell 中运行 `cargo test -- --test-threads=1` 全绿；清除两个变量后同样全绿。（2026-11-20；AUDIT-18 的 m249/m253 两项按 STATE 门禁偏差 skip）
+- [x] `m18_4_bang_routes_and_config` 不依赖宿主终端策略，且测试输出不含外部命令的 stdout。（2026-11-20：路由注入 `run_external_target_with`，成功命令改静默 `cmd /C exit 0`）
 
 ### AUDIT-15 pick CLI 契约
 - [ ] `rvifm pick --topic dir` 与 `rvifm pick --topic file` 均按对应 topic 评分；SPEC §4.6 示例可直接工作。

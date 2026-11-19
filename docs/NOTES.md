@@ -701,3 +701,10 @@ rvifm record  → 静默记录访问
 - **cmd_compact 保留"读写打开 + 先合并"**：维护写命令，建表与合并属其职责，行为不变。
 - **并发语义变化（良性）**：pick 由独占锁（RW）变共享锁（RO）。record 与 pick 并发时 record 得 `DatabaseAlreadyOpen` → 降级 `events.pending`（与改动前一致）；多个 pick 现在可并发（改进）。
 - **门禁偏差（登记 AUDIT-18）**：本机 HEAD 上 `m249_jobs_overlay_render_selection_and_cancel_state` 失败——作业行拼接宿主长临时路径（`ADMINI~1\...\Temp\2\`）超 70 列被截断丢"取消中"，测试违反 AGENTS §7 路径可移植规则；`m253_archive_zip_roundtrip_and_undo` 失败——第二次 undo 未移除归档（根因待查）。`git stash` 验证两项在干净 HEAD 同样失败，与 AUDIT-1 无关。本地门禁暂用 skip 命令（见 STATE §质量门禁），其余 326 单测 + 3 集成全绿。Linux cross-check 自 russh（M19-3b）起本机无法构建 aws-lc-sys，由 CI 承担（现状确认）。
+
+### 2026-11-20 — AUDIT-14 实现：测试环境隔离（WHY）
+
+- **失败机制**：`run_external_target` 直接读宿主 `$TMUX`/`$STY`；tmux 内 `tmux new-window` spawn 成功 → 返回 `Multiplexer` 而非 `RunExternal`，`m18_4_bang_routes_and_config` 断言炸；且 `echo hi` / tmux 的输出泄漏进测试 stdout。
+- **修法（不走测试改环境变量路线）**：edition 2024 下 `env::set_var`/`remove_var` 是 unsafe，测试内清环境不可取。改注入式——`detect_mux()`（生产探测）→ `run_external_target_with(mux, cfg, cmd)`；测试只注入会短路到 `CurrentPane` 的组合（`Some+true` 会真实 spawn 复用器，不覆盖），exec 路径用 `state.config.ui.terminal_in_new_window = false` 与宿主解耦；成功命令换静默 `cmd /C exit 0`；复用器 spawn 输出 `Stdio::null()`（M21-F8 同款）。生产行为不变（仅复用器输出静音）。
+- **验收**：`--test-threads=1` 在 `TMUX=1 STY=1` 与清除两变量下各全绿（326 单测 + 3 集成，AUDIT-18 两项按 STATE 偏差 skip）。
+- **观察（待 AUDIT-12 复核）**：`TMUX=1` 并行 4 跑中出现一次未捕获测试名的偶发失败，随后 3 连绿未复现；不影响 AUDIT-14 验收结论，记录备查。

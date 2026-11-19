@@ -569,29 +569,67 @@ enum ExternalRun {
     CurrentPane(String),
 }
 
+/// 复用器种类（M18-4）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MuxKind {
+    Tmux,
+    Screen,
+}
+
+/// 复用器环境探测（生产路径）。AUDIT-14：测试一律走 `run_external_target_with`
+/// 注入，宿主的 `TMUX`/`STY` 不得改变测试结果。
+fn detect_mux() -> Option<MuxKind> {
+    if std::env::var_os("TMUX").is_some() {
+        Some(MuxKind::Tmux)
+    } else if std::env::var_os("STY").is_some() {
+        Some(MuxKind::Screen)
+    } else {
+        None
+    }
+}
+
 fn run_external_target(cfg: &config::UiConfig, cmd: &str) -> ExternalRun {
+    run_external_target_with(detect_mux(), cfg, cmd)
+}
+
+/// AUDIT-14：注入复用器形态的判定（`run_external_target` 与测试共用）。
+/// 注意：`cfg.terminal_in_new_window=true` 且 mux 有值时会真实 spawn 复用器
+/// （输出已静音）；测试只注入会短路到 `CurrentPane` 的组合。
+fn run_external_target_with(
+    mux: Option<MuxKind>,
+    cfg: &config::UiConfig,
+    cmd: &str,
+) -> ExternalRun {
     if cfg.terminal_in_new_window {
-        if std::env::var_os("TMUX").is_some() {
-            let out = std::process::Command::new("tmux")
-                .args(tmux_window_args(cmd))
-                .status();
-            return match out {
-                Ok(st) if st.success() => {
-                    ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
-                }
-                _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
-            };
-        }
-        if std::env::var_os("STY").is_some() {
-            let out = std::process::Command::new("screen")
-                .args(["-X", "screen", "-t", "rvifm", "sh", "-c", cmd])
-                .status();
-            return match out {
-                Ok(st) if st.success() => {
-                    ExternalRun::Multiplexer(format!("已在 screen 新窗口执行: {cmd}"))
-                }
-                _ => ExternalRun::CurrentPane(cmd.to_owned()),
-            };
+        match mux {
+            Some(MuxKind::Tmux) => {
+                let out = std::process::Command::new("tmux")
+                    .args(tmux_window_args(cmd))
+                    // M21-F8 同款：复用器输出不进 TUI/测试输出。
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                return match out {
+                    Ok(st) if st.success() => {
+                        ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
+                    }
+                    _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
+                };
+            }
+            Some(MuxKind::Screen) => {
+                let out = std::process::Command::new("screen")
+                    .args(["-X", "screen", "-t", "rvifm", "sh", "-c", cmd])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                return match out {
+                    Ok(st) if st.success() => {
+                        ExternalRun::Multiplexer(format!("已在 screen 新窗口执行: {cmd}"))
+                    }
+                    _ => ExternalRun::CurrentPane(cmd.to_owned()),
+                };
+            }
+            None => {}
         }
     }
     ExternalRun::CurrentPane(cmd.to_owned())
@@ -12571,10 +12609,13 @@ mod tests {
 
     #[test]
     fn m18_4_bang_routes_and_config() {
-        // :!echo → 无 tmux 环境 → CurrentPane outcome（run 循环执行）。
+        // :!echo → CurrentPane outcome（run 循环执行）。
+        // AUDIT-14：注入 terminal_in_new_window=false——宿主 TMUX/STY 不改变
+        // 结果；复用器路由用 run_external_target_with 注入覆盖（见下方）。
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.txt"), "").unwrap();
         let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.config.ui.terminal_in_new_window = false;
         match exec_command_impl(&mut state, "!echo rvifm-test") {
             Ok(ExecOutcome::RunExternal { cmd }) => assert_eq!(cmd, "echo rvifm-test"),
             other => panic!("expected RunExternal, got {other:?}"),
@@ -12587,12 +12628,47 @@ mod tests {
             other => panic!("expected RunExternal, got {other:?}"),
         }
         // 退出状态 → 消息（成功 None；失败可读）。
-        let ok = std::process::Command::new("echo").arg("hi").status();
+        // AUDIT-14：静默命令，不向测试 stdout 泄漏外部输出。
+        let ok = if cfg!(windows) {
+            std::process::Command::new("cmd")
+                .args(["/C", "exit", "0"])
+                .status()
+        } else {
+            std::process::Command::new("sh")
+                .args(["-c", "exit 0"])
+                .status()
+        };
         assert!(run_external_current_result(ok).is_none());
         let bad = std::process::Command::new("rvifm-nonexistent-cmd-xyz").status();
         assert!(run_external_current_result(bad).unwrap().contains("失败"));
-        // 配置：缺省 true；[ui] 可覆盖。
-        assert!(state.config.ui.terminal_in_new_window);
+        // 路由判定不依赖宿主变量（AUDIT-14）：只注入会短路到 CurrentPane 的
+        // 组合——Some+true 会真实 spawn 复用器，不在测试覆盖内。
+        let cfg_true = crate::config::Config::default();
+        assert!(cfg_true.ui.terminal_in_new_window, "缺省 true");
+        assert!(
+            matches!(
+                run_external_target_with(None, &cfg_true.ui, "x"),
+                ExternalRun::CurrentPane(_)
+            ),
+            "无复用器 → 当前 pane"
+        );
+        let mut cfg_false = crate::config::Config::default();
+        cfg_false.ui.terminal_in_new_window = false;
+        assert!(
+            matches!(
+                run_external_target_with(Some(MuxKind::Tmux), &cfg_false.ui, "x"),
+                ExternalRun::CurrentPane(_)
+            ),
+            "开关关闭时忽略复用器环境"
+        );
+        assert!(
+            matches!(
+                run_external_target_with(Some(MuxKind::Screen), &cfg_false.ui, "x"),
+                ExternalRun::CurrentPane(_)
+            ),
+            "开关关闭时忽略 screen 环境"
+        );
+        // 配置：[ui] 可覆盖（缺省 true 已在上方断言）。
         let tmp2 = TempDir::new().unwrap();
         let path = tmp2.path().join("config.toml");
         std::fs::write(
