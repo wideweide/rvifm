@@ -827,3 +827,9 @@ rvifm record  → 静默记录访问
 - **用户裁决（AskUserQuestion，2026-11-21）**：① 预览统一取**方案 A**——预览恒在焦点 pane 对侧（:view 与 frecency 共用模型；焦点在右时预览渲染到左 pane；无预览模式时右 pane 保持第二目录列表）；② 二进制预览信息面板**裁剪 `--version` 子进程探测**——预览即执行未知二进制有安全风险，仅元数据（大小/修改时间/类型推断）。
 - **CUT**：不做 `.vifm` 配色解析器（一次性颜色提取 + TOML 移植，与 AGENTS §5.6 一致）；`.war`/`.apk` 等衍生归档格式不做（仅 `.jar`）；不做主题热重载。
 - **实现边界注记**：M34-1 高亮组映射走数据不写死主题分支，M27-2 的 16 色 vifm 回退保留为无主题兜底；snowwhite 为 rvifm 捆绑 TOML（include_str），不回传 opaline；M34-4 只统一"预览目标与放置"，不合并 :view 与 frecency 的全部交互细节（M17 查看器能力维持现状）。
+
+### 2026-11-21 — 0.10.0 发布验证（CI 5 job 绿 + tag 重指向 2 次）
+
+- **过程**：首推 windows clippy 失败（`msg_none` dead-code——m302 测试 cfg(unix) 包裹致 Windows 下无调用者，Linux 侧不报）→ 内联修复；二推 windows test 失败（`m323` 归档会话路径 `split_once(':')` 被 Windows 盘符冒号切断 → `rsplit_once`）；三推全绿。诊断通道固化：CI clippy/test 失败时 `::error::` 注解（匿名 check-runs annotations 可读——errexit 曾吞掉注解步骤，`set +e` 修正）。
+- **教训**：① Linux 全绿 ≠ Windows 绿——本会话三度（lstat/E0369/msg_none/盘符）验证 AGENTS §6 "以 CI run 为准" 纪律的必要性；② 路径含冒号（Windows 盘符）的序列化一律 rsplit 切分；③ test cfg(unix) 包裹的辅助函数会成 Windows dead-code。
+- **结果**：GitHub Release `v0.10.0` 已发布（三归档，含 rvifm+rv 双二进制）。crates.io 留待 Windows 侧（凭据边界）。
