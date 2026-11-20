@@ -25,8 +25,12 @@ jobs:
       - name: fmt
         run: cargo fmt --check
       # AUDIT-9：clippy 覆盖测试代码（--all-targets）。
+      # 0.10.0：tee 到 test-output.txt（clippy 失败时 digest 步骤可读错误行）。
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee test-output.txt
       - name: build
         run: cargo build --locked
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
@@ -59,6 +63,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           JOB_ID=$(gh run view ${{ github.run_id }} --json jobs --jq '.jobs[] | select(.conclusion=="failure") | .databaseId' | head -1)
+          touch test-output.txt
           grep -E "^test .* FAILED|panicked at|error\[|^error" test-output.txt | head -25 > digest.txt || true
           [ -s digest.txt ] || tail -25 test-output.txt > digest.txt
           SUMMARY=$(jq -Rs . < digest.txt)
