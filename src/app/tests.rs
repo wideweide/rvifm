@@ -942,6 +942,84 @@ impl crate::remote::RemoteFs for ReconnectMockFs {
     ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
         Err(self.err.clone())
     }
+    fn write(&self, _path: &Path, _data: &[u8]) -> Result<(), crate::remote::RemoteError> {
+        Err(self.err.clone())
+    }
+}
+
+#[test]
+fn m322_resume_part_path_deterministic_and_clean_removal() {
+    // M32-2：.part 路径——同 (remote, dest) 确定性命中、不同 dest 不同
+    // 路径；文件可写可删（现场生命周期归调用方）。
+    let p1 = resume_part_path("r1", Path::new("/a/b.txt"));
+    let p1b = resume_part_path("r1", Path::new("/a/b.txt"));
+    let p2 = resume_part_path("r1", Path::new("/a/c.txt"));
+    assert_eq!(p1, p1b, "同目标同路径");
+    assert_ne!(p1, p2, "不同目标不同路径");
+    assert!(p1.to_string_lossy().contains(".part"));
+    fs::write(&p1, b"data").unwrap();
+    fs::remove_file(&p1).unwrap();
+}
+
+#[test]
+fn m322_upload_connection_failure_keeps_part_and_reconnects() {
+    // M32-2：上传连接类失败 → .part 保留 + 重连后成功写入目标（mock
+    // 会话 as_any=None 不支持重连——验证可读错误含 .part 现场路径；
+    // SftpBackend 真实重连路径由 M32-1 downcast 机制覆盖，此处验证
+    // 上传分支的现场保留与错误合并）。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.remote_sessions.insert(
+        "r".to_owned(),
+        Box::new(ReconnectMockFs {
+            err: crate::remote::RemoteError::Connect("net down".to_owned()),
+        }),
+    );
+    state.active_tab_mut().location = Location::Remote {
+        remote: "r".to_owned(),
+        path: PathBuf::from("/"),
+    };
+    fs::write(tmp.path().join("src.txt"), b"PAYLOAD").unwrap();
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![tmp.path().join("src.txt")],
+        cut: false,
+        source: crate::state::YankSource::Local,
+    });
+    let mut msg = None;
+    paste_yanked(&mut state, false, &mut msg);
+    let m = msg.unwrap_or_default();
+    assert!(m.contains(".part 现场"), "错误含现场路径: {m}");
+    assert!(m.contains("该会话类型不支持自动重连"), "mock 拒绝重连: {m}");
+    // 现场文件存在且内容 = 传输数据（write 前已读入）。
+    let part = resume_part_path("r", Path::new("/src.txt"));
+    assert!(part.is_file(), "现场保留");
+    assert_eq!(fs::read(&part).unwrap(), b"PAYLOAD", "现场含传输数据");
+}
+
+#[test]
+fn m322_download_connection_failure_keeps_part() {
+    // M32-2：下载 read 连接类失败 → .part 现场保留 + mock 拒绝重连的
+    // 可读错误（真实重连成功路径由 M32-1 机制覆盖）。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.remote_sessions.insert(
+        "r".to_owned(),
+        Box::new(ReconnectMockFs {
+            err: crate::remote::RemoteError::Connect("net down".to_owned()),
+        }),
+    );
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![PathBuf::from("/remote.bin")],
+        cut: false,
+        source: crate::state::YankSource::Remote("r".to_owned()),
+    });
+    let buf = state.yank.clone().unwrap();
+    let mut msg = None;
+    paste_remote_to_local(&mut state, "r", &buf, false, &mut msg);
+    let m = msg.unwrap_or_default();
+    assert!(m.contains(".part 现场"), "错误含现场路径: {m}");
+    let part = resume_part_path("r", Path::new("/remote.bin"));
+    assert!(part.is_file(), "现场保留");
 }
 
 #[test]

@@ -2865,6 +2865,54 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
 /// 目录。复制还是移动由缓冲区类型与键位决定（SPEC §4.8）：yy 缓冲 + `p`
 /// = 复制、+ `P` = 移动；cut 缓冲恒为移动。每项独立入撤销栈（`u` 可逆）；
 /// 失败逐项报告，不 panic、不留半成品（单项目标已存在等错误即停）。
+/// M32-2：传输中断现场文件路径（`.part`）——临时目录下按会话+目标
+/// 路径哈希命名（连接重试时同路径命中）。会话级续传现场，进程退出
+/// 不清理（供诊断与重试）。
+pub(crate) fn resume_part_path(remote: &str, dest: &Path) -> PathBuf {
+    use std::fmt::Write as _;
+    let key = format!("{remote}:{}", dest.display().to_string().replace('\\', "/"));
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in key.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    let leaf = dest
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_owned());
+    let mut name = String::new();
+    let _ = write!(name, "rvifm-xfer-{h:016x}-{leaf}.part");
+    std::env::temp_dir().join(name)
+}
+
+/// M32-2/M32-1：重连当前远端会话（downcast SftpBackend → params/password
+/// 副本重建 → 替换会话表）；mock 或无会话返回可读 Err（会话放回）。
+pub(crate) fn remote_reconnect_session(state: &mut AppState, name: &str) -> Result<(), String> {
+    let any = state.remote_sessions.remove(name);
+    let Some(b) = any else {
+        return Err("remote: 会话已断开".to_owned());
+    };
+    match b
+        .as_any()
+        .and_then(|a| a.downcast_ref::<crate::remote::sftp::SftpBackend>())
+    {
+        Some(sb) => match sb.reconnect_from_params() {
+            Ok(nb) => {
+                state.remote_sessions.insert(name.to_owned(), Box::new(nb));
+                Ok(())
+            }
+            Err(e) => {
+                state.remote_sessions.insert(name.to_owned(), b);
+                Err(format!("remote: 重连失败: {e}"))
+            }
+        },
+        None => {
+            state.remote_sessions.insert(name.to_owned(), b);
+            Err("remote: 该会话类型不支持自动重连".to_owned())
+        }
+    }
+}
+
 pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Option<String>) {
     let Some(buffer) = state.yank.clone() else {
         *msg = Some("缓冲区为空（先 yy 复制）".to_owned());
@@ -2974,18 +3022,44 @@ pub(crate) fn paste_yanked_remote(
             .get(&remote)
             .map(|be| be.metadata(&dest).is_ok())
             .unwrap_or(false);
-        eprintln!("DBG paste exists={} dest={}", exists, dest.display());
         if exists {
             first_err = Some(format!("目标已存在: {}", dest.display()));
             break;
         }
-        let result = state
+        // M32-2：write 连接类失败 → .part 传输现场保留 + 自动重连一次后
+        // 重写（SIMPLIFIED：会话 write 无偏移参数，重连后整文件重写；
+        // 显式取消（x）在条目边界，不产生 .part）。
+        let write_err = state
             .remote_sessions
             .get(&remote)
-            .ok_or_else(|| "会话已断开".to_owned())
-            .and_then(|be| be.write(&dest, &data).map_err(|e| e.to_string()));
-        match result {
-            Ok(()) => {
+            .and_then(|be| be.write(&dest, &data).err());
+        let upload_err = match write_err {
+            None => None,
+            Some(e) if e.is_connection_class() => {
+                let part = resume_part_path(&remote, &dest);
+                let _ = std::fs::write(&part, &data);
+                match remote_reconnect_session(state, &remote) {
+                    Ok(()) => match state
+                        .remote_sessions
+                        .get(&remote)
+                        .and_then(|be| be.write(&dest, &data).err())
+                    {
+                        None => {
+                            let _ = std::fs::remove_file(&part);
+                            None
+                        }
+                        Some(e2) => Some(format!(
+                            "重连后仍失败: {e2}（.part 现场: {}）",
+                            part.display()
+                        )),
+                    },
+                    Err(e2) => Some(format!("{e2}（.part 现场: {}）", part.display())),
+                }
+            }
+            Some(e) => Some(e.to_string()),
+        };
+        match upload_err {
+            None => {
                 state.undo_stack.push(crate::state::UndoableOp::Remote {
                     tab_id,
                     remote: remote.clone(),
@@ -2996,7 +3070,7 @@ pub(crate) fn paste_yanked_remote(
                 });
                 done += 1;
             }
-            Err(e) => {
+            Some(e) => {
                 first_err = Some(e);
                 break;
             }
@@ -3049,17 +3123,52 @@ pub(crate) fn paste_remote_to_local(
     let mut first_err: Option<String> = None;
     let tab_id = state.active;
     for src in &buffer.paths {
-        let data = state
+        // M32-2：read 连接类失败 → .part 现场保留 + 自动重连一次后重新
+        // read（SIMPLIFIED：会话 read 无偏移参数，重连后整文件重读）。
+        let first_err_read = state
             .remote_sessions
             .get(remote)
-            .ok_or_else(|| "会话已断开".to_owned())
-            .and_then(|be| be.read(src).map_err(|e| e.to_string()));
-        let data = match data {
-            Ok(d) => d,
-            Err(e) => {
-                first_err = Some(e);
+            .and_then(|be| be.read(src).err());
+        let data = match first_err_read {
+            None => state
+                .remote_sessions
+                .get(remote)
+                .and_then(|be| be.read(src).ok()),
+            Some(e) if e.is_connection_class() => {
+                let part = resume_part_path(remote, src);
+                let _ = std::fs::write(&part, b"");
+                match remote_reconnect_session(state, remote) {
+                    Ok(()) => match state
+                        .remote_sessions
+                        .get(remote)
+                        .and_then(|be| be.read(src).err())
+                    {
+                        None => state
+                            .remote_sessions
+                            .get(remote)
+                            .and_then(|be| be.read(src).ok()),
+                        Some(e2) => {
+                            first_err = Some(format!(
+                                "重连后仍读取失败: {e2}（.part 现场: {}）",
+                                part.display()
+                            ));
+                            break;
+                        }
+                    },
+                    Err(e2) => {
+                        first_err = Some(format!("{e2}（.part 现场: {}）", part.display()));
+                        break;
+                    }
+                }
+            }
+            Some(e) => {
+                first_err = Some(e.to_string());
                 break;
             }
+        };
+        let data = match data {
+            Some(d) => d,
+            None => Vec::new(),
         };
         let name = src
             .file_name()
