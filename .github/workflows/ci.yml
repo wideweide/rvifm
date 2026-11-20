@@ -28,14 +28,17 @@ jobs:
       # 0.10.0：tee 到 test-output.txt（clippy 失败时 digest 步骤可读错误行）。
       - name: clippy
         shell: bash
+        # errexit 会在管道失败时立即退出——吞掉退出码，注解后再按结果退出。
         run: |
-          set -o pipefail
+          set +e
           cargo clippy --all-targets -- -D warnings 2>&1 | tee test-output.txt
-          # 失败时把输出全文以 ::error:: 注解逐行输出（匿名 check-runs 可读）。
-          tail -30 test-output.txt | while IFS= read -r line; do
+          tail -40 test-output.txt | grep -E "error|warning: unused" | head -20 | while IFS= read -r line; do
             echo "::error::$line"
           done
-          exit 1
+          if grep -qE "^error" test-output.txt; then
+            exit 1
+          fi
+          exit 0
       - name: build
         run: cargo build --locked
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
