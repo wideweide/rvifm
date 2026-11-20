@@ -39,6 +39,8 @@ pub enum SearchKind {
     Grep,
     /// M24-8：左右 pane 目录对比（text 承载前缀标记）。
     Compare,
+    /// M28-2：`:rename` 结构化预览（text 承载新名/跳过原因；y 应用整批）。
+    RenamePreview,
 }
 
 /// 结果上限（与 :tree 的 1 万条上限同模式）。

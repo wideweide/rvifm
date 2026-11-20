@@ -1087,8 +1087,13 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     crate::search::SearchKind::Find => "find",
                     crate::search::SearchKind::Grep => "grep",
                     crate::search::SearchKind::Compare => "compare",
+                    crate::search::SearchKind::RenamePreview => "rename-preview",
                 };
                 // M24-8：compare 无查询词，状态栏只显示条数。
+                // M28-2：rename 预览——追加剧键提示（y 应用整批 / Esc 取消）。
+                if r.kind == crate::search::SearchKind::RenamePreview {
+                    spans.push(Span::from("  [y=应用整批 / Esc=取消]"));
+                }
                 spans.push(if r.query.is_empty() {
                     Span::from(format!(
                         "  [{}: {} 项{}]",

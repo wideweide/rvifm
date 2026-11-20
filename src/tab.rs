@@ -428,6 +428,9 @@ pub struct Tab {
     /// M17 SRCH：搜索结果虚拟目录（:find/:grep；沿 :tree 同构——静态
     /// 条目 + 只读守卫，items/entries 平行表）。
     pub results: Option<crate::search::SearchResults>,
+    /// M28-2：`:rename` 结构化预览待应用计划（(旧路径, 新名) 对；仅含将
+    /// 重命名的条目）。进入 RenamePreview 结果视图时设置，退出/应用时清空。
+    pub pending_rename: Option<Vec<(PathBuf, String)>>,
     /// M18-1/M18-2：运行时排序状态（`S` 对话框 / `:sort`；None = 默认顺序；
     /// 多字段经 :sort，对话框写单元素）。
     pub sort: Option<Vec<SortSpec>>,
@@ -520,6 +523,7 @@ impl Tab {
             history: vec![Location::Physical(dir.to_path_buf())],
             hist_pos: 0,
             results: None,
+            pending_rename: None,
             viewer: None,
             pane_frecency: None,
             sort: None,
@@ -1223,7 +1227,20 @@ impl Tab {
             .map(|item| {
                 // 显示层统一 /（AGENTS §7；Windows display 为反斜杠）。
                 let shown = item.path.display().to_string().replace('\\', "/");
-                let name = if kind == crate::search::SearchKind::Compare {
+                let name = if kind == crate::search::SearchKind::RenamePreview {
+                    // M28-2：预览行——新名（text）为普通名时显示 "旧 → 新"；
+                    // 跳过原因（（…）形态）时显示 "旧 （原因）"。
+                    let old_name = item
+                        .path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    if item.text.starts_with('（') {
+                        format!("{old_name} {}", item.text)
+                    } else {
+                        format!("{old_name} → {}", item.text)
+                    }
+                } else if kind == crate::search::SearchKind::Compare {
                     let file = item
                         .path
                         .file_name()
@@ -1264,6 +1281,7 @@ impl Tab {
     /// M17 SRCH-1：退出结果视图——恢复原目录列表。
     pub fn exit_results(&mut self, config: Config) {
         self.results = None;
+        self.pending_rename = None;
         let _ = self.refresh(config);
     }
 
@@ -1300,6 +1318,7 @@ impl Tab {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         self.results = None;
+        self.pending_rename = None;
         self.navigate_to(Location::Physical(parent), config)?;
         if let Some(idx) = self.entries.iter().position(|i| i.name == name) {
             self.cursor = idx;
@@ -2075,6 +2094,7 @@ mod tests {
             history: Vec::new(),
             hist_pos: 0,
             results: None,
+            pending_rename: None,
             viewer: None,
             pane_frecency: None,
             sort: None,
@@ -2186,6 +2206,7 @@ mod tests {
             history: Vec::new(),
             hist_pos: 0,
             results: None,
+            pending_rename: None,
             viewer: None,
             pane_frecency: None,
             sort: None,

@@ -418,6 +418,200 @@ pub(crate) fn copy_to_clipboard(text: &str) {
     }
 }
 
+/// M28-2：结构化重命名变换形态。
+#[derive(Debug, Clone)]
+enum RenameTransform {
+    /// `s/<pat>/<repl>/[i]`（regex 替换，i = 大小写不敏感）。
+    Regex(regex::Regex, String),
+    /// `prefix=<str>`：前缀插入。
+    Prefix(String),
+    /// `suffix=<str>`：后缀追加。
+    Suffix(String),
+    /// `seq=<start>,<step>,<width>`：序号替换主干、保留扩展名。
+    Seq { start: i64, step: i64, width: usize },
+}
+
+/// M28-2：参数是否为结构化形态（判定保守——`s-x` 这类 plain 名字
+/// 不误判；`s` 形态需分隔符切出 >=2 段；已知键 = 前缀才算）。
+fn looks_structured_rename(arg: &str) -> bool {
+    if arg.starts_with("prefix=") || arg.starts_with("suffix=") || arg.starts_with("seq=") {
+        return true;
+    }
+    arg.strip_prefix('s').is_some_and(|rest| {
+        rest.chars()
+            .next()
+            .is_some_and(|d| !d.is_alphanumeric() && !d.is_whitespace())
+            && rest[rest.chars().next().unwrap().len_utf8()..]
+                .split(rest.chars().next().unwrap())
+                .count()
+                >= 2
+    })
+}
+
+/// M28-2：解析结构化 `:rename` 参数（非 plain 名字形态）。
+/// 形态判定：`s` + 非字母数字分隔符、`prefix=`、`suffix=`、`seq=`。
+fn parse_structured_rename(arg: &str) -> Result<RenameTransform, String> {
+    // s 形态判定先行：`s` + 非字母数字分隔符才是 s///（否则 seq= 等以 s
+    // 开头的形态落后续分支，不能在此误报"未知形态"）。
+    let s_form = arg
+        .strip_prefix('s')
+        .and_then(|rest| rest.chars().next())
+        .map(|d| !d.is_alphanumeric() && !d.is_whitespace())
+        .unwrap_or(false);
+    if s_form {
+        let rest = &arg[1..];
+        let delim = rest.chars().next().unwrap();
+        let segs: Vec<&str> = rest[delim.len_utf8()..].split(delim).collect();
+        match segs.len() {
+            2 => {
+                let re =
+                    regex::Regex::new(segs[0]).map_err(|e| format!("rename: 非法正则: {e}"))?;
+                Ok(RenameTransform::Regex(re, segs[1].to_owned()))
+            }
+            3 => {
+                if !segs[2].is_empty() && segs[2] != "i" {
+                    return Err(format!("rename: 未知标志 {}（仅支持 i）", segs[2]));
+                }
+                let pattern = if segs[2] == "i" {
+                    format!("(?i){}", segs[0])
+                } else {
+                    segs[0].to_owned()
+                };
+                let re =
+                    regex::Regex::new(&pattern).map_err(|e| format!("rename: 非法正则: {e}"))?;
+                Ok(RenameTransform::Regex(re, segs[1].to_owned()))
+            }
+            _ => Err(format!(
+                "rename: s 形态段数错误（:rename s/<pat>/<repl>/[i]）: {arg}"
+            )),
+        }
+    } else if let Some(v) = arg.strip_prefix("prefix=") {
+        Ok(RenameTransform::Prefix(v.to_owned()))
+    } else if let Some(v) = arg.strip_prefix("suffix=") {
+        Ok(RenameTransform::Suffix(v.to_owned()))
+    } else if let Some(v) = arg.strip_prefix("seq=") {
+        let parts: Vec<&str> = v.split(',').collect();
+        if parts.len() != 3 {
+            return Err("rename: seq 形态需 <start>,<step>,<width>".to_owned());
+        }
+        let start: i64 = parts[0]
+            .trim()
+            .parse()
+            .map_err(|_| "rename: seq start 非法整数".to_owned())?;
+        let step: i64 = parts[1]
+            .trim()
+            .parse()
+            .map_err(|_| "rename: seq step 非法整数".to_owned())?;
+        let width: usize = parts[2]
+            .trim()
+            .parse()
+            .map_err(|_| "rename: seq width 非法整数".to_owned())?;
+        if start < 0 || step < 1 || width == 0 || width > 10 {
+            return Err("rename: seq 需 start>=0、step>=1、1<=width<=10".to_owned());
+        }
+        Ok(RenameTransform::Seq { start, step, width })
+    } else {
+        Err(format!(
+            "rename: 未知参数形态（支持 s/<pat>/<repl>/[i]、prefix=、suffix=、seq=）: {arg}"
+        ))
+    }
+}
+
+/// M28-2：应用变换到单个名字（`index` 为选集内序号，seq 用）。
+fn apply_rename_transform(t: &RenameTransform, name: &str, index: usize) -> String {
+    match t {
+        RenameTransform::Regex(re, repl) => re.replace_all(name, repl.as_str()).into_owned(),
+        RenameTransform::Prefix(p) => format!("{p}{name}"),
+        RenameTransform::Suffix(s) => format!("{name}{s}"),
+        RenameTransform::Seq { start, step, width } => {
+            // 序号替换主干、保留扩展名（photo.jpg -> 001.jpg；无扩展名 -> 001）。
+            let num = start + (index as i64) * step;
+            match name.rsplit_once('.') {
+                Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => {
+                    let _ = stem;
+                    format!("{num:0width$}.{ext}")
+                }
+                _ => format!("{num:0width$}"),
+            }
+        }
+    }
+}
+
+/// M28-2：预览计划条目——`skip` 为 None 表示将重命名。
+pub(crate) struct RenamePlanItem {
+    pub old: PathBuf,
+    pub new: String,
+    pub skip: Option<&'static str>,
+}
+
+/// M28-2：构建结构化重命名计划（选集顺序；跳过 = 无变化/冲突/非法）。
+fn rename_preview_plan(state: &AppState, arg: &str) -> Result<Vec<RenamePlanItem>, String> {
+    let transform = parse_structured_rename(arg)?;
+    let base = physical_base(state)?;
+    let names = selected_names(state);
+    if names.is_empty() {
+        return Err("rename: 无选中条目".to_owned());
+    }
+    let mut plan = Vec::new();
+    let mut actionable = 0usize;
+    for (idx, name) in names.iter().enumerate() {
+        let new = apply_rename_transform(&transform, name, idx);
+        let (new, skip) = if new == *name {
+            (name.to_owned(), Some("无变化，跳过"))
+        } else if new.contains('/') || new.contains('\\') || new.is_empty() {
+            (new, Some("非法名字，跳过"))
+        } else if base.join(&new).exists() {
+            (new, Some("冲突：目标已存在，跳过"))
+        } else {
+            actionable += 1;
+            (new, None)
+        };
+        plan.push(RenamePlanItem {
+            old: base.join(name),
+            new,
+            skip,
+        });
+    }
+    if actionable == 0 {
+        return Err("rename: 预览无可重命名条目（全部跳过）".to_owned());
+    }
+    Ok(plan)
+}
+
+/// M28-2：应用预览计划（y 键）——逐项 rename_to 入撤销栈（`u` 逐项可逆，
+/// M13-6 口径），失败项跳过并计数；应用后退出预览并刷新。
+pub(crate) fn apply_rename_preview(state: &mut AppState, msg: &mut Option<String>) {
+    let Some(plan) = state.active_tab().pending_rename.clone() else {
+        *msg = Some("rename: 无待应用的预览计划".to_owned());
+        return;
+    };
+    let tab_id = state.active;
+    let mut applied = 0usize;
+    let mut failed: Vec<String> = Vec::new();
+    for (old, new) in &plan {
+        match ops::rename_to(tab_id, old, new) {
+            Ok(op) => {
+                state.undo_stack.push(op);
+                applied += 1;
+            }
+            Err(e) => failed.push(format!("{}: {e}", old.display())),
+        }
+    }
+    let cfg = state.config.clone();
+    state.active_tab_mut().pending_rename = None;
+    state.active_tab_mut().exit_results(cfg);
+    refresh_tab_panes(state, tab_id);
+    *msg = if failed.is_empty() {
+        Some(format!("已重命名 {applied} 项"))
+    } else {
+        Some(format!(
+            "已重命名 {applied} 项，失败 {} 项: {}",
+            failed.len(),
+            failed.join("; ")
+        ))
+    };
+}
+
 /// M23-10：复制目标的选集——标记优先（按列表序），其次可视范围，最后
 /// 光标单条目（与 cw/R 的选集语义一致）。
 pub(crate) fn selected_names(state: &AppState) -> Vec<String> {
@@ -1825,6 +2019,46 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 return Ok(ExecOutcome::BatchRename { base, names });
             };
+            // M28-2：结构化形态（s///、prefix=、suffix=、seq=）→ 结果视图
+            // 预览（RenamePreview），y 应用整批 / Esc 取消（取消不动文件）。
+            // 结果视图/`..` 行守卫：物理视图专属，先拒绝。
+            if looks_structured_rename(new_name) {
+                if state.active_tab().in_results() {
+                    return Err("搜索结果视图只读".to_owned());
+                }
+                if state.active_tab().on_parent_row {
+                    return Err("`..` 行仅导航".to_owned());
+                }
+                let plan = rename_preview_plan(state, new_name)?;
+                let base = physical_base(state)?;
+                let items: Vec<crate::search::ResultItem> = plan
+                    .iter()
+                    .map(|p| crate::search::ResultItem {
+                        path: p.old.clone(),
+                        line: None,
+                        text: match p.skip {
+                            Some(reason) => format!("（{reason}）"),
+                            None => p.new.clone(),
+                        },
+                        size: 0,
+                    })
+                    .collect();
+                let tab = state.active_tab_mut();
+                tab.enter_results(
+                    crate::search::SearchKind::RenamePreview,
+                    new_name.to_owned(),
+                    base,
+                    items,
+                    false,
+                );
+                tab.pending_rename = Some(
+                    plan.into_iter()
+                        .filter(|p| p.skip.is_none())
+                        .map(|p| (p.old, p.new))
+                        .collect(),
+                );
+                return Ok(ExecOutcome::Done { msg: None });
+            }
             // M2-3：重命名选中条目（新名字不含空白；含空格的名字在 M5-4 统一解析）。
             let base = physical_base(state)?;
             let tab = state.active_tab();

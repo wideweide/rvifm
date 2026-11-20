@@ -1219,6 +1219,19 @@ pub(crate) fn handle_key(
     // 其余导航/yy/预览键落回既有处理（目录语义）。
     if state.active_tab().in_results() {
         match key.code {
+            // M28-2：rename 预览——y 应用整批；其余类别落到既有处理（yy 等）。
+            KeyCode::Char('y')
+                if state
+                    .active_tab()
+                    .results
+                    .as_ref()
+                    .map(|r| r.kind == crate::search::SearchKind::RenamePreview)
+                    .unwrap_or(false) =>
+            {
+                input.count = None;
+                apply_rename_preview(state, msg);
+                return Outcome::Continue;
+            }
             KeyCode::Esc | KeyCode::Char('h') => {
                 input.count = None;
                 let cfg = state.config.clone();

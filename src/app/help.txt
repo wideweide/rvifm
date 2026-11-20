@@ -52,6 +52,8 @@ rvifm 帮助（vim 风格文件管理器）
   u               撤销上一次操作（逆序，跨 tab）
   cw              批量重命名（$EDITOR 编辑名单）
   :rename 新名    重命名当前条目
+  :rename s/<pat>/<repl>/[i] | prefix=/suffix=/seq=<start>,<step>,<width>
+                  结构化批量重命名（结果视图预览，y=应用整批 / Esc=取消）
   :copy / :move <目录>
   :link <dest>    创建符号链接（dest 为已存在目录时在其内批量建链；u 可逆）
   :mkdir / :touch <名>   （:mkdir 后光标定位新目录）

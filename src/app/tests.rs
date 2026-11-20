@@ -49,6 +49,7 @@ fn tab_at(path: &str) -> Tab {
         history: Vec::new(),
         hist_pos: 0,
         results: None,
+        pending_rename: None,
         viewer: None,
         pane_frecency: None,
         sort: None,
@@ -8195,6 +8196,127 @@ fn m281_link_command_creates_undoable_symlinks() {
         exec_command(&mut state, "link l-2").is_err(),
         "已存在不覆盖"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn m282_rename_structured_preview_and_apply() {
+    // M28-2：结构化 :rename——预览结果视图（RenamePreview）、y 应用、
+    // Esc 取消、u 逐项可逆；跳过 = 无变化/冲突；plain `s-x` 不误判。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("old-a.txt"), "A").unwrap();
+    fs::write(tmp.path().join("old-b.txt"), "B").unwrap();
+    fs::write(tmp.path().join("keep.txt"), "K").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let tab = state.active_tab_mut();
+    tab.tags.insert("old-a.txt".to_owned());
+    tab.tags.insert("old-b.txt".to_owned());
+    tab.tags.insert("keep.txt".to_owned());
+
+    // s/// 正则：old- → new-；keep.txt 无变化（跳过行）。
+    assert_eq!(exec_command(&mut state, "rename s/old-/new-/"), Ok(false));
+    let tab = state.active_tab();
+    assert!(
+        tab.results
+            .as_ref()
+            .map(|r| r.kind == crate::search::SearchKind::RenamePreview)
+            .unwrap_or(false),
+        "进入 rename 预览结果视图"
+    );
+    let plan = tab.pending_rename.clone().unwrap();
+    assert_eq!(plan.len(), 2, "仅两条将重命名（keep.txt 跳过）");
+    // 预览行显示：2 条 "旧 → 新" + 1 条跳过。
+    assert!(
+        tab.entries
+            .iter()
+            .any(|i| i.name.contains("old-a.txt → new-a.txt"))
+    );
+    assert!(
+        tab.entries
+            .iter()
+            .any(|i| i.name.contains("keep.txt （无变化，跳过）"))
+    );
+
+    // Esc 取消：无任何文件改动。
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+    assert!(tmp.path().join("old-a.txt").is_file(), "取消不动文件");
+    assert!(!tmp.path().join("new-a.txt").exists());
+
+    // 重新预览 + y 应用：磁盘改名 + u 逐项恢复。
+    assert_eq!(exec_command(&mut state, "rename s/old-/new-/"), Ok(false));
+    apply_rename_preview(&mut state, &mut msg_none());
+    assert!(tmp.path().join("new-a.txt").is_file());
+    assert!(tmp.path().join("new-b.txt").is_file());
+    assert!(!tmp.path().join("old-a.txt").exists());
+    let mut msg = None;
+    undo_last(&mut state, &mut msg);
+    undo_last(&mut state, &mut msg);
+    assert!(tmp.path().join("old-a.txt").is_file());
+    assert!(tmp.path().join("old-b.txt").is_file());
+
+    // prefix= / suffix= / seq= 三形态（seq 替换主干保留扩展名）。
+    assert_eq!(exec_command(&mut state, "rename prefix=img_"), Ok(false));
+    let plan = state.active_tab().pending_rename.clone().unwrap();
+    assert_eq!(plan.len(), 3);
+    assert!(plan.iter().all(|(_old, new)| new.starts_with("img_")));
+    state.active_tab_mut().pending_rename = None;
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+
+    let tab = state.active_tab_mut();
+    tab.tags.clear();
+    tab.tags.insert("keep.txt".to_owned());
+    assert_eq!(exec_command(&mut state, "rename seq=1,1,3"), Ok(false));
+    let plan = state.active_tab().pending_rename.clone().unwrap();
+    assert_eq!(
+        plan,
+        vec![(tmp.path().join("keep.txt"), "001.txt".to_owned())]
+    );
+    state.active_tab_mut().pending_rename = None;
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+
+    // plain 名字不误判（s 开头非结构化）。
+    let tab = state.active_tab_mut();
+    tab.tags.clear();
+    let idx = tab
+        .entries
+        .iter()
+        .position(|i| i.name == "keep.txt")
+        .unwrap();
+    tab.cursor = idx;
+    assert_eq!(exec_command(&mut state, "rename s-x"), Ok(false));
+    assert!(tmp.path().join("s-x").is_file(), "s-x 为 plain 重命名产物");
+    assert!(state.active_tab().results.is_none(), "plain 不进预览");
+
+    // 错误路径：非法正则、未知标志、seq 参数、全部跳过。
+    assert!(
+        exec_command(&mut state, "rename s/(/x/").is_err(),
+        "非法正则"
+    );
+    assert!(
+        exec_command(&mut state, "rename s/a/b/z").is_err(),
+        "未知标志"
+    );
+    assert!(
+        exec_command(&mut state, "rename seq=1,0,3").is_err(),
+        "step<1"
+    );
+    assert!(
+        exec_command(&mut state, "rename seq=a,b,c").is_err(),
+        "非整数"
+    );
+    let tab = state.active_tab_mut();
+    tab.tags.insert("no-such.txt".to_owned());
+    assert!(
+        exec_command(&mut state, "rename s/x/y/").is_err(),
+        "无选中条目"
+    );
+}
+
+fn msg_none() -> Option<String> {
+    None
 }
 
 #[test]
