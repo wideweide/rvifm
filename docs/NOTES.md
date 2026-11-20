@@ -819,3 +819,11 @@ rvifm record  → 静默记录访问
 - **新增能力面**：:link/:rename 结构化/:jobs 暂停详情/:compare bycontents+dp·do/frecency cmd topic（命令历史 frecency 排序 + :cmdmark + Tab 加权）/SFTP 重连与 .part 现场/会话恢复归档远端 tab/[visual][view] 键位分层。
 - **发布失败处置**：沿用既有口径——CI release job 失败则 tag 重指向修复提交强推重跑（0.9.0 先例：双 bin 后 cargo run 需 --bin rvifm，已固化）。
 - **crates.io**：凭据仅在 Windows 机器——Linux 侧只做 tag/GitHub Release；publish 待 Windows 侧执行后补 verified 记录。
+
+### 2026-11-21 — M34 蒸馏登记（WHY / CUT / 用户裁决）
+
+- **来源**：DeepSeek 讨论分享稿（chat.deepseek.com/share/thsffd9kmrse3gvf4t，用户实测反馈经 DeepSeek 评估）。按 §8.3 蒸馏登记，编号 M34（下一空闲号——M0–M33、FIX/FEAT（M15）、NAV/SRCH/VIEW、AUDIT、GAP、PROC、MISC 均已占用）。
+- **登记前现状核查（Explore 只读代理，2026-11-21）**：讨论稿 10 项中 2 项已覆盖不登记——`pick` 独立终端"左搜索右预览"即 AUDIT-3 交付（≥60 列双栏、窄端单栏降级）；dracula/gruvbox-dark 为 opaline 0.4.2 内置主题，激活链路 AUDIT-13 已通。属实的登记项：默认主题实为"无主题 → 16 色 vifm 回退"（非 gruvbox）；右 pane `/` 不可用系 M14"精简导航集"SIMPLIFIED 裁剪（keys.rs:353 注释明示，非回归）；frecency query 无回显（标题仅模式+计数）；结果行无图标（`[目录]/[文件]` 文本标记）；`.jar` 不在 `is_archive_file`（archive.rs:636）；二进制预览仅错误行/lossy 乱码，无信息面板。核查新发现缺陷：`preview_path()`（tab.rs:1296）只读左 pane 字段——焦点在右 pane 时 `w`/`:view` 预览错位（与其自身文档"活动 pane 光标文件"矛盾），并入 M34-4。
+- **用户裁决（AskUserQuestion，2026-11-21）**：① 预览统一取**方案 A**——预览恒在焦点 pane 对侧（:view 与 frecency 共用模型；焦点在右时预览渲染到左 pane；无预览模式时右 pane 保持第二目录列表）；② 二进制预览信息面板**裁剪 `--version` 子进程探测**——预览即执行未知二进制有安全风险，仅元数据（大小/修改时间/类型推断）。
+- **CUT**：不做 `.vifm` 配色解析器（一次性颜色提取 + TOML 移植，与 AGENTS §5.6 一致）；`.war`/`.apk` 等衍生归档格式不做（仅 `.jar`）；不做主题热重载。
+- **实现边界注记**：M34-1 高亮组映射走数据不写死主题分支，M27-2 的 16 色 vifm 回退保留为无主题兜底；snowwhite 为 rvifm 捆绑 TOML（include_str），不回传 opaline；M34-4 只统一"预览目标与放置"，不合并 :view 与 frecency 的全部交互细节（M17 查看器能力维持现状）。

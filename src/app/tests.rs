@@ -8873,7 +8873,8 @@ fn m282_rename_structured_preview_and_apply() {
 
     // 重新预览 + y 应用：磁盘改名 + u 逐项恢复。
     assert_eq!(exec_command(&mut state, "rename s/old-/new-/"), Ok(false));
-    apply_rename_preview(&mut state, &mut msg_none());
+    let mut m303_msg = None;
+    apply_rename_preview(&mut state, &mut m303_msg);
     assert!(tmp.path().join("new-a.txt").is_file());
     assert!(tmp.path().join("new-b.txt").is_file());
     assert!(!tmp.path().join("old-a.txt").exists());
@@ -8941,10 +8942,6 @@ fn m282_rename_structured_preview_and_apply() {
         exec_command(&mut state, "rename s/x/y/").is_err(),
         "无选中条目"
     );
-}
-
-fn msg_none() -> Option<String> {
-    None
 }
 
 #[test]

@@ -435,6 +435,34 @@ redb 三表，无后台守护进程：
 **OUT_OF_SCOPE**
 - 每模式独立 seq 超时、绑定继承规则、用户自定义 Action（全局 OUT_OF_SCOPE 既有）。
 
+#### M34 — 主题、预览统一与文档（2026-11-21 增补；来源：DeepSeek 讨论蒸馏·用户实测反馈，用户确认登记；裁决见 NOTES 2026-11-21）
+
+**硬约束**：预览渲染同源红线不变（TUI 预览与 pick 共用 `render_preview` / `ImageEngine`，M8-8 / AUDIT-3）；高亮组映射走数据（opaline token / TOML），不为特定主题写死代码分支；二进制预览信息面板**不执行文件内容、不 spawn 子进程**（`--version` 探测已裁剪）；主题默认值变更只影响未显式配置 `[ui] theme` 的安装。
+
+**MUST**
+- **M34-1 默认主题 gruvbox**：`[ui] theme` 缺省值 None → `gruvbox-dark`（opaline 内置；fresh install 视觉等价 vifm gruvbox，显式配置不受影响）。核查 M27-2 vifm 高亮组（TopLine/TabLine/TopLineSel/TabLineSel/Border/CurrLine/OtherLine/StatusLine/Selected）在激活主题下的映射——缺 token 的组按 gruvbox 色板补映射或明确回退；验证 `[ui] theme = "dracula"` 与 `:theme dracula` 生效；M27-2 的 16 色 vifm 回退保留为无主题兜底，不删除。
+- **M34-2 snowwhite 内置主题移植**：从 vifm-colors 仓库 `snowwhite.vifm`（约 32 行高亮组）一次性提取颜色映射 opaline token schema，生成 rvifm 捆绑 TOML（include_str! 或等价机制，经 AUDIT-13 activate 链路可发现）；`[ui] theme = "snowwhite"` / `:theme snowwhite` 可选。
+- **M34-3 右 pane `/` 搜索**：解除 M14"搜索仅左 pane"SIMPLIFIED——`/` 按 `tab.focus` 分派，焦点在右 pane 时对右 pane 目录列表执行搜索（匹配高亮 + 实时跳转 + 计数 + n/N + Esc 清理，与左 pane M15 FIX-1 语义一致）；右 pane 既有键位集不变。
+- **M34-4 对侧预览统一（用户裁决方案 A）**：`preview_path()` 焦点感知修复——预览目标 = 当前焦点 pane 光标文件（与其自身文档"活动 pane 光标文件"一致；含归档/远端 Location 语义）。:view（M13-9 交互查看器）与 frecency Pane（M23-6）统一为同一"焦点 pane 交互 + 对侧 pane 预览"模型——预览渲染在非焦点 pane（焦点在左预览在右，与现状兼容；焦点在右预览渲染到左 pane）；无预览模式时右 pane 保持第二目录列表默认；两处共用同一"对侧预览"定位/渲染路径（消除两套预览逻辑），Tab 切回焦点语义不变。
+- **M34-5 frecency Pane 视觉与输入回显**：搜索模式实时回显当前 query（底部状态栏，键入即时更新、清空同步）；结果行渲染 devicons 图标 + 全路径（图标链路与文件列表/预览共用，无 Nerd Font 降级同 M9-5；`[目录]/[文件]` 文本标记移除，`✦keyword` 标记保留）；顶部标题文案 `Frecency - 高频目录/文件搜索`。
+- **M34-6 `.jar` 归档识别**：`is_archive_file` 增加 `.jar`（复用 M7-2 ZipFs zip 后端）；浏览/预览/搜索链路自动生效；roundtrip 与损坏归档测试同 M26-3 模式。
+- **M34-7 二进制/不可读预览信息面板**：NUL 二进制、非 UTF-8、读取失败统一渲染结构化信息面板——文件大小、修改时间、类型推断（扩展名 + 魔数嗅探），替代现有 lossy 乱码渲染与单一错误行；不执行文件（硬约束）；TUI 预览与 pick 预览同源。
+- **M34-8 docs/GUIDE.md 用户手册**：快速上手（安装 → 首次浏览/文件操作/撤销 → 归档 → frecency 跳转）+ 键位/命令速查表；分节参考 ranger(1) 结构（浏览/文件操作/选择/搜索/归档/跳转/配置），每节最小示例；README 不扩写；GUIDE（仓库侧手册）与 help.txt（TUI 内速查）分工；内容以实现现状为准，不描写未实现功能。
+- **M34-9 M34 文档收尾**：help.txt（右 pane 搜索语义、主题列表）、README（默认主题、jar 支持）与 ACCEPTANCE §34 逐条同步；批次勾选完成后关闭。
+
+**SIMPLIFIED**
+- M34-1：opaline 缺 token 的组允许整组回退 16 色兜底（不逐组造 token）；不新增主题管理界面（沿用 `:theme` + 配置）。
+- M34-2：颜色映射为一次性手工移植；snowwhite 为 rvifm 捆绑而非回传 opaline。
+- M34-4：只统一"预览目标与放置"，不合并 :view 与 frecency 的全部交互细节（M17 查看器能力维持现状）。
+- M34-5：query 回显仅搜索模式（Normal 模式底部提示维持现状）。
+- M34-7：类型推断做到"目录/文本/二进制/归档/已知扩展名"粒度，不追求完整 MIME 数据库。
+
+**OUT_OF_SCOPE**
+- `.vifm` 配色文件解析器（一次性提取移植替代；与 AGENTS §5.6"不实现 vifmrc 注入"一致）。
+- 可执行文件 `--version` 子进程探测（用户裁决裁剪：预览即执行未知二进制有安全风险）。
+- `.war` / `.apk` 等其它 zip 衍生格式的归档识别（仅 `.jar`）。
+- 主题热重载（文件监视自动刷新）。
+
 #### M25 — 会话持久化、marks、归档创建与 git 集成（2026-11-19 增补；来源：用户批次需求讨论稿蒸馏）
 
 **硬约束**：marks 由 frecency 模块实现，数据持久化在 frecency 的 redb 存储中（与 `keyword` bookmark 共用），带频率记录，不设独立 marks 存储/模块；归档创建仅纯 Rust 编码器（zip / tar / tar.gz），`.tar.xz` / `.tar.bz2` / `.tar.zst` 保持只读（**M26-4 起改为外部 CLI 降级，见 §26**）；git 集成零编译期依赖——`git` CLI 子进程实现，不引入 git2/gitoxide（M23-12 评估路线）；会话/校验文件损坏静默降级不 panic；所有新键位经 keymap.rs Action 驱动。
