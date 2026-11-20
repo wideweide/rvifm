@@ -69,6 +69,8 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 | tar.xz / tar.bz2 / tar.zst | 外部 CLI（`tar`） | 取决于平台 tar 的 xz/bz2/zstd 支持 |
 
 校验文件默认 md5（`md5sum -c` 兼容行），`checksum=sha256|none` 可选。
+
+**`.7z` 浏览边界（M26-3）**：虚拟浏览按归档实际内容遍历；**加密** 7z 打开/读取给出可读错误（"已加密（暂不支持密码解锁）"），**分卷**（.7z.001 等）不支持虚拟浏览。`u` 撤销语义不涉及归档内（只读边界不变）。
 **观察项**：`libarchive_oxide` / `OxiArc`（统一归档库成熟后再评估，见 [docs/NOTES.md](docs/NOTES.md)）。
 
 **原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持 `rvifm maintenance compact` 手动执行，并在 TUI 启动时按阈值惰性触发（AUDIT-4）。**`pick` 是纯只读选择器**（AUDIT-1：redb 只读句柄，不写任何事件、不推进时钟），支持 `--topic dir|file`（AUDIT-15）与同源预览窗格（AUDIT-3）；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。**TUI 内成功执行的 `:` 命令文本也会持久化写入 frecency redb（cmd topic，M30）**——供命令历史 frecency 排序（↑/↓ 常用优先）与命令书签（`:cmdmark` / `'`+tag 展开）；`[frecency] ignore_patterns` 可 glob 排除敏感命令（命中静默跳过），请按需配置。
@@ -217,6 +219,8 @@ append_rules = [
 | M10 | 声明式键位系统 | 已完成（`[normal]` 分层 + `[keymap] seq_timeout_ms`） |
 | M11 | 预览与文件打开 | 完成（opener 分层 / PDF 视觉 / pick 预览随 AUDIT-2/3/7 整改落地） |
 | M12 | 权限不足内联提权（sudo -A） | 已完成 |
+
+> 提权平台边界：Linux/macOS 走 `sudo -A` + askpass（M12 完整验收）；**Windows 无 UAC 内联提权**（UAC 机制不同，SIMPLIFIED "尽力而为"未落地）——权限不足直接给可读错误，不弹 UAC。
 | M13 | vifm 对齐增强（DD/tree/cw/:jobs/view 等） | 已完成 |
 | M14 | 双栏模型与标签栏 | 已完成 |
 | M15–M17 | 实测反馈 + 导航增强 + 递归搜索与查看器 | 已完成 |
@@ -227,7 +231,7 @@ append_rules = [
 | M23 | Frecency 对齐增强与 Pane 模式 | 已完成（0.8.0） |
 | M24 | 交互增强与列表规范 | 已完成 |
 | M25 | 会话持久化、归档创建与 git 集成（含 marks/bookmark） | 已完成（M25-2 marks 随 2026-11-20 整改落地） |
-| M26 | 归档创建扩展与外部工具降级 | 已确认启动 |
+| M26 | 归档创建扩展与外部工具降级 | 已完成（2026-11-20，5/5） |
 | M27 | 0.8.0 实测问题与 vifm 视觉对齐（符号链接目录 / 去边框配色 / PDF 前 1–2 页图像） | 完成（2026-11-20） |
 | AUDIT | 评估报告整改批次（17 项 + AUDIT-18，见 docs/REVIEW.md） | ✅ 已完成（2026-11-20，18/18） |
 
