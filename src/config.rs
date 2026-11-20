@@ -269,6 +269,19 @@ pub struct KeymapLayers {
     pub replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>>,
     /// M23-11：自定义外部命令模板（run = "cmd:<模板>" 注册；索引 = 数组序号）。
     pub commands: Vec<String>,
+    /// M33-1：per-mode 分层（[visual]/[view]/[command]；缺省空 = 未配置
+    /// 模式行为不变——消费端回退内建默认）。
+    pub visual: ModeLayers,
+    pub view: ModeLayers,
+    pub command: ModeLayers,
+}
+
+/// M33-1：单模式三层（不含自定义命令表——command 模式绑定共用全局表）。
+#[derive(Debug, Default, Clone)]
+pub struct ModeLayers {
+    pub prepend: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+    pub append: Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>,
+    pub replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>>,
 }
 
 /// 解析一条 `{ on = ..., run = ... }` 键位绑定。
@@ -318,6 +331,31 @@ fn parse_binding(
     into.push((keys, action));
 }
 
+/// M33-1：解析单模式三层（无 KeymapLayers 依赖——供 [visual]/[view]/
+/// [command] 的 ModeLayers 解析复用）。
+fn parse_mode_layers_standalone(table: &toml::value::Table) -> ModeLayers {
+    let mut out = ModeLayers::default();
+    let mut commands = Vec::new();
+    if let Some(arr) = table.get("prepend_keymap").and_then(|v| v.as_array()) {
+        for item in arr {
+            parse_binding(item, &mut out.prepend, &mut commands);
+        }
+    }
+    if let Some(arr) = table.get("append_keymap").and_then(|v| v.as_array()) {
+        for item in arr {
+            parse_binding(item, &mut out.append, &mut commands);
+        }
+    }
+    if let Some(arr) = table.get("keymap").and_then(|v| v.as_array()) {
+        let mut parsed = Vec::new();
+        for item in arr {
+            parse_binding(item, &mut parsed, &mut commands);
+        }
+        out.replace = Some(parsed);
+    }
+    out
+}
+
 /// 解析一个模式表（如 `[normal]`）中的三层键位。
 fn parse_mode_layers(table: &toml::value::Table, layers: &mut KeymapLayers) {
     let mut replace: Option<Vec<(Vec<crate::keymap::Key>, crate::keymap::Action)>> = None;
@@ -361,6 +399,16 @@ pub fn load_keymap_layers_from(path: &std::path::Path) -> KeymapLayers {
     };
     if let Some(mode) = value.get("normal").and_then(|v| v.as_table()) {
         parse_mode_layers(mode, &mut layers);
+    }
+    // M33-1：[visual]/[view]/[command] 三模式分层（缺省空 = 未配置）。
+    for (key, slot) in [
+        ("visual", &mut layers.visual),
+        ("view", &mut layers.view),
+        ("command", &mut layers.command),
+    ] {
+        if let Some(mode) = value.get(key).and_then(|v| v.as_table()) {
+            *slot = parse_mode_layers_standalone(mode);
+        }
     }
     layers
 }
@@ -515,6 +563,57 @@ append_rules = [
         assert_eq!(cfg2.preview, PreviewConfig::default());
         assert_eq!(cfg2.preview.pdf_image_pages, 1);
         assert!(!cfg2.preview.pdf_prefer_image);
+    }
+
+    #[test]
+    fn m331_visual_view_command_layers_parse() {
+        // M33-1：三模式分层解析——prepend/append/replace 独立生效；
+        // 未配置模式为空（零行为变化）；未知动作名条目跳过。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[visual]
+prepend_keymap = [
+    { on = "d", run = "delete_selected" },
+]
+append_keymap = [
+    { on = "x", run = "unknown_action_xyz" },
+]
+
+[view]
+keymap = [
+    { on = "q", run = "toggle_view" },
+]
+
+[command]
+prepend_keymap = [
+    { on = "C-a", run = "to_top" },
+]
+"#,
+        )
+        .unwrap();
+        let layers = load_keymap_layers_from(&path);
+        assert_eq!(layers.visual.prepend.len(), 1, "visual prepend");
+        assert!(matches!(
+            layers.visual.prepend[0].1,
+            crate::keymap::Action::DeleteSelected
+        ));
+        assert_eq!(layers.visual.append.len(), 0, "未知动作整条跳过");
+        assert!(layers.view.replace.is_some(), "view replace 层");
+        assert!(matches!(
+            layers.view.replace.as_ref().unwrap()[0].1,
+            crate::keymap::Action::ToggleView
+        ));
+        assert_eq!(layers.command.prepend.len(), 1, "command prepend");
+
+        // 未配置 → 全空（默认 Config 形态）。
+        let tmp2 = TempDir::new().unwrap();
+        let layers2 = load_keymap_layers_from(&tmp2.path().join("nope.toml"));
+        assert!(layers2.visual.prepend.is_empty());
+        assert!(layers2.visual.replace.is_none());
+        assert!(layers2.command.prepend.is_empty());
     }
 
     #[test]
