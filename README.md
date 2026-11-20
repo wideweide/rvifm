@@ -71,7 +71,8 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 校验文件默认 md5（`md5sum -c` 兼容行），`checksum=sha256|none` 可选。
 **观察项**：`libarchive_oxide` / `OxiArc`（统一归档库成熟后再评估，见 [docs/NOTES.md](docs/NOTES.md)）。
 
-**原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持 `rvifm maintenance compact` 手动执行，并在 TUI 启动时按阈值惰性触发（AUDIT-4）。**`pick` 是纯只读选择器**（AUDIT-1：redb 只读句柄，不写任何事件、不推进时钟），支持 `--topic dir|file`（AUDIT-15）与同源预览窗格（AUDIT-3）；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。
+**原生 frecency 选择器，去掉 fzf 和 SQLite。** 通过 `rvifm pick` / `rvifm record` 两个子命令提供与 fzf 同构的 stdin/stdout 契约，可作为独立程序被 bash/fish 调用。存储用纯 Rust 的 `redb`，采用 **events + snapshot + meta** 三表结构：`record` 只追加事件，`pick` 与 TUI 选择器重放评分；compaction 支持 `rvifm maintenance compact` 手动执行，并在 TUI 启动时按阈值惰性触发（AUDIT-4）。**`pick` 是纯只读选择器**（AUDIT-1：redb 只读句柄，不写任何事件、不推进时钟），支持 `--topic dir|file`（AUDIT-15）与同源预览窗格（AUDIT-3）；只有 shell 真正 `cd` 成功或文件管理器真正跳转/打开成功时，才调用 `record`。**TUI 内成功执行的 `:` 命令文本也会持久化写入 frecency redb（cmd topic，M30）**——供命令历史 frecency 排序（↑/↓ 常用优先）与命令书签（`:cmdmark` / `'`+tag 展开）；`[frecency] ignore_patterns` 可 glob 排除敏感命令（命中静默跳过），请按需配置。
+清理仅按容量裁剪（无分数下限）——低分重要条目永远可达（对齐同级 frecency 项目的 "no score-threshold cleanup" 不变量）。
 
 **多标签从 M1 开始。** 每个 tab 独立持有 `Location`、光标、滚动位置和搜索状态；撤销栈全局共享，`UndoableOp` 记录所属 tab 与路径，跨 tab 撤销能正确定位。这避免了后期再改“当前 tab 上下文”导致的大范围返工。
 
@@ -86,6 +87,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 - **会话与归档创建**：退出保存/启动恢复物理标签；`:archive` 创建 zip/tar/tar.gz 并生成校验文件，`u` 可逆
 - **git 集成**：异步状态列与分支/diff 摘要状态栏，`gi` / `:gitui` 启动外部 git TUI
 - **声明式键位**（M10 已落地，当前仅 `[normal]` 模式可配）：动作驱动 + TOML 分层定制
+- **命令历史与命令书签**（M30 已落地）：`:` 模式 ↑/↓ 为跨会话 frecency 排序（常用优先）；`:cmdmark <chars>` 标记命令、命令行内 `'`+<chars> 展开；Tab 路径补全按访问频率加权
 - **路径 marks**（已落地）：`m<char>` 标记当前条目、`'<char>` 跳转到该 keyword 的最高排名条目（目录 cd / 文件定位光标）；`:bmark` / `:bmarks` / `:bmgo` / `:delbmarks` 命令族与 marks 共用 frecency 持久化数据；多字符 keyword 在 `o` / `:j` / `:J` 搜索中享有高优先级匹配
 
 ## 技术栈

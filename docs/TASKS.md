@@ -373,7 +373,7 @@
 - [x] M30-2 `:` 命令历史迁移（↑/↓ replay 顶层 N + 会话合并、跨会话持久；见 SPEC M30-2；2026-11-20 完成：cmd_history_ranked + InputMode::Command.ranked 快照，405 单测）
 - [x] M30-3 路径补全加权（frecency 分数优先、字典序兜底、缺失零成本降级；见 SPEC M30-3；2026-11-20 完成：path_scores + completion_candidates，406 单测）
 - [x] M30-4 命令书签（:cmdmark + `:` 内 `'` 展开；unbook 保留历史；见 SPEC M30-4；2026-11-20 完成：cmd_bookmark + cmdmark 臂 + cmd_mark_pending 态，408 单测）
-- [ ] M30-5 M30 文档与隐私收尾（README/help 明示命令文本入库 + IGNORE_PATTERNS 排除；见 SPEC M30-5）
+- [x] M30-5 M30 文档与隐私收尾（README/help 明示命令文本入库 + IGNORE_PATTERNS 排除；见 SPEC M30-5；2026-11-20 完成，批次 5/5 关闭）
 
 ## M31 — 文档与验收补齐（2026-11-20 增补；见 SPEC M31 节，已确认登记）
 

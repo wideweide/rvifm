@@ -799,7 +799,10 @@ rvifm record  → 静默记录访问
 - **来源**：2026-11-20 运维/开发视角评估报告（基于 harness 文档核验版），用户指令"蒸馏 P1/P2 + 第四/五节建议；P3 按建议；frecency 通用化对齐同级项目"。参考报告（README-only）勘误已并入登记口径：`:compare` 已有 M24-8 基座（M29 定位为增强而非新建）；M26 已完成（能力矩阵探测降为 M31 验收视角）；`:jobs` 已有选择/取消（M28-3 定位为暂停/详情增强）。
 - **M29-2 实现期裁剪（覆盖同步）**：原登记"覆盖已存在走既有确认提示"——实现时确认 copy 链路**无覆盖确认流**（FIX-2/M20-2 均为"同名报错不覆盖"口径），引入覆盖确认属新范围 → `!` 条目（两侧内容不同）dp/do 一律可读拒绝，仅 `>`（取回）/`<`（删除）两类干净方向可用；SPEC M29-2 已同步修订。键位经 Keymap 注册（d-p/d-o 序列 → DiffPut/DiffObtain Action），普通视图 `d+p` 组合行为变化（原为超时后 p 执行粘贴，现为可读拒绝）——vifm 借名语义一致性优先。
 - **批次划分**：M28 运维操作补齐（:link/:rename/:jobs 增强）、M29 对比增强（bycontents+dp/do）、M30 frecency 通用化、M31 文档与验收补齐；统一目标 **0.10.0**（PLAN §4 自动发布规则沿用）。
-- **P2 补登（用户确认"先补登 P2 三项再执行"）**：M32 远端健壮性与会话扩展（SFTP 重连 / .part+偏移续传 / 会话持久化扩展）、M33 键位模式分层扩展（[visual]/[view]/[command]）。要点：续传与 M20-3"显式取消清理半成品"并存——中断保留 `.part`、取消清理；重连为操作触发式一次（不做后台心跳）；M33 未配置模式必须零行为变化；command-line 可映射集合用白名单（实现时定、help 记录）。
+- **M30 实现期注记（2026-11-20）**：cmd_mark_pending 放 InputMode::Command 模式局部字段而非 InputState——InputState 跨模式复用、标志须随模式构造重置；`:` 内 `'`+tag 展开覆盖当前输入（草稿经 Enter 提交前不落库）。m304_cmdmark_command_arm 写全局 redb → STORE_TEST_LOCK 串行（redb "already open" 无重试，M21-F1 踩坑再现）。
+### M30-5 文档与隐私收尾
+- [x] README/help 明示"命令文本持久化写入 frecency redb（IGNORE_PATTERNS 可排除）"。（2026-11-20：README frecency 段隐私句 + ignore_patterns 提示；help :cmdmark/↑↓ 条目随 M30-2/4 落地）
+- [x] NOTES 对齐注记（cmd 命名/无分数下限/书签同构）落档；ACCEPTANCE §30 全勾后关闭。（2026-11-20：对齐注记已在蒸馏期 NOTES 落档（M30 对齐基线段）；§30 全勾）：M32 远端健壮性与会话扩展（SFTP 重连 / .part+偏移续传 / 会话持久化扩展）、M33 键位模式分层扩展（[visual]/[view]/[command]）。要点：续传与 M20-3"显式取消清理半成品"并存——中断保留 `.part`、取消清理；重连为操作触发式一次（不做后台心跳）；M33 未配置模式必须零行为变化；command-line 可映射集合用白名单（实现时定、help 记录）。
 - **同级 frecency 项目对齐（用户指令；HEAD `d7e03d0`，2026-11-19）**：
   - **topic 命名用 `cmd`**（其架构注释 dir/file/cmd/自定义 topic 口径）——M30-1 采纳。
   - **清理无分数下限是不变量**：其 2026-11-18 引入 per-topic score floor 当日撤销（分数是序数、绝对值跨使用模式无意义、阈值是 MAX_ENTRIES 的不可预测替身、低分重要条目必须可达），REGRESSION 固化 "no score-threshold cleanup"。rvifm M23-3 本就只用容量裁剪——**登记为 CUT：不引入分数下限清理**（SPEC M30 OUT_OF_SCOPE）。
