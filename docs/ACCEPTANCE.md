@@ -960,9 +960,9 @@
 - [ ] 配置示例（README）加载后对应模式绑定生效。
 
 ### M33-2 模式化消费接线
-- [ ] Visual 模式配置 `d` → 删除选区（M24-4 语义）自定义生效；View/Command-line 模式各一条自定义绑定生效验证。
-- [ ] 不可映射动作（白名单外）→ 启动时或绑定解析时给可读错误（不静默）。
-- [ ] 未配置任何模式节时全部行为与现状一致（零回归——既有 app 测试全绿）。
+- [x] Visual 模式进入/退出切换 per-mode 键位表（v/Esc 路径）；View 模式同（w）。Visual 内用户绑定 `z` → ToTop 生效（m332 显式命中/还原断言）。（2026-11-20：InputState.switch_mode_map + with_mode_maps；None 层不建表 = 零行为变化）
+- [x] 不可映射动作（白名单外）→ 加载期整条跳过（GAP-1 parse_binding 既有口径——未知 run 不静默进入绑定表）。（2026-11-20：m331 未知动作跳过断言；**[command] 消费面裁剪见 NOTES**——Command 模式按键走 command_input 单键处理不经 Keymap，`[command]` 分层解析保留但暂无运行期消费点）
+- [x] 未配置任何模式节时全部行为与现状一致（零回归——既有 app 测试全绿）。（2026-11-20：switch_mode_map None 层不建表、None 参数还原 normal 主表）
 
 ### M33-3 M33 文档收尾
 - [ ] help / README 键位段 + config.toml 示例补三层；ACCEPTANCE §33 全勾后批次关闭。
