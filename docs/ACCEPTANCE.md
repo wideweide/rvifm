@@ -903,7 +903,7 @@
 
 > M11-6（Alacritty 图片显示，deferred）的补验清单——任何真实终端环境按序执行（约 10 分钟），全部通过即可勾选 M11-6 并在 NOTES 记一行环境信息（终端名/版本/是否 tmux 内）。
 
-- [ ] 1. 无 tmux 环境：Alacritty/Kitty/WezTerm 打开 rvifm，光标移到 `.png` 文件 → 预览窗格显示图像（协议探测：Kitty 原生 / WezTerm Sixel / 其它 halfblocks）。
+- [x] 1. 无 tmux 环境：Alacritty/Kitty/WezTerm 打开 rvifm，光标移到 `.png` 文件 → 预览窗格显示图像（协议探测：Kitty 原生 / WezTerm Sixel / 其它 halfblocks）。（2026-11-21 用户实测 foot：图片渲染效果良好；同场 PDF 无文本语料首页视觉渲染可用、速度略慢——见 NOTES 2026-11-21）
 - [ ] 2. tmux 内（passthrough 开启 `set -g allow-passthrough on`）：同上验证图片可见（tmux 3.3+）。
 - [ ] 3. 无协议终端（如老版 gnome-terminal）：确认 halfblocks 兜底显示（Unicode 块字符近似图）。
 - [ ] 4. `NO_COLOR=1` 启动：确认无 panic、列表/预览降级正常。
@@ -924,7 +924,7 @@
 - [x] 外部 CLI 归档双环境验收条目落地（条目见 M26 归档创建验收段——未装工具路径 CI 自动覆盖；装 7z 不支持 cab 打包的人工验证项随 M28-1 Windows 项同口径保留）。（2026-11-20）
 
 ### M31-3 M11-6 手工验证清单
-- [ ] ACCEPTANCE 独立小节：Alacritty（halfblocks）/ tmux passthrough / Kitty 原生协议 / 无协议降级链逐项清单；M11-6 条目引用该清单。
+- [x] ACCEPTANCE 独立小节：Alacritty（halfblocks）/ tmux passthrough / Kitty 原生协议 / 无协议降级链逐项清单；M11-6 条目引用该清单。（2026-11-20 清单已建于 §M31-3，补勾；清单第 1 项 2026-11-21 foot 实测通过）
 
 ### M31-4 ACCEPTANCE M0–M13 复选框化
 - [x] M0–M13 普通 bullet 全部转复选框（137 条，已完成的里程碑勾 `[x]`）；`grep` 核验对应区间（§2–§13）无残留裸 bullet；条目文字零改动。（2026-11-20）

@@ -404,7 +404,7 @@
 
 ## M34 — 主题、预览统一与文档（2026-11-21 增补；见 SPEC M34 节，已确认登记）
 
-> 来源：DeepSeek 讨论蒸馏（2026-11-20 分享稿，用户实测反馈）。登记前经代码现状核查（2026-11-21）：`pick` 双栏预览（AUDIT-3 已覆盖，≥60 列双栏窄端降级）与 dracula/gruvbox 内置可用（opaline 0.4.2 内置 39 主题）不重复登记；右 pane `/` 不可用为 M14 SIMPLIFIED 裁剪（非回归）；核查另发现 `preview_path` 焦点缺陷并入 M34-4。用户裁决（2026-11-21）：预览统一取方案 A（对侧预览）；二进制信息面板裁剪 `--version` 探测（见 NOTES）。顺序：1（默认主题）→ 2（snowwhite）→ 3（右栏搜索）→ 4（预览统一）→ 5（frecency 视觉回显）→ 6（jar）→ 7（二进制信息面板）→ 8（GUIDE）→ 9（文档收尾）。
+> 来源：DeepSeek 讨论蒸馏（2026-11-20 分享稿，用户实测反馈）。登记前经代码现状核查（2026-11-21）：`pick` 双栏预览（AUDIT-3 已覆盖，≥60 列双栏窄端降级）与 dracula/gruvbox 内置可用（opaline 0.4.2 内置 39 主题）不重复登记；右 pane `/` 不可用为 M14 SIMPLIFIED 裁剪（非回归）；核查另发现 `preview_path` 焦点缺陷并入 M34-4。用户裁决（2026-11-21）：预览统一取方案 A（对侧预览）；二进制信息面板裁剪 `--version` 探测（见 NOTES）。顺序：1（默认主题）→ 2（snowwhite）→ 3（右栏搜索）→ 4（预览统一）→ 5（frecency 视觉回显）→ 6（jar）→ 7（二进制信息面板）→ 8（GUIDE）→ 9（预览尺寸适配，2026-11-21 追加）→ 10（文档收尾）。
 
 - [ ] M34-1 默认主题 gruvbox（`[ui] theme` 缺省 `gruvbox-dark`；vifm 高亮组映射核查补充；dracula 验证；见 SPEC M34-1）
 - [ ] M34-2 snowwhite 内置主题移植（vifm-colors 颜色 → opaline TOML 捆绑；见 SPEC M34-2）
@@ -414,7 +414,8 @@
 - [ ] M34-6 `.jar` 归档识别（zip 后端复用；见 SPEC M34-6）
 - [ ] M34-7 二进制/不可读预览信息面板（大小/时间/类型推断；不执行文件；见 SPEC M34-7）
 - [ ] M34-8 docs/GUIDE.md 用户手册（快速上手 + 键位/命令速查；见 SPEC M34-8）
-- [ ] M34-9 M34 文档收尾（help/README/ACCEPTANCE §34 同步；见 SPEC M34-9）
+- [ ] M34-9 图片/PDF 预览尺寸适配（小于窗格原尺寸居中不放大、超过 fit-width；见 SPEC M34-9）
+- [ ] M34-10 M34 文档收尾（help/README/ACCEPTANCE §34 同步；见 SPEC M34-10）
 
 ## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
 

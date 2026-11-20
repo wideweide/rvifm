@@ -833,3 +833,8 @@ rvifm record  → 静默记录访问
 - **过程**：首推 windows clippy 失败（`msg_none` dead-code——m302 测试 cfg(unix) 包裹致 Windows 下无调用者，Linux 侧不报）→ 内联修复；二推 windows test 失败（`m323` 归档会话路径 `split_once(':')` 被 Windows 盘符冒号切断 → `rsplit_once`）；三推全绿。诊断通道固化：CI clippy/test 失败时 `::error::` 注解（匿名 check-runs annotations 可读——errexit 曾吞掉注解步骤，`set +e` 修正）。
 - **教训**：① Linux 全绿 ≠ Windows 绿——本会话三度（lstat/E0369/msg_none/盘符）验证 AGENTS §6 "以 CI run 为准" 纪律的必要性；② 路径含冒号（Windows 盘符）的序列化一律 rsplit 切分；③ test cfg(unix) 包裹的辅助函数会成 Windows dead-code。
 - **结果**：GitHub Release `v0.10.0` 已发布（三归档，含 rvifm+rv 双二进制）。crates.io 留待 Windows 侧（凭据边界）。
+
+### 2026-11-21 — M11-6 foot 实测（清单第 1 项）+ M34-9 预览尺寸适配补登
+
+- **用户实测（foot 终端，2026-11-21）**：图片预览渲染效果良好——M31-3 清单第 1 项通过（foot 支持 Kitty graphics，协议探测链生效）；PDF 无文本语料首页视觉渲染可用、速度略慢。后者为定性数据：首次栅格化成本属预期（AUDIT-2 结果缓存使二次查看免栅格化）；量化耗时/内存基线仍归 M31-5（rustc ≥1.97 环境）。M11-6 保持 deferred（清单 2–6 未验：tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）。
+- **新增需求蒸馏**：用户指令"图片/PDF 实际尺寸小于预览区按实际大小居中；超过缩放宽度与预览区一致" → 登记 **M34-9**（原文档收尾任务顺延为 M34-10）。设计默认（实现期可依 SPEC 调整）：不放大用 `Resize::Fit` 基线（`Fill` 会放大，禁用）；fit-width 后高度超出在交互查看器滚动、普通预览窗格显示顶部（同文本预览"前 N 行"语义）；pick 预览同源适用。
