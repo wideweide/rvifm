@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-20
 - **当前阶段**：M28–M33 新批次**已登记（用户确认，执行已批准启动）**——M28 运维操作补齐 / M29 对比增强 / M30 frecency 通用化（对齐同级 frecency 项目）/ M31 文档与验收补齐 / M32 远端健壮性与会话扩展（P2 补登）/ M33 键位模式分层扩展（P2 补登）；统一目标 0.10.0
-- **当前任务**：M29-3 M29 批次文档收尾（M29-1/2 已于 2026-11-20 完成；自动续轮中）
+- **当前任务**：M30-1 frecency cmd 事件 schema 与 record 链路（M29 批次 3/3 已关闭；自动续轮中）
 - **阶段状态**：M0–M27 + AUDIT + MISC 全部完成；v0.9.0 已发布（GitHub Release 三归档含 rv 别名，CI #271 五 job 全绿）；**crates.io publish 待 Windows 机器凭据执行**（Linux 侧无凭据，非停止条件）；M11-6 真实终端验证 deferred（清单化任务已登记 M31-3）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -33,6 +33,7 @@
 - M24：交互增强与列表规范（9 项），318 单测 + 6 集成；列对齐、自然排序、行可视、计数前缀、命令历史、路径补全、`:compare`、`:jobs`。
 - M25：会话持久化、归档创建/校验、异步 git 状态列与 `gi`、frecency 通用化评估；**M25-2 marks/bookmark 由 frecency 实现补齐（2026-11-20）**——`m<char>` 写入 keyword 事件（dir/file topic、`..` 行=当前目录）、`'<char>` 经 jump_to 支持 file 语义、`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks` 命令族（`:delbmarks` 清除 = 空 keyword 事件保留累积分数）、多字符 keyword 搜索高优先级（M23-1 既有）。**M25 批次自此全部完成**；361 单测 + 5 集成。
 - AUDIT：评估整改 18 项全部完成（2026-11-20）——pick 只读红线（redb ReadOnlyDatabase）、opener/主题/预览整层接线、app.rs 拆分 `src/app/` 7 模块、CI 门禁增强（clippy all-targets + Linux cross-check）、测试隔离与可移植性整改（含 Store::open 数据目录自动创建）、生产 panic 面清零、glob 统一修 `*x*`、help/README 同步、惰性 compaction 与 per-topic λ 一致性、归档成员/xz 解压上限；357 单测 + 5 集成双环境绿。
+- M29：对比增强 3 项全部完成（2026-11-20）——M29-1 `:compare bycontents`（SHA-256 分块哈希 + 64MB 护栏）、M29-2 dp/do 同步（DiffPut/DiffObtain Action + 可恢复删除 + 操作后重建；`!` 覆盖同步裁剪见 NOTES）、M29-3 文档收尾；399 单测 + 9 集成。
 - M28：运维操作补齐 4 项全部完成（2026-11-20）——M28-1 `:link` 符号链接创建（junction 回退；undo_op symlink 感知修复）、M28-2 `:rename` 结构化批量重命名（RenamePreview 预览 + y 应用）、M28-3 `:jobs` 暂停/详情（JobControls/JobProgress）、M28-4 文档收尾；396 单测 + 9 集成；Windows junction 人工验证项随 M11-6 模式保留。
 - MISC-1：`rv` 短别名二进制（2026-11-20）——Cargo 双 `[[bin]]` 同 `src/main.rs`（rv `test=false`）、CI release 归档含双二进制、README 三处说明、冒烟测试；385 单测 + 9 集成。**任务列表自此全部完成，进入 0.9.0 自动发布。**
 - M27：0.8.0 实测问题与 vifm 视觉对齐 3 项全部完成（2026-11-20）——M27-1 符号链接目录跟随（lstat→path metadata 修正随 M27-3 验证落地）、M27-2 vifm 布局配色（pane_borders=false 默认 + 16 色回退）、M27-3 PDF 前 1–2 页图像可配置（[preview] 表 + 中断提交 3 缺陷修正，见 NOTES）；M27 批次自此全部完成；385 单测 + 8 集成。

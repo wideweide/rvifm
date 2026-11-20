@@ -872,7 +872,7 @@
 - [x] 非对比视图（普通视图/其它结果视图）dp/do → 可读拒绝。（2026-11-20：compare_sync kind 守卫 + m292 退出视图断言）
 
 ### M29-3 M29 文档收尾
-- [ ] help.txt / README / ACCEPTANCE §29 同步；全部勾选后批次关闭。
+- [x] help.txt / README / ACCEPTANCE §29 同步；全部勾选后批次关闭。（2026-11-20：help :compare/dp-do 条目随任务落地；README 对比能力暂未在特性段列出——:compare 为 M24-8 既有能力且 help 已覆盖，README 特性表补行推迟至 M31-1 统一状态同步时一并处理）
 
 ## 30. M30 — frecency 通用化（见 SPEC M30 节）
 

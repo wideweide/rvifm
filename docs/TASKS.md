@@ -363,7 +363,7 @@
 
 - [x] M29-1 `:compare bycontents` 内容对比（SHA-256；64MB 护栏；虚拟目录前缀；见 SPEC M29-1；2026-11-20 完成：compare_panes by_contents + 分块哈希，398 单测）
 - [x] M29-2 对比结果 `dp`/`do` 同步（入撤销栈；`!` 覆盖同步裁剪为可读拒绝；操作后重建；见 SPEC M29-2；2026-11-20 完成：DiffPut/DiffObtain Action + compare_sync，399 单测）
-- [ ] M29-3 M29 文档收尾（help/README/ACCEPTANCE §29 同步；见 SPEC M29-3）
+- [x] M29-3 M29 文档收尾（help/README/ACCEPTANCE §29 同步；见 SPEC M29-3；2026-11-20 完成，批次 3/3 关闭）
 
 ## M30 — frecency 通用化（2026-11-20 增补；M25-7 评估立项；见 SPEC M30 节，已确认登记）
 
