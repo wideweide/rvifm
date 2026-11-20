@@ -1671,7 +1671,7 @@ mod tests {
         assert!(matches!(back.kind, EntryKind::Command));
         // 旧数据（Navigate）照常反序列化。
         let old = r#"{"path":"/d","topic":"dir","kind":"Navigate","clock":1,"keyword":"","ts":5}"#;
-        let back_old: EntryRecord = serde_json::from_str(&old).unwrap();
+        let back_old: EntryRecord = serde_json::from_str(old).unwrap();
         assert!(matches!(back_old.kind, EntryKind::Navigate));
     }
 
