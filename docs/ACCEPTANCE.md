@@ -899,6 +899,17 @@
 
 ## 31. M31 — 文档与验收补齐（见 SPEC M31 节）
 
+### M31-3 M11-6 真实终端手工验证清单（deferred 补验入口）
+
+> M11-6（Alacritty 图片显示，deferred）的补验清单——任何真实终端环境按序执行（约 10 分钟），全部通过即可勾选 M11-6 并在 NOTES 记一行环境信息（终端名/版本/是否 tmux 内）。
+
+- [ ] 1. 无 tmux 环境：Alacritty/Kitty/WezTerm 打开 rvifm，光标移到 `.png` 文件 → 预览窗格显示图像（协议探测：Kitty 原生 / WezTerm Sixel / 其它 halfblocks）。
+- [ ] 2. tmux 内（passthrough 开启 `set -g allow-passthrough on`）：同上验证图片可见（tmux 3.3+）。
+- [ ] 3. 无协议终端（如老版 gnome-terminal）：确认 halfblocks 兜底显示（Unicode 块字符近似图）。
+- [ ] 4. `NO_COLOR=1` 启动：确认无 panic、列表/预览降级正常。
+- [ ] 5. 损坏图片文件：预览给可读提示，不 panic。
+- [ ] 6. 大图（>400 万像素）：预览可读提示或缩放，不 OOM。
+
 ### M31-2 外部 CLI 双环境验收（补于 M26 段后）
 - [x] （自动）未装 rar/cab 外部工具环境：`:archive rar|cab|lzh` → 可读错误、无半成品（CI 无工具环境覆盖；M26-4 测试断言）。
 - [ ] （人工）装 7z 环境：cab/lzh 打包 → 精确提示区分"工具缺失"与"格式不支持"（7z 打包能力矩阵探测不在 M26-4 范围——提示措辞以实际错误为准）。

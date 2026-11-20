@@ -381,7 +381,7 @@
 
 - [x] M31-1 README 状态与边界同步（M26 行漂移修正、.7z 加密/分卷边界、Windows UAC 边界；见 SPEC M31-1；2026-11-20 完成）
 - [x] M31-2 ACCEPTANCE 补条目（:jobs 取消时延、外部 CLI 双环境验收；见 SPEC M31-2；2026-11-20 完成）
-- [ ] M31-3 M11-6 手工验证清单（ACCEPTANCE 独立小节；见 SPEC M31-3）
+- [x] M31-3 M11-6 手工验证清单（ACCEPTANCE 独立小节；见 SPEC M31-3；2026-11-20 完成：6 步清单，M11-6 勾选以清单补验为准）
 - [ ] M31-4 ACCEPTANCE M0–M13 复选框化（零语义机械转换 + grep 核验；见 SPEC M31-4）
 - [ ] M31-5 pdf-visual 护栏实测（rustc≥1.97 环境语料耗时/内存数据入 NOTES；见 SPEC M31-5）
 
