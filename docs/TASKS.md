@@ -352,8 +352,8 @@
 
 > 来源：2026-11-20 评估报告蒸馏（P1），用户确认。对标 ranger/Total Commander/Double Commander/vifm。顺序：1（链接）→ 2（重命名）→ 3（任务视图）→ 4（文档收尾）。
 
-- [ ] M28-1 `:link` 符号链接创建（tags/选择优先；Windows 目录 junction 回退；入撤销栈；见 SPEC M28-1）
-- [ ] M28-2 `:rename` 结构化批量重命名（s///、prefix/suffix/seq；预览虚拟目录；整批撤销；见 SPEC M28-2）
+- [x] M28-1 `:link` 符号链接创建（tags/选择优先；Windows 目录 junction 回退；入撤销栈；见 SPEC M28-1；2026-11-20 完成（补勾）：undo_op symlink 感知修复）
+- [x] M28-2 `:rename` 结构化批量重命名（s///、prefix/suffix/seq；预览虚拟目录；整批撤销；见 SPEC M28-2；2026-11-20 完成（补勾）：RenamePreview 结果视图 + y 应用/Esc 取消，逐项撤销）
 - [x] M28-3 `:jobs` 任务视图增强（`p` 暂停/恢复 + Enter 详情覆盖层 + 状态列；见 SPEC M28-3；2026-11-20 完成：JobControls 束 + JobProgress 采样 + JobDetail 覆盖层，396 单测）
 - [x] M28-4 M28 文档收尾（help/README/ACCEPTANCE §28 同步；见 SPEC M28-4；2026-11-20 完成，批次 4/4 关闭）
 
@@ -390,7 +390,7 @@
 > 来源：评估报告 P2 蒸馏补登（用户确认）。依赖 M19–M20（已完成）、M25-1（已完成）。顺序：1（重连）→ 2（续传）→ 3（会话扩展）→ 4（文档收尾）。
 
 - [x] M32-1 SFTP 连接健康检查与自动重连（连接类错误分类复用；操作触发式重连一次；不阻塞事件循环；见 SPEC M32-1；2026-11-20 完成：remote_with_reconnect + is_connection_class + as_any downcast，411 单测）
-- [ ] M32-2 大文件传输断点续传（.part + 偏移；完成原子改名；显式取消清理；见 SPEC M32-2）
+- [x] M32-2 大文件传输断点续传（.part + 偏移；完成原子改名；显式取消清理；见 SPEC M32-2；2026-11-20 完成（补勾）：连接类失败保留 .part 现场 + 自动重连重试，偏移续传裁剪为 SIMPLIFIED）
 - [x] M32-3 会话持久化范围扩展（Archive/Remote Location 保存恢复；失败降级可读；见 SPEC M32-3；2026-11-20 完成：SessionTab.kind + restore_session_with_hints，416 单测）
 - [x] M32-4 M32 文档收尾（help/README/ACCEPTANCE §32 同步；见 SPEC M32-4；2026-11-20 完成，批次 4/4 关闭）
 
