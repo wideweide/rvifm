@@ -400,7 +400,7 @@
 
 - [x] M33-1 `[visual]`/`[view]`/`[command]` 三层 TOML 解析与合并（与 [normal] 同构；缺省空；见 SPEC M33-1；2026-11-20 完成：ModeLayers + parse_mode_layers_standalone，417 单测）
 - [x] M33-2 模式化消费接线（visual/view 切换换表；未配置零行为变化；[command] 消费面裁剪见 NOTES；见 SPEC M33-2；2026-11-20 完成：switch_mode_map + with_mode_maps，418 单测）
-- [ ] M33-3 M33 文档收尾（help/README 键位段 + config 示例；见 SPEC M33-3）
+- [x] M33-3 M33 文档收尾（help/README 键位段 + config 示例；见 SPEC M33-3；2026-11-20 完成，批次 3/3 关闭）
 
 ## 杂项定稿任务（2026-11-19 用户确认，见 SPEC §6.1）
 

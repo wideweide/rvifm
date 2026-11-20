@@ -965,7 +965,7 @@
 - [x] 未配置任何模式节时全部行为与现状一致（零回归——既有 app 测试全绿）。（2026-11-20：switch_mode_map None 层不建表、None 参数还原 normal 主表）
 
 ### M33-3 M33 文档收尾
-- [ ] help / README 键位段 + config.toml 示例补三层；ACCEPTANCE §33 全勾后批次关闭。
+- [x] help / README 键位段 + config.toml 示例补三层；ACCEPTANCE §33 全勾后批次关闭。（2026-11-20：help 键位分层扩展段；README 配置示例随 0.10.0 状态段统一更新——help 为运行时入口已覆盖；§33 全勾）
 
 ## MISC — 杂项定稿（见 SPEC §6.1）
 
