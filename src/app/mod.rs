@@ -458,7 +458,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     )?);
     state.config = config;
     // M25-1：会话恢复（关闭/缺失/损坏 → 保持初始 CWD tab）。
-    crate::session::restore_session(&mut state);
+    // M32-3：恢复跳过的 tab 汇入状态栏提示（远端重连失败/归档缺失）。
+    let hints = crate::session::restore_session_with_hints(&mut state);
+    if let Some(h) = hints.first() {
+        msg = Some(h.clone());
+    }
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_keymap(keymap);

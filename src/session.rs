@@ -15,20 +15,26 @@ use crate::state::AppState;
 use crate::tab::Location;
 
 /// 会话文件结构（配置目录 `session.toml`）。
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 struct SessionFile {
     active: usize,
     tabs: Vec<SessionTab>,
 }
 
 /// 单个 tab 的恢复数据（左 pane 语义）。
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+/// M32-3：`kind` 扩展——`physical`（缺省，向后兼容）/ `archive`
+/// （host:inner）/ `remote`（remote:path）；归档恢复 host 存在即进入，
+/// 远端恢复重连（失败跳过该 tab）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct SessionTab {
     path: String,
     cursor: usize,
     on_parent_row: bool,
     /// "left" / "right"（M14-1 焦点 pane）。
     focus: String,
+    /// M32-3：tab 类型（缺省 physical = 旧文件零迁移兼容）。
+    #[serde(default)]
+    kind: String,
 }
 
 /// 会话文件路径（与 config.toml 同目录）。
@@ -47,19 +53,33 @@ pub fn serialize_session(state: &AppState) -> String {
         tabs: state
             .tabs
             .iter()
-            .filter_map(|tab| {
-                let Location::Physical(p) = &tab.location else {
-                    return None; // 归档/远端不保存
+            .map(|tab| {
+                // M32-3：三种 Location 均入会话（归档/远端恢复失败静默跳过）。
+                let (kind, path) = match &tab.location {
+                    Location::Physical(p) => ("physical", p.to_string_lossy().into_owned()),
+                    Location::Archive { host, inner } => (
+                        "archive",
+                        format!(
+                            "{}:{}",
+                            host.to_string_lossy().replace('\\', "/"),
+                            inner.to_string_lossy().replace('\\', "/")
+                        ),
+                    ),
+                    Location::Remote { remote, path } => (
+                        "remote",
+                        format!("{}:{}", remote, path.to_string_lossy().replace('\\', "/")),
+                    ),
                 };
-                Some(SessionTab {
-                    path: p.to_string_lossy().into_owned(),
+                SessionTab {
+                    path,
                     cursor: tab.cursor,
                     on_parent_row: tab.on_parent_row,
                     focus: match tab.focus {
                         crate::tab::Focus::Right => "right".to_owned(),
                         crate::tab::Focus::Left => "left".to_owned(),
                     },
-                })
+                    kind: kind.to_owned(),
+                }
             })
             .collect(),
     };
@@ -88,28 +108,77 @@ fn parse_session(text: &str) -> Option<SessionFile> {
 
 /// 启动恢复：`session_restore = false` 或文件缺失/损坏/空时保持初始状态。
 /// 恢复失败的 tab（目录不存在等）跳过；恢复后 tab 数为 0 → 保持初始 tab。
-pub fn restore_session(state: &mut AppState) {
-    if !state.config.ui.session_restore {
-        return;
-    }
-    let Ok(text) = fs::read_to_string(session_path()) else {
-        return;
-    };
-    let Some(file) = parse_session(&text) else {
-        return;
-    };
-    apply_session(state, &file);
-}
-
 /// 把会话数据应用到 state（纯逻辑，供测试直接驱动）。
 /// 单个 tab 构建失败即跳过；cursor/active 钳制到合法范围。
-fn apply_session(state: &mut AppState, file: &SessionFile) {
+fn apply_session(state: &mut AppState, file: &SessionFile) -> Vec<String> {
     let cfg = state.config.clone();
     let mut restored = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
     for tab in &file.tabs {
-        let path = PathBuf::from(&tab.path);
-        let Ok(mut built) = crate::tab::Tab::from_physical(&path, cfg.clone()) else {
-            continue; // 目录不存在/读取失败：跳过
+        // M32-3：kind 分派——archive/remote 恢复失败跳过该 tab
+        //（不 panic、不阻塞其余 tab）；physical 行为与 M25-1 一致。
+        let mut built = match tab.kind.as_str() {
+            "archive" => {
+                let (host, inner) = match tab.path.split_once(':') {
+                    Some((h, i)) => (PathBuf::from(h), PathBuf::from(i)),
+                    None => continue,
+                };
+                if !host.is_file() {
+                    skipped.push(format!("归档文件缺失: {}，已跳过", host.display()));
+                    continue;
+                }
+                // 基座 tab 用临时目录（host 是归档文件，from_physical 对
+                // 文件路径 read_dir 失败）——navigate_to 加载归档条目。
+                match crate::tab::Tab::from_physical(&std::env::temp_dir(), cfg.clone()) {
+                    Ok(mut t) => {
+                        if t.navigate_to(
+                            crate::tab::Location::Archive {
+                                host: host.clone(),
+                                inner: inner.clone(),
+                            },
+                            cfg.clone(),
+                        )
+                        .is_err()
+                        {
+                            skipped.push(format!("归档 {} 打开失败，已跳过", host.display()));
+                            continue;
+                        }
+                        t
+                    }
+                    Err(_) => continue,
+                }
+            }
+            "remote" => {
+                let (name, rpath) = match tab.path.split_once(':') {
+                    Some((n, pth)) => (n.to_owned(), PathBuf::from(pth)),
+                    None => continue,
+                };
+                // 远端恢复：重连会话 + 加载条目；失败跳过该 tab。
+                if crate::app::remote_reconnect_session(state, &name).is_err() {
+                    skipped.push(format!("远端 {} 重连失败，已跳过", name));
+                    continue;
+                }
+                let Ok(items) = crate::app::remote_load_entries(state, &name, &rpath) else {
+                    continue;
+                };
+                let Ok(mut t) = crate::tab::Tab::from_physical(&std::env::temp_dir(), cfg.clone())
+                else {
+                    continue;
+                };
+                t.location = crate::tab::Location::Remote {
+                    remote: name,
+                    path: rpath,
+                };
+                t.entries = items;
+                t
+            }
+            _ => {
+                let path = PathBuf::from(&tab.path);
+                match crate::tab::Tab::from_physical(&path, cfg.clone()) {
+                    Ok(t) => t,
+                    Err(_) => continue, // 目录不存在/读取失败：跳过
+                }
+            }
         };
         built.cursor = tab.cursor.min(built.entries.len().saturating_sub(1));
         built.on_parent_row = tab.on_parent_row && built.has_parent_row();
@@ -121,10 +190,25 @@ fn apply_session(state: &mut AppState, file: &SessionFile) {
         restored.push(built);
     }
     if restored.is_empty() {
-        return; // 全部恢复失败 → 保持初始会话
+        return skipped; // 全部恢复失败 → 保持初始会话（仍返回跳过原因）
     }
     state.tabs = restored;
     state.active = file.active.min(state.tabs.len() - 1);
+    skipped
+}
+
+/// M32-3：恢复 + 跳过提示（restore_session 的增强形态；调用方接状态栏）。
+pub fn restore_session_with_hints(state: &mut AppState) -> Vec<String> {
+    if !state.config.ui.session_restore {
+        return Vec::new();
+    }
+    let Ok(text) = fs::read_to_string(session_path()) else {
+        return Vec::new();
+    };
+    let Some(file) = parse_session(&text) else {
+        return Vec::new();
+    };
+    apply_session(state, &file)
 }
 
 #[cfg(test)]
@@ -165,6 +249,78 @@ mod tests {
     }
 
     #[test]
+    fn m323_archive_session_roundtrip_and_missing_host() {
+        // M32-3：归档 tab 入会话（host:inner 格式）+ 恢复（host 存在 →
+        // 进入 Archive Location；host 缺失 → 跳过 + 提示）。
+        let tmp = TempDir::new().unwrap();
+        let zip = tmp.path().join("a.zip");
+        // 真实 zip fixture（M26 pack 保证 navigate 可进）。
+        let src = tmp.path().join("payload.txt");
+        fs::write(&src, b"PAYLOAD").unwrap();
+        let _ = crate::ops::create_archive(
+            0,
+            tmp.path(),
+            "a.zip",
+            crate::ops::ArchiveFormat::Zip,
+            &["payload.txt".to_owned()],
+        )
+        .unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut arch = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        arch.location = Location::Archive {
+            host: zip.clone(),
+            inner: PathBuf::from("inner"),
+        };
+        state.tabs.push(arch);
+        let text = serialize_session(&state);
+        let file = parse_session(&text).unwrap();
+        assert_eq!(file.tabs[1].kind, "archive");
+        assert!(file.tabs[1].path.contains("a.zip:inner"));
+
+        let mut fresh = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let skipped = apply_session(&mut fresh, &file);
+        assert_eq!(skipped, Vec::<String>::new(), "有效归档无跳过");
+        assert_eq!(fresh.tabs.len(), 2);
+        assert!(
+            matches!(fresh.tabs[1].location, Location::Archive { .. }),
+            "归档恢复进入 Archive Location"
+        );
+
+        // host 缺失 → 跳过 + 原因。
+        let mut file2 = file.clone();
+        file2.tabs[1].path = "/nonexistent-xyz.zip:inner".to_owned();
+        let mut fresh2 = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let skipped = apply_session(&mut fresh2, &file2);
+        assert!(skipped.iter().any(|s| s.contains("归档文件缺失")));
+    }
+
+    #[test]
+    fn m323_remote_session_serialize_and_restore_skip() {
+        // M32-3：远端 tab 入会话（remote:path）；恢复重连失败（mock 会话
+        // 不在会话表）→ 跳过 + 提示。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let mut r = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        r.location = Location::Remote {
+            remote: "srv".to_owned(),
+            path: PathBuf::from("/data"),
+        };
+        state.tabs.push(r);
+        let text = serialize_session(&state);
+        let file = parse_session(&text).unwrap();
+        assert_eq!(file.tabs[1].kind, "remote");
+
+        let mut fresh = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        let skipped = apply_session(&mut fresh, &file);
+        // remote 恢复经 remote_reconnect_session（会话表无 srv → "会话已断开"）。
+        assert!(
+            skipped.iter().any(|s| s.contains("重连失败")),
+            "skipped: {skipped:?}"
+        );
+        assert_eq!(fresh.tabs.len(), 1, "失败 tab 跳过");
+    }
+
+    #[test]
     fn m251_corrupt_and_nonphysical_dropped() {
         // 损坏文本 → None。
         assert_eq!(parse_session("!!!not toml{{{"), None);
@@ -183,7 +339,12 @@ mod tests {
         state.tabs.push(remote_tab);
         let text = serialize_session(&state);
         let file = parse_session(&text).unwrap();
-        assert_eq!(file.tabs.len(), 1, "仅物理 Location 入会话");
+        assert_eq!(file.tabs.len(), 2, "M32-3：远端 tab 也入会话");
+        assert_eq!(file.tabs[1].kind, "remote");
+        assert!(
+            file.tabs[1].path.starts_with("srv:"),
+            "远端路径格式 remote:path"
+        );
 
         // cursor 越界钳制；恢复失败目录跳过；active 钳制。
         let file2 = SessionFile {
@@ -194,12 +355,14 @@ mod tests {
                     cursor: 99,
                     on_parent_row: true,
                     focus: "left".to_owned(),
+                    kind: "physical".to_owned(),
                 },
                 SessionTab {
                     path: "/nonexistent-dir-xyz-12345".to_owned(),
                     cursor: 0,
                     on_parent_row: false,
                     focus: "left".to_owned(),
+                    kind: "physical".to_owned(),
                 },
             ],
         };

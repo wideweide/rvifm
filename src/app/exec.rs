@@ -1115,6 +1115,33 @@ pub(crate) fn remote_with_reconnect<R>(
     }
 }
 
+/// M32-3：远端条目加载（会话恢复用；remote_navigate 的数据段同源）。
+/// 失败返回可读 Err（恢复调用方跳过该 tab）。
+pub(crate) fn remote_load_entries(
+    state: &mut AppState,
+    name: &str,
+    path: &std::path::Path,
+) -> Result<Vec<crate::tab::FileItem>, String> {
+    let items = remote_with_reconnect(state, name, |b| b.list(path))?;
+    Ok(items
+        .into_iter()
+        .map(|i| crate::tab::FileItem {
+            icon: crate::icons::icon_for(
+                std::path::Path::new(&format!("{}/{}", path.display(), i.name)),
+                crate::icons::IconTheme::Dark,
+            ),
+            name: i.name.clone(),
+            is_dir: i.is_dir,
+            // 远端元数据无链接/执行位：链接 false、可执行按扩展名近似（M21-F1）。
+            is_link: false,
+            is_exec: !i.is_dir && crate::tab::is_exec_name(&i.name),
+            size: i.size,
+            perm: String::new(),
+            mtime: i.mtime,
+        })
+        .collect())
+}
+
 pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> Result<(), String> {
     // M32-1：list 经重连包装（连接类错误自动重连一次后重试）。
     let (name, items) = {

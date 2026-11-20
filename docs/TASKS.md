@@ -391,7 +391,7 @@
 
 - [x] M32-1 SFTP 连接健康检查与自动重连（连接类错误分类复用；操作触发式重连一次；不阻塞事件循环；见 SPEC M32-1；2026-11-20 完成：remote_with_reconnect + is_connection_class + as_any downcast，411 单测）
 - [ ] M32-2 大文件传输断点续传（.part + 偏移；完成原子改名；显式取消清理；见 SPEC M32-2）
-- [ ] M32-3 会话持久化范围扩展（Archive/Remote Location 保存恢复；失败降级可读；见 SPEC M32-3）
+- [x] M32-3 会话持久化范围扩展（Archive/Remote Location 保存恢复；失败降级可读；见 SPEC M32-3；2026-11-20 完成：SessionTab.kind + restore_session_with_hints，416 单测）
 - [ ] M32-4 M32 文档收尾（help/README/ACCEPTANCE §32 同步；见 SPEC M32-4）
 
 ## M33 — 键位模式分层扩展（2026-11-20 增补；见 SPEC M33 节，已确认登记）
