@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-20
 - **当前阶段**：M28–M33 新批次**已登记（用户确认，执行已批准启动）**——M28 运维操作补齐 / M29 对比增强 / M30 frecency 通用化（对齐同级 frecency 项目）/ M31 文档与验收补齐 / M32 远端健壮性与会话扩展（P2 补登）/ M33 键位模式分层扩展（P2 补登）；统一目标 0.10.0
-- **当前任务**：无——M28–M33 全部关闭，进入 **0.10.0 自动发布**（PLAN §4；crates.io 待 Windows 侧）
+- **当前任务**：0.10.0 发布中（bump 提交后 tag 推送 → CI 三 target 归档 + GitHub Release；crates.io 凭据仅在 Windows 机器）
 - **阶段状态**：M0–M27 + AUDIT + MISC 全部完成；v0.9.0 已发布（GitHub Release 三归档含 rv 别名，CI #271 五 job 全绿）；**crates.io publish 待 Windows 机器凭据执行**（Linux 侧无凭据，非停止条件）；M11-6 真实终端验证 deferred（清单化任务已登记 M31-3）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 

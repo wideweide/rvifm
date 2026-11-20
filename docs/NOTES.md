@@ -812,3 +812,10 @@ rvifm record  → 静默记录访问
 - **P3 观察项决策（不立任务）**：① `:du` 磁盘用量分析——方案已明确（后台扫描 + 分批追加虚拟结果目录），等用户高频清盘需求再立项；② git 列内暂存/取消暂存——**维持只读**（M23-12 CLI 路线可行但 FM 职责有张力，观察用户反馈）；③ 插件系统——维持非目标，rhai 成熟度观察；④ libarchive_oxide/OxiArc——README 既有观察项继续。
 - **横切纪律（AGENTS §6 增补）**：任务关闭声明"双环境绿"前以最近一次 CI run 结论为准——cfg(unix) 测试代码 Windows 本机不编译（M12-2/M27-3 两度教训，本周 M27-3 验证连续暴露 5 缺陷的根因）。
 - **pdf-visual 实测边界**：本 Linux 机 rustc 1.95 < exprim@0.4.0 要求 1.97，M31-5 须在 CI ubuntu 或 Windows 本机执行；只测不改护栏。
+
+### 2026-11-20 — 0.10.0 自动发布（WHY + 变化面）
+
+- **触发**：M28–M33 全部关闭（任务列表无未勾选非 deferred 项）——按 AGENTS §3 自动发布条款执行。
+- **新增能力面**：:link/:rename 结构化/:jobs 暂停详情/:compare bycontents+dp·do/frecency cmd topic（命令历史 frecency 排序 + :cmdmark + Tab 加权）/SFTP 重连与 .part 现场/会话恢复归档远端 tab/[visual][view] 键位分层。
+- **发布失败处置**：沿用既有口径——CI release job 失败则 tag 重指向修复提交强推重跑（0.9.0 先例：双 bin 后 cargo run 需 --bin rvifm，已固化）。
+- **crates.io**：凭据仅在 Windows 机器——Linux 侧只做 tag/GitHub Release；publish 待 Windows 侧执行后补 verified 记录。

@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.9.0 已发布；任务列表全部完成（M0–M27、AUDIT 18/18、M26 归档创建扩展 5/5、M27 视觉对齐 3/3、MISC-1 rv 别名）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.10.0 已发布；任务列表全部完成（M0–M27、AUDIT 18/18、M26–M27、M28 运维操作、M29 对比增强、M30 frecency 通用化、M31 文档验收、M32 远端健壮性、M33 键位分层）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -84,6 +84,9 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 - **vim 风格浏览**：`j/k/h/l`、`gg/G`、`Ctrl-u/Ctrl-d`、`/` 搜索（smart-case）、`n/N`、`=` glob 过滤
 - **文件操作与撤销**：复制、移动、删除（应用内暂存可恢复）、重命名、新建、符号链接创建（`:link`，Windows 目录联接回退）、结构化批量重命名（`:rename s/<pat>/<repl>/[i]` / `prefix=` / `suffix=` / `seq=`，预览确认），`u` 逆序撤销（含跨 tab）
 - **后台作业**：`:jobs` 列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情——进度/速率/时长）
+- **目录对比**：`:compare`（按名+大小 / `bycontents` SHA-256 内容判定）；结果视图 `dp` 取回另一侧 / `do` 删除当前侧（可恢复）
+- **符号链接与结构化重命名**：`:link` 创建符号链接（Windows 目录联接回退）；`:rename s/old/new/`、`prefix=`、`suffix=`、`seq=` 批量重命名（预览确认）
+- **SFTP 健壮性**：连接类错误自动重连一次；传输失败保留 `.part` 现场（重试粘贴续传/诊断）；会话恢复归档/远端标签
 - **选择与批量操作**：`v` 可视选择、`t` 标记（tag）、`:tag` 批量复制/移动/删除
 - **TOML 配置**：隐藏文件、排序方式等基本选项，零配置可用
 - **会话与归档创建**：退出保存/启动恢复物理标签；`:archive` 创建 zip/tar/tar.gz 并生成校验文件，`u` 可逆
