@@ -640,6 +640,36 @@ pub fn record_command_line(
     record_impl(db_path, pending, &record)
 }
 
+/// M30-3：dir/file 条目分数映射（`:` Tab 补全加权用）——只读
+///（open_store_readonly，AUDIT-1 口径：不合并 pending、不写库）；
+/// 库缺失 → 空表（调用方零成本字典序兜底）。
+pub fn path_scores() -> std::collections::HashMap<(String, String), f64> {
+    path_scores_at(&crate::config::frecency_db_path())
+}
+
+/// M30-3：注入 DB 路径形态（测试用；语义同 [`path_scores`]）。
+pub fn path_scores_at(db_path: &Path) -> std::collections::HashMap<(String, String), f64> {
+    let mut map = std::collections::HashMap::new();
+    let store = match open_store_readonly_at(db_path) {
+        Ok(Some(s)) => s,
+        _ => return map,
+    };
+    let snapshot = store.snapshot_all().unwrap_or_default();
+    let events = store
+        .last_compaction()
+        .and_then(|s| store.events_since(s))
+        .unwrap_or_default();
+    let now_dir = store.type_tick("dir").unwrap_or(0);
+    let now_file = store.type_tick("file").unwrap_or(0);
+    let now_cmd = store.type_tick("cmd").unwrap_or(0);
+    for e in replay(&snapshot, &events, now_dir, now_file, now_cmd) {
+        if e.topic == "dir" || e.topic == "file" {
+            map.insert((e.topic, e.path), e.score);
+        }
+    }
+    map
+}
+
 /// M30-2：命令历史排序（`:` 模式 ↑/↓ 数据源）——cmd topic replay 顶层
 /// `limit` 条（分数降序 = 常用优先；并列按 last_visit 新在前），会话内
 /// 未落盘命令并入（列表头部 = 最不常用位）。返回**升序**（最常用在

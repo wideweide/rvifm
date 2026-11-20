@@ -580,17 +580,20 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Some(CmdInput::Continue)
                             }
                             KeyCode::Tab => {
+                                // M30-3：候选加权排序（frecency 分数优先、
+                                // 字典序兜底；只读快照，store 缺失零成本降级）。
                                 let names: Vec<String> = {
                                     let tab = state.active_tab();
-                                    if tab.focus == crate::tab::Focus::Right {
-                                        &tab.right.entries
-                                    } else {
-                                        &tab.entries
-                                    }
-                                }
-                                .iter()
-                                .map(|i| i.name.clone())
-                                .collect();
+                                    let base = tab.focus_base().to_path_buf();
+                                    let items: Vec<crate::tab::FileItem> =
+                                        if tab.focus == crate::tab::Focus::Right {
+                                            tab.right.entries.clone()
+                                        } else {
+                                            tab.entries.clone()
+                                        };
+                                    let scores = crate::frecency::path_scores();
+                                    completion_candidates(&base, &items, &scores)
+                                };
                                 let n = tab_complete(input, comp, &names);
                                 if n > 10 {
                                     msg = Some(format!("补全候选 {n} 个（Tab 循环切换）"));

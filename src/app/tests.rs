@@ -921,6 +921,57 @@ fn m291_compare_command_modes() {
 }
 
 #[test]
+fn m303_completion_candidates_weighted() {
+    // M30-3：Tab 补全候选加权——frecency 分数条目降序在前，无记录条目
+    // 字典序兜底；空 scores → 全量字典序（M24-7 行为不变）。
+    let tmp = TempDir::new().unwrap();
+    let items = vec![
+        crate::tab::FileItem {
+            icon: crate::icons::icon_for_active(&tmp.path().join("zeta")),
+            name: "zeta".to_owned(),
+            is_dir: true,
+            is_link: false,
+            is_exec: false,
+            size: 0,
+            perm: String::new(),
+            mtime: 0,
+        },
+        crate::tab::FileItem {
+            icon: crate::icons::icon_for_active(&tmp.path().join("alpha")),
+            name: "alpha".to_owned(),
+            is_dir: false,
+            is_link: false,
+            is_exec: false,
+            size: 10,
+            perm: String::new(),
+            mtime: 0,
+        },
+        crate::tab::FileItem {
+            icon: crate::icons::icon_for_active(&tmp.path().join("mid")),
+            name: "mid".to_owned(),
+            is_dir: true,
+            is_link: false,
+            is_exec: false,
+            size: 0,
+            perm: String::new(),
+            mtime: 0,
+        },
+    ];
+    let mk = |name: &str| tmp.path().join(name).to_string_lossy().replace('\\', "/");
+    let mut scores = std::collections::HashMap::new();
+    scores.insert(("dir".to_owned(), mk("zeta")), 3.0);
+    scores.insert(("file".to_owned(), mk("alpha")), 1.5);
+    scores.insert(("dir".to_owned(), mk("mid")), 2.0);
+    let out = completion_candidates(tmp.path(), &items, &scores);
+    // 分数降序：zeta(3) > mid(2) > alpha(1.5)。
+    assert_eq!(out, vec!["zeta", "mid", "alpha"]);
+
+    // 空 scores → 字典序兜底（alpha/mid/zeta）。
+    let out = completion_candidates(tmp.path(), &items, &std::collections::HashMap::new());
+    assert_eq!(out, vec!["alpha", "mid", "zeta"]);
+}
+
+#[test]
 fn m292_compare_sync_dp_do_and_refresh() {
     // M29-2：对比结果 dp（取回另一侧）与 do（删除当前侧多出）——
     // 均入撤销栈可逆；操作后按原模式重建结果（前缀变化正确）；

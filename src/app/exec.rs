@@ -466,6 +466,41 @@ pub(crate) fn run_compare(state: &mut AppState, by_contents: bool) -> Result<Str
     ))
 }
 
+/// M30-3：`:` Tab 补全候选加权排序——候选仍来自焦点 pane 条目；
+/// 有 frecency 分数（dir/file Navigate/Open 事件，只读快照）的条目
+/// 分数降序在前，无记录条目字典序兜底；store 缺失/空 → 全量字典序
+/// （零成本路径，与 M24-7 行为一致）。
+pub(crate) fn completion_candidates(
+    base: &Path,
+    items: &[crate::tab::FileItem],
+    scores: &std::collections::HashMap<(String, String), f64>,
+) -> Vec<String> {
+    let key_of = |name: &str, is_dir: bool| -> (String, String) {
+        (
+            if is_dir { "dir" } else { "file" }.to_owned(),
+            base.join(name).to_string_lossy().replace('\\', "/"),
+        )
+    };
+    let mut weighted: Vec<(String, f64)> = items
+        .iter()
+        .map(|i| {
+            let s = scores
+                .get(&key_of(&i.name, i.is_dir))
+                .copied()
+                .unwrap_or(0.0);
+            (i.name.clone(), s)
+        })
+        .collect();
+    weighted.sort_by(|a, b| {
+        let (ah, bh) = (a.1 > 0.0, b.1 > 0.0);
+        bh.cmp(&ah).then_with(|| match (ah, bh) {
+            (true, true) => b.1.total_cmp(&a.1),
+            _ => a.0.cmp(&b.0),
+        })
+    });
+    weighted.into_iter().map(|(n, _)| n).collect()
+}
+
 /// M29-2：对比结果视图同步操作（dp/do）。`put` = dp（取回另一侧条目到
 /// 当前侧，仅 `>` 条目）；否则 do（删除当前侧多出条目，仅 `<`，可恢复
 /// 路径 + 撤销栈）。`!`/`=` 条目可读拒绝（copy 链路无覆盖确认流——
