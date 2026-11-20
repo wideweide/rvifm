@@ -26,6 +26,9 @@ const META: redb::TableDefinition<&str, u64> = redb::TableDefinition::new("meta"
 const META_GLOBAL_TICK: &str = "global_tick";
 const META_DIR_TICK: &str = "dir_tick";
 const META_FILE_TICK: &str = "file_tick";
+/// M30-1：`cmd` topic 独立类型时钟（命令历史 frecency；缺失旧库自全局
+/// 时钟连续分叉，与 dir/file 同语义）。
+const META_CMD_TICK: &str = "cmd_tick";
 const META_LAST_COMPACTION: &str = "last_compaction";
 /// snapshot key 分隔符（unit separator，路径中不出现）。
 const KEY_SEP: char = '\u{1f}';
@@ -126,12 +129,15 @@ impl Store {
             .unwrap_or(0))
     }
 
-    /// 当前类型时钟（M8-10）：`dir` → `dir_tick`，其余 → `file_tick`。
+    /// 当前类型时钟（M8-10）：`dir` → `dir_tick`，`cmd` → `cmd_tick`
+    /// （M30-1），其余 → `file_tick`。
     /// 缺失（旧库）时返回 `global_tick` 当前值——新时钟自旧全局时钟连续
     /// 分叉，旧数据的 aging 行为不变。
     pub fn type_tick(&self, topic: &str) -> std::io::Result<u64> {
         let key = if topic == "dir" {
             META_DIR_TICK
+        } else if topic == "cmd" {
+            META_CMD_TICK
         } else {
             META_FILE_TICK
         };
@@ -166,6 +172,8 @@ impl Store {
             // 类型时钟推进（dir/file 各自独立；缺失则以全局序号起点初始化）。
             let clock_key = if record.topic == "dir" {
                 META_DIR_TICK
+            } else if record.topic == "cmd" {
+                META_CMD_TICK
             } else {
                 META_FILE_TICK
             };

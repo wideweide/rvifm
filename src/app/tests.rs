@@ -3321,7 +3321,7 @@ fn replay_unified_uses_global_seq_for_all_topics() {
     // 统一视角：全局序号推进到 100 → file 条目大幅衰减。
     let u = crate::frecency::replay_unified(&[], &events, 100);
     // 分型视角：file 时钟停在 2 → 衰减很小。
-    let p = crate::frecency::replay(&[], &events, 2, 2);
+    let p = crate::frecency::replay(&[], &events, 2, 2, 0);
     let su = u.iter().find(|e| e.path == "/f/notes.txt").unwrap();
     let sp = p.iter().find(|e| e.path == "/f/notes.txt").unwrap();
     assert!(

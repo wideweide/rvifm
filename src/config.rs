@@ -86,6 +86,8 @@ pub struct FrecencyConfig {
     pub lambda_dir: Option<f64>,
     pub lambda_file: Option<f64>,
     pub lambda_unified: Option<f64>,
+    /// M30-1：cmd topic 衰减速率（缺省 0.01）。
+    pub lambda_cmd: Option<f64>,
     /// 容量上限（M23-3 清理阈值）。
     pub max_entries: Option<usize>,
 }
@@ -477,6 +479,18 @@ append_rules = [
         std::fs::write(&path, "[ui]\ntheme = \"ayu-dark\"\n").unwrap();
         let cfg = load_from(&path).unwrap();
         assert_eq!(cfg.ui.theme.as_deref(), Some("ayu-dark"));
+    }
+
+    #[test]
+    fn frecency_lambda_cmd_parses_with_default() {
+        // M30-1：[frecency] lambda_cmd 可配；缺省 None（frecency 内取 0.01）。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[frecency]\nlambda_cmd = 0.05\n").unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert_eq!(cfg.frecency.lambda_cmd, Some(0.05));
+        let cfg2 = load_from(&tmp.path().join("nope.toml")).unwrap();
+        assert_eq!(cfg2.frecency.lambda_cmd, None);
     }
 
     #[test]

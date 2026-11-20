@@ -1466,8 +1466,11 @@ pub(crate) fn load_jump_entries(
             let now_file = store
                 .type_tick("file")
                 .map_err(|e| format!("时钟读取失败: {e}"))?;
+            let now_cmd = store
+                .type_tick("cmd")
+                .map_err(|e| format!("时钟读取失败: {e}"))?;
             let topic = if kind == JumpKind::Dir { "dir" } else { "file" };
-            crate::frecency::replay(&snapshot, &events, now_dir, now_file)
+            crate::frecency::replay(&snapshot, &events, now_dir, now_file, now_cmd)
                 .into_iter()
                 .filter(|e| e.topic == topic)
                 .collect()

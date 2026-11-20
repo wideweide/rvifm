@@ -604,8 +604,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             mode = InputMode::Normal;
                             let result = exec_command_impl(&mut state, line.trim());
                             // M24-6：仅记录成功执行的命令（失败不记；空命令不记）。
+                            // M30-1：命令文本入 frecency cmd topic（成功才记录；
+                            // IGNORE_PATTERNS 命中静默跳过；写失败静默降级）。
                             if result.is_ok() {
+                                let patterns = state.config.frecency.ignore_patterns.clone();
                                 state.record_cmd_history(&line);
+                                crate::frecency::record_command_line_now(&line, &patterns);
                             }
                             match result {
                                 Ok(ExecOutcome::Quit) => {

@@ -29,6 +29,8 @@ pub enum EntryKind {
     Keyword,
     /// 容量清理墓碑（M23-3）：重放时删除该条目（带 keyword 条目永不清理）。
     Remove,
+    /// M30-1：`:` 命令执行成功（cmd topic；path 承载命令文本）。
+    Command,
 }
 
 /// 访问事件记录（append-only；M8-2 起持久化到 redb `events` 表，
@@ -265,6 +267,8 @@ pub struct FrecencySettings {
     pub lambda_dir: f64,
     pub lambda_file: f64,
     pub lambda_unified: f64,
+    /// M30-1：cmd topic 衰减速率（缺省 0.01，与 dir/file 同）。
+    pub lambda_cmd: f64,
     pub max_entries: usize,
 }
 
@@ -274,6 +278,7 @@ impl Default for FrecencySettings {
             lambda_dir: AGING_LAMBDA,
             lambda_file: AGING_LAMBDA,
             lambda_unified: 0.005, // unified 时钟混合计数 dir+file 事件
+            lambda_cmd: AGING_LAMBDA,
             max_entries: MAX_ENTRIES_DEFAULT,
         }
     }
@@ -283,6 +288,7 @@ static SETTINGS: std::sync::Mutex<FrecencySettings> = std::sync::Mutex::new(Frec
     lambda_dir: AGING_LAMBDA,
     lambda_file: AGING_LAMBDA,
     lambda_unified: 0.005,
+    lambda_cmd: AGING_LAMBDA,
     max_entries: MAX_ENTRIES_DEFAULT,
 });
 
@@ -296,6 +302,7 @@ pub fn init_settings(cfg: &crate::config::FrecencyConfig) {
             lambda_dir: cfg.lambda_dir.unwrap_or(d.lambda_dir),
             lambda_file: cfg.lambda_file.unwrap_or(d.lambda_file),
             lambda_unified: cfg.lambda_unified.unwrap_or(d.lambda_unified),
+            lambda_cmd: cfg.lambda_cmd.unwrap_or(d.lambda_cmd),
             max_entries: cfg.max_entries.unwrap_or(d.max_entries),
         };
     }
@@ -325,11 +332,16 @@ pub fn replay(
     events: &[(u64, EntryRecord)],
     now_dir: u64,
     now_file: u64,
+    now_cmd: u64,
 ) -> Vec<ScoredEntry> {
     replay_inner(
         snapshot,
         events,
-        ReplayClocks::PerType { now_dir, now_file },
+        ReplayClocks::PerType {
+            now_dir,
+            now_file,
+            now_cmd,
+        },
     )
 }
 
@@ -346,7 +358,12 @@ pub fn replay_unified(
 /// 时钟视角（M8-12）：PerType = dir/file 各自独立时钟；Unified = 全局序号。
 #[derive(Debug, Clone, Copy)]
 enum ReplayClocks {
-    PerType { now_dir: u64, now_file: u64 },
+    PerType {
+        now_dir: u64,
+        now_file: u64,
+        /// M30-1：cmd 类型时钟（命令历史独立衰减）。
+        now_cmd: u64,
+    },
     Unified(u64),
 }
 
@@ -363,6 +380,8 @@ fn replay_inner(
             st.lambda_unified
         } else if topic == "file" {
             st.lambda_file
+        } else if topic == "cmd" {
+            st.lambda_cmd
         } else {
             st.lambda_dir
         }
@@ -422,8 +441,16 @@ fn replay_inner(
             // 统一视角：now = 全局序号，clock 兜底 tick（全局序号语义）。
             let (now, clock) = match clocks {
                 ReplayClocks::Unified(now) => (now, s.tick),
-                ReplayClocks::PerType { now_dir, now_file } => {
-                    let now = if s.topic == "dir" { now_dir } else { now_file };
+                ReplayClocks::PerType {
+                    now_dir,
+                    now_file,
+                    now_cmd,
+                } => {
+                    let now = match s.topic.as_str() {
+                        "dir" => now_dir,
+                        "cmd" => now_cmd,
+                        _ => now_file,
+                    };
                     let clock = if s.clock == 0 { s.tick } else { s.clock };
                     (now, clock)
                 }
@@ -547,12 +574,16 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
     let Some(path) = path else {
         return Err(arg_err("record: 缺少路径"));
     };
+    let is_cmd = topic == "cmd";
     let record = EntryRecord {
         path: path.replace('\\', "/"),
         topic,
         // M16 NAV-1：--keyword → 纯元数据事件（不记访问）。
+        // M30-1：cmd topic 访问 → Command kind（命令历史）。
         kind: if keyword.is_some() {
             EntryKind::Keyword
+        } else if is_cmd {
+            EntryKind::Command
         } else {
             EntryKind::Navigate
         },
@@ -575,6 +606,49 @@ pub fn cmd_record(args: Vec<String>) -> std::io::Result<()> {
         return Ok(());
     }
     record_impl(&db_path, &pending, &record)
+}
+
+/// M30-1：命令文本记录（TUI `:` 执行成功后调用；cmd topic）。
+/// IGNORE_PATTERNS 命中命令文本 → 静默跳过（模式由调用方传入——TUI 侧
+/// 经 state.config 传递，测试可直接注入，避免宿主配置依赖）；写失败
+/// 降级 events.pending（与路径记录同语义）。`line` 为原始命令行。
+pub fn record_command_line(
+    db_path: &Path,
+    pending: &Path,
+    line: &str,
+    ignore_patterns: &[String],
+) -> std::io::Result<()> {
+    init_settings(&crate::config::load().unwrap_or_default().frecency);
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if crate::frecency::ignored(trimmed, ignore_patterns) {
+        return Ok(());
+    }
+    let record = EntryRecord {
+        path: trimmed.to_owned(),
+        topic: "cmd".to_owned(),
+        kind: EntryKind::Command,
+        clock: 0,
+        keyword: String::new(),
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+    record_impl(db_path, pending, &record)
+}
+
+/// M30-1：record_command_line 的便捷封装（数据目录/降级路径按配置推导；
+/// TUI 调用用——写失败静默，不阻塞 UI）。
+pub fn record_command_line_now(line: &str, ignore_patterns: &[String]) {
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    let _ = record_command_line(&db_path, &pending, line, ignore_patterns);
 }
 
 /// M16 NAV-1：设置/清除书签 keyword（可注入路径，测试用）。
@@ -687,7 +761,10 @@ fn record_impl(db_path: &Path, pending: &Path, record: &EntryRecord) -> std::io:
         match store.append_event(record) {
             Ok(_) => {
                 // M23-3：容量清理（dir/file topic；写事务末尾检查）。
-                if matches!(record.kind, EntryKind::Navigate | EntryKind::Open) {
+                if matches!(
+                    record.kind,
+                    EntryKind::Navigate | EntryKind::Open | EntryKind::Command
+                ) {
                     let _ = cleanup_capacity(&store, &record.topic);
                 }
                 return Ok(()); // 成功静默（不污染 stdout）
@@ -776,7 +853,8 @@ pub fn cleanup_capacity_with(
     let events = store.events_since(since)?;
     let dir_tick = store.type_tick("dir")?;
     let file_tick = store.type_tick("file")?;
-    let entries = replay(&snapshot, &events, dir_tick, file_tick);
+    let cmd_tick = store.type_tick("cmd")?;
+    let entries = replay(&snapshot, &events, dir_tick, file_tick, cmd_tick);
     let topic_entries: Vec<&ScoredEntry> = entries.iter().filter(|e| e.topic == topic).collect();
     if topic_entries.len() <= max_entries {
         return Ok(0);
@@ -898,6 +976,8 @@ fn replay_merge(
     let lambda_for_topic = |topic: &str| {
         if topic == "file" {
             st.lambda_file
+        } else if topic == "cmd" {
+            st.lambda_cmd
         } else {
             st.lambda_dir
         }
@@ -966,11 +1046,12 @@ fn pick_ranked_entries_at(db_path: &Path) -> std::io::Result<Vec<ScoredEntry>> {
         Some(store) => {
             let snapshot = store.snapshot_all()?;
             let since = store.last_compaction()?;
-            // M8-10：读方分别取类型时钟（dir/file 各自独立 aging）。
+            // M8-10：读方分别取类型时钟（dir/file/cmd 各自独立 aging）。
             let now_dir = store.type_tick("dir")?;
             let now_file = store.type_tick("file")?;
+            let now_cmd = store.type_tick("cmd")?;
             let events = store.events_since(since)?;
-            Ok(replay(&snapshot, &events, now_dir, now_file))
+            Ok(replay(&snapshot, &events, now_dir, now_file, now_cmd))
         }
         None => Ok(Vec::new()),
     }
@@ -1330,7 +1411,7 @@ mod tests {
         events.push((tick, rec("/b", 2000)));
 
         let now = tick; // 读取时 aging：旧格式 clock=0 兜底全局序号，两类 now 相同
-        let ranked = replay(&[], &events, now, now);
+        let ranked = replay(&[], &events, now, now, now);
         let a = ranked.iter().find(|e| e.path == "/a").unwrap();
         let b = ranked.iter().find(|e| e.path == "/b").unwrap();
         assert!(b.score > a.score, "B({}) 应排在 A({}) 前", b.score, a.score);
@@ -1423,9 +1504,9 @@ mod tests {
         };
         let events = [(1u64, file_ev(1))]; // file 时钟 1 时打开一次
         // 场景 1：dir/file 时钟都停在 2（近期）。
-        let r1 = replay(&[], &events, 2, 2);
+        let r1 = replay(&[], &events, 2, 2, 2);
         // 场景 2：dir 时钟推进到 1000（目录重度使用），file 时钟仍 2。
-        let r2 = replay(&[], &events, 1000, 2);
+        let r2 = replay(&[], &events, 1000, 2, 2);
         let s1 = r1.iter().find(|e| e.path == "/f/notes.txt").unwrap();
         let s2 = r2.iter().find(|e| e.path == "/f/notes.txt").unwrap();
         assert!(
@@ -1435,13 +1516,164 @@ mod tests {
             s2.score
         );
         // 反向对照：file 时钟真实推进确实衰减（排除假阳性）。
-        let r3 = replay(&[], &events, 2, 1000);
+        let r3 = replay(&[], &events, 2, 1000, 1000);
         let s3 = r3.iter().find(|e| e.path == "/f/notes.txt").unwrap();
         assert!(s3.score < s1.score, "file 时钟推进应衰减 file 分数");
     }
 
     /// M23-5 测试互斥：SETTINGS 为进程级 OnceLock，并行测试会互相覆盖。
     static SETTINGS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn m301_cmd_clock_independent_from_dir_file() {
+        // M30-1：cmd 类型时钟独立推进——cmd 事件不推进 dir/file 时钟，
+        // dir/file 事件不推进 cmd 时钟。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let store = Store::open(&db).unwrap();
+        store
+            .append_event(&EntryRecord {
+                path: "cd /tmp".to_owned(),
+                topic: "cmd".to_owned(),
+                kind: EntryKind::Command,
+                clock: 0,
+                keyword: String::new(),
+                ts: 0,
+            })
+            .unwrap();
+        assert_eq!(store.type_tick("cmd").unwrap(), 1);
+        // 旧库回退语义：缺失时钟读 global_tick（=1）——独立性的判定是
+        // 「自有时钟 ≠ 全局时钟」（dir 时钟缺失时回退不可区分）。
+        store
+            .append_event(&EntryRecord {
+                path: "/d".to_owned(),
+                topic: "dir".to_owned(),
+                kind: EntryKind::Navigate,
+                clock: 0,
+                keyword: String::new(),
+                ts: 0,
+            })
+            .unwrap();
+        // dir 时钟缺失 → 自当前全局（1）分叉为 2。
+        assert_eq!(store.type_tick("dir").unwrap(), 2);
+        assert_eq!(store.type_tick("cmd").unwrap(), 1);
+        store
+            .append_event(&EntryRecord {
+                path: "q2".to_owned(),
+                topic: "cmd".to_owned(),
+                kind: EntryKind::Command,
+                clock: 0,
+                keyword: String::new(),
+                ts: 0,
+            })
+            .unwrap();
+        assert_eq!(store.type_tick("cmd").unwrap(), 2, "cmd 自有时钟推进");
+        assert_ne!(
+            store.type_tick("cmd").unwrap(),
+            store.global_tick().unwrap(),
+            "cmd 时钟独立于全局时钟"
+        );
+        assert_ne!(
+            store.type_tick("dir").unwrap(),
+            store.global_tick().unwrap(),
+            "dir 时钟独立于全局时钟"
+        );
+    }
+
+    #[test]
+    fn m301_record_command_line_writes_and_ignores() {
+        // M30-1：record_command_line——写入 cmd 事件；IGNORE_PATTERNS 命中
+        // 静默跳过；空行跳过。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let pending = tmp.path().join("events.pending");
+        let _ = &pending;
+        let _g = SETTINGS_TEST_LOCK.lock().unwrap();
+        init_settings(&crate::config::FrecencyConfig::default());
+        record_command_line(&db, &pending, "sort name", &[]).unwrap();
+        let store = Store::open(&db).unwrap();
+        let events = store.events_since(0).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].1.topic, "cmd");
+        assert!(matches!(events[0].1.kind, EntryKind::Command));
+        assert_eq!(events[0].1.path, "sort name");
+
+        // IGNORE_PATTERNS：命令文本命中 → 跳过。
+        let db2 = tmp.path().join("f2.redb");
+        let pending2 = tmp.path().join("p2.pending");
+        init_settings(&crate::config::FrecencyConfig {
+            ignore_patterns: vec!["secret*".to_owned()],
+            ..Default::default()
+        });
+        let pats = vec!["secret*".to_owned()];
+        record_command_line(&db2, &pending2, "secret-cmd --key", &pats).unwrap();
+        record_command_line(&db2, &pending2, "   ", &pats).unwrap();
+        record_command_line(&db2, &pending2, "sort name", &pats).unwrap();
+        let store2 = Store::open(&db2).unwrap();
+        let evs = store2.events_since(0).unwrap();
+        assert_eq!(evs.len(), 1, "命中与空行跳过、未命中照常记录");
+        assert_eq!(evs[0].1.path, "sort name");
+        init_settings(&crate::config::FrecencyConfig::default());
+    }
+
+    #[test]
+    fn m301_cmd_topic_ages_with_lambda_cmd() {
+        // M30-1：cmd 条目衰减使用 lambda_cmd（与 dir/file 档位独立）。
+        let _g = SETTINGS_TEST_LOCK.lock().unwrap();
+        init_settings(&crate::config::FrecencyConfig {
+            lambda_cmd: Some(0.5),
+            lambda_dir: None,
+            lambda_file: None,
+            lambda_unified: None,
+            max_entries: None,
+            ignore_patterns: Vec::new(),
+        });
+        let events = [(
+            1u64,
+            EntryRecord {
+                path: "sort name".to_owned(),
+                topic: "cmd".to_owned(),
+                kind: EntryKind::Command,
+                clock: 0,
+                keyword: String::new(),
+                ts: 0,
+            },
+        )];
+        // λ=0.5、时钟推进 4 → score = 4*exp(-2) ≈ 0.54（若误用 0.01 → ≈3.84）。
+        let r = replay(&[], &events, 0, 0, 4);
+        let e = r.iter().find(|e| e.topic == "cmd").unwrap();
+        assert!(
+            e.score < 1.0,
+            "lambda_cmd=0.5 应显著衰减: score={}",
+            e.score
+        );
+        init_settings(&crate::config::FrecencyConfig::default());
+    }
+
+    #[test]
+    fn m301_entry_kind_command_serde_roundtrip_and_compat() {
+        // M30-1：serde 新变体——序列化/反序列化往返；旧 JSON（无 Command
+        // 变体）反序列化不受影响。
+        let rec = EntryRecord {
+            path: "q".to_owned(),
+            topic: "cmd".to_owned(),
+            kind: EntryKind::Command,
+            clock: 3,
+            keyword: String::new(),
+            ts: 9,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(
+            json.contains("\"Command\"") || json.contains("Command"),
+            "{json}"
+        );
+        let back: EntryRecord = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back.kind, EntryKind::Command));
+        // 旧数据（Navigate）照常反序列化。
+        let old = r#"{"path":"/d","topic":"dir","kind":"Navigate","clock":1,"keyword":"","ts":5}"#;
+        let back_old: EntryRecord = serde_json::from_str(&old).unwrap();
+        assert!(matches!(back_old.kind, EntryKind::Navigate));
+    }
 
     #[test]
     fn m23_5_per_topic_lambda_dir_decays_faster_than_file() {
@@ -1452,6 +1684,7 @@ mod tests {
             lambda_dir: Some(0.5),
             lambda_file: Some(0.001),
             lambda_unified: None,
+            lambda_cmd: None,
             max_entries: None,
             ignore_patterns: Vec::new(),
         });
@@ -1463,7 +1696,7 @@ mod tests {
                 r
             }),
         ];
-        let r = replay(&[], &events, 100, 100);
+        let r = replay(&[], &events, 100, 100, 100);
         let d = r.iter().find(|e| e.topic == "dir").unwrap();
         let fl = r.iter().find(|e| e.topic == "file").unwrap();
         assert!(
@@ -1484,6 +1717,7 @@ mod tests {
             lambda_dir: None,
             lambda_file: None,
             lambda_unified: None,
+            lambda_cmd: None,
             max_entries: Some(10),
             ignore_patterns: Vec::new(),
         });
@@ -1499,6 +1733,7 @@ mod tests {
             &store.events_since(0).unwrap(),
             store.type_tick("dir").unwrap(),
             store.type_tick("file").unwrap(),
+            store.type_tick("cmd").unwrap(),
         );
         let dir_n = entries.iter().filter(|e| e.topic == "dir").count();
         assert_eq!(dir_n, 9, "清理至 90%（上限 10）");
@@ -1526,8 +1761,8 @@ mod tests {
         ];
         // 不设书签的同访问序列。
         let events_without = [(1u64, rec("/w/proj", 1)), (3, rec("/w/proj", 3))];
-        let r_with = replay(&[], &events_with, 10, 10);
-        let r_without = replay(&[], &events_without, 10, 10);
+        let r_with = replay(&[], &events_with, 10, 10, 10);
+        let r_without = replay(&[], &events_without, 10, 10, 10);
         let e_with = r_with.iter().find(|e| e.path == "/w/proj").unwrap();
         let e_without = r_without.iter().find(|e| e.path == "/w/proj").unwrap();
         assert_eq!(e_with.keyword, "", "unbook 后 keyword 清空");
@@ -1593,7 +1828,13 @@ mod tests {
 
         let dir_tick = store.type_tick("dir").unwrap();
         let file_tick = store.type_tick("file").unwrap();
-        let entries = replay(&[], &store.events_since(0).unwrap(), dir_tick, file_tick);
+        let entries = replay(
+            &[],
+            &store.events_since(0).unwrap(),
+            dir_tick,
+            file_tick,
+            file_tick,
+        );
         let dir_entries: Vec<&ScoredEntry> = entries.iter().filter(|e| e.topic == "dir").collect();
         assert!(
             dir_entries.len() <= 30,
@@ -1676,7 +1917,7 @@ mod tests {
         let now_dir = store.type_tick("dir").unwrap();
         let now_file = store.type_tick("file").unwrap();
         let events = store.events_since(since).unwrap();
-        let ranked = replay(&snapshot, &events, now_dir, now_file);
+        let ranked = replay(&snapshot, &events, now_dir, now_file, now_file);
         drop(store);
 
         assert!(
@@ -1803,7 +2044,7 @@ mod tests {
         ev_file.clock = 60;
         let events = vec![(100u64, ev_dir), (60u64, ev_file)];
 
-        let live = replay(&snapshot, &events, 100, 60);
+        let live = replay(&snapshot, &events, 100, 60, 60);
         let merged = replay_merge(&snapshot, &events, 0);
         for m in &merged {
             let l = live
