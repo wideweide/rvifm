@@ -177,11 +177,38 @@ pub(crate) fn expand_home_arg(arg: &str) -> String {
 /// 意义）。输出序：左 pane 遍历（`=` 同名同大小 / `!` 同名异大小 /
 /// `<` 仅左），随后右 pane 独有（`>` 仅右）。路径取实际所在侧
 /// （=/!/< 左，> 右），size 透传供属性列展示。
+/// M29-1：bycontents 单文件读取上限（沿用 M11/AUDIT-17 护栏口径
+/// 64MB）——超限不读内容、按"不同（未知）"计并在完成消息中标注。
+pub(crate) const COMPARE_MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// M29-1：SHA-256 分块哈希（1MB 块，不整读入内存）。
+fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read as _;
+    let mut f = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let digest = hasher.finalize();
+    // digest 0.11 的 GenericArray 不再实现 LowerHex——手写小写 hex（零新增依赖）。
+    Ok(digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>())
+}
+
 pub(crate) fn compare_panes(
     left_base: &Path,
     left: &[crate::tab::FileItem],
     right_base: &Path,
     right: &[crate::tab::FileItem],
+    by_contents: bool,
 ) -> Vec<crate::search::ResultItem> {
     let right_sizes: std::collections::HashMap<&str, u64> = right
         .iter()
@@ -194,7 +221,29 @@ pub(crate) fn compare_panes(
         match right_sizes.get(item.name.as_str()) {
             Some(&rsize) => {
                 matched.insert(item.name.as_str());
-                let marker = if rsize == item.size { "=" } else { "!" };
+                let marker = if rsize != item.size {
+                    "!"
+                } else if !by_contents {
+                    "="
+                } else {
+                    // M29-1：同尺寸 → 内容判定；超限/读取失败按不同（未知）计。
+                    let lp = left_base.join(&item.name);
+                    let rp = right_base.join(&item.name);
+                    let oversized = rsize > COMPARE_MAX_FILE_BYTES;
+                    let same = if oversized {
+                        None
+                    } else {
+                        sha256_file(&lp)
+                            .ok()
+                            .zip(sha256_file(&rp).ok())
+                            .map(|(a, b)| a == b)
+                    };
+                    match same {
+                        Some(true) => "=",
+                        Some(false) => "!",
+                        None => "!",
+                    }
+                };
                 out.push(compare_item(left_base, item, marker));
             }
             None => out.push(compare_item(left_base, item, "<")),

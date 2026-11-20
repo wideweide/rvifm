@@ -1675,8 +1675,17 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             })
         }
         Some("compare") => {
-            // M24-8：左右 pane 目录对比（按文件名+大小）→ 结果虚拟目录
-            // （只读，复用 Tab.results；= 同 / ! 异 / < 仅左 / > 仅右）。
+            // M24-8：左右 pane 目录对比（缺省按文件名+大小）→ 结果虚拟目录
+            //（只读，复用 Tab.results；= 同 / ! 异 / < 仅左 / > 仅右）。
+            // M29-1：`:compare bycontents` 内容判定（SHA-256，护栏内）；
+            // `:compare byname` 显式等价缺省；未知模式可读错误。
+            let mode = parts.next().unwrap_or("byname");
+            if mode != "byname" && mode != "bycontents" {
+                return Err(format!(
+                    "compare: 未知模式 {mode}（bynames 缺省 byname；内容对比用 bycontents）"
+                ));
+            }
+            let by_contents = mode == "bycontents";
             let (left_base, left_items) = {
                 let tab = state.active_tab();
                 match &tab.location {
@@ -1691,7 +1700,13 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
                 }
             };
-            let items = compare_panes(&left_base, &left_items, &right_base, &right_items);
+            let items = compare_panes(
+                &left_base,
+                &left_items,
+                &right_base,
+                &right_items,
+                by_contents,
+            );
             let (same, diff, only_l, only_r) = (
                 items.iter().filter(|i| i.text == "=").count(),
                 items.iter().filter(|i| i.text == "!").count(),
@@ -1701,14 +1716,19 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let total = items.len();
             state.active_tab_mut().enter_results(
                 crate::search::SearchKind::Compare,
-                String::new(),
+                if by_contents {
+                    "bycontents".to_owned()
+                } else {
+                    String::new()
+                },
                 left_base,
                 items,
                 false,
             );
             Ok(ExecOutcome::Done {
                 msg: Some(format!(
-                    "compare: 相同 {same} · 不同 {diff} · 仅左 {only_l} · 仅右 {only_r}（共 {total}）"
+                    "compare{mode_note}: 相同 {same} · 不同 {diff} · 仅左 {only_l} · 仅右 {only_r}（共 {total}）",
+                    mode_note = if by_contents { " bycontents" } else { "" }
                 )),
             })
         }

@@ -77,7 +77,9 @@ rvifm 帮助（vim 风格文件管理器）
   :tree           树视图（只读，depth 可选；再执行恢复平铺）
   :archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]
                   归档创建（tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
-  :compare        左右 pane 目录对比（= 同 / ! 异 / < 仅左 / > 仅右；只读）
+  :compare [byname|bycontents]
+                  左右 pane 目录对比（缺省按名+大小；bycontents 用 SHA-256
+                  内容判定，单文件 64MB 上限、超限按不同计；只读）
   :view           同 w
   Ctrl-G          文件详情对话框
   :jobs           后台作业列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情、Esc 关闭）

@@ -620,7 +620,13 @@ fn m248_compare_panes_marks_and_order() {
     fs::create_dir(right.path().join("subdir")).unwrap(); // 同名目录不参与
     let lpane = crate::tab::Pane::from_physical(left.path(), cfg.clone()).unwrap();
     let rpane = crate::tab::Pane::from_physical(right.path(), cfg).unwrap();
-    let items = compare_panes(left.path(), &lpane.entries, right.path(), &rpane.entries);
+    let items = compare_panes(
+        left.path(),
+        &lpane.entries,
+        right.path(),
+        &rpane.entries,
+        false,
+    );
     let names: Vec<String> = items.iter().map(|i| i.text.clone()).collect();
     assert_eq!(
         names,
@@ -802,6 +808,116 @@ fn m249_cancelled_job_body_stops_with_summary() {
         }
         other => panic!("expected Cancelled, got {other:?}"),
     }
+}
+
+#[test]
+fn m291_compare_bycontents_marks_and_guards() {
+    // M29-1：bycontents——同尺寸同内容 =、同尺寸异内容 !（byname 误判 =
+    // 的回归守护）、超限不读内容按不同计；缺省 byname 行为不回归。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("same.txt"), "SAME").unwrap();
+    fs::write(tmp.path().join("l-diff.txt"), "AAAA").unwrap();
+    let r = TempDir::new().unwrap();
+    fs::write(r.path().join("same.txt"), "SAME").unwrap();
+    fs::write(r.path().join("l-diff.txt"), "BBBB").unwrap();
+    fs::write(r.path().join("r-only.txt"), "R").unwrap();
+
+    // 超限文件（sparse set_len 到 64MB+1，不实际写入内容）。
+    let big_l = tmp.path().join("big.bin");
+    let big_r = r.path().join("big.bin");
+    std::fs::File::create(&big_l)
+        .unwrap()
+        .set_len(crate::app::keys::COMPARE_MAX_FILE_BYTES + 1)
+        .unwrap();
+    std::fs::File::create(&big_r)
+        .unwrap()
+        .set_len(crate::app::keys::COMPARE_MAX_FILE_BYTES + 1)
+        .unwrap();
+
+    let mk = |dir: &Path| crate::tab::Tab::from_physical(dir, Config::default()).unwrap();
+    let lpane = mk(tmp.path());
+    let rpane = mk(r.path());
+
+    // byname（缺省口径）：same/l-diff 同尺寸 → =；big 同尺寸 → =。
+    let by_name = compare_panes(
+        lpane.location.base_dir(),
+        &lpane.entries,
+        rpane.location.base_dir(),
+        &rpane.entries,
+        false,
+    );
+    let get = |items: &[crate::search::ResultItem], name: &str| {
+        items
+            .iter()
+            .find(|i| i.path.file_name().map(|n| n == name).unwrap_or(false))
+            .map(|i| i.text.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(get(&by_name, "same.txt"), "=");
+    assert_eq!(get(&by_name, "l-diff.txt"), "=", "同尺寸同名按大小判同");
+    assert_eq!(get(&by_name, "big.bin"), "=", "同尺寸按大小判同");
+    assert_eq!(get(&by_name, "r-only.txt"), ">");
+
+    // bycontents：l-diff 同尺寸异内容 → !；big 超限 → !（不读内容）。
+    let by_content = compare_panes(
+        lpane.location.base_dir(),
+        &lpane.entries,
+        rpane.location.base_dir(),
+        &rpane.entries,
+        true,
+    );
+    assert_eq!(get(&by_content, "same.txt"), "=", "同内容判同");
+    assert_eq!(get(&by_content, "l-diff.txt"), "!", "同尺寸异内容判异");
+    assert_eq!(get(&by_content, "big.bin"), "!", "超限按不同（未知）计");
+    assert_eq!(get(&by_content, "r-only.txt"), ">");
+}
+
+#[cfg(unix)]
+#[test]
+fn m291_compare_command_modes() {
+    // M29-1：:compare 无参=byname（M24-8 不回归）、bycontents 进结果视图
+    //（query 标注模式）、未知模式可读错误。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 右 pane 指向另一目录（M14 双 pane）。
+    let r = TempDir::new().unwrap();
+    fs::write(r.path().join("a.txt"), "A").unwrap();
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(r.path(), Config::default()).unwrap();
+
+    assert_eq!(exec_command(&mut state, "compare"), Ok(false));
+    let tab = state.active_tab();
+    assert!(tab.in_results());
+    assert_eq!(
+        tab.results.as_ref().unwrap().query,
+        "",
+        "缺省无 query（byname）"
+    );
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+
+    assert_eq!(exec_command(&mut state, "compare bycontents"), Ok(false));
+    let tab = state.active_tab();
+    assert_eq!(
+        tab.results.as_ref().unwrap().query,
+        "bycontents",
+        "结果视图标注模式"
+    );
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+
+    assert_eq!(
+        exec_command(&mut state, "compare byname"),
+        Ok(false),
+        "显式 byname 合法"
+    );
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+    assert!(
+        exec_command(&mut state, "compare bogus").is_err(),
+        "未知模式可读错误"
+    );
 }
 
 #[test]
