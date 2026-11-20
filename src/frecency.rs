@@ -640,6 +640,31 @@ pub fn record_command_line(
     record_impl(db_path, pending, &record)
 }
 
+/// M30-4：命令书签查找——cmd topic 中 keyword 精确匹配 `tag` 的最高
+/// 分条目的命令文本；无命中返回 None。只读（open_store_readonly）。
+/// 多字符 keyword 在 `o` 搜索享高优先级由 M23-1 既有 grade_for 保证。
+pub fn cmd_bookmark_at(db_path: &Path, tag: &str) -> Option<String> {
+    let store = open_store_readonly_at(db_path).ok().flatten()?;
+    let snapshot = store.snapshot_all().ok()?;
+    let events = store
+        .last_compaction()
+        .and_then(|s| store.events_since(s))
+        .unwrap_or_default();
+    let now_dir = store.type_tick("dir").ok()?;
+    let now_file = store.type_tick("file").ok()?;
+    let now_cmd = store.type_tick("cmd").ok()?;
+    replay(&snapshot, &events, now_dir, now_file, now_cmd)
+        .into_iter()
+        .filter(|e| e.topic == "cmd" && e.keyword == tag)
+        .max_by(|a, b| a.score.total_cmp(&b.score))
+        .map(|e| e.path)
+}
+
+/// M30-4：全局路径形态（TUI `:cmdmark` 消费用）。
+pub fn cmd_bookmark(tag: &str) -> Option<String> {
+    cmd_bookmark_at(&crate::config::frecency_db_path(), tag)
+}
+
 /// M30-3：dir/file 条目分数映射（`:` Tab 补全加权用）——只读
 ///（open_store_readonly，AUDIT-1 口径：不合并 pending、不写库）；
 /// 库缺失 → 空表（调用方零成本字典序兜底）。
@@ -1602,6 +1627,37 @@ mod tests {
 
     /// M23-5 测试互斥：SETTINGS 为进程级 OnceLock，并行测试会互相覆盖。
     static SETTINGS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn m304_cmd_bookmark_set_lookup_unbook() {
+        // M30-4：命令书签——keyword 事件（cmd topic）设置/查找/清除
+        //（unbook 保留历史）；无命中返回 None。
+        let _g = SETTINGS_TEST_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let pending = tmp.path().join("events.pending");
+        // 先记录命令（Command 事件）再设书签。
+        record_command_line(&db, &pending, "sort name desc", &[]).unwrap();
+        set_keyword_topic_at(&db, &pending, "sort name desc", "cmd", "sd").unwrap();
+        assert_eq!(
+            cmd_bookmark_at(&db, "sd").as_deref(),
+            Some("sort name desc"),
+            "书签命中返回命令文本"
+        );
+        assert_eq!(cmd_bookmark_at(&db, "zz"), None, "未命中 None");
+        // 清除（空 keyword 事件）→ 查找 None，历史（Command 事件）保留。
+        set_keyword_topic_at(&db, &pending, "sort name desc", "cmd", "").unwrap();
+        assert_eq!(cmd_bookmark_at(&db, "sd"), None, "清除后无命中");
+        let store = Store::open(&db).unwrap();
+        let cmds: Vec<_> = store
+            .events_since(0)
+            .unwrap()
+            .into_iter()
+            .filter(|(_, r)| matches!(r.kind, EntryKind::Command))
+            .collect();
+        assert_eq!(cmds.len(), 1, "unbook 保留 Command 历史");
+        assert_eq!(cmds[0].1.path, "sort name desc");
+    }
 
     #[test]
     fn m302_cmd_history_ranked_order_and_merge() {

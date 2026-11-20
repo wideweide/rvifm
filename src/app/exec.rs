@@ -2556,6 +2556,46 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             hist_move(state, forward, &mut m)?;
             Ok(ExecOutcome::Done { msg: m })
         }
+        Some("cmdmark") => {
+            // M30-4：命令书签——`:cmdmark <chars> [命令文本]`。
+            // 无命令文本 → 对最近一条会话命令（record_cmd_history 尾部）设
+            // keyword；`-` 清除（unbook 保留历史，M23-2 语义）；chars 限
+            // 字母数字（与 marks 同口径）≤32 字符。
+            let tag = parts
+                .next()
+                .ok_or_else(|| "cmdmark: 缺少书签名（:cmdmark <chars> [命令文本]）".to_owned())?;
+            if tag.chars().count() > 32 {
+                return Err("cmdmark: 书签名过长（≤32 字符）".to_owned());
+            }
+            let clear = tag == "-";
+            if !clear && !tag.chars().all(|c| c.is_ascii_alphanumeric()) {
+                return Err("cmdmark: 书签名限字母数字".to_owned());
+            }
+            // 命令文本：显式参数（空白连接）> 最近会话命令。
+            let rest = parts.collect::<Vec<&str>>().join(" ");
+            let cmd_text = if !rest.is_empty() {
+                rest
+            } else {
+                let hist = state.cmd_history.clone();
+                let Some(last) = hist.last() else {
+                    return Err("cmdmark: 无可标记的命令（会话历史为空）".to_owned());
+                };
+                last.clone()
+            };
+            if cmd_text.trim().is_empty() {
+                return Err("cmdmark: 命令文本为空".to_owned());
+            }
+            let kw_str = if clear { String::new() } else { tag.to_owned() };
+            crate::frecency::set_keyword_topic_now(&cmd_text, "cmd", &kw_str)
+                .map_err(|e| format!("cmdmark: 写入失败: {e}"))?;
+            Ok(ExecOutcome::Done {
+                msg: Some(if clear {
+                    "已清除命令书签（历史保留）".to_owned()
+                } else {
+                    format!("已设置命令书签 {kw_str}: {cmd_text}")
+                }),
+            })
+        }
         Some("keyword") => {
             // M16 NAV-1：设置/清除当前目录书签 keyword（append-only 事件）。
             // `-` 清除；归档视图与 `..` 行已被前置守卫拒绝。

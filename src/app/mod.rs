@@ -139,6 +139,8 @@ pub(crate) enum InputMode {
         comp: Option<CmdComp>,
         /// M30-2：命令历史排序快照（进入命令模式时构建；↑/↓ 数据源）。
         ranked: Vec<String>,
+        /// M30-4：`'` 书签 tag 等待态。
+        cmd_mark_pending: bool,
     },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。`origin` 为进入搜索时
     /// 的光标位置（FIX-1：实时跳转的起点，Esc 时恢复）。
@@ -565,12 +567,35 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     draft,
                     comp,
                     ranked,
+                    cmd_mark_pending,
                 } => {
                     // M24-6：↑/↓ 浏览会话命令历史（内存 Vec，无持久化）；
                     // M24-7：Tab 补全焦点 pane 条目名（前缀循环，>10 候选
                     // 显示计数）；其余按键走原有单键处理。
                     let handled = if key.kind == KeyEventKind::Press {
                         match key.code {
+                            // M30-4：' 置位 tag 等待态（字面回显）；
+                            // tag 字符消费展开为书签命令；Esc 取消还原。
+                            KeyCode::Char('\'') if !*cmd_mark_pending => {
+                                *cmd_mark_pending = true;
+                                input.push('\'');
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Char(c) if *cmd_mark_pending => {
+                                *cmd_mark_pending = false;
+                                input.pop();
+                                match crate::frecency::cmd_bookmark(&c.to_string()) {
+                                    Some(cmd) => {
+                                        *input = cmd;
+                                        *hist_pos = None;
+                                        Some(CmdInput::Continue)
+                                    }
+                                    None => {
+                                        msg = Some(format!("无命令书签 {c}"));
+                                        Some(CmdInput::Continue)
+                                    }
+                                }
+                            }
                             KeyCode::Up => {
                                 hist_prev(ranked, hist_pos, input, draft);
                                 Some(CmdInput::Continue)
@@ -1023,6 +1048,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     &state.cmd_history,
                                     CMD_RANKED_LIMIT,
                                 ),
+                                cmd_mark_pending: false,
                             };
                         }
                         Outcome::EnterSearch => {
@@ -1326,6 +1352,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                                 &state.cmd_history,
                                                 CMD_RANKED_LIMIT,
                                             ),
+                                            cmd_mark_pending: false,
                                         };
                                     }
                                 }
@@ -1451,6 +1478,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     &state.cmd_history,
                                     CMD_RANKED_LIMIT,
                                 ),
+                                cmd_mark_pending: false,
                             };
                         }
                     }

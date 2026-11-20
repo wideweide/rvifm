@@ -921,6 +921,38 @@ fn m291_compare_command_modes() {
 }
 
 #[test]
+fn m304_cmdmark_command_arm() {
+    // 写全局 frecency DB（set_keyword_topic_now）——STORE 锁串行。
+    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    // M30-4：:cmdmark——默认标最近会话命令；显式命令文本；`-` 清除；
+    // 非法书签名/空历史可读错误。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 无历史 → 错误。
+    assert!(exec_command(&mut state, "cmdmark sd").is_err(), "空历史");
+    // 造一条会话历史（直接调 record_cmd_history）。
+    state.record_cmd_history("sort name desc");
+    assert_eq!(
+        exec_command(&mut state, "cmdmark sd"),
+        Ok(false),
+        "标最近命令"
+    );
+    // 显式命令文本覆盖。
+    assert_eq!(exec_command(&mut state, "cmdmark q quit-all"), Ok(false));
+    // 非法书签名。
+    assert!(
+        exec_command(&mut state, "cmdmark a-b").is_err(),
+        "非字母数字"
+    );
+    assert!(exec_command(&mut state, "cmdmark").is_err(), "缺参");
+    assert_eq!(
+        exec_command(&mut state, "cmdmark -"),
+        Ok(false),
+        "清除形态合法"
+    );
+}
+
+#[test]
 fn m303_completion_candidates_weighted() {
     // M30-3：Tab 补全候选加权——frecency 分数条目降序在前，无记录条目
     // 字典序兜底；空 scores → 全量字典序（M24-7 行为不变）。
@@ -4459,6 +4491,7 @@ fn feat1_mouse_ignored_in_input_modes() {
         hist_pos: None,
         draft: String::new(),
         comp: None,
+        cmd_mark_pending: false,
         ranked: Vec::new(),
     };
     let ev = MouseEvent {
@@ -6394,6 +6427,7 @@ fn renders_command_line_and_message() {
         hist_pos: None,
         draft: String::new(),
         comp: None,
+        cmd_mark_pending: false,
         ranked: Vec::new(),
     };
     terminal
