@@ -930,7 +930,7 @@
 - [x] M0–M13 普通 bullet 全部转复选框（137 条，已完成的里程碑勾 `[x]`）；`grep` 核验对应区间（§2–§13）无残留裸 bullet；条目文字零改动。（2026-11-20）
 
 ### M31-5 pdf-visual 护栏实测
-- [ ] rustc ≥1.97 环境执行语料回归 + `cargo check --features pdf-visual` 通过；耗时/内存峰值数据（含 100MB 级语料）记入 NOTES；护栏数值未改动。
+- [~] rustc ≥1.97 环境执行语料回归 + `cargo check --features pdf-visual` 通过；耗时/内存峰值数据（含 100MB 级语料）记入 NOTES；护栏数值未改动。（**deferred**：本机 rustc 1.95 < exprim 要求 1.97；CI stable 双平台编译验证持续绿（M11-15 job）；语料实测随 M11-6 场景或后续 CI job 补验）
 
 ## 32. M32 — 远端健壮性与会话扩展（见 SPEC M32 节）
 
