@@ -920,6 +920,70 @@ fn m291_compare_command_modes() {
     );
 }
 
+/// M32-1 测试用 mock：可控返回连接类/非连接类错误（as_any None →
+/// 不支持重连——原样放回并上浮，不 panic）。
+struct ReconnectMockFs {
+    err: crate::remote::RemoteError,
+}
+
+impl crate::remote::RemoteFs for ReconnectMockFs {
+    fn list(
+        &self,
+        _path: &Path,
+    ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+        Err(self.err.clone())
+    }
+    fn read(&self, _path: &Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+        Err(self.err.clone())
+    }
+    fn metadata(
+        &self,
+        _path: &Path,
+    ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+        Err(self.err.clone())
+    }
+}
+
+#[test]
+fn m321_remote_with_reconnect_guards() {
+    // M32-1：reconnect 包装——非连接类错误原样上浮；mock 后端（as_any
+    // None）连接类错误也给可读"不支持自动重连"；会话被放回不丢失。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+    // 非连接类（Auth）：原样上浮。
+    state.remote_sessions.insert(
+        "r".to_owned(),
+        Box::new(ReconnectMockFs {
+            err: crate::remote::RemoteError::Auth("denied".to_owned()),
+        }),
+    );
+    let r = remote_with_reconnect(&mut state, "r", |b| b.list(Path::new("/")));
+    assert!(
+        r.is_err() && r.unwrap_err().contains("认证失败"),
+        "非连接类上浮"
+    );
+    assert!(state.remote_sessions.contains_key("r"), "会话放回");
+
+    // 连接类（Connect）+ mock（as_any None）：可读"不支持自动重连"。
+    state.remote_sessions.insert(
+        "r".to_owned(),
+        Box::new(ReconnectMockFs {
+            err: crate::remote::RemoteError::Connect("net down".to_owned()),
+        }),
+    );
+    let r = remote_with_reconnect(&mut state, "r", |b| b.list(Path::new("/")));
+    assert!(
+        r.is_err() && r.unwrap_err().contains("不支持自动重连"),
+        "连接类 + mock → 可读拒绝"
+    );
+    assert!(state.remote_sessions.contains_key("r"), "会话放回");
+
+    // 会话不存在："会话已断开"。
+    let r = remote_with_reconnect(&mut state, "nope", |b| b.list(Path::new("/")));
+    assert!(r.is_err() && r.unwrap_err().contains("会话已断开"));
+}
+
 #[test]
 fn m304_cmdmark_command_arm() {
     // 写全局 frecency DB（set_keyword_topic_now）——STORE 锁串行。

@@ -116,6 +116,31 @@ enum SftpCmd {
 #[derive(Clone)]
 pub struct SftpBackend {
     cmd_tx: std_mpsc::Sender<SftpCmd>,
+    /// M32-1：连接参数副本（自动重连用；口令认证的会话 password 不落盘
+    /// ——重连仅密钥路径可行，口令会话重连失败给可读提示）。
+    pub(crate) params: SftpParams,
+    /// M32-1：口令（仅口令认证会话持有；密钥会话 None。进程内存驻留，
+    /// 不写任何文件——M22-3 口令不落盘边界不变）。
+    pub(crate) password: Option<String>,
+}
+
+impl SftpBackend {
+    /// M32-1：连接类错误自动重连一次——按原参数（含口令，若会话以口令
+    /// 认证）重建后端；成功返回新后端，失败返回原始错误。非连接类错误
+    /// 原样返回 Err（is_connection_class 口径）。
+    /// M32-1：&self 形态（downcast 后调用）——用 params/password 副本
+    /// 重建后端；成功返回新后端（password 副本随迁）。
+    pub fn reconnect_from_params(&self) -> Result<Self, RemoteError> {
+        let r = if let Some(pw) = &self.password {
+            SftpBackend::connect_with_password(&self.params, pw)
+        } else {
+            SftpBackend::connect(&self.params)
+        };
+        r.map(|mut b| {
+            b.password = self.password.clone();
+            b
+        })
+    }
 }
 
 impl std::fmt::Debug for SftpBackend {
@@ -138,7 +163,11 @@ impl SftpBackend {
             .map_err(|e| RemoteError::Other(format!("线程启动失败: {e}")))?;
         // 连接结果（actor 侧已含 CONNECT_TIMEOUT）。
         match init_rx.recv_timeout(CONNECT_TIMEOUT + OP_TIMEOUT) {
-            Ok(Ok(())) => Ok(Self { cmd_tx }),
+            Ok(Ok(())) => Ok(Self {
+                cmd_tx,
+                params: params.clone(),
+                password: None,
+            }),
             Ok(Err(e)) => Err(e),
             Err(std_mpsc::RecvTimeoutError::Timeout) => {
                 Err(RemoteError::Timeout("连接超时".to_owned()))
@@ -162,7 +191,11 @@ impl SftpBackend {
             })
             .map_err(|e| RemoteError::Other(format!("线程启动失败: {e}")))?;
         match init_rx.recv_timeout(CONNECT_TIMEOUT + OP_TIMEOUT) {
-            Ok(Ok(())) => Ok(Self { cmd_tx }),
+            Ok(Ok(())) => Ok(Self {
+                cmd_tx,
+                params: params.clone(),
+                password: Some(password.to_owned()),
+            }),
             Ok(Err(e)) => Err(e),
             Err(std_mpsc::RecvTimeoutError::Timeout) => {
                 Err(RemoteError::Timeout("连接超时".to_owned()))
@@ -195,6 +228,10 @@ impl SftpBackend {
 }
 
 impl RemoteFs for SftpBackend {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn list(&self, path: &Path) -> Result<Vec<RemoteEntry>, RemoteError> {
         let path = path_to_string(path);
         self.call(|resp| SftpCmd::List { path, resp })

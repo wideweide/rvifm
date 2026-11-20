@@ -1063,20 +1063,69 @@ pub(crate) fn current_remote_path(state: &AppState) -> Option<PathBuf> {
     }
 }
 
+/// M32-1：远端操作连接类错误自动重连——`f` 以当前会话执行；返回连接
+/// 类错误（Connect/Timeout）时按会话原参数重连一次，成功则替换会话并
+/// 以新后端重试 `f`；重连失败/非连接类错误原样上浮。会话不在表（已
+/// 断开无参数可解析）→ "会话已断开"。
+pub(crate) fn remote_with_reconnect<R>(
+    state: &mut AppState,
+    name: &str,
+    f: impl Fn(&dyn crate::remote::RemoteFs) -> Result<R, crate::remote::RemoteError>,
+) -> Result<R, String> {
+    // 第一遍：现有会话。
+    let first = match state.remote_sessions.get(name) {
+        Some(b) => f(b.as_ref()),
+        None => return Err("remote: 会话已断开".to_owned()),
+    };
+    match first {
+        Ok(v) => Ok(v),
+        Err(e) if e.is_connection_class() => {
+            // downcast 拿 SftpBackend（含 params/password 副本）重连；
+            // Mock 测试后端无重连语义——原样放回并上浮错误。
+            let any = state.remote_sessions.remove(name);
+            let Some(b) = any else {
+                return Err(format!("remote: {e}"));
+            };
+            match b
+                .as_any()
+                .and_then(|a| a.downcast_ref::<crate::remote::sftp::SftpBackend>())
+            {
+                Some(sb) => match sb.reconnect_from_params() {
+                    Ok(nb) => {
+                        state.remote_sessions.insert(name.to_owned(), Box::new(nb));
+                    }
+                    Err(e2) => {
+                        state.remote_sessions.insert(name.to_owned(), b);
+                        return Err(format!("remote: 重连失败: {e2}（原错误: {e}）"));
+                    }
+                },
+                None => {
+                    state.remote_sessions.insert(name.to_owned(), b);
+                    return Err(format!("remote: {e}（该会话类型不支持自动重连）"));
+                }
+            }
+            // 重连成功 → 替换会话并重试操作。
+            let retry = match state.remote_sessions.get(name) {
+                Some(b) => f(b.as_ref()),
+                None => return Err("remote: 会话已断开".to_owned()),
+            };
+            retry.map_err(|e2| format!("remote: 重连后仍失败: {e2}"))
+        }
+        Err(e) => Err(format!("remote: {e}")),
+    }
+}
+
 pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> Result<(), String> {
+    // M32-1：list 经重连包装（连接类错误自动重连一次后重试）。
     let (name, items) = {
         let tab = state.active_tab();
         let Location::Remote { remote, .. } = &tab.location else {
             return Err("remote: 非远端视图".to_owned());
         };
         let name = remote.clone();
-        let Some(backend) = state.remote_sessions.get(&name) else {
-            return Err("remote: 会话已断开".to_owned());
-        };
-        (
-            name,
-            backend.list(path).map_err(|e| format!("remote: {e}"))?,
-        )
+        let path_buf = path.to_path_buf();
+        let items = remote_with_reconnect(state, &name, |b| b.list(&path_buf))?;
+        (name, items)
     };
     let cfg = state.config.clone();
     let tab = state.active_tab_mut();

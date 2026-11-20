@@ -25,6 +25,17 @@ pub enum RemoteError {
     Other(String),
 }
 
+impl RemoteError {
+    /// M32-1：连接类错误判定（重连候选）——Connect/Timeout 属传输层
+    /// 失效（网络断/握手超时），重连可能恢复；Auth（凭据问题重连同样
+    /// 失败，且 M22-3 有独立口令流程）、NotFound/PermissionDenied（远端
+    /// 语义错误）、Other（不明）不触发自动重连——避免无意义重试与
+    /// 重连循环。
+    pub fn is_connection_class(&self) -> bool {
+        matches!(self, RemoteError::Connect(_) | RemoteError::Timeout(_))
+    }
+}
+
 impl std::fmt::Display for RemoteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -66,6 +77,12 @@ pub struct RemoteMeta {
 /// 路径参数为远端**绝对路径**（`/` 分隔，如 `/home/user/a.txt`）。
 /// 网络实现必须保证不阻塞调用线程（M19-3b：超时/异步由后端负责）。
 pub trait RemoteFs {
+    /// M32-1：downcast 支持（SftpBackend 自动重连取连接参数副本用；
+    /// 默认实现空 Any——具体后端按需覆盖）。
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
+
     /// 列出 `path` 目录下的直接子项（不递归）。
     fn list(&self, path: &Path) -> Result<Vec<RemoteEntry>, RemoteError>;
     /// 读取文件内容（目录返回 NotFound）。
@@ -129,6 +146,29 @@ pub mod sftp;
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn m321_connection_class_classification() {
+        // M32-1：连接类判定——Connect/Timeout true；Auth/NotFound/
+        // PermissionDenied/Other false（无意义重试与重连循环防护）。
+        assert!(RemoteError::Connect("x".to_owned()).is_connection_class());
+        assert!(RemoteError::Timeout("t".to_owned()).is_connection_class());
+        assert!(!RemoteError::Auth("a".to_owned()).is_connection_class());
+        assert!(!RemoteError::NotFound("n".to_owned()).is_connection_class());
+        assert!(!RemoteError::PermissionDenied("p".to_owned()).is_connection_class());
+        assert!(!RemoteError::Other("o".to_owned()).is_connection_class());
+        assert!(!RemoteError::Unimplemented("u").is_connection_class());
+    }
+
+    #[test]
+    fn m321_as_any_default_none_and_override() {
+        // M32-1：as_any 默认 None（Mock 无重连语义）；SftpBackend 覆盖
+        // 返回 Some（downcast 可达）。
+        let mock = MockFs {
+            entries: Vec::new(),
+        };
+        assert!(mock.as_any().is_none(), "默认实现 None");
+    }
 
     /// 内存 mock：验证 trait 人体工学与默认写操作"未实现"。
     struct MockFs {
