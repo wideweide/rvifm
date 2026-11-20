@@ -119,7 +119,9 @@ fn apply_session(state: &mut AppState, file: &SessionFile) -> Vec<String> {
         //（不 panic、不阻塞其余 tab）；physical 行为与 M25-1 一致。
         let mut built = match tab.kind.as_str() {
             "archive" => {
-                let (host, inner) = match tab.path.split_once(':') {
+                // Windows 盘符（C:/...）含冒号——rsplit_once 以最后的冒号
+                // 切分（inner 无冒号语义；host 保留完整盘符路径）。
+                let (host, inner) = match tab.path.rsplit_once(':') {
                     Some((h, i)) => (PathBuf::from(h), PathBuf::from(i)),
                     None => continue,
                 };
