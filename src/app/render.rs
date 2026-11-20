@@ -657,8 +657,63 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
+    if let InputMode::JobDetail { index } = mode {
+        // M28-3：作业详情覆盖层——类型/源/目标/状态/进度/速率/时长。
+        let mut lines: Vec<Line> = Vec::new();
+        if let Some(j) = state.jobs.get(*index) {
+            let status = match &j.status {
+                crate::state::JobStatus::Running => {
+                    if j.cancel_requested
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        "取消中…"
+                    } else if j.pause.load(std::sync::atomic::Ordering::Relaxed) {
+                        "已暂停（p 恢复）"
+                    } else {
+                        "运行中"
+                    }
+                }
+                crate::state::JobStatus::Done { summary } => summary,
+                crate::state::JobStatus::Cancelled { summary } => summary,
+                crate::state::JobStatus::Failed { err } => err,
+            };
+            let elapsed = j.started.elapsed().as_secs();
+            let rate = j
+                .progress
+                .rate_bytes_per_sec()
+                .map(|r| format!("{}/s", crate::tab::format_size(r as u64)))
+                .unwrap_or_else(|| "—".to_owned());
+            lines.push(Line::from(format!("作业: #{id}", id = j.id)));
+            lines.push(Line::from(format!("类型: {}", j.kind)));
+            lines.push(Line::from(format!("来源: {}", j.src.replace('\\', "/"))));
+            lines.push(Line::from(format!("目标: {}", j.target.replace('\\', "/"))));
+            lines.push(Line::from(format!(
+                "条目: {}/{} 项",
+                j.progress.processed(),
+                j.src_count
+            )));
+            lines.push(Line::from(format!(
+                "已传输: {}",
+                crate::tab::format_size(j.progress.bytes())
+            )));
+            lines.push(Line::from(format!("速率（5s 滑动平均）: {rate}")));
+            lines.push(Line::from(format!("已运行: {elapsed}s")));
+            lines.push(Line::from(format!("状态: {status}")));
+            lines.push(Line::from(String::new()));
+            lines.push(Line::from("任意键返回 :jobs"));
+        } else {
+            lines.push(Line::from("（作业不存在）"));
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(ratatui::widgets::Block::bordered().title("作业详情（Enter）")),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::Jobs { cursor } = mode {
-        // M13-8 → M24-9：后台作业菜单覆盖层（j/k 选择、x 取消、Esc/q 关闭）。
+        // M13-8 → M24-9 → M28-3：后台作业菜单覆盖层
+        //（j/k 选择、x 取消、p 暂停/恢复、Enter 详情、Esc/q 关闭）。
         let mut lines: Vec<Line> = Vec::new();
         if state.jobs.is_empty() {
             lines.push(Line::from("（无后台作业）"));
@@ -670,6 +725,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                             .load(std::sync::atomic::Ordering::Relaxed)
                         {
                             "取消中…".to_owned()
+                        } else if j.pause.load(std::sync::atomic::Ordering::Relaxed) {
+                            "已暂停".to_owned()
                         } else {
                             "运行中".to_owned()
                         }
@@ -697,7 +754,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         }
         frame.render_widget(
             Paragraph::new(lines).block(
-                ratatui::widgets::Block::bordered().title("后台作业（j/k=选择 x=取消 Esc=关闭）"),
+                ratatui::widgets::Block::bordered()
+                    .title("后台作业（j/k=选择 x=取消 p=暂停/恢复 Enter=详情 Esc=关闭）"),
             ),
             frame.area(),
         );
@@ -969,6 +1027,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         return;
     }
     let status = match mode {
+        InputMode::JobDetail { .. } => {
+            Line::from(String::new()) // 详情覆盖层提前 return，不可达（M28-3）
+        }
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
         InputMode::ArchiveDialog { input, field, .. } => {
             // M25-4：对话框激活字段指示（覆盖层提前 return，实际不可达）。

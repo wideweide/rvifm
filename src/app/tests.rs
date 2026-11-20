@@ -698,46 +698,46 @@ fn m249_jobs_menu_key_navigation_and_cancel() {
     let tmp = TempDir::new().unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     let dst = TempDir::new().unwrap();
-    state.add_job("copy", 1, &dst.path().display().to_string());
-    state.add_job("move", 2, &dst.path().display().to_string());
+    state.add_job(
+        "copy",
+        1,
+        tmp.path().display().to_string().as_str(),
+        &dst.path().display().to_string(),
+    );
+    state.add_job(
+        "move",
+        2,
+        tmp.path().display().to_string().as_str(),
+        &dst.path().display().to_string(),
+    );
     let mut cursor = 0usize;
     let mut msg = None;
     // j/k 移动并钳制。
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('j'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('j'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert_eq!(cursor, 1);
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('j'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('j'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert_eq!(cursor, 1, "尾端钳制");
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('k'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('k'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert_eq!(cursor, 0);
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('k'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('k'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert_eq!(cursor, 0, "首端钳制");
     // x 取消运行中作业：置位标志 + 提示，不关闭。
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('x'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('x'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert!(
         state.jobs[0]
             .cancel_requested
@@ -747,36 +747,28 @@ fn m249_jobs_menu_key_navigation_and_cancel() {
     assert!(msg.as_deref().unwrap().contains("#1"));
     // 已请求过 → 不重复提示；非 Running（Done）→ 忽略。
     msg = None;
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('x'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('x'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert!(msg.is_none(), "已请求过不重复提示");
     state.jobs[1].status = crate::state::JobStatus::Done {
         summary: "move: 2 项完成".to_owned(),
     };
-    assert!(!jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('x'),
-        &mut msg
-    ));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('x'), &mut msg),
+        JobsMenuOutcome::None
+    );
     assert!(msg.is_none(), "非运行中作业不可取消");
-    // Esc 关闭。
-    assert!(jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Esc,
-        &mut msg
-    ));
-    assert!(jobs_menu_key(
-        &mut state,
-        &mut cursor,
-        KeyCode::Char('q'),
-        &mut msg
-    ));
+    // Esc/q 关闭。
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Esc, &mut msg),
+        JobsMenuOutcome::Close
+    );
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('q'), &mut msg),
+        JobsMenuOutcome::Close
+    );
 }
 
 #[test]
@@ -786,13 +778,20 @@ fn m249_cancelled_job_body_stops_with_summary() {
     let dst = TempDir::new().unwrap();
     // 标志预置 → 第一个文件边界即取消：无操作、Cancelled 摘要。
     let cancel = std::sync::atomic::AtomicBool::new(true);
+    let pause = std::sync::atomic::AtomicBool::new(false);
+    let progress = crate::state::JobProgress::default();
+    let controls = crate::state::JobControls {
+        cancel: &cancel,
+        pause: &pause,
+        progress: &progress,
+    };
     let (ops, status) = execute_job_body(
         "copy",
         &["a.txt".to_owned()],
         tmp.path(),
         dst.path(),
         0,
-        &cancel,
+        &controls,
     );
     assert!(ops.is_empty(), "取消后不产生新操作");
     assert!(!dst.path().join("a.txt").exists(), "未执行复制");
@@ -806,12 +805,84 @@ fn m249_cancelled_job_body_stops_with_summary() {
 }
 
 #[test]
+fn m283_jobs_pause_toggle_and_detail_outcome() {
+    // M28-3：p 暂停/恢复切换（仅 Running 生效）+ Enter 打开详情 outcome。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.add_job("copy", 1, "src", "d");
+    state.add_job("move", 1, "src", "d");
+    let mut cursor = 0usize;
+    let mut msg = None;
+    // p → 暂停；再 p → 恢复。
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('p'), &mut msg),
+        JobsMenuOutcome::None
+    );
+    assert!(state.job_paused(0), "作业已暂停");
+    assert!(msg.as_deref().unwrap().contains("已暂停"));
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('p'), &mut msg),
+        JobsMenuOutcome::None
+    );
+    assert!(!state.job_paused(0), "已恢复");
+    // 非运行中（Done）→ p 无效。
+    state.jobs[0].status = crate::state::JobStatus::Done {
+        summary: "done".to_owned(),
+    };
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Char('p'), &mut msg),
+        JobsMenuOutcome::None
+    );
+    assert!(!state.job_paused(0));
+    // Enter → 打开详情；空列表 → 不打开。
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Enter, &mut msg),
+        JobsMenuOutcome::OpenDetail
+    );
+    state.jobs.clear();
+    assert_eq!(
+        jobs_menu_key(&mut state, &mut cursor, KeyCode::Enter, &mut msg),
+        JobsMenuOutcome::None
+    );
+}
+
+#[test]
+fn m283_job_detail_overlay_renders_fields() {
+    // M28-3：详情覆盖层——类型/来源/目标/条目/状态字段可见。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.add_job("copy", 2, "src-dir", "d");
+    state.jobs[0].status = crate::state::JobStatus::Running;
+    let mode = InputMode::JobDetail { index: 0 };
+    let compact = |buf: &ratatui::backend::TestBackend, w: u16, h: u16| {
+        (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf.buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<String>()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all = compact(terminal.backend(), 70, 14);
+    assert!(all.contains("作业详情"), "标题: {all}");
+    assert!(all.contains("类型:copy"), "类型字段: {all}");
+    assert!(all.contains("目标:d"), "目标字段: {all}");
+    assert!(all.contains("条目:0/2项"), "进度字段: {all}");
+    assert!(all.contains("任意键返回:jobs"), "返回提示: {all}");
+}
+
+#[test]
 fn m249_jobs_overlay_render_selection_and_cancel_state() {
     let tmp = TempDir::new().unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     // AUDIT-18：目标只作展示串，用固定短标签——宿主临时路径长度（如
     // 8.3 短名/多级 Temp）不再截断 70 列断言里的"取消中"。
-    let id = state.add_job("copy", 1, "d");
+    let id = state.add_job("copy", 1, "src", "d");
     state.jobs[0]
         .cancel_requested
         .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -872,7 +943,11 @@ fn run_job_from_outcome(
                 &base,
                 &target,
                 0,
-                &std::sync::atomic::AtomicBool::new(false),
+                &crate::state::JobControls {
+                    cancel: &std::sync::atomic::AtomicBool::new(false),
+                    pause: &std::sync::atomic::AtomicBool::new(false),
+                    progress: &crate::state::JobProgress::default(),
+                },
             );
             let n = ops.len();
             for uop in ops {
@@ -1245,7 +1320,11 @@ fn m254_dialog_keys_flow() {
         &base,
         &target,
         0,
-        &std::sync::atomic::AtomicBool::new(false),
+        &crate::state::JobControls {
+            cancel: &std::sync::atomic::AtomicBool::new(false),
+            pause: &std::sync::atomic::AtomicBool::new(false),
+            progress: &crate::state::JobProgress::default(),
+        },
     );
     assert!(
         matches!(status, crate::state::JobStatus::Done { .. }),
@@ -2582,7 +2661,11 @@ fn tag_batch_operations() {
         tmp.path(),
         &sub,
         0,
-        &std::sync::atomic::AtomicBool::new(false),
+        &crate::state::JobControls {
+            cancel: &std::sync::atomic::AtomicBool::new(false),
+            pause: &std::sync::atomic::AtomicBool::new(false),
+            progress: &crate::state::JobProgress::default(),
+        },
     );
     assert_eq!(ops.len(), 2, "两条复制各一条撤销记录");
     for op in ops {
@@ -2608,7 +2691,11 @@ fn tag_batch_operations() {
         tmp.path(),
         &sub,
         0,
-        &std::sync::atomic::AtomicBool::new(false),
+        &crate::state::JobControls {
+            cancel: &std::sync::atomic::AtomicBool::new(false),
+            pause: &std::sync::atomic::AtomicBool::new(false),
+            progress: &crate::state::JobProgress::default(),
+        },
     );
     assert_eq!(ops.len(), 2);
     assert!(matches!(status, crate::state::JobStatus::Done { .. }));
@@ -3355,7 +3442,12 @@ fn jobs_lifecycle_and_jobs_menu_render() {
     let dst = TempDir::new().unwrap();
 
     // 登记 Running 作业。
-    let id = state.add_job("copy", 2, &dst.path().display().to_string());
+    let id = state.add_job(
+        "copy",
+        2,
+        tmp.path().display().to_string().as_str(),
+        &dst.path().display().to_string(),
+    );
     assert_eq!(id, 1);
     assert!(matches!(
         state.jobs[0].status,
@@ -3400,7 +3492,7 @@ fn jobs_lifecycle_and_jobs_menu_render() {
     assert!(dst.path().join("j1.txt").exists());
 
     // 失败状态流转。
-    let id2 = state.add_job("move", 1, "no-such-dir");
+    let id2 = state.add_job("move", 1, "src", "no-such-dir");
     state.apply_job_update(crate::state::JobUpdate {
         job_id: id2,
         tab_id: 0,
@@ -8012,13 +8104,20 @@ fn m261_archive_job_cancelled_before_start() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let cancel = std::sync::atomic::AtomicBool::new(true);
+    let pause = std::sync::atomic::AtomicBool::new(false);
+    let progress = crate::state::JobProgress::default();
+    let controls = crate::state::JobControls {
+        cancel: &cancel,
+        pause: &pause,
+        progress: &progress,
+    };
     let (ops, status) = execute_job_body(
         "archive:zip:md5",
         &["a.txt".to_owned()],
         tmp.path(),
         &tmp.path().join("out.zip"),
         0,
-        &cancel,
+        &controls,
     );
     assert!(ops.is_empty(), "取消不产生撤销记录");
     assert!(

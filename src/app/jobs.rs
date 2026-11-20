@@ -88,6 +88,19 @@ pub(crate) fn refresh_on_fs_change(state: &mut AppState) -> Option<String> {
     None
 }
 
+/// M28-3：文件边界暂停等待——`pause` 置位期间每 100ms 轮询，
+/// `cancel` 置位立即返回（暂停中取消即刻终止，不无限阻塞）。
+fn wait_while_paused(
+    pause: &std::sync::atomic::AtomicBool,
+    cancel: &std::sync::atomic::AtomicBool,
+) {
+    while pause.load(std::sync::atomic::Ordering::Relaxed)
+        && !cancel.load(std::sync::atomic::Ordering::Relaxed)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 /// M26-1：归档创建作业体——`rest = "<fmt>:<cs>"`。产物（含扩展名补齐 /
 /// 同名不覆盖，由 `create_archive` 保证）与校验文件各入一条撤销记录；
 /// 失败 Err（半成品已由 create_archive 清理）。
@@ -97,10 +110,12 @@ fn execute_archive_job(
     base: &std::path::Path,
     target: &std::path::Path,
     tab_id: usize,
-    cancel: &std::sync::atomic::AtomicBool,
+    controls: &crate::state::JobControls<'_>,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
     use crate::state::{JobStatus, UndoableOp};
-    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+    // M28-3：暂停在启动边界等待（归档创建为整段原子操作，无逐项暂停点）。
+    wait_while_paused(controls.pause, controls.cancel);
+    if controls.cancel.load(std::sync::atomic::Ordering::Relaxed) {
         return (
             Vec::new(),
             JobStatus::Cancelled {
@@ -174,19 +189,21 @@ pub(crate) fn execute_job_body(
     base: &std::path::Path,
     target: &std::path::Path,
     tab_id: usize,
-    cancel: &std::sync::atomic::AtomicBool,
+    controls: &crate::state::JobControls<'_>,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
     // M26-1：归档创建分支——整段原子（不做逐项取消；取消在启动前检查）。
     if let Some(rest) = op.strip_prefix("archive:") {
-        return execute_archive_job(rest, names, base, target, tab_id, cancel);
+        return execute_archive_job(rest, names, base, target, tab_id, controls);
     }
     let mut ops = Vec::new();
     let mut first_err: Option<String> = None;
     let mut done = 0usize;
     let mut cancelled = false;
     for name in names {
+        // M28-3：文件边界等待暂停（cancel 优先——暂停中取消立即终止）。
+        wait_while_paused(controls.pause, controls.cancel);
         // M24-9：协作式取消——文件边界检查标志，已完成项保留（u 可逆）。
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if controls.cancel.load(std::sync::atomic::Ordering::Relaxed) {
             cancelled = true;
             break;
         }
@@ -194,6 +211,8 @@ pub(crate) fn execute_job_body(
         if !src.exists() {
             continue; // 已消失的条目跳过
         }
+        // M28-3：字节计数（传输量按源条目大小）。
+        let item_bytes = std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
         let result = if op == "copy" {
             crate::ops::copy_to(tab_id, &src, target)
         } else {
@@ -203,6 +222,13 @@ pub(crate) fn execute_job_body(
             Ok(uop) => {
                 ops.push(uop);
                 done += 1;
+                use std::sync::atomic::Ordering;
+                controls.progress.processed.fetch_add(1, Ordering::Relaxed);
+                controls
+                    .progress
+                    .bytes
+                    .fetch_add(item_bytes, Ordering::Relaxed);
+                controls.progress.record();
             }
             Err(e) => {
                 if first_err.is_none() {
@@ -231,32 +257,65 @@ pub(crate) fn execute_job_body(
 
 /// M24-9：`:jobs` 覆盖层单键——j/k 选择、x 取消运行中作业、Esc/q 关闭。
 /// 返回是否关闭覆盖层。
+/// M28-3：`:jobs` 菜单按键结果——None 继续菜单、Close 关闭、
+/// OpenDetail 打开详情覆盖层（Enter）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JobsMenuOutcome {
+    None,
+    Close,
+    OpenDetail,
+}
+
 pub(crate) fn jobs_menu_key(
     state: &mut AppState,
     cursor: &mut usize,
     code: KeyCode,
     msg: &mut Option<String>,
-) -> bool {
+) -> JobsMenuOutcome {
     match code {
-        KeyCode::Esc | KeyCode::Char('q') => true,
+        KeyCode::Esc | KeyCode::Char('q') => JobsMenuOutcome::Close,
         KeyCode::Char('j') | KeyCode::Down => {
             if !state.jobs.is_empty() {
                 *cursor = (*cursor + 1).min(state.jobs.len() - 1);
             }
-            false
+            JobsMenuOutcome::None
         }
         KeyCode::Char('k') | KeyCode::Up => {
             *cursor = cursor.saturating_sub(1);
-            false
+            JobsMenuOutcome::None
         }
         KeyCode::Char('x') => {
             if state.cancel_job(*cursor) {
                 let id = state.jobs[*cursor].id;
                 *msg = Some(format!("已请求取消作业 #{id}（当前文件完成后停止）"));
             }
-            false
+            JobsMenuOutcome::None
         }
-        _ => false,
+        KeyCode::Char('p') => {
+            // M28-3：暂停/恢复切换（仅 Running 且未请求取消的作业生效）。
+            let (id, paused) = match state.jobs.get(*cursor) {
+                Some(j) => (j.id, state.job_paused(*cursor)),
+                None => (0, false),
+            };
+            if state.pause_job(*cursor, !paused) {
+                *msg = Some(if paused {
+                    format!("作业 #{id} 已恢复运行")
+                } else {
+                    format!("作业 #{id} 已暂停（p 恢复；文件边界生效）")
+                });
+            } else {
+                *msg = Some("该作业不可暂停（已完成/已取消/归档启动前场景）".to_owned());
+            }
+            JobsMenuOutcome::None
+        }
+        KeyCode::Enter => {
+            if !state.jobs.is_empty() {
+                JobsMenuOutcome::OpenDetail
+            } else {
+                JobsMenuOutcome::None
+            }
+        }
+        _ => JobsMenuOutcome::None,
     }
 }
 
@@ -276,6 +335,8 @@ pub(crate) fn spawn_job_thread(
     job_id: usize,
     spec: &JobSpec<'_>,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pause: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    progress: std::sync::Arc<crate::state::JobProgress>,
 ) {
     let tx = job_tx.clone();
     let op = spec.op.to_owned();
@@ -284,7 +345,12 @@ pub(crate) fn spawn_job_thread(
     let target = spec.target.to_path_buf();
     let tab_id = spec.tab_id;
     std::thread::spawn(move || {
-        let (ops, status) = execute_job_body(&op, &names, &base, &target, tab_id, &cancel);
+        let controls = crate::state::JobControls {
+            cancel: &cancel,
+            pause: &pause,
+            progress: &progress,
+        };
+        let (ops, status) = execute_job_body(&op, &names, &base, &target, tab_id, &controls);
         let _ = tx.send(crate::state::JobUpdate {
             job_id,
             tab_id,
@@ -292,4 +358,70 @@ pub(crate) fn spawn_job_thread(
             status,
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::AtomicBool;
+    use tempfile::TempDir;
+
+    #[test]
+    fn wait_while_paused_returns_immediately_when_cancelled() {
+        // M28-3：暂停中取消——不阻塞、立即返回（cancel 优先）。
+        let pause = AtomicBool::new(true);
+        let cancel = AtomicBool::new(true);
+        let t0 = std::time::Instant::now();
+        wait_while_paused(&pause, &cancel);
+        assert!(t0.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn wait_while_paused_exits_when_unpaused() {
+        // M28-3：暂停阻塞——另一线程 50ms 后解除，等待正常退出。
+        let pause = std::sync::Arc::new(AtomicBool::new(true));
+        let cancel = AtomicBool::new(false);
+        let p2 = pause.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            p2.store(false, std::sync::atomic::Ordering::Relaxed);
+        });
+        let t0 = std::time::Instant::now();
+        wait_while_paused(&pause, &cancel);
+        assert!(
+            t0.elapsed() >= std::time::Duration::from_millis(40),
+            "暂停期间确实等待"
+        );
+        assert!(t0.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn job_body_counts_progress_and_bytes() {
+        // M28-3：进度计数——processed/bytes 随复制条目递增。
+        let tmp = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "AAAA").unwrap();
+        fs::write(tmp.path().join("b.txt"), "BB").unwrap();
+        let cancel = AtomicBool::new(false);
+        let pause = AtomicBool::new(false);
+        let progress = crate::state::JobProgress::default();
+        let controls = crate::state::JobControls {
+            cancel: &cancel,
+            pause: &pause,
+            progress: &progress,
+        };
+        let (ops, status) = execute_job_body(
+            "copy",
+            &["a.txt".to_owned(), "b.txt".to_owned()],
+            tmp.path(),
+            dst.path(),
+            0,
+            &controls,
+        );
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(status, crate::state::JobStatus::Done { .. }));
+        assert_eq!(progress.processed(), 2);
+        assert_eq!(progress.bytes(), 6, "按源条目大小计（4+2 字节）");
+    }
 }

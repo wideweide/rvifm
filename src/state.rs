@@ -155,16 +155,85 @@ pub enum JobStatus {
     },
 }
 
+/// M28-3：作业进度计数与采样（线程共享；detail 覆盖层读取）。
+/// `record` 节流采样（500ms）；`rate_bytes_per_sec` 取最近 5 秒窗口的
+/// 滑动平均速率。锁中毒降级：unwrap_or_else 取守卫数据（AUDIT-8 口径）。
+#[derive(Debug, Default)]
+pub struct JobProgress {
+    pub processed: std::sync::atomic::AtomicU64,
+    pub bytes: std::sync::atomic::AtomicU64,
+    samples: std::sync::Mutex<Vec<(std::time::Instant, u64, u64)>>,
+}
+
+impl JobProgress {
+    pub(crate) fn record(&self) {
+        use std::sync::atomic::Ordering;
+        let now = std::time::Instant::now();
+        if let Ok(mut v) = self.samples.lock() {
+            let due = v
+                .last()
+                .map(|(t, _, _)| now.duration_since(*t).as_millis() >= 500)
+                .unwrap_or(true);
+            if due {
+                v.push((
+                    now,
+                    self.processed.load(Ordering::Relaxed),
+                    self.bytes.load(Ordering::Relaxed),
+                ));
+                let len = v.len();
+                if len > 64 {
+                    v.drain(..len - 64);
+                }
+            }
+        }
+    }
+
+    /// 滑动窗口速率（字节/秒）——最近 5 秒窗口首尾样本差；样本不足 → None。
+    pub fn rate_bytes_per_sec(&self) -> Option<f64> {
+        let v = self.samples.lock().unwrap_or_else(|e| e.into_inner());
+        let cutoff = std::time::Instant::now() - std::time::Duration::from_secs(5);
+        let (t0, _, b0) = *v.iter().find(|(t, _, _)| *t >= cutoff)?;
+        let (t1, _, b1) = *v.last()?;
+        let dt = t1.duration_since(t0).as_secs_f64();
+        if dt <= 0.0 {
+            return None;
+        }
+        Some((b1.saturating_sub(b0)) as f64 / dt)
+    }
+
+    pub(crate) fn processed(&self) -> u64 {
+        self.processed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn bytes(&self) -> u64 {
+        self.bytes.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 /// 后台作业记录（M13-8）：`:jobs` 菜单展示。M24-9 增协作式取消标志——
 /// `cancel_requested` 由覆盖层 `x` 置位，后台线程在文件边界检查后终止。
+/// M28-3 增暂停标志（文件边界等待）、进度计数/采样（详情覆盖层）、
+/// 启动时刻与来源目录（详情显示）。
 #[derive(Debug, Clone)]
 pub struct Job {
     pub id: usize,
     pub kind: String,
     pub src_count: usize,
+    pub src: String,
     pub target: String,
     pub status: JobStatus,
     pub cancel_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub pause: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub progress: std::sync::Arc<JobProgress>,
+    pub started: std::time::Instant,
+}
+
+/// M28-3：作业执行控制束——取消/暂停标志与进度计数（降低
+/// execute_job_body 参数量；生命周期同调用方）。
+pub struct JobControls<'a> {
+    pub cancel: &'a std::sync::atomic::AtomicBool,
+    pub pause: &'a std::sync::atomic::AtomicBool,
+    pub progress: &'a JobProgress,
 }
 
 /// 后台线程完成后的更新包（主线程收包后入撤销栈并刷新）。
@@ -289,17 +358,45 @@ impl AppState {
     }
 
     /// 登记新后台作业并返回其 id（M13-8）。
-    pub fn add_job(&mut self, kind: &str, src_count: usize, target: &str) -> usize {
+    pub fn add_job(&mut self, kind: &str, src_count: usize, src: &str, target: &str) -> usize {
         let id = self.jobs.len() + 1;
         self.jobs.push(Job {
             id,
             kind: kind.to_owned(),
             src_count,
+            src: src.to_owned(),
             target: target.to_owned(),
             status: JobStatus::Running,
             cancel_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pause: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            progress: std::sync::Arc::new(JobProgress::default()),
+            started: std::time::Instant::now(),
         });
         id
+    }
+
+    /// M28-3：暂停/恢复运行中作业（协作式——后台线程在文件边界等待）。
+    /// 返回是否生效（越界 / 非 Running / 已请求取消 → false）。
+    pub fn pause_job(&mut self, index: usize, pause: bool) -> bool {
+        let Some(job) = self.jobs.get(index) else {
+            return false;
+        };
+        if job.status != JobStatus::Running
+            || job
+                .cancel_requested
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return false;
+        }
+        job.pause.store(pause, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
+    /// M28-3：作业是否处于暂停态（Running 且标志置位）。
+    pub fn job_paused(&self, index: usize) -> bool {
+        self.jobs.get(index).is_some_and(|j| {
+            j.status == JobStatus::Running && j.pause.load(std::sync::atomic::Ordering::Relaxed)
+        })
     }
 
     /// M24-9：请求取消运行中作业（协作式——后台线程在文件边界检查标志）。
@@ -571,7 +668,7 @@ mod tests {
         // AUDIT-12：后台作业回包语义——ops 入撤销栈（可 u 撤销）、状态
         // 终态化、changed 反映"有撤销记录"。
         let mut s = AppState::new(tab("C:/a"));
-        let id = s.add_job("copy", 1, "C:/b");
+        let id = s.add_job("copy", 1, "C:/a", "C:/b");
         assert!(matches!(s.jobs[0].status, JobStatus::Running));
         let changed = s.apply_job_update(crate::state::JobUpdate {
             job_id: id,

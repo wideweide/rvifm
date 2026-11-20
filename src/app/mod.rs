@@ -191,8 +191,12 @@ pub(crate) enum InputMode {
     SortDialog { cursor: usize, desc: bool },
     /// 文件详情对话框（M13-5，Ctrl-G）：打开时读取完成，任意键关闭。
     FileInfo { path: PathBuf, text: String },
-    /// 后台作业菜单（M13-8：`:jobs`；M24-9 增选择游标与 x 取消）。
+    /// 后台作业菜单（M13-8：`:jobs`；M24-9 增选择游标与 x 取消；
+    /// M28-3 增 p 暂停/恢复与 Enter 详情）。
     Jobs { cursor: usize },
+    /// 作业详情覆盖层（M28-3）：显示类型/源/目标/进度/速率/时长；
+    /// 任意键返回 `:jobs`。
+    JobDetail { index: usize },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
         input: String,
@@ -377,15 +381,18 @@ fn spawn_job_from_plan(
 ) -> Option<String> {
     // :jobs 展示作业种类取 op 首段（"archive:zip:md5" → "archive"）。
     let kind = op.split(':').next().unwrap_or(op);
-    let job_id = state.add_job(kind, names.len(), &target.display().to_string());
+    let src_dir = base.display().to_string();
+    let job_id = state.add_job(kind, names.len(), &src_dir, &target.display().to_string());
     // M24-9：取消标志与线程共享（覆盖层 x 置位）。
+    // M28-3：暂停标志与进度计数随作业共享（p 切换；详情覆盖层读取）。
     // AUDIT-8：去 expect——登记异常时不 spawn（可读提示），不留悬挂线程。
-    let Some(cancel) = state
-        .jobs
-        .iter()
-        .find(|j| j.id == job_id)
-        .map(|j| j.cancel_requested.clone())
-    else {
+    let Some((cancel, pause, progress)) = state.jobs.iter().find(|j| j.id == job_id).map(|j| {
+        (
+            j.cancel_requested.clone(),
+            j.pause.clone(),
+            j.progress.clone(),
+        )
+    }) else {
         return Some("后台作业登记异常：未找到作业".to_owned());
     };
     let tab_id = state.active;
@@ -400,6 +407,8 @@ fn spawn_job_from_plan(
             tab_id,
         },
         cancel,
+        pause,
+        progress,
     );
     None
 }
@@ -1147,11 +1156,23 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     mode = InputMode::Normal;
                 }
                 InputMode::Jobs { cursor } => {
-                    // M13-8 → M24-9：j/k 选择、x 取消运行中作业、Esc/q 关闭。
-                    if key.kind == KeyEventKind::Press
-                        && jobs_menu_key(&mut state, cursor, key.code, &mut msg)
-                    {
-                        mode = InputMode::Normal;
+                    // M13-8 → M24-9：j/k 选择、x 取消；M28-3：p 暂停/恢复、
+                    // Enter 详情、Esc/q 关闭。
+                    if key.kind == KeyEventKind::Press {
+                        match jobs_menu_key(&mut state, cursor, key.code, &mut msg) {
+                            JobsMenuOutcome::None => {}
+                            JobsMenuOutcome::Close => mode = InputMode::Normal,
+                            JobsMenuOutcome::OpenDetail => {
+                                mode = InputMode::JobDetail { index: *cursor };
+                            }
+                        }
+                    }
+                }
+                InputMode::JobDetail { index } => {
+                    // M28-3：详情覆盖层——任意键返回 :jobs（Esc/q/Enter 语义一致）。
+                    if key.kind == KeyEventKind::Press {
+                        let _ = index;
+                        mode = InputMode::Jobs { cursor: *index };
                     }
                 }
                 InputMode::ArchiveDialog {
