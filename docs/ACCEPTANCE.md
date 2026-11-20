@@ -945,9 +945,9 @@
 - [ ] 断电/跨会话场景：`.part` 残留不破坏目标目录浏览（可读提示或清理策略实现定）。
 
 ### M32-3 会话持久化范围扩展
-- [ ] 归档内退出 → 重启恢复归档位置（host 存在即进入；host 缺失 → 降级跳过 + 可读提示）。
-- [ ] 远端位置退出 → 重启恢复并重连；失败 → 跳过该 tab + 状态栏提示，不 panic。
-- [ ] 物理 tab 恢复行为不回归（M25-1）；session.toml 损坏静默降级。
+- [x] 归档内退出 → 重启恢复归档位置（host 存在即 navigate_to 进入；host 缺失 → 跳过 + 提示"归档文件缺失"）。（2026-11-20：SessionTab.kind（physical 缺省向后兼容）+ apply_session kind 分派；m323 归档 roundtrip + 缺失跳过断言——fixture 用 M26 pack 真归档）
+- [x] 远端位置退出 → 重启恢复并重连（remote_reconnect_session 复用 M32-1）；失败 → 跳过该 tab + 提示（restore_session_with_hints 返回跳过原因，run() 接状态栏），不 panic。（2026-11-20：m323 remote 序列化格式 remote:path + 重连失败跳过断言）
+- [x] 物理 tab 恢复行为不回归（M25-1）；session.toml 损坏静默降级。（2026-11-20：m251 断言迁移（非物理 tab 现入会话）后全绿；kind 字段 serde default = 旧文件零迁移）
 
 ### M32-4 M32 文档收尾
 - [ ] help/README 补重连与续传行为；ACCEPTANCE §32 全勾后批次关闭。
