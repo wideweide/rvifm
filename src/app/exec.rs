@@ -418,6 +418,145 @@ pub(crate) fn copy_to_clipboard(text: &str) {
     }
 }
 
+/// M24-8/M29-1：执行左右 pane 目录对比并进入结果视图。
+/// `by_contents` = 内容判定（SHA-256，M29-1）；返回状态栏消息。
+pub(crate) fn run_compare(state: &mut AppState, by_contents: bool) -> Result<String, String> {
+    let (left_base, left_items) = {
+        let tab = state.active_tab();
+        match &tab.location {
+            Location::Physical(p) => (p.clone(), tab.entries.clone()),
+            _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
+        }
+    };
+    let (right_base, right_items) = {
+        let tab = state.active_tab();
+        match &tab.right.location {
+            Location::Physical(p) => (p.clone(), tab.right.entries.clone()),
+            _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
+        }
+    };
+    let items = compare_panes(
+        &left_base,
+        &left_items,
+        &right_base,
+        &right_items,
+        by_contents,
+    );
+    let (same, diff, only_l, only_r) = (
+        items.iter().filter(|i| i.text == "=").count(),
+        items.iter().filter(|i| i.text == "!").count(),
+        items.iter().filter(|i| i.text == "<").count(),
+        items.iter().filter(|i| i.text == ">").count(),
+    );
+    let total = items.len();
+    state.active_tab_mut().enter_results(
+        crate::search::SearchKind::Compare,
+        if by_contents {
+            "bycontents".to_owned()
+        } else {
+            String::new()
+        },
+        left_base,
+        items,
+        false,
+    );
+    Ok(format!(
+        "compare{mode_note}: 相同 {same} · 不同 {diff} · 仅左 {only_l} · 仅右 {only_r}（共 {total}）",
+        mode_note = if by_contents { " bycontents" } else { "" }
+    ))
+}
+
+/// M29-2：对比结果视图同步操作（dp/do）。`put` = dp（取回另一侧条目到
+/// 当前侧，仅 `>` 条目）；否则 do（删除当前侧多出条目，仅 `<`，可恢复
+/// 路径 + 撤销栈）。`!`/`=` 条目可读拒绝（copy 链路无覆盖确认流——
+/// SIMPLIFIED）。操作后按原模式重建对比结果（前缀变化正确）。
+pub(crate) fn compare_sync(state: &mut AppState, msg: &mut Option<String>, put: bool) {
+    let kind_ok = state
+        .active_tab()
+        .results
+        .as_ref()
+        .map(|r| r.kind == crate::search::SearchKind::Compare)
+        .unwrap_or(false);
+    if !kind_ok {
+        *msg = Some("dp/do 仅在 :compare 对比结果视图可用".to_owned());
+        return;
+    }
+    let (by_contents, left_base, item) = {
+        let tab = state.active_tab();
+        let Some(r) = tab.results.as_ref() else {
+            return;
+        };
+        let by_contents = r.query == "bycontents";
+        let Location::Physical(left_base) = tab.location.clone() else {
+            *msg = Some("compare: 需要 pane 为物理目录视图".to_owned());
+            return;
+        };
+        let Some(item) = r.items.get(tab.cursor).cloned() else {
+            *msg = Some("compare: 无选中对比条目".to_owned());
+            return;
+        };
+        (by_contents, left_base, item)
+    };
+    let tab_id = state.active;
+    let marker = item.text.as_str();
+    let name = item
+        .path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if put {
+        // dp：取回另一侧（`>` 条目 path 指向右侧）复制到当前侧（左）。
+        if marker != ">" {
+            *msg = Some(match marker {
+                "<" => "dp: 该条目仅当前侧存在（另一侧无内容可取回；删除当前侧用 do）".to_owned(),
+                "!" => "dp: 两侧内容不同——不支持覆盖同步（SIMPLIFIED），请手动处理".to_owned(),
+                _ => "dp: 两侧相同，无需同步".to_owned(),
+            });
+            return;
+        }
+        match crate::ops::copy_to(tab_id, &item.path, &left_base) {
+            Ok(op) => {
+                state.undo_stack.push(op);
+                *msg = Some(format!("已取回 {name} 到当前侧（u 可撤销）"));
+            }
+            Err(e) => {
+                *msg = Some(format!("dp 失败: {e}"));
+                return;
+            }
+        }
+    } else {
+        // do：删除当前侧多出条目（`<` 条目 path 指向左侧当前侧；
+        // 可恢复路径 = 应用内暂存 + 撤销栈）。
+        if marker != "<" {
+            *msg = Some(match marker {
+                ">" => "do: 该条目仅另一侧存在（当前侧无此文件）".to_owned(),
+                "!" => "do: 两侧内容不同——不支持覆盖同步（SIMPLIFIED），请手动处理".to_owned(),
+                _ => "do: 两侧相同，无需删除".to_owned(),
+            });
+            return;
+        }
+        let mut m = None;
+        let escalate = execute_delete(state, &mut m, item.path.clone(), false, None);
+        if escalate.is_some() {
+            *msg = Some("do: 权限不足（可 l 定位后在普通视图删除）".to_owned());
+            return;
+        }
+        if let Some(e) = m {
+            *msg = Some(format!("do 失败: {e}"));
+            return;
+        }
+        *msg = Some(format!("已删除当前侧 {name}（暂存可恢复，u 可撤销）"));
+    }
+    // 操作后按原模式重建对比结果（左 pane 列表先刷新）；
+    // 操作消息与刷新摘要合并展示。
+    let op_msg = msg.clone().unwrap_or_default();
+    refresh_tab_panes(state, tab_id);
+    match run_compare(state, by_contents) {
+        Ok(m) => *msg = Some(format!("{op_msg}；{m}")),
+        Err(e) => *msg = Some(format!("{op_msg}；重建失败: {e}")),
+    }
+}
+
 /// M28-2：结构化重命名变换形态。
 #[derive(Debug, Clone)]
 enum RenameTransform {
@@ -1512,7 +1651,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     // M17 SRCH：结果视图只读——find/grep 重执行与退出类命令豁免。
     if state.active_tab().in_results() {
         match cmd_head {
-            Some("find" | "grep" | "sort" | "q" | "quit" | "help" | "theme") => {}
+            // M29-2：compare 重执行豁免——dp/do 后可重跑对比（结果替换）。
+            Some("find" | "grep" | "sort" | "compare" | "q" | "quit" | "help" | "theme") => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
             }
@@ -1675,62 +1815,17 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             })
         }
         Some("compare") => {
-            // M24-8：左右 pane 目录对比（缺省按文件名+大小）→ 结果虚拟目录
-            //（只读，复用 Tab.results；= 同 / ! 异 / < 仅左 / > 仅右）。
+            // M24-8：左右 pane 目录对比（缺省按文件名+大小）→ 结果虚拟目录。
             // M29-1：`:compare bycontents` 内容判定（SHA-256，护栏内）；
             // `:compare byname` 显式等价缺省；未知模式可读错误。
             let mode = parts.next().unwrap_or("byname");
             if mode != "byname" && mode != "bycontents" {
                 return Err(format!(
-                    "compare: 未知模式 {mode}（bynames 缺省 byname；内容对比用 bycontents）"
+                    "compare: 未知模式 {mode}（缺省 byname；内容对比用 bycontents）"
                 ));
             }
-            let by_contents = mode == "bycontents";
-            let (left_base, left_items) = {
-                let tab = state.active_tab();
-                match &tab.location {
-                    Location::Physical(p) => (p.clone(), tab.entries.clone()),
-                    _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
-                }
-            };
-            let (right_base, right_items) = {
-                let tab = state.active_tab();
-                match &tab.right.location {
-                    Location::Physical(p) => (p.clone(), tab.right.entries.clone()),
-                    _ => return Err("compare: 需要 pane 为物理目录视图".to_owned()),
-                }
-            };
-            let items = compare_panes(
-                &left_base,
-                &left_items,
-                &right_base,
-                &right_items,
-                by_contents,
-            );
-            let (same, diff, only_l, only_r) = (
-                items.iter().filter(|i| i.text == "=").count(),
-                items.iter().filter(|i| i.text == "!").count(),
-                items.iter().filter(|i| i.text == "<").count(),
-                items.iter().filter(|i| i.text == ">").count(),
-            );
-            let total = items.len();
-            state.active_tab_mut().enter_results(
-                crate::search::SearchKind::Compare,
-                if by_contents {
-                    "bycontents".to_owned()
-                } else {
-                    String::new()
-                },
-                left_base,
-                items,
-                false,
-            );
-            Ok(ExecOutcome::Done {
-                msg: Some(format!(
-                    "compare{mode_note}: 相同 {same} · 不同 {diff} · 仅左 {only_l} · 仅右 {only_r}（共 {total}）",
-                    mode_note = if by_contents { " bycontents" } else { "" }
-                )),
-            })
+            let msg = run_compare(state, mode == "bycontents")?;
+            Ok(ExecOutcome::Done { msg: Some(msg) })
         }
         Some("archive") => {
             // M25-3/M25-4：归档创建——`[格式] <名> [checksum=md5|sha256|none]`；

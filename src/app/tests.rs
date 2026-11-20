@@ -921,6 +921,125 @@ fn m291_compare_command_modes() {
 }
 
 #[test]
+fn m292_compare_sync_dp_do_and_refresh() {
+    // M29-2：对比结果 dp（取回另一侧）与 do（删除当前侧多出）——
+    // 均入撤销栈可逆；操作后按原模式重建结果（前缀变化正确）；
+    // 非法方向 / `!` / `=` 可读拒绝；非对比视图拒绝。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("l-only.txt"), "L").unwrap();
+    fs::write(tmp.path().join("same.txt"), "S").unwrap();
+    let r = TempDir::new().unwrap();
+    fs::write(r.path().join("r-only.txt"), "R").unwrap();
+    fs::write(r.path().join("same.txt"), "S").unwrap();
+    fs::write(r.path().join("diff.txt"), "RIGHT").unwrap();
+    fs::write(tmp.path().join("diff.txt"), "LEFT").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(r.path(), Config::default()).unwrap();
+
+    assert_eq!(exec_command(&mut state, "compare byname"), Ok(false));
+    // 快照（名称、标记、游标）到本地 Vec——避免跨 compare_sync 的借用冲突。
+    let snapshot = |state: &AppState| -> Vec<(String, String, usize)> {
+        let tab = state.active_tab();
+        tab.results
+            .as_ref()
+            .unwrap()
+            .items
+            .iter()
+            .enumerate()
+            .map(|(idx, i)| {
+                (
+                    i.path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    i.text.clone(),
+                    idx,
+                )
+            })
+            .collect()
+    };
+    let snap = snapshot(&state);
+    let find_marker = |snap: &[(String, String, usize)], name: &str| -> String {
+        snap.iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, t, _)| t.clone())
+            .unwrap_or_default()
+    };
+    let cursor_of = |snap: &[(String, String, usize)], name: &str| -> usize {
+        snap.iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, _, i)| *i)
+            .unwrap()
+    };
+
+    // dp 取回 `>` 条目（r-only.txt）到当前侧。
+    state.active_tab_mut().cursor = cursor_of(&snap, "r-only.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, true);
+    assert!(msg.as_deref().unwrap().contains("已取回"), "msg: {msg:?}");
+    assert!(tmp.path().join("r-only.txt").is_file(), "已复制到当前侧");
+    assert!(r.path().join("r-only.txt").is_file(), "另一侧不动");
+    // 重建后该条目变 `=`。
+    let snap = snapshot(&state);
+    assert_eq!(find_marker(&snap, "r-only.txt"), "=", "同步后重建为相同");
+    // u 撤销取回 → 重跑对比回到 `>`（结果为静态快照，文件操作后不自动
+    // 刷新——与 :find/:grep 语义一致；仅 dp/do 同步操作即时重建）。
+    undo_last(&mut state, &mut None);
+    assert!(!tmp.path().join("r-only.txt").exists(), "u 移除取回副本");
+    assert_eq!(exec_command(&mut state, "compare byname"), Ok(false));
+    let snap = snapshot(&state);
+    assert_eq!(find_marker(&snap, "r-only.txt"), ">", "重建后回到仅右");
+
+    // do 删除 `<` 条目（l-only.txt）——可恢复路径。
+    state.active_tab_mut().cursor = cursor_of(&snap, "l-only.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, false);
+    assert!(msg.as_deref().unwrap().contains("已删除"), "msg: {msg:?}");
+    assert!(!tmp.path().join("l-only.txt").exists(), "当前侧已删除");
+    let snap = snapshot(&state);
+    assert_eq!(
+        find_marker(&snap, "l-only.txt"),
+        "",
+        "两侧均无此文件——从结果中消失"
+    );
+    // u 撤销删除 → 重跑对比回到 `<`（静态快照语义同上）。
+    undo_last(&mut state, &mut None);
+    assert!(tmp.path().join("l-only.txt").is_file(), "暂存恢复");
+    assert_eq!(exec_command(&mut state, "compare byname"), Ok(false));
+    let snap = snapshot(&state);
+    assert_eq!(find_marker(&snap, "l-only.txt"), "<");
+
+    // 非法方向拒绝：dp 于 `<`、do 于 `>`；`!` 双向拒绝；`=` 双向拒绝。
+    state.active_tab_mut().cursor = cursor_of(&snap, "l-only.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, true);
+    assert!(msg.as_deref().unwrap().contains("仅当前侧存在"));
+    state.active_tab_mut().cursor = cursor_of(&snap, "r-only.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, false);
+    assert!(msg.as_deref().unwrap().contains("仅另一侧存在"));
+    state.active_tab_mut().cursor = cursor_of(&snap, "diff.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, true);
+    assert!(msg.as_deref().unwrap().contains("不支持覆盖同步"));
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, false);
+    assert!(msg.as_deref().unwrap().contains("不支持覆盖同步"));
+    state.active_tab_mut().cursor = cursor_of(&snap, "same.txt");
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, true);
+    assert!(msg.as_deref().unwrap().contains("无需同步"));
+
+    // 非对比视图（退出结果视图）→ 拒绝。
+    let cfg = state.config.clone();
+    state.active_tab_mut().exit_results(cfg);
+    let mut msg = None;
+    compare_sync(&mut state, &mut msg, true);
+    assert!(msg.as_deref().unwrap().contains("仅在 :compare"));
+}
+
+#[test]
 fn m283_jobs_pause_toggle_and_detail_outcome() {
     // M28-3：p 暂停/恢复切换（仅 Running 生效）+ Enter 打开详情 outcome。
     let tmp = TempDir::new().unwrap();

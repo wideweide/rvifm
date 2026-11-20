@@ -777,6 +777,11 @@ pub(crate) fn handle_key(
                 Some(n) => state.goto_tab(n),
                 None => state.prev_tab(),
             },
+            Some(Action::DiffPut) | Some(Action::DiffObtain) => {
+                // M29-2：对比结果视图同步（dp=取回另一侧到当前侧；
+                // do=删除当前侧多出条目）——仅 Compare 结果视图生效。
+                compare_sync(state, msg, matches!(action, Some(Action::DiffPut)));
+            }
             Some(Action::DeleteSelected) => {
                 if state.active_tab().in_results() {
                     *msg = Some("搜索结果视图只读".to_owned());

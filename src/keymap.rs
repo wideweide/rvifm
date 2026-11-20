@@ -63,6 +63,10 @@ pub enum Action {
     ToggleView,
     PutCopy,
     PutMove,
+    /// M29-2：对比结果视图——取回另一侧条目到当前侧（仅 `>` 条目）。
+    DiffPut,
+    /// M29-2：对比结果视图——删除当前侧多出条目（仅 `<` 条目，可恢复）。
+    DiffObtain,
     // 撤销
     Undo,
     /// 目录历史后退（M16 NAV-3：仅用户键位映射，无默认键）。
@@ -113,6 +117,8 @@ impl Action {
             "open_editor" | "edit" => OpenEditor,
             "toggle_view" | "view" => ToggleView,
             "put_copy" | "paste_copy" => PutCopy,
+            "diff_put" => DiffPut,
+            "diff_obtain" => DiffObtain,
             "put_move" | "paste_move" => PutMove,
             "undo" => Undo,
             "next_tab" | "tab_next" => NextTab,
@@ -238,6 +244,10 @@ impl Keymap {
             (vec![kc(Char('d'))], HalfPageDown),
             (vec![kc(Char('u'))], HalfPageUp),
             (vec![k(Char('d')), k(Char('d'))], DeleteSelected),
+            // M29-2：对比同步——vimdiff 语义借名（do=取回/obtain 由 SPEC M29-2
+            // 定义为 dp=复制另一侧到当前、do=删除当前侧多出；仅对比视图生效）。
+            (vec![k(Char('d')), k(Char('p'))], DiffPut),
+            (vec![k(Char('d')), k(Char('o'))], DiffObtain),
             (vec![k(Char('y')), k(Char('y'))], Yank),
             (vec![k(Char('D')), k(Char('D'))], DeletePermanent),
             (vec![k(Char('c')), k(Char('w'))], RenameBatch),
