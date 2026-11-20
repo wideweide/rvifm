@@ -847,10 +847,10 @@
 - [ ] 未知参数形态 → 可读错误列出支持的四种形态。
 
 ### M28-3 :jobs 任务视图增强
-- [ ] 大目录作业运行中按 `p` → `:jobs` 状态列 paused、进度停走；再按 `p` → 恢复运行（done/cancelled 作业上 `p` 无效或有提示）。
-- [ ] Enter 打开作业详情覆盖层：类型/源/目标/已处理条目数/传输字节/速率/时长；Esc 返回 `:jobs`。
-- [ ] M24-9 既有行为不回归（j/k 选择、`x` 取消、Esc 关闭）。
-- [ ] 暂停期间 TUI 不阻塞：导航/`:q`/`:jobs` 均即时响应。
+- [x] 大目录作业运行中按 `p` → `:jobs` 状态列"已暂停"、进度停走；再按 `p` → 恢复运行（done/cancelled 作业上 `p` 无效并有提示）。（2026-11-20：Job.pause 协作式标志 + AppState::pause_job + wait_while_paused 边界等待（100ms 轮询、cancel 优先）；m283 菜单切换断言）
+- [x] Enter 打开作业详情覆盖层：类型/源/目标/已处理条目数/传输字节/速率（5s 滑动平均）/时长；任意键返回 `:jobs`。（2026-11-20：InputMode::JobDetail + JobProgress 采样（500ms 节流、64 样本上限）；传输字节按源条目大小累计；m283 TestBackend 渲染断言）
+- [x] M24-9 既有行为不回归（j/k 选择、`x` 取消、Esc 关闭）。（2026-11-20：m249 测试迁移至 JobsMenuOutcome 枚举后全绿；取消语义不变）
+- [x] 暂停期间 TUI 不阻塞：暂停等待在后台线程（100ms 轮询），事件循环不受影响；归档作业（整段原子）暂停在启动边界生效。（2026-11-20：wait_while_paused 双测试——cancel 优先立即返回 + 解除后退出）
 
 ### M28-4 M28 文档收尾
 - [ ] help.txt 补 `:link` / `:rename` / `:jobs` `p`/Enter；README 核心特性段同步。
