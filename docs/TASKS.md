@@ -355,7 +355,7 @@
 - [ ] M28-1 `:link` 符号链接创建（tags/选择优先；Windows 目录 junction 回退；入撤销栈；见 SPEC M28-1）
 - [ ] M28-2 `:rename` 结构化批量重命名（s///、prefix/suffix/seq；预览虚拟目录；整批撤销；见 SPEC M28-2）
 - [x] M28-3 `:jobs` 任务视图增强（`p` 暂停/恢复 + Enter 详情覆盖层 + 状态列；见 SPEC M28-3；2026-11-20 完成：JobControls 束 + JobProgress 采样 + JobDetail 覆盖层，396 单测）
-- [ ] M28-4 M28 文档收尾（help/README/ACCEPTANCE §28 同步；见 SPEC M28-4）
+- [x] M28-4 M28 文档收尾（help/README/ACCEPTANCE §28 同步；见 SPEC M28-4；2026-11-20 完成，批次 4/4 关闭）
 
 ## M29 — 对比增强（2026-11-20 增补；见 SPEC M29 节，已确认登记）
 
