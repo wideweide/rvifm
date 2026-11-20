@@ -3166,10 +3166,7 @@ pub(crate) fn paste_remote_to_local(
                 break;
             }
         };
-        let data = match data {
-            Some(d) => d,
-            None => Vec::new(),
-        };
+        let data = data.unwrap_or_default();
         let name = src
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
