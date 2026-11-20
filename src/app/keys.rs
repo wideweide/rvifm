@@ -1334,7 +1334,11 @@ pub(crate) fn handle_key(
     // Esc：退出可视选择（M3-1）；非可视模式忽略。
     if key.code == KeyCode::Esc {
         input.count = None;
-        state.active_tab_mut().exit_visual();
+        if state.active_tab().visual.is_some() {
+            state.active_tab_mut().exit_visual();
+            // M33-2：退出 visual → 还原 normal 主表。
+            input.switch_mode_map(None);
+        }
         return Outcome::Continue;
     }
 
@@ -1510,12 +1514,17 @@ pub(crate) fn handle_key(
         }
         KeyCode::Char('v') => {
             input.count = None;
+            let entering = state.active_tab().visual.is_none();
             state.active_tab_mut().toggle_visual();
+            // M33-2：进入/退出 visual → 切换 per-mode 键位表（未配置不换）。
+            input.switch_mode_map(if entering { Some("visual") } else { None });
         }
         KeyCode::Char('V') => {
             // M24-3：行可视模式 V——与 v 同语义（选中条目），互斥自动。
             input.count = None;
+            let entering = state.active_tab().visual.is_none();
             state.active_tab_mut().toggle_visual();
+            input.switch_mode_map(if entering { Some("visual") } else { None });
         }
         KeyCode::Char('t') => {
             input.count = None;
@@ -1523,8 +1532,11 @@ pub(crate) fn handle_key(
         }
         KeyCode::Char('w') => {
             // M13-9：view 模式切换（预览窗格完整内容视图 ↔ 摘要预览）。
+            // M33-2：进入/退出 view → 切换 per-mode 键位表（未配置不换）。
             input.count = None;
+            let entering = !state.active_tab().view_mode;
             let on = state.active_tab_mut().toggle_view();
+            input.switch_mode_map(if on && entering { Some("view") } else { None });
             *msg = Some(if on {
                 "view: 完整内容视图开启".to_owned()
             } else {

@@ -44,6 +44,8 @@ pub(crate) struct InputState {
     seq: Vec<crate::keymap::Key>,
     count: Option<usize>,
     keymap: crate::keymap::Keymap,
+    /// M33-2：per-mode 键位表（None = 模式未配置 → 保持内建行为不变）。
+    mode_maps: std::collections::BTreeMap<&'static str, crate::keymap::Keymap>,
 }
 
 impl Default for InputState {
@@ -52,6 +54,7 @@ impl Default for InputState {
             seq: Vec::new(),
             count: None,
             keymap: crate::keymap::Keymap::default_map(),
+            mode_maps: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -63,6 +66,55 @@ impl InputState {
             seq: Vec::new(),
             count: None,
             keymap,
+            mode_maps: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// M33-2：以 per-mode 键位表构造（visual/view/command；None 层 = 空
+    /// ModeLayers，不建表）。normal 主表恒为用户分层合并默认。
+    fn with_mode_maps(keymap: crate::keymap::Keymap, layers: &crate::config::KeymapLayers) -> Self {
+        let mut s = Self::with_keymap(keymap);
+        let mk = |ml: &crate::config::ModeLayers| {
+            crate::keymap::Keymap::with_layers(
+                ml.prepend.clone(),
+                ml.append.clone(),
+                ml.replace.clone(),
+            )
+        };
+        if !layers.visual.prepend.is_empty()
+            || !layers.visual.append.is_empty()
+            || layers.visual.replace.is_some()
+        {
+            s.mode_maps.insert("visual", mk(&layers.visual));
+        }
+        if !layers.view.prepend.is_empty()
+            || !layers.view.append.is_empty()
+            || layers.view.replace.is_some()
+        {
+            s.mode_maps.insert("view", mk(&layers.view));
+        }
+        s
+    }
+
+    /// M33-2：切换到指定模式的键位表（None = 回 normal 主表）。
+    /// 序列/计数清空（模式边界语义）。
+    fn switch_mode_map(&mut self, mode: Option<&'static str>) {
+        self.seq.clear();
+        self.count = None;
+        match mode {
+            Some(m) => {
+                if let Some(km) = self.mode_maps.get(m) {
+                    self.keymap = km.clone();
+                }
+            }
+            None => {
+                let base = crate::keymap::Keymap::with_layers(
+                    config::keymap_layers().prepend,
+                    config::keymap_layers().append,
+                    config::keymap_layers().replace,
+                );
+                self.keymap = base;
+            }
         }
     }
 }
@@ -465,7 +517,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     }
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
-    let mut input = InputState::with_keymap(keymap);
+    let mut input = InputState::with_mode_maps(keymap, &config::keymap_layers());
     let mut mode = InputMode::default();
     // AUDIT-6：多键序列可配置超时（`[keymap] seq_timeout_ms`，缺省 500）。
     // 待决 seq 的截止时刻：seq 变化时重置，空时清除；超时清空 seq

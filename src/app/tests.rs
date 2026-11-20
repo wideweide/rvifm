@@ -1095,6 +1095,71 @@ fn m304_cmdmark_command_arm() {
 }
 
 #[test]
+fn m332_visual_mode_keymap_switch() {
+    // M33-2：visual 进入/退出切换 per-mode 键位表——配置 [visual] 后
+    // v 进入时用户绑定生效（单键显式命中），退出还原 normal 主表。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let layers = crate::config::KeymapLayers {
+        visual: crate::config::ModeLayers {
+            prepend: vec![(
+                vec![crate::keymap::Key::plain(KeyCode::Char('z'))],
+                crate::keymap::Action::ToTop,
+            )],
+            append: Vec::new(),
+            replace: None,
+        },
+        ..Default::default()
+    };
+    let keymap = crate::keymap::Keymap::with_layers(
+        layers.prepend.clone(),
+        layers.append.clone(),
+        layers.replace.clone(),
+    );
+    let mut input = InputState::with_mode_maps(keymap, &layers);
+
+    // normal 模式：z 未绑定（非显式）。
+    assert!(
+        !input
+            .keymap
+            .is_explicit(&[crate::keymap::Key::plain(KeyCode::Char('z'))])
+    );
+    // v 进入 visual（1511 臂）→ 换表 → z 显式命中。
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().visual.is_some(), "进入 visual");
+    assert!(
+        input
+            .keymap
+            .is_explicit(&[crate::keymap::Key::plain(KeyCode::Char('z'))]),
+        "visual 表含用户绑定"
+    );
+    // z → ToTop（visual 内动作执行）。
+    let msg: Option<String> = None;
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    let _ = msg;
+    // Esc 退出 → 还原 normal 表（z 不再显式）。
+    press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(state.active_tab().visual.is_none(), "退出 visual");
+    assert!(
+        !input
+            .keymap
+            .is_explicit(&[crate::keymap::Key::plain(KeyCode::Char('z'))]),
+        "还原 normal 主表"
+    );
+}
+
+#[test]
 fn m303_completion_candidates_weighted() {
     // M30-3：Tab 补全候选加权——frecency 分数条目降序在前，无记录条目
     // 字典序兜底；空 scores → 全量字典序（M24-7 行为不变）。
