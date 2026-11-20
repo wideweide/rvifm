@@ -31,6 +31,11 @@ jobs:
         run: |
           set -o pipefail
           cargo clippy --all-targets -- -D warnings 2>&1 | tee test-output.txt
+          # 失败时把错误行以 ::error:: 注解输出（匿名 check-runs 可读）。
+          grep -E "^error(\[|:)" test-output.txt | head -20 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit 1
       - name: build
         run: cargo build --locked
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
