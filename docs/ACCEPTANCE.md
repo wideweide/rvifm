@@ -853,8 +853,8 @@
 - [x] 暂停期间 TUI 不阻塞：暂停等待在后台线程（100ms 轮询），事件循环不受影响；归档作业（整段原子）暂停在启动边界生效。（2026-11-20：wait_while_paused 双测试——cancel 优先立即返回 + 解除后退出）
 
 ### M28-4 M28 文档收尾
-- [ ] help.txt 补 `:link` / `:rename` / `:jobs` `p`/Enter；README 核心特性段同步。
-- [ ] ACCEPTANCE §28 全部勾选后批次方可关闭。
+- [x] help.txt 补 `:link` / `:rename` / `:jobs` `p`/Enter；README 核心特性段同步。（2026-11-20：help 三条目随各任务落地（AUDIT-11 口径：无漂移）；README 文件操作/后台作业两条目）
+- [x] ACCEPTANCE §28 全部勾选后批次方可关闭。（2026-11-20：M28-1～3 unix 自动化项全勾；M28-1 的 Windows junction 人工验证项保留未勾——随 CI windows 构建与用户实测补验）
 
 ## 29. M29 — 对比增强（见 SPEC M29 节）
 
