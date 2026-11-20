@@ -640,6 +640,55 @@ pub fn record_command_line(
     record_impl(db_path, pending, &record)
 }
 
+/// M30-2：命令历史排序（`:` 模式 ↑/↓ 数据源）——cmd topic replay 顶层
+/// `limit` 条（分数降序 = 常用优先；并列按 last_visit 新在前），会话内
+/// 未落盘命令并入（列表头部 = 最不常用位）。返回**升序**（最常用在
+/// 末尾）——`↑`（hist_prev 首跳 `len-1`）先命中最常用条目（M25-7
+/// "常用命令置顶"口径）；store 缺失/为空时仅会话列表（行为退化同
+/// M24-6 FIFO）。无 pending 合并（AUDIT-1：合并只在 record/TUI 启动）。
+pub fn cmd_history_ranked(session: &[String], limit: usize) -> Vec<String> {
+    cmd_history_ranked_at(&crate::config::frecency_db_path(), session, limit)
+}
+
+/// M30-2：注入 DB 路径形态（测试用；语义同 [`cmd_history_ranked`]）。
+pub fn cmd_history_ranked_at(db_path: &Path, session: &[String], limit: usize) -> Vec<String> {
+    let mut ranked: Vec<ScoredEntry> = Vec::new();
+    if let Ok(store) = Store::open(db_path) {
+        let snapshot = store.snapshot_all().unwrap_or_default();
+        let events = store
+            .last_compaction()
+            .and_then(|s| store.events_since(s))
+            .unwrap_or_default();
+        let now_dir = store.type_tick("dir").unwrap_or(0);
+        let now_file = store.type_tick("file").unwrap_or(0);
+        let now_cmd = store.type_tick("cmd").unwrap_or(0);
+        ranked = replay(&snapshot, &events, now_dir, now_file, now_cmd)
+            .into_iter()
+            .filter(|e| e.topic == "cmd")
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| b.last_visit.cmp(&a.last_visit))
+        });
+    }
+    // 升序输出（最不常用在前、最常用在末尾）——↑ 首跳 len-1 命中最常用。
+    let mut out: Vec<String> = ranked.into_iter().take(limit).map(|e| e.path).collect();
+    out.reverse();
+    // 会话未落盘命令并入头部（保持会话顺序；insert(0) 逐条会逆序，
+    // 故先收集再 splice）。
+    let missing: Vec<String> = session
+        .iter()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !out.iter().any(|s| s == t)
+        })
+        .map(|l| l.trim().to_owned())
+        .collect();
+    out.splice(0..0, missing);
+    out
+}
+
 /// M30-1：record_command_line 的便捷封装（数据目录/降级路径按配置推导；
 /// TUI 调用用——写失败静默，不阻塞 UI）。
 pub fn record_command_line_now(line: &str, ignore_patterns: &[String]) {
@@ -1523,6 +1572,71 @@ mod tests {
 
     /// M23-5 测试互斥：SETTINGS 为进程级 OnceLock，并行测试会互相覆盖。
     static SETTINGS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn m302_cmd_history_ranked_order_and_merge() {
+        // M30-2：ranked 排序（分数升序输出、最常用在末尾——↑ 首跳命中）
+        // + 会话未落盘命令并入头部 + 空 store 退化 FIFO + limit 截断。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        let store = Store::open(&db).unwrap();
+        // 三个命令：高频 / 中频 / 低频（各 3/2/1 次）。
+        for _ in 0..3 {
+            store
+                .append_event(&EntryRecord {
+                    path: "hot".to_owned(),
+                    topic: "cmd".to_owned(),
+                    kind: EntryKind::Command,
+                    clock: 0,
+                    keyword: String::new(),
+                    ts: 0,
+                })
+                .unwrap();
+        }
+        for _ in 0..2 {
+            store
+                .append_event(&EntryRecord {
+                    path: "warm".to_owned(),
+                    topic: "cmd".to_owned(),
+                    kind: EntryKind::Command,
+                    clock: 0,
+                    keyword: String::new(),
+                    ts: 0,
+                })
+                .unwrap();
+        }
+        store
+            .append_event(&EntryRecord {
+                path: "cold".to_owned(),
+                topic: "cmd".to_owned(),
+                kind: EntryKind::Command,
+                clock: 0,
+                keyword: String::new(),
+                ts: 0,
+            })
+            .unwrap();
+        drop(store); // redb 文件锁：重开前释放句柄
+        let ranked = cmd_history_ranked_at(&db, &["session-only".to_owned()], 100);
+        assert_eq!(
+            ranked.last().map(|s| s.as_str()),
+            Some("hot"),
+            "最常用在末尾（↑ 首跳）"
+        );
+        assert!(ranked.contains(&"warm".to_owned()));
+        assert!(ranked.contains(&"cold".to_owned()));
+        assert_eq!(
+            ranked.first().map(|s| s.as_str()),
+            Some("session-only"),
+            "会话并入头部"
+        );
+        // limit 截断：保留最常用 top-2（升序输出，hot 在末尾）。
+        let top2 = cmd_history_ranked_at(&db, &[], 2);
+        assert_eq!(top2, vec!["warm".to_owned(), "hot".to_owned()]);
+        // 空 store + 会话 → FIFO（↑ 首跳最新会话命令）。
+        let empty_db = tmp.path().join("empty.redb");
+        let fifo = cmd_history_ranked_at(&empty_db, &["a".to_owned(), "b".to_owned()], 100);
+        assert_eq!(fifo, vec!["a".to_owned(), "b".to_owned()]);
+    }
 
     #[test]
     fn m301_cmd_clock_independent_from_dir_file() {

@@ -115,7 +115,8 @@ rvifm 帮助（vim 风格文件管理器）
   :q              退出
   :help           本帮助页
   Esc             关闭当前覆盖层/退出可视选择
-  ↑/↓（命令行内） 浏览本会话已执行的命令（Enter 执行，Esc 取消；上限 100）
+  ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
+                  本会话未入库命令并入；Enter 执行，Esc 取消）
   Tab（命令行内） 补全当前词为条目名（前缀匹配循环；~ 展开 HOME）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 

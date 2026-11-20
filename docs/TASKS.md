@@ -370,7 +370,7 @@
 > 来源：M25-7 评估（NOTES：可行、迁移成本低）+ 用户指令"对齐同级 frecency 项目最近更新"（对齐基线见 SPEC M30：topic=cmd、无分数下限清理、书签=keyword 事件、pick 只读）。顺序：1（schema+record）→ 2（历史迁移）→ 3（补全加权）→ 4（命令书签）→ 5（文档收尾）。
 
 - [x] M30-1 cmd 事件 schema 与 record 链路（EntryKind::Command、IGNORE_PATTERNS 扩展 cmd、cmd 档配置；见 SPEC M30-1；2026-11-20 完成：META_CMD_TICK + lambda_cmd + record_command_line，404 单测）
-- [ ] M30-2 `:` 命令历史迁移（↑/↓ replay 顶层 N + 会话合并、跨会话持久；见 SPEC M30-2）
+- [x] M30-2 `:` 命令历史迁移（↑/↓ replay 顶层 N + 会话合并、跨会话持久；见 SPEC M30-2；2026-11-20 完成：cmd_history_ranked + InputMode::Command.ranked 快照，405 单测）
 - [ ] M30-3 路径补全加权（frecency 分数优先、字典序兜底、缺失零成本降级；见 SPEC M30-3）
 - [ ] M30-4 命令书签（设置 + `:` 模式消费展开；unbook 保留历史；见 SPEC M30-4）
 - [ ] M30-5 M30 文档与隐私收尾（README/help 明示命令文本入库 + IGNORE_PATTERNS 排除；见 SPEC M30-5）

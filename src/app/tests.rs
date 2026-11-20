@@ -4408,6 +4408,7 @@ fn feat1_mouse_ignored_in_input_modes() {
         hist_pos: None,
         draft: String::new(),
         comp: None,
+        ranked: Vec::new(),
     };
     let ev = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -6342,6 +6343,7 @@ fn renders_command_line_and_message() {
         hist_pos: None,
         draft: String::new(),
         comp: None,
+        ranked: Vec::new(),
     };
     terminal
         .draw(|frame| render(frame, &state, &mode, Some("未知命令: x")))

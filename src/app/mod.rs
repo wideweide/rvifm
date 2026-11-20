@@ -122,6 +122,9 @@ pub(crate) enum JumpKind {
 
 /// 输入模式（M5-4 统一模式系统前先持有最小集合）。
 /// M8-12 起 JumpSelect 携带 f64 分数的条目，不再派生 Eq。
+/// M30-2：命令历史排序条数上限（`:` 模式 ↑/↓ 数据源规模）。
+const CMD_RANKED_LIMIT: usize = 100;
+
 #[derive(Debug, Default, PartialEq)]
 pub(crate) enum InputMode {
     #[default]
@@ -134,6 +137,8 @@ pub(crate) enum InputMode {
         hist_pos: Option<usize>,
         draft: String,
         comp: Option<CmdComp>,
+        /// M30-2：命令历史排序快照（进入命令模式时构建；↑/↓ 数据源）。
+        ranked: Vec<String>,
     },
     /// 搜索输入模式：正在输入 `/` 后的内容（M1-7）。`origin` 为进入搜索时
     /// 的光标位置（FIX-1：实时跳转的起点，Esc 时恢复）。
@@ -559,6 +564,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     hist_pos,
                     draft,
                     comp,
+                    ranked,
                 } => {
                     // M24-6：↑/↓ 浏览会话命令历史（内存 Vec，无持久化）；
                     // M24-7：Tab 补全焦点 pane 条目名（前缀循环，>10 候选
@@ -566,11 +572,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     let handled = if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Up => {
-                                hist_prev(&state.cmd_history, hist_pos, input, draft);
+                                hist_prev(ranked, hist_pos, input, draft);
                                 Some(CmdInput::Continue)
                             }
                             KeyCode::Down => {
-                                hist_next(&state.cmd_history, hist_pos, input, draft);
+                                hist_next(ranked, hist_pos, input, draft);
                                 Some(CmdInput::Continue)
                             }
                             KeyCode::Tab => {
@@ -1010,6 +1016,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 hist_pos: None,
                                 draft: String::new(),
                                 comp: None,
+                                ranked: crate::frecency::cmd_history_ranked(
+                                    &state.cmd_history,
+                                    CMD_RANKED_LIMIT,
+                                ),
                             };
                         }
                         Outcome::EnterSearch => {
@@ -1309,6 +1319,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                             hist_pos: None,
                                             draft: String::new(),
                                             comp: None,
+                                            ranked: crate::frecency::cmd_history_ranked(
+                                                &state.cmd_history,
+                                                CMD_RANKED_LIMIT,
+                                            ),
                                         };
                                     }
                                 }
@@ -1430,6 +1444,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 hist_pos: None,
                                 draft: String::new(),
                                 comp: None,
+                                ranked: crate::frecency::cmd_history_ranked(
+                                    &state.cmd_history,
+                                    CMD_RANKED_LIMIT,
+                                ),
                             };
                         }
                     }
