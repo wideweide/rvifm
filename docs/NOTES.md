@@ -899,3 +899,10 @@ rvifm record  → 静默记录访问
 - **扩展维护点有三处**：`is_archive_file`、`open_dispatch`（独立扩展分派表！）、`is_unsupported_archive`——首版只改第一处，roundtrip 测试立刻暴露 open_dispatch 漏接（`.jar` → "不支持的归档格式"）。**后续加格式必须三处核对**。
 - 取路径：`.jar` → ZipFs（zip crate 复用）；浏览/预览/搜索链路经 is_archive_file 自动生效；`:archive` 创建不覆盖 `.jar`（创建产物为 `.zip`，SPEC OUT_OF_SCOPE）。
 - README 浏览列表与对比段补 `.jar`；430 单测（+1：识别/大小写/roundtrip list+read）。
+
+### 2026-11-21 — M34-7 实现：二进制/不可读预览信息面板
+
+- **`file_info_text`（src/preview.rs，pub）**：`[二进制/不可读预览] {path}` + 类型 + 大小 + 修改——类型 = 归档扩展（is_archive_file）→ 魔数嗅探（10 类：PDF/zip/gzip/7z/RAR/PNG/JPEG/GIF/ELF/PE）→ 扩展名兜底；有界 1KB 读取（`File::read` 截断，不整文件加载）；**零子进程**（--version 探测已裁剪的硬约束）。
+- **接入点**：`read_text_preview` 的 NUL 分支与非 UTF-8 分支（`from_utf8_lossy` → `from_utf8` Err 面板化——乱码渲染消失）；查看器 `read_to_string` 失败分支（"无法读取（非 UTF-8 或已删除）"退役）→ 同一面板；pick 同源自动生效（preview_lines → render_preview）。
+- **边界**：`[文件过大]` 截断提示保留（SPEC 未要求改）；魔数仅在二进制/不可读路径生效——纯文本的 `%PDF` 假文件仍按文本渲染（NUL 分支不触发），测试改用 `%PDF+NUL`。
+- 431 单测（+1：非 UTF-8 面板/魔数嗅探/无乱码；既有二进制测试改面板断言）。

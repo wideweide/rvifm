@@ -414,7 +414,7 @@
 - [x] M34-4 对侧预览统一（preview_path 焦点修复 + :view/frecency 共用对侧模型，方案 A；见 SPEC M34-4；2026-11-21 完成：`preview_path` 焦点感知修复右焦点预览错位 + 查看器渲染抽出 `render_view_content`（`render_right_pane`/`render()` 双侧分派——焦点右时查看器占左 pane、右 pane 保持列表导航）；frecency 对侧语义不动；428 单测）
 - [x] M34-5 frecency Pane 视觉与回显（query 底部回显 + 图标全路径行 + 标题文案；见 SPEC M34-5；2026-11-21 完成：标题固定"Frecency - 高频目录/文件搜索"，行=devicons 图标+全路径（目录条目尾斜杠触发文件夹图标）替换 `[目录]/[文件]`，✦keyword 保留，搜索态底部 `/query` 实时回显、计数移至提示行；429 单测）
 - [x] M34-6 `.jar` 归档识别（zip 后端复用；见 SPEC M34-6；2026-11-21 完成：is_archive_file + open_dispatch 双表同步 `.jar` → ZipFs——roundtrip 测试先暴露只改一表的漏接（"不支持的归档格式"），浏览/预览/搜索链路自动生效，README 浏览列表/对比段同步；430 单测）
-- [ ] M34-7 二进制/不可读预览信息面板（大小/时间/类型推断；不执行文件；见 SPEC M34-7）
+- [x] M34-7 二进制/不可读预览信息面板（大小/时间/类型推断；不执行文件；见 SPEC M34-7；2026-11-21 完成：`file_info_text`（魔数嗅探 10 类 + 扩展名兜底 + 大小/修改时间，有界 1KB 读取、零子进程）替代 `[二进制文件]` 单行与 lossy 乱码；查看器读取失败分支同源接入；431 单测）
 - [ ] M34-8 docs/GUIDE.md 用户手册（快速上手 + 键位/命令速查；见 SPEC M34-8）
 - [ ] M34-9 图片/PDF 预览尺寸适配（小于窗格原尺寸居中不放大、超过 fit-width；见 SPEC M34-9）
 - [ ] M34-10 M34 文档收尾（help/README/ACCEPTANCE §34 同步；见 SPEC M34-10）

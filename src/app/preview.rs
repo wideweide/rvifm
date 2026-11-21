@@ -216,7 +216,8 @@ pub(crate) fn render_view_content(
     }
     // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
     let Ok(text) = std::fs::read_to_string(&path) else {
-        frame.render_widget(Paragraph::new("无法读取（非 UTF-8 或已删除）"), inner);
+        // M34-7：读取失败/非 UTF-8 → 结构化信息面板（类型/大小/修改）。
+        frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
         return;
     };
     let height = inner.height as usize;

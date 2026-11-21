@@ -191,17 +191,91 @@ fn read_text_preview(path: &Path, max_lines: usize) -> String {
         Ok(b) => b,
         Err(e) => return format!("读取失败: {e}"),
     };
-    // 二进制探测：首 1KB 含 NUL 即按二进制处理。
+    // 二进制探测：首 1KB 含 NUL 即按二进制处理（M34-7：结构化信息面板）。
     let probe = &bytes[..bytes.len().min(1024)];
     if probe.contains(&0) {
-        return format!("[二进制文件] {}", path.display());
+        return file_info_text(path);
     }
-    let text = String::from_utf8_lossy(&bytes);
+    // M34-7：非 UTF-8（无 NUL）同样面板化——替代 lossy 乱码渲染。
+    let text = match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => return file_info_text(path),
+    };
     let mut kept: Vec<&str> = text.lines().take(max_lines).collect();
     if kept.is_empty() {
         kept.push("（空文件）");
     }
     kept.join("\n")
+}
+
+/// M34-7：二进制/不可读文件的结构化信息面板——类型（魔数嗅探 + 扩展名）、
+/// 大小、修改时间；**不执行文件**（无子进程、无内容解析执行）。替代旧的
+/// 单行错误提示与 lossy 乱码渲染；TUI 预览与 pick 同源（read_text_preview
+/// 与查看器读取失败分支共用）。
+pub fn file_info_text(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut out = vec![format!("[二进制/不可读预览] {}", path.display())];
+    // 魔数嗅探：只读前 1KB（有界读取，不整文件加载）。
+    let head = (|| -> std::io::Result<Vec<u8>> {
+        use std::io::Read;
+        let mut f = fs::File::open(path)?;
+        let mut buf = vec![0u8; 1024];
+        let n = f.read(&mut buf)?;
+        buf.truncate(n);
+        Ok(buf)
+    })()
+    .ok();
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let kind = if crate::archive::is_archive_file(&name) {
+        format!("归档（{ext}）")
+    } else if let Some(m) = head.as_deref().and_then(magic_kind) {
+        m.to_owned()
+    } else if !ext.is_empty() {
+        format!("{ext} 文件（二进制数据）")
+    } else {
+        "二进制数据".to_owned()
+    };
+    out.push(format!("  类型: {kind}"));
+    match fs::metadata(path) {
+        Ok(m) => {
+            out.push(format!("  大小: {}", crate::tab::format_size(m.len())));
+            let mtime = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            out.push(format!("  修改: {}", crate::tab::format_mtime_min(mtime)));
+        }
+        Err(e) => out.push(format!("  元数据读取失败: {e}")),
+    }
+    out.join("\n")
+}
+
+/// 魔数 → 类型描述（M34-7：嗅探首字节；粒度到"归档/图像/文档/可执行"）。
+fn magic_kind(head: &[u8]) -> Option<&'static str> {
+    const MAGICS: &[(&[u8], &str)] = &[
+        (b"%PDF", "PDF 文档"),
+        (b"PK\x03\x04", "zip 容器（jar/war 同类）"),
+        (b"\x1f\x8b", "gzip 压缩"),
+        (b"7z\xbc\xaf\x27\x1c", "7z 归档"),
+        (b"Rar!", "RAR 归档"),
+        (b"\x89PNG", "PNG 图像"),
+        (b"\xff\xd8\xff", "JPEG 图像"),
+        (b"GIF8", "GIF 图像"),
+        (b"\x7fELF", "ELF 可执行"),
+        (b"MZ", "Windows PE 可执行"),
+    ];
+    MAGICS
+        .iter()
+        .find(|(m, _)| head.starts_with(m))
+        .map(|(_, d)| *d)
 }
 
 /// 供 `pick` 使用的快捷入口：给路径渲染预览行（Span 形式，M8-8 共用证明）。
@@ -259,7 +333,11 @@ mod tests {
 
         let preview = render_preview(&bin, 10);
         let texts = preview.line_texts();
-        assert!(texts.iter().any(|t| t.contains("二进制文件")));
+        // M34-7：结构化信息面板（PNG 魔数嗅探 + 大小/修改），非单一错误行。
+        assert!(texts.iter().any(|t| t.contains("二进制/不可读预览")));
+        assert!(texts.iter().any(|t| t.contains("PNG 图像")));
+        assert!(texts.iter().any(|t| t.contains("大小:")));
+        assert!(texts.iter().any(|t| t.contains("修改:")));
 
         // 大文件（>512KB）→ 截断提示。
         let big = tmp.path().join("big.txt");
@@ -283,6 +361,28 @@ mod tests {
         let preview = render_preview(&img, 10);
         let texts = preview.line_texts();
         assert!(texts.iter().any(|t| t.contains("图像预览")));
+    }
+
+    #[test]
+    fn m34_7_non_utf8_panel_and_magic_sniff() {
+        let tmp = TempDir::new().unwrap();
+        // 非 UTF-8（无 NUL）→ 信息面板，不渲染 lossy 乱码。
+        let bad = tmp.path().join("bad.txt");
+        fs::write(&bad, [0xff, 0xfe, b'a', b'b']).unwrap();
+        let texts = render_preview(&bad, 10).line_texts();
+        assert!(texts.iter().any(|t| t.contains("二进制/不可读预览")));
+        assert!(texts.iter().all(|t| !t.contains('\u{fffd}')), "无乱码");
+        // NUL 二进制 + PDF 魔数 → 类型嗅探。
+        let pdf = tmp.path().join("doc.bin");
+        fs::write(&pdf, b"%PDF-1.4\x00\x01").unwrap();
+        let texts = render_preview(&pdf, 10).line_texts();
+        assert!(texts.iter().any(|t| t.contains("PDF 文档")));
+        // magic_kind 直接断言（含 zip 容器）。
+        assert_eq!(
+            magic_kind(b"PK\x03\x04rest"),
+            Some("zip 容器（jar/war 同类）")
+        );
+        assert_eq!(magic_kind(b"hello"), None);
     }
 
     #[test]
