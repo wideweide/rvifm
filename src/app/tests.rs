@@ -2487,6 +2487,134 @@ fn m34_3_right_pane_search_incsearch_commit_and_nn() {
 }
 
 #[test]
+fn m41_1_right_pane_command_mode_and_tab_switch() {
+    // M41-1：右 pane `:` 进入命令模式；gt/gT/Ngt/gg 与左 pane 同语义
+    // （`g` 起始待决序列复用左 pane seq 机制）；d 仍拒绝（M14-1 边界）。
+    let (tmp, mut state) = make_state(3);
+    let mut input = InputState::default();
+    let mut msg: Option<String> = None;
+    {
+        let tab = state.active_tab_mut();
+        tab.right = crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.focus = crate::tab::Focus::Right;
+    }
+    // `:` → 命令模式。
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char(':'),
+            KeyModifiers::NONE
+        ),
+        Outcome::EnterCommand
+    );
+    // gt → 下一标签（先建第二个 tab 并回到第 1 个）。
+    state.push_tab(tab_at(tmp.path().to_str().unwrap()));
+    state.active = 0;
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(state.active, 1, "gt 切到下一标签");
+    // gT → 回上一标签。
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('T'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(state.active, 0, "gT 回上一标签");
+    // 2gt → 计数切到第 2 个标签。
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('2'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('t'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(state.active, 1, "2gt 切到第 2 个标签");
+    // gg → 右 pane 顶部（切回 tab 0——tab_at 的右 pane 指向 CWD，不可用）。
+    state.active = 0;
+    state.active_tab_mut().right.cursor_bottom();
+    assert_eq!(state.active_tab().right.cursor, 2);
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(
+        press(
+            &mut state,
+            &mut input,
+            KeyCode::Char('g'),
+            KeyModifiers::NONE
+        ),
+        Outcome::Continue
+    );
+    assert_eq!(state.active_tab().right.cursor, 0, "gg 右 pane 顶部");
+    // d 仍拒绝（M14-1 边界不变）。
+    let out = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(out, Outcome::Continue);
+    assert!(msg.as_deref().unwrap_or("").contains("仅导航"));
+}
+
+#[test]
 fn m34_4_view_renders_in_opposite_pane() {
     // M34-4：view 模式预览占非焦点 pane——焦点右：查看器在左、右 pane 保持
     // 目录列表；焦点左：查看器在右（M13-9 现状保持）。

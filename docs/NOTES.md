@@ -970,3 +970,4 @@ rvifm record  → 静默记录访问
 - **M37-3 勾选漂移修正**：TASKS 复选框 `[ ]` 而 STATE/NOTES 记 M37 7/7 关闭——按冲突优先级（NOTES > TASKS 勾选状态）翻转为 `[x]`；`:sync` 三策略 deferred 属实（l2r/r2l + --apply/--delete + dry-run 已验收），后续按需补登。
 - **PLAN/AGENTS/STATE 状态漂移一并清零**：PLAN 总表 M35–M38 状态列（实际 M35 5/5、M36 8/8、M37 7/7 已关、M38 3/5 执行中）+ 发布注记 M41；AGENTS §10（原停 M35）；STATE 当前阶段/任务（原停 M35 执行中）。
 - **设计取向**：方向键不新增 Action（复用 CursorUp/CursorDown/ReturnParent/EnterSelected，符合 §5.4 动作驱动约束）；视口偏移有状态化复用既有 scroll 字段；右键菜单保持左 pane（右 pane 文件操作边界不变，SIMPLIFIED）。
+- **M41-1 实现决策**：右 pane `g` 原为单键直跳顶部（M14-1"无 gg 序列"），与 `gt` 序列冲突——改为 `g` 起始待决序列复用左 pane seq 机制：`gt`/`gT`/`Ngt` 直接命中默认 keymap 的 NextTab/PrevTab（计数行为天然一致），`gg` 顶部经 ToTop 臂焦点化；单键 `g` 直跳语义退役（SPEC M41-1 已记录升格）。`:` 返回 Outcome::EnterCommand，命令作用于焦点 pane 的链路 M14-1 focus_base 既有。

@@ -71,6 +71,8 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 视图 ==
   Tab             切换左右 pane 焦点（双栏均可导航）
+  : / gt / gT     双栏一致：右 pane 下 : 进入命令模式（作用于焦点 pane），
+                  gt/gT/{N}gt 切标签，gg 跳右栏顶部
   w               右 pane 在目录列表与预览间切换（预览小图原尺寸居中、大图按宽适配）
   S               排序对话框（字母直接应用 / 空格切换方向 / 回车确认）
   :sort 字段,...  多字段排序（name/natural/mtime/size/ext，逗号分隔 + asc/desc）

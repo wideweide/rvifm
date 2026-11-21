@@ -420,6 +420,8 @@ pub(crate) fn copy_to_clipboard(text: &str) {
 
 /// M37-1：符号模式解析（[ugoa]*[+-=][rwxXst] 简易单段形态）——
 /// 返回结果八进制 mode。基础 `cur` 为当前文件 mode。
+/// POSIX only（调用点均在 cfg(unix) 块内；Windows 下不编译避免 dead-code）。
+#[cfg(unix)]
 fn parse_symbolic_mode(spec: &str, cur: u32) -> Option<u32> {
     // 解析 [ugoa]* 前缀（缺省 = a）。
     let (targets, rest) = {
@@ -472,7 +474,8 @@ fn parse_symbolic_mode(spec: &str, cur: u32) -> Option<u32> {
     })
 }
 
-/// M37-1：chmod 目标路径（光标条目 base 拼接）。
+/// M37-1：chmod 目标路径（光标条目 base 拼接）。POSIX only（同上）。
+#[cfg(unix)]
 fn base_dir_for_chmod(state: &AppState, name: &str) -> PathBuf {
     state.active_tab().location.base_dir().join(name)
 }
@@ -2428,7 +2431,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             #[cfg(not(unix))]
             {
                 let _ = parts;
-                return Err("chmod: 仅 POSIX 平台支持（Windows 请用系统属性对话框）".to_owned());
+                Err("chmod: 仅 POSIX 平台支持（Windows 请用系统属性对话框）".to_owned())
             }
             #[cfg(unix)]
             {

@@ -375,10 +375,8 @@ pub(crate) fn handle_right_key(
         KeyCode::Char('k') if !ctrl => tab.right.move_cursor(-1),
         KeyCode::Char('d') if ctrl => tab.right.move_cursor(half),
         KeyCode::Char('u') if ctrl => tab.right.move_cursor(-half),
-        KeyCode::Char('g') if !ctrl => {
-            // M14-1 右 pane 精简集：g = 跳到顶部（无 gg 序列）。
-            tab.right.cursor_top();
-        }
+        // M41-1：`g` 序列（gt/gT/Ngt/gg）已由 handle_key 右 pane 分支拦截，
+        // 此处不再有直跳顶部的单键 `g`（与左 pane gg 序列语义统一）。
         KeyCode::Char('G') if !ctrl => tab.right.cursor_bottom(),
         KeyCode::Enter | KeyCode::Char('l') if !ctrl => {
             if let Err(e) = tab.right.enter_selected(cfg) {
@@ -762,10 +760,17 @@ pub(crate) fn handle_key(
         match action {
             Some(Action::ToTop) => {
                 // M24-5：Ngg → 光标定位到第 N 行（1-based）。
+                // M41-1：焦点分派——右 pane 焦点下 gg/Ngg 作用于右 pane 列表。
                 if let Some(n) = count {
                     let tab = state.active_tab_mut();
-                    tab.cursor = (n - 1).min(tab.entries.len().saturating_sub(1));
-                    tab.scroll = tab.cursor;
+                    if tab.focus == crate::tab::Focus::Right {
+                        tab.right.cursor = (n - 1).min(tab.right.entries.len().saturating_sub(1));
+                    } else {
+                        tab.cursor = (n - 1).min(tab.entries.len().saturating_sub(1));
+                        tab.scroll = tab.cursor;
+                    }
+                } else if state.active_tab().focus == crate::tab::Focus::Right {
+                    state.active_tab_mut().right.cursor_top();
                 } else {
                     state.active_tab_mut().cursor_top();
                 }
@@ -1228,11 +1233,24 @@ pub(crate) fn handle_key(
     // 选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
     // M34-3：搜索解除 SIMPLIFIED——`/`/n/N 与左 pane 共用 Search 链路，
     // 作用对象为焦点 pane（Tab::search_move/status 已 focus-aware）。
+    // M41-1：`:` 与 gt/gT/Ngt/gg 解除 SIMPLIFIED——命令模式经 focus_base
+    // 作用于焦点 pane；`g` 起始待决序列复用左 pane seq 机制（gt/gT/Ngt 由
+    // 默认 keymap 命中，gg 由 ToTop 臂焦点化；未知第二键整体丢弃）。
     if state.active_tab().focus == crate::tab::Focus::Right {
         match key.code {
             KeyCode::Char('/') => {
                 input.count = None;
                 return Outcome::EnterSearch;
+            }
+            KeyCode::Char(':') => {
+                input.count = None;
+                return Outcome::EnterCommand;
+            }
+            KeyCode::Char('g') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                input
+                    .seq
+                    .push(crate::keymap::Key::plain(KeyCode::Char('g')));
+                return Outcome::Continue;
             }
             KeyCode::Char('n') => {
                 input.count = None;
