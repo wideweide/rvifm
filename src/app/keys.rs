@@ -1644,10 +1644,13 @@ pub(crate) fn handle_key(
     Outcome::Continue
 }
 
-/// FEAT-1：鼠标事件处理——左键单击聚焦（已聚焦行再击 = 打开，双击的第二击
-/// 自然落到此路径）、滚轮逐行滚动（每次精确移动一行，不跳变）。仅 Normal
-/// 模式响应（输入模式忽略）；标签栏/状态栏/右 pane 不响应。Visual 选择由
-/// tab.visual 锚点 + 光标移动自然延伸，鼠标只移动光标不破坏选区。
+/// FEAT-1/M41-3：鼠标事件处理——左键单击切换焦点 pane 并移动该 pane 光标
+/// （高亮随焦点呈现；已聚焦行再次单击 = 打开，双击的第二击自然落到此路径；
+/// 右 pane 打开 = M14-1 进入目录语义，文件 no-op）、滚轮逐行滚动作用于
+/// 焦点 pane（每次精确移动一行，不跳变）。仅 Normal 模式响应（输入模式
+/// 忽略）；标签栏/状态栏不响应；右键上下文菜单保持左 pane（SPEC M41
+/// SIMPLIFIED）。Visual 选择由 tab.visual 锚点 + 光标移动自然延伸，鼠标
+/// 只移动光标不破坏选区。
 pub(crate) fn handle_mouse(
     state: &mut AppState,
     mode: &InputMode,
@@ -1658,49 +1661,107 @@ pub(crate) fn handle_mouse(
     if !matches!(mode, InputMode::Normal) {
         return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
     }
-    // 列表几何：与 render 同源（M21-F1）——pane_layout 左 pane 的边框内区；
-    // FEAT-2：`..` 行占用内区首行（有父行时条目从第 2 行开始）。
-    let [_, left, _, _] = pane_layout(area);
-    let inner = left_list_area(state.config.ui.pane_borders, left);
-    let has_parent = state.active_tab().has_parent_row() as usize;
-    let in_columns = mouse.column >= inner.x
-        && mouse.column < inner.x + inner.width
-        && mouse.row >= inner.y
-        && mouse.row < inner.y + inner.height;
-    let in_parent_row = has_parent > 0 && mouse.row == inner.y && in_columns;
-    let in_entries = in_columns && mouse.row >= inner.y + has_parent as u16;
+    // 列表几何：与 render 同源（M21-F1）——双 pane 内区；左 pane `..` 行
+    // 占内区首行（FEAT-2，有父行时条目从第 2 行开始），右 pane 无 `..` 行
+    // （M14-1，条目从内区首行开始）。
+    let [_, left, right, _] = pane_layout(area);
+    let borders = state.config.ui.pane_borders;
+    let left_inner = left_list_area(borders, left);
+    let right_inner = left_list_area(borders, right);
+    let in_left = mouse.column >= left_inner.x
+        && mouse.column < left_inner.x + left_inner.width
+        && mouse.row >= left_inner.y
+        && mouse.row < left_inner.y + left_inner.height;
+    let in_right = mouse.column >= right_inner.x
+        && mouse.column < right_inner.x + right_inner.width
+        && mouse.row >= right_inner.y
+        && mouse.row < right_inner.y + right_inner.height;
     match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) if in_parent_row => {
-            if state.active_tab().on_parent_row {
-                // 已聚焦 `..` 行再次单击（含双击第二击）→ 返回上级。
-                open_selected(state, msg);
+        // M41-3：滚轮作用于焦点 pane（左右内区均可发起）。
+        MouseEventKind::ScrollUp if in_left || in_right => {
+            if state.active_tab().focus == crate::tab::Focus::Right {
+                state.active_tab_mut().right.move_cursor(-1);
             } else {
-                // 单击聚焦 `..` 行。
-                state.active_tab_mut().on_parent_row = true;
+                state.active_tab_mut().move_cursor(-1);
             }
         }
-        MouseEventKind::Down(MouseButton::Left) if in_entries => {
-            let Some(idx) = hit_entry_index(state, mouse, area) else {
+        MouseEventKind::ScrollDown if in_left || in_right => {
+            if state.active_tab().focus == crate::tab::Focus::Right {
+                state.active_tab_mut().right.move_cursor(1);
+            } else {
+                state.active_tab_mut().move_cursor(1);
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) if in_left => {
+            let has_parent = state.active_tab().has_parent_row();
+            let on_parent = has_parent && mouse.row == left_inner.y;
+            if on_parent {
+                let focused = {
+                    let tab = state.active_tab();
+                    tab.focus == crate::tab::Focus::Left && tab.on_parent_row
+                };
+                {
+                    let tab = state.active_tab_mut();
+                    tab.focus = crate::tab::Focus::Left;
+                    if !focused {
+                        // 单击聚焦 `..` 行。
+                        tab.on_parent_row = true;
+                    }
+                }
+                if focused {
+                    // 已聚焦 `..` 行再次单击（含双击第二击）→ 返回上级。
+                    open_selected(state, msg);
+                }
+            } else {
+                let Some(idx) = hit_entry_index(state, mouse, area) else {
+                    return;
+                };
+                let was_focused_row = {
+                    let tab = state.active_tab();
+                    tab.focus == crate::tab::Focus::Left && !tab.on_parent_row && idx == tab.cursor
+                };
+                {
+                    let tab = state.active_tab_mut();
+                    tab.focus = crate::tab::Focus::Left;
+                    tab.on_parent_row = false;
+                    if !was_focused_row {
+                        // 单击切焦点 + 移光标，不打开。
+                        tab.cursor = idx;
+                    }
+                }
+                if was_focused_row {
+                    // 已聚焦行再次单击（含双击第二击）→ 打开。
+                    open_selected(state, msg);
+                }
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) if in_right => {
+            // 右 pane（M41-3）：单击切焦点 + 移光标；已聚焦行再击 = 进入
+            // 目录（M14-1 语义，文件 no-op）。
+            let Some(idx) = hit_right_index(state, mouse, area) else {
                 return;
             };
-            let focused = {
+            let was_focused_row = {
                 let tab = state.active_tab();
-                idx == tab.cursor && !tab.on_parent_row
+                tab.focus == crate::tab::Focus::Right && idx == tab.right.cursor
             };
-            state.active_tab_mut().on_parent_row = false;
-            if focused {
-                // 已聚焦行再次单击（含双击第二击）→ 打开。
-                open_selected(state, msg);
+            if was_focused_row {
+                let cfg = state.config.clone();
+                {
+                    let tab = state.active_tab_mut();
+                    tab.focus = crate::tab::Focus::Right;
+                    if let Err(e) = tab.right.enter_selected(cfg) {
+                        *msg = Some(format!("进入失败: {e}"));
+                    }
+                }
+                // M21-F9：进入成功实时记录（与右 pane Enter 臂同款）。
+                let tab_id = state.active;
+                record_live_visit(state, tab_id, 'R');
             } else {
-                // 单击聚焦：仅移动光标，不打开。
-                state.active_tab_mut().cursor = idx;
+                let tab = state.active_tab_mut();
+                tab.focus = crate::tab::Focus::Right;
+                tab.right.cursor = idx;
             }
-        }
-        MouseEventKind::ScrollUp if in_columns => {
-            state.active_tab_mut().move_cursor(-1);
-        }
-        MouseEventKind::ScrollDown if in_columns => {
-            state.active_tab_mut().move_cursor(1);
         }
         _ => {}
     }

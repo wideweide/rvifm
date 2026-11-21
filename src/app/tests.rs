@@ -2697,6 +2697,134 @@ fn m41_2_arrow_keys_match_jkhl_both_panes() {
 }
 
 #[test]
+fn m41_3_mouse_click_focus_and_highlight_both_panes() {
+    // M41-3：单击切焦点 + 光标移至命中条目（高亮随焦点）；已聚焦行再击
+    // 打开（右 pane = M14-1 进入目录语义，文件 no-op）；滚轮作用于焦点
+    // pane。左 pane 有 `..` 行（条目从内区第 2 行开始），右 pane 无。
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("sub")).unwrap();
+    for n in ["a.txt", "b.txt"] {
+        fs::write(tmp.path().join(n), "x").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    let mut msg: Option<String> = None;
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let [_, left, right, _] = pane_layout(area);
+    let borders = state.config.ui.pane_borders;
+    let left_inner = left_list_area(borders, left);
+    let right_inner = left_list_area(borders, right);
+    let down = |column: u16, row: u16| MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+    // 1) 单击右 pane 第 2 行（idx 1 = a.txt）→ 焦点右 + 光标 1，不打开。
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &down(right_inner.x, right_inner.y + 1),
+        &mut msg,
+        area,
+    );
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Right,
+        "焦点切右"
+    );
+    assert_eq!(state.active_tab().right.cursor, 1, "右光标移至命中行");
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        tmp.path(),
+        "首次单击不打开"
+    );
+    // 2) 再击同一行（idx 1 = 文件）→ enter_selected 文件 no-op（M14-1）。
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &down(right_inner.x, right_inner.y + 1),
+        &mut msg,
+        area,
+    );
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        tmp.path(),
+        "已聚焦文件行再击不进入"
+    );
+    // 3) 单击右 pane 首行（idx 0 = sub）→ 光标 0；再击 → 进入 sub。
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &down(right_inner.x, right_inner.y),
+        &mut msg,
+        area,
+    );
+    assert_eq!(state.active_tab().right.cursor, 0, "右光标移至首行");
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &down(right_inner.x, right_inner.y),
+        &mut msg,
+        area,
+    );
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        tmp.path().join("sub"),
+        "已聚焦目录行再击进入"
+    );
+    // 4) 单击左 pane 条目 idx 0（`..` 行下第 1 行）→ 焦点切左 + 光标 0。
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &down(left_inner.x, left_inner.y + 1),
+        &mut msg,
+        area,
+    );
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Left,
+        "焦点切左"
+    );
+    assert_eq!(state.active_tab().cursor, 0, "左光标移至命中行");
+    // 5) 滚轮作用于焦点 pane（左）：↑ 光标回 `..` 行语义 = cursor 不动
+    // （move_cursor 向上在 `..` 行停留——FEAT-2），改用 ↓ 验证下移。
+    let wheel = |kind: MouseEventKind, column: u16, row: u16| MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &wheel(MouseEventKind::ScrollDown, left_inner.x, left_inner.y + 1),
+        &mut msg,
+        area,
+    );
+    assert_eq!(state.active_tab().cursor, 1, "滚轮下移焦点 pane 光标");
+    // 6) 滚轮在右 pane 内区发起，仍作用于焦点 pane（左）。
+    handle_mouse(
+        &mut state,
+        &InputMode::Normal,
+        &wheel(MouseEventKind::ScrollUp, right_inner.x, right_inner.y),
+        &mut msg,
+        area,
+    );
+    assert_eq!(
+        state.active_tab().cursor,
+        0,
+        "右区滚轮仍作用于焦点 pane（左）"
+    );
+    assert_eq!(
+        state.active_tab().right.cursor,
+        0,
+        "右 pane 光标不受非焦点滚轮影响"
+    );
+}
+
+#[test]
 fn m34_4_view_renders_in_opposite_pane() {
     // M34-4：view 模式预览占非焦点 pane——焦点右：查看器在左、右 pane 保持
     // 目录列表；焦点左：查看器在右（M13-9 现状保持）。

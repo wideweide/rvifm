@@ -107,10 +107,11 @@ rvifm 帮助（vim 风格文件管理器）
   :remote         列出全部远端；远端内 dd/yy/p/P/:mkdir/:find/:grep 同本地
 
 == 鼠标 ==
-  左键单击        聚焦条目（已聚焦再击 = 打开；双击 = 直接打开）
+  左键单击        切换焦点至点击 pane 并聚焦条目（已聚焦再击 = 打开；
+                  双击 = 直接打开；右栏打开 = 进入目录）
   左键 ".." 行    聚焦/返回上级
-  右键条目        上下文菜单（Open/Info/Copy/Move/Rename/Delete）
-  滚轮            逐行滚动列表
+  右键条目        上下文菜单（Open/Info/Copy/Move/Rename/Delete；左栏）
+  滚轮            逐行滚动焦点 pane 列表
 
 == 历史 ==
   :histprev       目录历史后退（当前 tab 独立）

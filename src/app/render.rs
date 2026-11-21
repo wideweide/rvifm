@@ -232,6 +232,34 @@ pub(crate) fn hit_entry_index(
     Some(idx.min(tab.entries.len().saturating_sub(1)))
 }
 
+/// M41-3：右 pane 命中索引——右 pane 无 `..` 行（M14-1），条目从内区首行
+/// 开始；offset 推导与 render_right_pane 的 ListState 一致（with_selected
+/// 从 0 起自动调整 = list_offset）。空列表返回 None。
+pub(crate) fn hit_right_index(
+    state: &AppState,
+    mouse: &MouseEvent,
+    area: ratatui::layout::Rect,
+) -> Option<usize> {
+    let [_, _, right, _] = pane_layout(area);
+    let inner = left_list_area(state.config.ui.pane_borders, right);
+    if inner.width == 0
+        || mouse.column < inner.x
+        || mouse.column >= inner.x + inner.width
+        || mouse.row < inner.y
+        || mouse.row >= inner.y + inner.height
+    {
+        return None;
+    }
+    let tab = state.active_tab();
+    if tab.right.entries.is_empty() {
+        return None;
+    }
+    let offset = list_offset(tab.right.cursor, inner.height as usize);
+    let idx = (mouse.row - inner.y) as usize;
+    idx.checked_add(offset)?;
+    Some(idx.min(tab.right.entries.len().saturating_sub(1)))
+}
+
 /// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
 /// 小终端保底 30×8（不足时取终端本身），在区域内水平垂直居中。
 pub(crate) fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
