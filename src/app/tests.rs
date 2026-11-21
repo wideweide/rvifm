@@ -981,6 +981,59 @@ impl crate::remote::RemoteFs for CountingMockFs {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn m371_chmod_octal_symbolic_and_batch() {
+    // M37-1：:chmod 八进制/符号/批量/递归——POSIX only。
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    fs::write(tmp.path().join("b.txt"), "B").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let tab = state.active_tab_mut();
+    tab.tags.insert("a.txt".to_owned());
+    tab.tags.insert("b.txt".to_owned());
+
+    // 八进制批量。
+    assert_eq!(exec_command(&mut state, "chmod 644"), Ok(false));
+    for f in ["a.txt", "b.txt"] {
+        assert_eq!(
+            fs::metadata(tmp.path().join(f))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644,
+            "{f} mode"
+        );
+    }
+
+    // 符号模式（u+x，光标单条目）。
+    state.active_tab_mut().tags.clear();
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "a.txt")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    assert_eq!(exec_command(&mut state, "chmod u+x"), Ok(false));
+    assert_eq!(
+        fs::metadata(tmp.path().join("a.txt"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o100,
+        0o100,
+        "u+x"
+    );
+
+    // 错误路径：缺参/非法模式。
+    assert!(exec_command(&mut state, "chmod").is_err(), "缺参");
+    assert!(exec_command(&mut state, "chmod 999").is_err(), "非法八进制");
+    assert!(exec_command(&mut state, "chmod u+z").is_err(), "非法符号");
+}
+
 #[test]
 fn m362_download_single_read_and_tempfile_rename() {
     // M36-2：下载 read **一次**（R-3 双读修复）+ 临时文件 rename 后

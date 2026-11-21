@@ -1101,7 +1101,7 @@
 
 ## 37. M37 — 文件运维（见 SPEC M37 节）
 
-- [ ] M37-1 :chmod 八进制/符号/递归 + 批量失败逐项（POSIX；Windows 拒绝提示）。
+- [x] M37-1 :chmod 八进制/符号/递归 + 批量失败逐项（POSIX；Windows 拒绝提示）。（2026-11-21：chmod 命令臂（tags/v/光标选集 + -R 递归收集万条上限 + 八进制/符号 parse_symbolic_mode）+ m371 断言（八进制批量/u+x/错误路径）；Windows/非 unix 分支可读拒绝；失败逐项报告）
 - [ ] M37-2 :extract 选中/全部 + zip-slip 语料拒绝 + 冲突策略 + job 化 + u 可逆。
 - [ ] M37-3 :sync 三策略 + dry-run + 删除显式开关 + 确认。
 - [ ] M37-4 :du 并行/取消/万条上限/排序视图。

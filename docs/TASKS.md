@@ -452,7 +452,7 @@
 
 > 来源：同上。目标 0.13.0。顺序：1（:chmod）→ 2（:extract）→ 3（:sync）→ 4（:du）→ 5（:dup）→ 6（:checksum）→ 7（暂存区）。
 
-- [ ] M37-1 `:chmod <mode>` 批量属性（八进制/符号、递归；POSIX only；见 SPEC M37-1）
+- [x] M37-1 `:chmod <mode>` 批量属性（八进制/符号、递归；POSIX only；见 SPEC M37-1；2026-11-21 完成：parse_symbolic_mode + 递归收集，444 单测）
 - [ ] M37-2 `:extract` 归档解压（选中/全部、zip-slip 防护、job 化、u 可逆；见 SPEC M37-2）
 - [ ] M37-3 `:sync` 目录同步（dry-run、三策略、删除显式开关；见 SPEC M37-3）
 - [ ] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4）

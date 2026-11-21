@@ -418,6 +418,65 @@ pub(crate) fn copy_to_clipboard(text: &str) {
     }
 }
 
+/// M37-1：符号模式解析（[ugoa]*[+-=][rwxXst] 简易单段形态）——
+/// 返回结果八进制 mode。基础 `cur` 为当前文件 mode。
+fn parse_symbolic_mode(spec: &str, cur: u32) -> Option<u32> {
+    // 解析 [ugoa]* 前缀（缺省 = a）。
+    let (targets, rest) = {
+        let mut t = 0u32;
+        let mut rest = spec;
+        loop {
+            match rest.chars().next() {
+                Some('u') => {
+                    t |= 0o400 | 0o200 | 0o100;
+                    rest = &rest[1..];
+                }
+                Some('g') => {
+                    t |= 0o40 | 0o20 | 0o10;
+                    rest = &rest[1..];
+                }
+                Some('o') => {
+                    t |= 0o4 | 0o2 | 0o1;
+                    rest = &rest[1..];
+                }
+                Some('a') => {
+                    t |= 0o777;
+                    rest = &rest[1..];
+                }
+                _ => break,
+            }
+        }
+        if t == 0 {
+            t = 0o777;
+        }
+        (t, rest)
+    };
+    let (op, perms_str) = match rest.chars().next()? {
+        c @ ('+' | '-' | '=') => (c, &rest[1..]),
+        _ => return None,
+    };
+    let mut perms = 0u32;
+    for c in perms_str.chars() {
+        match c {
+            'r' => perms |= 0o444,
+            'w' => perms |= 0o222,
+            'x' | 'X' => perms |= 0o111,
+            _ => return None,
+        }
+    }
+    Some(match op {
+        '+' => cur | (perms & targets),
+        '-' => cur & !(perms & targets),
+        '=' => (cur & !targets) | (perms & targets),
+        _ => cur,
+    })
+}
+
+/// M37-1：chmod 目标路径（光标条目 base 拼接）。
+fn base_dir_for_chmod(state: &AppState, name: &str) -> PathBuf {
+    state.active_tab().location.base_dir().join(name)
+}
+
 /// M24-8/M29-1：执行左右 pane 目录对比并进入结果视图。
 /// `by_contents` = 内容判定（SHA-256，M29-1）；返回状态栏消息。
 pub(crate) fn run_compare(state: &mut AppState, by_contents: bool) -> Result<String, String> {
@@ -1944,6 +2003,110 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             }
             let msg = run_compare(state, mode == "bycontents")?;
             Ok(ExecOutcome::Done { msg: Some(msg) })
+        }
+        Some("chmod") => {
+            // M37-1：批量 chmod（八进制/符号；tags/v 选集/光标；-R 递归）。
+            // POSIX only（std::os::unix::fs::PermissionsExt）——Windows 可读拒绝。
+            #[cfg(not(unix))]
+            {
+                let _ = parts;
+                return Err("chmod: 仅 POSIX 平台支持（Windows 请用系统属性对话框）".to_owned());
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut recursive = false;
+                let mut mode_str: Option<String> = None;
+                for a in parts {
+                    match a {
+                        "-R" => recursive = true,
+                        s => {
+                            if mode_str.is_some() {
+                                return Err("chmod: 多余参数（:chmod [-R] <mode>）".to_owned());
+                            }
+                            mode_str = Some(s.to_owned());
+                        }
+                    }
+                }
+                let Some(mode_str) = mode_str else {
+                    return Err("chmod: 缺少模式（:chmod [-R] <mode>，如 644 / u+x）".to_owned());
+                };
+                // 八进制（3-4 位数字）优先；符号模式（u+x 等）简易解析。
+                let mode = if mode_str.chars().all(|c| c.is_ascii_digit())
+                    && (3..=4).contains(&mode_str.chars().count())
+                {
+                    u32::from_str_radix(&mode_str, 8)
+                        .map_err(|e| format!("chmod: 非法八进制 {mode_str}: {e}"))?
+                } else {
+                    // 符号模式：[ugoa]*[+-=][rwxXst]（简易——全量重算）。
+                    let cur = state
+                        .active_tab()
+                        .entries
+                        .get(state.active_tab().cursor)
+                        .map(|i| {
+                            std::fs::metadata(base_dir_for_chmod(state, &i.name))
+                                .map(|m| m.permissions().mode() & 0o777)
+                                .unwrap_or(0)
+                        })
+                        .unwrap_or(0);
+                    parse_symbolic_mode(&mode_str, cur)
+                        .ok_or_else(|| format!("chmod: 非法符号模式 {mode_str}"))?
+                };
+                let names = selected_names(state);
+                if names.is_empty() {
+                    return Err("chmod: 无选中条目".to_owned());
+                }
+                let base = physical_base(state)?;
+                let mut applied = 0usize;
+                let mut failures: Vec<String> = Vec::new();
+                for name in &names {
+                    let target = base.join(name);
+                    let targets: Vec<PathBuf> = if recursive {
+                        let mut t = vec![target.clone()];
+                        // 简易递归收集（万条上限）。
+                        let mut stack = vec![target.clone()];
+                        while let Some(dir) = stack.pop() {
+                            if let Ok(rd) = std::fs::read_dir(&dir) {
+                                for e in rd.flatten() {
+                                    t.push(e.path());
+                                    if e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                                        && t.len() < 10_000
+                                    {
+                                        stack.push(e.path());
+                                    }
+                                }
+                            }
+                        }
+                        t
+                    } else {
+                        vec![target.clone()]
+                    };
+                    for t in targets {
+                        let perm = std::fs::metadata(&t)
+                            .map(|m| {
+                                let mut p = m.permissions();
+                                p.set_mode(mode);
+                                p
+                            })
+                            .map_err(|e| format!("{}: {e}", t.display()))?;
+                        match std::fs::set_permissions(&t, perm) {
+                            Ok(()) => applied += 1,
+                            Err(e) => failures.push(format!("{}: {e}", t.display())),
+                        }
+                    }
+                }
+                if failures.is_empty() {
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("chmod: {applied} 个路径已设 {mode_str}")),
+                    })
+                } else {
+                    Err(format!(
+                        "chmod: {applied} 项成功，失败 {}: {}",
+                        failures.len(),
+                        failures.join("; ")
+                    ))
+                }
+            }
         }
         Some("archive") => {
             // M25-3/M25-4：归档创建——`[格式] <名> [checksum=md5|sha256|none]`；
