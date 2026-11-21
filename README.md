@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.11.1 已发布（crates.io 上线）；M35–M39 全部完成（文档一致性/传输引擎/文件运维/检索与 shell 集成/预览与平台），M40 稳定化执行中，全部批次完成后统一发布 1.0.0。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v1.0.0 发布（M0–M40 全部完成，CHANGELOG 批次并入；0.9.0/0.10.0 跳过、0.11.0/0.11.1 先行上线，见 CHANGELOG）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 

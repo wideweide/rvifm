@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-22
 - **当前阶段**：M0–M40-6 全部完成关闭（M41 4/4、M38 5/5、M39 6/6、M40 1–6 完成/M40-4 sftp 覆盖 deferred、M31-5 补验完成；v0.11.1 已发布）；M36–M41 不单独发版，统一发 1.0.0（用户决策）；**CI 红灯已闭环**（2026-11-22 Linux 开发机）——四失败面中 ubuntu/macos build、windows test、audit 三面在 0e232c7 已绿（M40-6 修复生效），仅剩 fuzz build 一面，根因为 fuzz 靶两处编译错误（E0603 `mod exec` 私有 + E0596 `fsx` 缺 mut），从未在任何环境编译过（Windows 无 nightly；CI 注解被 crate 名 grep 误报淹没），已修复并锁定 fuzz/Cargo.lock（见 NOTES）
-- **当前任务**：**M40-7 1.0.0 统一发布**（CHANGELOG 已备 → Cargo.toml 1.0.0 + tag v1.0.0 → 三平台+aarch64 归档+SHA256SUMS → GitHub Release → crates.io；crates.io 凭据在 Windows 机）
+- **当前任务**：**M40-7 1.0.0 统一发布执行中**（CHANGELOG 批次并入已备 + Cargo.toml 1.0.0 + tag v1.0.0 → CI 归档+SHA256SUMS+GitHub Release；crates.io 凭据在 Windows 机 deferred——Linux 机无凭据）
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
