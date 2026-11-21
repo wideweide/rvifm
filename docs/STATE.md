@@ -3,26 +3,23 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-21
-- **当前阶段**：M0–M27 + AUDIT + M28–M33 + MISC 全部完成并关闭；**M34 批次（主题、预览统一与文档，10 任务）已登记、暂缓执行**——用户 2026-11-21 指示 Windows 侧收尾操作先行，待指令再启动（TASKS 中以 `[~]` 挂起，启动时整体翻转回 `[ ]`）
-- **当前任务**：0.10.0 发布收尾——GitHub Release 已发布并验证（2026-11-21，CI 5 job 全绿，tag 重指向 2 次，三归档含 rvifm+rv）；**crates.io 待 Windows 机器凭据执行**（实查 crates.io 最新 0.8.0——0.9.0 与 0.10.0 均未发布，用户将操作）
-- **阶段状态**：开发侧无进行中任务；人工验证项见下方“进行中/暂停/延期”；M34 启动后目标 0.11.0（PLAN §4 自动发布规则）
+- **当前阶段**：M0–M27 + AUDIT + M28–M33 + MISC 全部完成并关闭；**M34 批次（主题、预览统一与文档，10 任务）执行中**（用户 2026-11-21 指令"升级后开跑"：本机 rustup stable 1.100 就绪、全门禁绿）；统一目标 0.11.0
+- **当前任务**：M34-1 默认主题 gruvbox（`[ui] theme` 缺省 `gruvbox-dark` + vifm 高亮组 token 推导 + dracula 验证）
+- **阶段状态**：0.10.0 发布收尾仅剩 crates.io——GitHub Release 已发布验证（三归档含 rvifm+rv）；crates.io 停在 0.8.0，0.9.0/0.10.0 待 Windows 机器凭据（用户操作，非停止条件）；M11-6 清单第 1 项 foot 已过
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
 ## 进行中 / 暂停 / 延期
 
-- **M34（10 任务）**：已登记、**暂缓执行**（用户 2026-11-21 指示：Windows 侧收尾先行；启动时翻转 `[~]` → `[ ]`）。登记内容与用户裁决见 NOTES 2026-11-21 两则。
 - M11-6：真实终端图片显示（M31-3 六步清单）——第 1 项已过（foot，2026-11-21，Kitty graphics）；2–6 待验（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）。
-- M31-5：pdf-visual 护栏量化实测，需 rustc ≥1.97 环境（CI 或 Windows 本机）；foot 定性数据（首页栅格化略慢）已记 NOTES。
+- M31-5：pdf-visual 护栏量化实测——**本机（rustc 1.100 ≥ 1.97）已可执行**（升级前受 1.95 阻塞），仍 deferred 待运行；foot 定性数据已记 NOTES。
 - M28-1 Windows junction 回退人工验证；M31-2 装 7z 环境 cab/lzh 提示区分（人工，随 M11-6 模式保留）。
 - PROC-1：预算门控与断点落地协议已生效（用户 2026-11-19 确认），为「自动续轮」第 3 条停止条件。
 
 ## 下一步
 
-1. **Windows 侧收尾（用户执行）**：
-   - `cargo publish`：检出 `v0.9.0` tag 发布 0.9.0、检出 `v0.10.0` 发布 0.10.0（crates.io 不要求连续，也可只发 0.10.0）；完成后提交 `release: 0.9.0 verified` / `release: 0.10.0 verified`。
-   - Win2016 冒烟：0.10.0 归档（rvifm + rv 双二进制）`--version` / `--help` + 基本浏览（AGENTS §6 发布门禁）。
-2. **人工补验**：M11-6 清单 2–6 步（任意真实终端，约 10 分钟）；junction / 7z 提示两项可随 Windows 侧顺带完成。
-3. **M34 启动（待用户指令）**：指令下达后翻转 TASKS M34 段 `[~]` → `[ ]`，按 SPEC M34 节顺序执行（M34-1 默认主题 → … → M34-9 预览尺寸适配 → M34-10 文档收尾）；全部完成后自动发布 0.11.0（PLAN §4）。
+1. **M34 批次按序执行（自动续轮）**：M34-1 默认主题 → M34-2 snowwhite → M34-3 右栏搜索 → M34-4 预览统一 → M34-5 frecency 视觉回显 → M34-6 jar → M34-7 信息面板 → M34-8 GUIDE → M34-9 预览尺寸适配 → M34-10 文档收尾；全部完成后自动发布 0.11.0（PLAN §4）。
+2. **Windows 侧收尾（用户执行）**：crates.io publish 0.9.0/0.10.0（检出对应 tag；或只发 0.10.0）→ 补 `release: x.y.z verified`；Win2016 冒烟；顺带 M11-6 清单 2–6 / junction / 7z 人工项。
+3. **M31-5 本机补验**：rustc 1.100 已解锁，可随 M34 期间或用户指令执行语料量化。
 
 ## 批次关闭记录
 
@@ -51,7 +48,7 @@
 ## 质量门禁
 
 - 本地：`cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test` → `--version` / `--help` 冒烟。
-- **当前已知门禁偏差**：本机可全量 `cargo test`（M33 关闭口径 418 单测 + 9 集成）；残留以 CI 为准：① `cargo check --target x86_64-unknown-linux-gnu` 的 aws-lc-sys 交叉构建本机不可行（AUDIT-9 固化进 ubuntu job）；② `cargo check --features pdf-visual` 需 rustc ≥1.97（exprim@0.4.0），Linux 开发机 1.95.0 不可执行，CI 工具链覆盖（Windows 本机 rustc 以实际为准）。
+- **当前已知门禁偏差**：本机可全量 `cargo test`（418 单测 + 9 集成，rustc 1.100 实测 2026-11-21）；残留以 CI 为准：① `cargo check --target x86_64-unknown-linux-gnu` 的 aws-lc-sys 交叉构建本机不可行（AUDIT-9 固化进 ubuntu job）。**已闭环**：`cargo check --features pdf-visual` 本机恢复可执行（rustup stable 1.100 ≥ exprim MSRV 1.97，2026-11-21 实测通过）。
 - 含 `cfg(unix)` / `cfg(test)` 改动：Windows 本机不编译 cfg(unix) 测试代码——以 CI ubuntu job 或 Linux 开发机全量运行为准（M12-2/M27-3 两度教训）。
 - CI：`ubuntu-latest` + `windows-latest` 全绿；tag `v*` 触发三 target release 归档。
 
@@ -59,11 +56,11 @@
 
 - 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`；一轮结束自动进入下一轮，无需人工确认（AGENTS §3）；**M34 暂缓期间不得自行启动**。
 - 主要风险：`pick` 只读红线（结构性保证，回归测试固化）；cfg(unix) 测试代码 Windows 本机不编译——以 CI ubuntu job 与 Linux 开发机全量运行为准（M27-3 连续发现两例潜伏缺陷，见 NOTES）；`pdf-visual` 在 rustc <1.97 的本机不可检查，CI 覆盖。
-- 环境：双本机——Windows Server 2016（`x86_64-pc-windows-msvc`；crates.io 凭据所在）+ Linux 开发机（近期会话所在，foot 实测终端，rustc 1.95）；其它平台交给 CI（ubuntu-latest / windows-latest）。
+- 环境：双本机——Windows Server 2016（`x86_64-pc-windows-msvc`；crates.io 凭据所在）+ Linux 开发机（近期会话所在，foot 实测终端，rustup stable 1.100）；其它平台交给 CI（ubuntu-latest / windows-latest）。
 
 ## 环境
 
-- 本机：双环境——Windows Server 2016（目标 `x86_64-pc-windows-msvc`；crates.io publish 在此执行）+ Linux 开发机（rustc 1.95，`~/.local/bin` 工具链补装，foot 终端实测）。
+- 本机：双环境——Windows Server 2016（目标 `x86_64-pc-windows-msvc`；crates.io publish 在此执行）+ Linux 开发机（rustup stable **1.100.0**，`~/.cargo/bin` 优先于 apt 的 /usr/bin 1.95；foot 终端实测）。
 - CI：`ubuntu-latest` + `windows-latest`（fmt --check / clippy -D warnings / build --locked / test --locked / pdf-visual check）。
 - 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → GitHub Release（crates.io 发布沿用 Windows 机器凭据）。
 

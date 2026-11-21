@@ -845,3 +845,11 @@ rvifm record  → 静默记录访问
 - **用户指令**：检查解决文件不一致与冲突；**不启动 M34 执行**（Windows 侧收尾由用户操作）；提交推送。
 - **crates.io 实查（2026-11-21 API）**：最新发布 **0.8.0**（2026-11-18）——0.9.0 与 0.10.0 均未发布；Windows 侧需分别检出 `v0.9.0`/`v0.10.0` tag 执行 `cargo publish`（或只发 0.10.0，crates.io 不要求连续）。
 - **一致性修正**：STATE 下一步仍停在"从 M28-1 推进 M28→M33 自动发布 0.10.0"（已全部完成）——重写为 Windows 收尾/人工补验/M34 待指令三段；环境口径修正为双本机（Windows Server 2016 + Linux 开发机，与近期 foot 实测会话一致）；PLAN 0.10.0 节从"发布中"改"GitHub Release 已发布 + crates.io 缺口"；M34 条目整体翻 `[~]` 挂起——防止任何新会话按"取第一个未勾选"规则误启动，启动时用户指令后整体翻转回 `[ ]`。
+
+### 2026-11-21 — 本机工具链升级 rustup stable 1.100 + M34 启动（用户指令"升级后开跑"）
+
+- **升级**：rustup 用户级安装（`~/.cargo/bin` PATH 优先于 apt 的 /usr/bin 1.95，系统包未动、无需 sudo）；stable **1.100.0** ≥ exprim MSRV **1.97**（crates.io API 实查 rust_version=1.97）。
+- **全门禁实测（2026-11-21）**：fmt ✓；clippy `--all-targets -D warnings` ✓——1.95→1.100 跨 5 个 minor **零新 lint**；build ✓（1m52s）；test **418+9 全绿**；`--version` 冒烟 ✓；**pdf-visual check 本机首次通过**（28.96s）——此前 CI 独占的门禁缺口闭环。
+- **口径同步**：STATE 质量门禁"已知偏差"仅剩 aws-lc-sys cross-check 一项（pdf-visual 项移入"已闭环"）；M31-5 自本机可执行（仍 deferred 待运行）；环境记录 rustup 1.100。
+- **观察（不处理）**：cargo manifest 警告 unused dep `tokio-stream`（既有，非本次引入），留待后续卫生项。
+- **M34-1 映射基准**：vifm-colors `gruvbox.vifm`（cterm 提取）→ opaline gruvbox-dark token（bg.panel/bg.highlight/accent.primary/text.muted/text.dim 等标准词表）；TopLineSel bg cterm237 #3a3a3a ≈ gruvbox bg1 #3c3836（bg.highlight）几乎重合；CurrLine（vifm bold+inverse）与 rvifm 既有 `highlight_style(REVERSED)` 等价，不改动。
