@@ -1,20 +1,5 @@
 use super::*;
 
-/// M27-3：pages=2 但未进入两页布局时，底部 1 行可读说明的文案。
-/// - `pages < 2`：无说明（None）；
-/// - 两页均已生成（`pngs_len >= 2`）→ 预览区高度不足，仅显示第 1 页；
-/// - 仅生成第 1 页 → 第 2 页未生成（文档仅 1 页或渲染失败）。
-pub(crate) fn pdf_overflow_note(pages: u32, pngs_len: usize) -> Option<&'static str> {
-    if pages < 2 {
-        return None;
-    }
-    if pngs_len >= 2 {
-        Some("（预览区高度不足，仅显示第 1 页）")
-    } else {
-        Some("（第 2 页未生成：文档仅 1 页或第 2 页渲染失败）")
-    }
-}
-
 /// M34-4：查看器内容渲染（M17 VIEW-1 文本 + 图片/目录/PDF/Office 分流）——
 /// 对侧 pane 复用：render_right_pane（焦点左）与 render()（焦点右）分派到
 /// 非焦点 pane。预览目标 = preview_path()（M34-4 起焦点感知）。
@@ -139,67 +124,30 @@ pub(crate) fn render_view_content(
             return;
         }
         crate::preview::PreviewKind::Pdf => {
-            // AUDIT-2 + M27-3：`[preview] pdf_image_pages`（0 关/1 第 1 页/
-            // 2 前两页）与 `pdf_prefer_image`（true = 文本先行后仍优先展示
-            // 图像）。产出（结果缓存）经 ImageEngine 渲染；两页在预览区
-            // 上下排列（高度不足仅显示第 1 页并提示）；失败回退文本/提示
-            // 路径（文本提取先行不跳过，AGENTS §5.5）。
-            let pages = state.config.preview.pdf_image_pages.min(2);
+            // AUDIT-2 + M27-3：`[preview] pdf_image_pages`（0 关）与
+            // `pdf_prefer_image` 门控；M39-2：查看器改为**单页展示 + `[`/`]`
+            // 翻页（任意页，按需渲染缓存）——不再 1–2 页网格。
+            let pages_cfg = state.config.preview.pdf_image_pages.min(2);
             let prefer = state.config.preview.pdf_prefer_image;
-            if let Some(pngs) = crate::pdf::cached_visual_pngs(&path, pages, prefer) {
-                let page_note = if pngs.len() >= 2 {
-                    "第 1–2 页图像"
-                } else {
-                    "第 1 页图像"
-                };
+            if pages_cfg > 0 {
+                let page = viewer.page;
                 let pane = ratatui::widgets::Block::bordered()
-                    .title(format!("{shown} · PDF 预览（{page_note}）"))
+                    .title(format!("{shown} · PDF 第 {} 页（[ ] 翻页）", page + 1))
                     .border_style(pane_border_style(true));
                 let inner = pane.inner(area);
                 frame.render_widget(pane, area);
-                if pngs.len() >= 2 && inner.height >= 12 {
-                    // 两页上下排列（预览区足够高）。
-                    let [top, bottom] = ratatui::layout::Layout::vertical([
-                        ratatui::layout::Constraint::Ratio(1, 2),
-                        ratatui::layout::Constraint::Ratio(1, 2),
-                    ])
-                    .areas(inner);
-                    let r1 = state.image_engine.render_file(frame, top, &pngs[0]);
-                    let r2 = state.image_engine.render_file(frame, bottom, &pngs[1]);
-                    if r1.is_err() || r2.is_err() {
+                if let Some(png) = crate::pdf::cached_visual_page_png(&path, page, prefer) {
+                    if state.image_engine.render_file(frame, inner, &png).is_err() {
                         frame.render_widget(
                             Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
                             inner,
                         );
                     }
                 } else {
-                    // 单页展示（pages=1 / 第 2 页生成失败 / 高度不足只
-                    // 显示第 1 页）。pages=2 时底部 1 行可读说明——文案
-                    // 区分"高度不足省略第 2 页"与"第 2 页未生成"。
-                    let note = pdf_overflow_note(pages, pngs.len());
-                    let (img_area, note_area) = if note.is_some() {
-                        let [img, n] = ratatui::layout::Layout::vertical([
-                            ratatui::layout::Constraint::Min(0),
-                            ratatui::layout::Constraint::Length(1),
-                        ])
-                        .areas(inner);
-                        (img, Some(n))
-                    } else {
-                        (inner, None)
-                    };
-                    if state
-                        .image_engine
-                        .render_file(frame, img_area, &pngs[0])
-                        .is_err()
-                    {
-                        frame.render_widget(
-                            Paragraph::new("PDF 图像渲染失败（协议探测失败或解码错误）"),
-                            img_area,
-                        );
-                    }
-                    if let (Some(text), Some(narea)) = (note, note_area) {
-                        frame.render_widget(Paragraph::new(ratatui::text::Line::from(text)), narea);
-                    }
+                    // 视觉不可用（文本层足够且无 prefer / 渲染失败）→ 文本回退。
+                    let preview =
+                        crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                    frame.render_widget(preview.into_paragraph(), inner);
                 }
                 return;
             }

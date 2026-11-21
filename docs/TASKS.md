@@ -484,7 +484,7 @@
 > 来源：同上。目标 0.14.0。顺序：1（hex）→ 2（CSV/PDF 翻页/EXIF）→ 3（zip 容器）→ 4（SFTP 硬化）→ 5（UAC）→ 6（标签布局）。
 
 - [x] M39-1 十六进制查看器（偏移跳转、ASCII 侧栏、分块；见 SPEC M39-1；2026-11-21 完成：w 打开二进制文件（前 8KB NUL 判定）→ 16 字节/行 hex（偏移+ASCII 侧栏）、viewer_hex_lines 分块读取（视口窗口 ≤1MB）、`:goto 0x…/十进制` 行对齐跳转（结果视图豁免清单加 goto）；m39_1 全链路测试，435 单测）
-- [ ] M39-2 CSV/TSV 预览、PDF 翻页、图片 EXIF 摘要（见 SPEC M39-2）
+- [x] M39-2 CSV/TSV 预览、PDF 翻页、图片 EXIF 摘要（见 SPEC M39-2；2026-11-21 完成：csv/tsv 表格对齐预览（naive 分隔 SIMPLIFIED）+ PDF 查看器单页 `[`/`]` 翻页（PAGE_CACHE 任意页按需渲染，门控沿用 pdf_image_pages；旧 1–2 页网格与 pdf_overflow_note 退役）+ 容器级尺寸摘要（PNG/JPEG/GIF/BMP 头解析入信息面板）；m39_2 四测试，438 单测 + 8 cli）
 - [ ] M39-3 通用 zip 容器识别（docx/xlsx/pptx/apk/war；见 SPEC M39-3）
 - [ ] M39-4 SFTP 硬化（指纹确认 ask 缺省、ProxyJump、agent、keepalive；见 SPEC M39-4）
 - [ ] M39-5 Windows 操作级 UAC（ShellExecuteEx runas；见 SPEC M39-5）

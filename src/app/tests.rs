@@ -5565,6 +5565,61 @@ fn m39_1_hex_viewer_binary_and_goto() {
 }
 
 #[test]
+fn m39_2_pdf_viewer_page_flip_keys() {
+    // M39-2：viewer `[`/`]` 翻页——page 状态推进/回退/第 1 页停留。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("doc.pdf"), "%PDF-1.4\n%dummy").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "doc.pdf")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    state.active_tab_mut().toggle_view();
+    let mut input = InputState::default();
+    assert_eq!(state.active_tab().viewer.as_ref().unwrap().page, 0);
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char(']'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char(']'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().viewer.as_ref().unwrap().page, 2);
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('['),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().viewer.as_ref().unwrap().page, 1);
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('['),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('['),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.active_tab().viewer.as_ref().unwrap().page,
+        0,
+        "第 1 页停留"
+    );
+}
+
+#[test]
 fn feat1_mouse_click_focus_then_reclick_opens_dir() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir(tmp.path().join("d1")).unwrap();
@@ -9944,18 +9999,5 @@ fn m282_rename_structured_preview_and_apply() {
     );
 }
 
-#[test]
-fn m273_pdf_overflow_note_variants() {
-    // M27-3：pages=2 未进两页布局时的底部说明——两页齐全=高度不足；
-    // 仅第 1 页=未生成；pages<2 无说明。
-    assert_eq!(preview::pdf_overflow_note(1, 0), None);
-    assert_eq!(preview::pdf_overflow_note(0, 2), None);
-    assert_eq!(
-        preview::pdf_overflow_note(2, 2),
-        Some("（预览区高度不足，仅显示第 1 页）")
-    );
-    assert_eq!(
-        preview::pdf_overflow_note(2, 1),
-        Some("（第 2 页未生成：文档仅 1 页或第 2 页渲染失败）")
-    );
-}
+// M27-3：pdf_overflow_note 已随 M39-2 查看器单页翻页改造移除（旧 1–2 页
+// 网格的底部说明函数，唯一调用点退役；单页文案并入标题"[ ] 翻页"）。

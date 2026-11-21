@@ -96,6 +96,14 @@ static VISUAL_CACHE: std::sync::LazyLock<
     Mutex<std::collections::HashMap<PathBuf, Option<Vec<PathBuf>>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
+/// M39-2：单页视觉渲染缓存键值表（(路径, 0-based 页) → PNG 临时文件；
+/// `None` = 该页渲染失败——失败缓存避免每帧重试）。
+type PageCacheMap = std::collections::HashMap<(PathBuf, u32), Option<PathBuf>>;
+
+/// M39-2：单页视觉渲染缓存（查看器 `[`/`]` 翻页）。
+static PAGE_CACHE: std::sync::LazyLock<Mutex<PageCacheMap>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
 /// M27-3：视觉预览入口（查看器调用，每帧安全）。
 /// - `pages == 0`：关闭（None，文本/提示路径）；
 /// - `NeedsVisual`：按 `pages`（1–2）生成 PNG；
@@ -168,7 +176,7 @@ fn generate_page_pngs(
 }
 
 /// M27-3：预览切换/退出统一清理——删除缓存中登记的全部临时 PNG 并清空
-/// 缓存（run 循环退出与目标切换均可调用；幂等）。
+/// 缓存（run 循环退出与目标切换均可调用；幂等）。M39-2：单页缓存一并清理。
 pub fn cleanup_visual_temps() {
     if let Ok(mut cache) = VISUAL_CACHE.lock() {
         for pngs in cache.values().flatten() {
@@ -178,6 +186,69 @@ pub fn cleanup_visual_temps() {
         }
         cache.clear();
     }
+    if let Ok(mut cache) = PAGE_CACHE.lock() {
+        for png in cache.values().flatten() {
+            let _ = std::fs::remove_file(png);
+        }
+        cache.clear();
+    }
+}
+
+/// M39-2：单页视觉渲染入口（查看器 `[`/`]` 翻页，每帧安全）——任意页
+/// 按需渲染；门控与 `cached_visual_pngs` 一致（NeedsVisual，或 Text +
+/// prefer_image：文本提取先行不跳过，AGENTS §5.5）。
+pub fn cached_visual_page_png(path: &Path, page: u32, prefer_image: bool) -> Option<PathBuf> {
+    cached_visual_page_png_with(path, page, prefer_image, find_external_renderer())
+}
+
+/// 注入外部工具形态（测试用）。
+fn cached_visual_page_png_with(
+    path: &Path,
+    page: u32,
+    prefer_image: bool,
+    ext: Option<(&'static str, &'static str)>,
+) -> Option<PathBuf> {
+    let key = (path.to_path_buf(), page);
+    if let Ok(cache) = PAGE_CACHE.lock()
+        && let Some(hit) = cache.get(&key)
+    {
+        return hit.clone();
+    }
+    let outcome = match preview_pdf(path) {
+        PdfPreview::NeedsVisual => render_page_single(path, page, ext),
+        PdfPreview::Text(_) if prefer_image => render_page_single(path, page, ext),
+        _ => None,
+    };
+    // 插入时清理其它路径条目（一次只看一个文件；M27-3 同语义）；
+    // 单路径页缓存超 32 条整体清空（防长文档无限增长）。
+    if let Ok(mut cache) = PAGE_CACHE.lock() {
+        cache.retain(|k, v| {
+            let keep = k.0 == key.0;
+            if !keep && let Some(p) = v {
+                let _ = std::fs::remove_file(p);
+            }
+            keep
+        });
+        if cache.len() > 32 {
+            for p in cache.values().flatten() {
+                let _ = std::fs::remove_file(p);
+            }
+            cache.clear();
+        }
+        cache.insert(key, outcome.clone());
+    }
+    outcome
+}
+
+/// 单页渲染 → 临时 PNG；失败 None（失败缓存于调用方）。
+fn render_page_single(
+    path: &Path,
+    page: u32,
+    ext: Option<(&'static str, &'static str)>,
+) -> Option<PathBuf> {
+    let png = next_temp_png();
+    render_page_png_with(path, page, &png, ext).ok()?;
+    Some(png)
 }
 
 /// 临时 PNG 路径（进程内原子计数，避免并发/多文件冲突）。
@@ -811,5 +882,34 @@ mod tests {
         assert!(px <= visual::MAX_EXPORT_PIXELS, "{px} > cap");
         assert!(pp.width > 0 && pp.height > 0);
         assert_eq!(pp.rgb.len(), pp.width as usize * pp.height as usize * 3);
+    }
+
+    #[test]
+    fn m39_2_page_cache_gating_and_failure_caching() {
+        // M39-2：单页缓存门控——Text PDF 无 prefer → None（文本提取先行
+        // 不跳过）；有 prefer + 无外部工具（干净环境）→ None 且失败缓存
+        // （二次调用同结果，不重复探测）。
+        let tmp = TempDir::new().unwrap();
+        let p = make_pdf(tmp.path(), "pg.pdf", "page gate");
+        cleanup_visual_temps();
+        assert_eq!(
+            cached_visual_page_png_with(&p, 0, false, None),
+            None,
+            "Text + 无 prefer → None"
+        );
+        assert_eq!(
+            cached_visual_page_png_with(&p, 3, false, None),
+            None,
+            "任意页同门控"
+        );
+        // prefer_image = true → NeedsVisual/Text 优先展示，但无外部工具
+        // （CI/本机干净环境）→ 渲染失败 None（exprim 关闭时）。
+        let first = cached_visual_page_png_with(&p, 0, true, None);
+        let second = cached_visual_page_png_with(&p, 0, true, None);
+        assert_eq!(first, second, "失败/成功缓存一致");
+        // 单路径清理：插入其它路径条目 → 旧条目被清除（含临时文件）。
+        if let Ok(mut cache) = PAGE_CACHE.lock() {
+            cache.clear();
+        }
     }
 }

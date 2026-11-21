@@ -83,6 +83,15 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
     if path.is_dir() {
         return directory_preview(path, max_lines);
     }
+    // M39-2：CSV/TSV 表格对齐预览（naive 分隔——引号内分隔符不解析，
+    // SIMPLIFIED；TUI 预览与 pick 同源）。
+    let ext_lower = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if matches!(ext_lower.as_str(), "csv" | "tsv") {
+        return csv_preview(path, max_lines, &ext_lower);
+    }
     if crate::office::is_office_file(path) {
         return match crate::office::extract_preview_text(path, max_lines) {
             Ok(body) => text_preview(&body),
@@ -208,10 +217,112 @@ fn read_text_preview(path: &Path, max_lines: usize) -> String {
     kept.join("\n")
 }
 
+/// M39-2：CSV/TSV 表格对齐预览——前 200 行按分隔符切列，列宽 = 视口内
+/// 最大显示宽（字符数，上限 40；CJK 计 1——SIMPLIFIED）；列数取最大，
+/// 短行右侧留空；输出截断到 max_lines。
+fn csv_preview(path: &Path, max_lines: usize, ext: &str) -> Preview {
+    let delim = if ext == "tsv" { '\t' } else { ',' };
+    let Ok(text) = fs::read_to_string(path) else {
+        return text_preview(&format!("[无法读取] {}", path.display()));
+    };
+    let rows: Vec<Vec<&str>> = text
+        .lines()
+        .take(200)
+        .map(|l| l.split(delim).collect())
+        .collect();
+    let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if cols == 0 {
+        return text_preview(&text);
+    }
+    let widths: Vec<usize> = (0..cols)
+        .map(|c| {
+            rows.iter()
+                .filter_map(|r| r.get(c))
+                .map(|s| s.chars().count())
+                .max()
+                .unwrap_or(0)
+                .min(40)
+        })
+        .collect();
+    let mut out = String::new();
+    for row in &rows {
+        let line = (0..cols)
+            .map(|c| {
+                let cell = row.get(c).copied().unwrap_or("");
+                let w = widths[c];
+                format!("{cell:<w$}  ")
+            })
+            .collect::<String>();
+        out.push_str(line.trim_end());
+        out.push('\n');
+        if out.lines().count() >= max_lines {
+            break;
+        }
+    }
+    text_preview(out.trim_end())
+}
+
+/// M39-2：图片容器级摘要（尺寸 + 格式）——解析文件头，不引依赖、不整读
+/// （PNG IHDR / JPEG SOF 扫描 / GIF 逻辑屏幕 / BMP 头）。非图像或解析
+/// 失败返回 None（EXIF 全字段 OUT_OF_SCOPE，SIMPLIFIED）。
+pub fn image_dimensions(path: &Path) -> Option<(u32, u32, &'static str)> {
+    use std::io::Read;
+    let mut f = fs::File::open(path).ok()?;
+    let mut head = vec![0u8; 128];
+    let n = f.read(&mut head).ok()?;
+    let h = &head[..n];
+    // PNG：8 字节签名 + 4 长度 + "IHDR" + 宽(4 BE) + 高(4 BE)。
+    if h.len() >= 24 && &h[..8] == b"\x89PNG\r\n\x1a\n" && &h[12..16] == b"IHDR" {
+        let w = u32::from_be_bytes([h[16], h[17], h[18], h[19]]);
+        let ht = u32::from_be_bytes([h[20], h[21], h[22], h[23]]);
+        return Some((w, ht, "PNG"));
+    }
+    // GIF：签名 + 逻辑屏幕宽（LE u16 @6）/ 高（@8）。
+    if h.len() >= 10 && (&h[..6] == b"GIF87a" || &h[..6] == b"GIF89a") {
+        let w = u16::from_le_bytes([h[6], h[7]]) as u32;
+        let ht = u16::from_le_bytes([h[8], h[9]]) as u32;
+        return Some((w, ht, "GIF"));
+    }
+    // BMP："BM" + 宽（LE i32 @18）/ 高（@22，DIB 头 ≥ 40 字节；top-down
+    // 负高取绝对值）。
+    if h.len() >= 26 && &h[..2] == b"BM" {
+        let w = u32::from_le_bytes([h[18], h[19], h[20], h[21]]);
+        let ht = i32::from_le_bytes([h[22], h[23], h[24], h[25]]).unsigned_abs();
+        return Some((w, ht, "BMP"));
+    }
+    // JPEG：FF D8 起，扫描 SOF0–SOF3/SOF9–SOF11（C0-C3/C9-CA/CB）段——
+    // 段长 2 字节 BE；SOF 段内 高@+5、宽@+7（各 2 字节 BE）。
+    if h.len() >= 4 && &h[..2] == b"\xff\xd8" {
+        let mut i = 2usize;
+        while i + 4 <= h.len() {
+            if h[i] != 0xff {
+                break;
+            }
+            let marker = h[i + 1];
+            if marker == 0xd8 || (0xd0..=0xd7).contains(&marker) {
+                i += 2; // 无长度段
+                continue;
+            }
+            let len = u16::from_be_bytes([h[i + 2], h[i + 3]]) as usize;
+            let sof = matches!(marker, 0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc9 | 0xca | 0xcb);
+            if sof && i + 9 <= h.len() {
+                let ht = u16::from_be_bytes([h[i + 5], h[i + 6]]) as u32;
+                let w = u16::from_be_bytes([h[i + 7], h[i + 8]]) as u32;
+                return Some((w, ht, "JPEG"));
+            }
+            if len == 0 {
+                break;
+            }
+            i += 2 + len;
+        }
+    }
+    None
+}
+
 /// M34-7：二进制/不可读文件的结构化信息面板——类型（魔数嗅探 + 扩展名）、
 /// 大小、修改时间；**不执行文件**（无子进程、无内容解析执行）。替代旧的
 /// 单行错误提示与 lossy 乱码渲染；TUI 预览与 pick 同源（read_text_preview
-/// 与查看器读取失败分支共用）。
+/// 与查看器读取失败分支共用）。M39-2：图像文件追加容器级尺寸摘要。
 pub fn file_info_text(path: &Path) -> String {
     let name = path
         .file_name()
@@ -242,6 +353,10 @@ pub fn file_info_text(path: &Path) -> String {
         "二进制数据".to_owned()
     };
     out.push(format!("  类型: {kind}"));
+    // M39-2：图像容器摘要（尺寸 + 格式；头解析，不引依赖）。
+    if let Some((w, h, fmt)) = image_dimensions(path) {
+        out.push(format!("  尺寸: {w}×{h}（{fmt}）"));
+    }
     match fs::metadata(path) {
         Ok(m) => {
             out.push(format!("  大小: {}", crate::tab::format_size(m.len())));
@@ -283,6 +398,32 @@ pub fn preview_lines(path: &Path, max_lines: usize) -> Vec<Span<'static>> {
     let preview = render_preview(path, max_lines);
     // Paragraph 的行文本提取（共享渲染证明；M11 接入图像后同样适用）。
     preview.line_texts().into_iter().map(Span::from).collect()
+}
+
+/// M39-2：合成最小 PNG 头（IHDR 尺寸）——供 image_dimensions 断言。
+#[cfg(test)]
+fn write_png_head(path: &std::path::Path, w: u32, h: u32) {
+    use std::io::Write as _;
+    let mut b = std::fs::File::create(path).unwrap();
+    let _ = b.write_all(b"\x89PNG\r\n\x1a\n");
+    let _ = b.write_all(&0u32.to_be_bytes());
+    let _ = b.write_all(b"IHDR");
+    let _ = b.write_all(&w.to_be_bytes());
+    let _ = b.write_all(&h.to_be_bytes());
+}
+
+/// M39-2：合成最小 JPEG 头（SOF0 段）——供 image_dimensions 断言。
+#[cfg(test)]
+fn write_jpeg_head(path: &std::path::Path, w: u16, h: u16) {
+    use std::io::Write as _;
+    let mut b = std::fs::File::create(path).unwrap();
+    let _ = b.write_all(b"\xff\xd8");
+    let _ = b.write_all(&[0xff, 0xc0]); // SOF0
+    let _ = b.write_all(&[0x00, 0x0b]); // 段长 11
+    let _ = b.write_all(&[8]); // 精度
+    let _ = b.write_all(&h.to_be_bytes());
+    let _ = b.write_all(&w.to_be_bytes());
+    let _ = b.write_all(&[1]); // 分量数
 }
 
 #[cfg(test)]
@@ -472,5 +613,65 @@ mod tests {
         let spans = preview_lines(&p, 10);
         let joined: String = spans.iter().map(|s| s.content.clone()).collect();
         assert!(joined.contains("hello shared"));
+    }
+
+    #[test]
+    fn m39_2_csv_tsv_table_alignment() {
+        // CSV/TSV 表格对齐：列宽 = 最长单元格；短行留空；TSV 用 Tab。
+        let tmp = TempDir::new().unwrap();
+        let csv = tmp.path().join("t.csv");
+        fs::write(&csv, "name,age\nalice,30\nbob,\n").unwrap();
+        let p = render_preview(&csv, 10);
+        let texts = p.line_texts();
+        let joined: String = texts.concat();
+        assert!(joined.contains("name   age"), "对齐列宽: {joined}");
+        assert!(joined.contains("alice  30"), "第二列跟随最宽列");
+        assert_eq!(
+            texts.iter().position(|l| l == "bob"),
+            Some(2),
+            "短行尾随填充被裁剪"
+        );
+        // TSV：Tab 分隔。
+        let tsv = tmp.path().join("t.tsv");
+        fs::write(&tsv, "a\tbb\nccc\td\n").unwrap();
+        let p = render_preview(&tsv, 10);
+        let joined: String = p.line_texts().concat();
+        assert!(joined.contains("a    bb"), "TSV 列宽按最长: {joined}");
+        assert!(joined.contains("ccc  d"));
+    }
+
+    #[test]
+    fn m39_2_image_dimensions_and_info_panel() {
+        // 容器级摘要：PNG IHDR / JPEG SOF；BMP/GIF 头解析；非图像 None。
+        let tmp = TempDir::new().unwrap();
+        let png = tmp.path().join("t.png");
+        write_png_head(&png, 1920, 1080);
+        assert_eq!(
+            image_dimensions(&png),
+            Some((1920, 1080, "PNG")),
+            "PNG IHDR"
+        );
+        let jpg = tmp.path().join("t.jpg");
+        write_jpeg_head(&jpg, 640, 480);
+        assert_eq!(image_dimensions(&jpg), Some((640, 480, "JPEG")));
+        let gif = tmp.path().join("t.gif");
+        let mut g = vec![b'G', b'I', b'F', b'8', b'9', b'a'];
+        g.extend(320u16.to_le_bytes());
+        g.extend(200u16.to_le_bytes());
+        fs::write(&gif, &g).unwrap();
+        assert_eq!(image_dimensions(&gif), Some((320, 200, "GIF")));
+        let bmp = tmp.path().join("t.bmp");
+        let mut m = vec![b'B', b'M'];
+        m.extend(vec![0u8; 16]);
+        m.extend(100i32.to_le_bytes());
+        m.extend(50i32.to_le_bytes());
+        fs::write(&bmp, &m).unwrap();
+        assert_eq!(image_dimensions(&bmp), Some((100, 50, "BMP")));
+        let txt = tmp.path().join("t.txt");
+        fs::write(&txt, "plain").unwrap();
+        assert_eq!(image_dimensions(&txt), None);
+        // 信息面板追加尺寸行（file_info_text 同源接线）。
+        let info = file_info_text(&png);
+        assert!(info.contains("尺寸: 1920×1080（PNG）"), "info: {info}");
     }
 }

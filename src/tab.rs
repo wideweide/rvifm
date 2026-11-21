@@ -511,6 +511,8 @@ pub struct ViewerState {
     pub match_line: usize,
     /// M39-1：hex 模式——二进制文件的完整视图（16 字节/行，分块读取）。
     pub hex: bool,
+    /// M39-2：PDF 查看器当前页（0-based；`[`/`]` 翻页）。
+    pub page: u32,
 }
 
 /// M39-1：二进制判定——前 8KB 含 NUL 字节即视为二进制（hex 查看器进入）。
@@ -1111,6 +1113,7 @@ impl Tab {
                 query: None,
                 match_line: 0,
                 hex,
+                page: 0,
             });
         } else {
             self.viewer = None;
@@ -1188,6 +1191,22 @@ impl Tab {
         };
         let line = (offset / 16) as usize;
         v.scroll = line.min(v.line_count.saturating_sub(1));
+    }
+
+    /// M39-2：PDF 查看器翻页——`[` 上一页（第 1 页停留）、`]` 下一页
+    /// （越界页渲染失败由查看器显示失败提示，用户 `[` 退回）。
+    pub fn viewer_prev_page(&mut self) {
+        if let Some(v) = self.viewer.as_mut()
+            && v.page > 0
+        {
+            v.page -= 1;
+        }
+    }
+
+    pub fn viewer_next_page(&mut self) {
+        if let Some(v) = self.viewer.as_mut() {
+            v.page += 1;
+        }
     }
 
     /// M17 VIEW-1：查看器滚动（delta 行，钳制到内容范围）。

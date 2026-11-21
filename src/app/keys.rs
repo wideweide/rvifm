@@ -1217,6 +1217,18 @@ pub(crate) fn handle_key(
                 }
                 return Outcome::Continue;
             }
+            KeyCode::Char('[') => {
+                // M39-2：PDF 查看器翻页（上一页；第 1 页停留；其余查看器 no-op）。
+                input.count = None;
+                state.active_tab_mut().viewer_prev_page();
+                return Outcome::Continue;
+            }
+            KeyCode::Char(']') => {
+                // M39-2：PDF 查看器翻页（下一页；越界页渲染失败可见，[ 退回）。
+                input.count = None;
+                state.active_tab_mut().viewer_next_page();
+                return Outcome::Continue;
+            }
             KeyCode::Char(':') => {} // 放行：进入命令模式
             _ => {
                 input.count = None;

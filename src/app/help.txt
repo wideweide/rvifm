@@ -79,6 +79,10 @@ rvifm 帮助（vim 风格文件管理器）
   w               右 pane 在目录列表与预览间切换（预览小图原尺寸居中、大图按宽适配）
   w（二进制文件） hex 完整视图（16 字节/行：偏移 + ASCII 侧栏；分块读取；
                   :goto <0x偏移|十进制> 跳转；无编辑）
+  [ / ]（PDF）     查看器 PDF 翻页（任意页按需渲染；需 pdf_image_pages>0
+                  或外部工具，文本层足够且无 prefer 时回退文本）
+  CSV/TSV 预览    表格对齐（列宽=最长单元格；naive 分隔，引号内分隔符不解析）
+  图片信息        预览信息面板含容器尺寸/格式（PNG/JPEG/GIF/BMP 头解析）
   S               排序对话框（字母直接应用 / 空格切换方向 / 回车确认）
   :sort 字段,...  多字段排序（name/natural/mtime/size/ext，逗号分隔 + asc/desc）
   :tree           树视图（只读，depth 可选；再执行恢复平铺）

@@ -168,6 +168,11 @@ S                排序对话框；:sort 字段,... 多字段排序
 16 字节/行（偏移 + 十六进制 + ASCII 侧栏），内容分块读取（视口窗口 ≤1MB，
 大文件不整读）；`:goto 0x100` 或 `:goto 256` 按 16 字节行对齐跳转。无编辑。
 
+PDF 查看器：`[`/`]` 逐页翻页（任意页按需渲染；`[preview] pdf_image_pages>0`
+或装有 pdftoppm/mutool 时生效，文本层足够且未开 `pdf_prefer_image` 时回退
+文本预览）。CSV/TSV 文件预览为表格对齐形态；图片信息面板显示容器尺寸/格式
+（PNG/JPEG/GIF/BMP 头解析，无 EXIF 全字段）。
+
 ## 10. 远端（SFTP）
 
 ```
