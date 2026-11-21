@@ -122,6 +122,8 @@ impl InputState {
 /// Normal 模式按键的处理结果。
 #[derive(Debug, PartialEq)]
 pub(crate) enum Outcome {
+    /// 请求进入传输队列覆盖层（M36-7 `:queue`）。
+    EnterQueue { cursor: usize },
     /// 无状态变化。
     Continue,
     /// 请求退出应用。
@@ -256,6 +258,8 @@ pub(crate) enum InputMode {
     /// 作业详情覆盖层（M28-3）：显示类型/源/目标/进度/速率/时长；
     /// 任意键返回 `:jobs`。
     JobDetail { index: usize },
+    /// 传输队列覆盖层（M36-7）：j/k 选择、x 取消条目、Esc 关闭。
+    Queue { cursor: usize },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
         input: String,
@@ -610,6 +614,34 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             input.seq.clear();
             seq_deadline = None;
             last_seq_len = 0;
+        }
+        // M36-7：传输队列消费（每次 poll 前——头条目上传同步执行）。
+        if !state.transfer_queue.is_empty()
+            && state
+                .transfer_queue
+                .first()
+                .map(|e| e.direction == crate::app::jobs::TransferDirection::Upload)
+                .unwrap_or(false)
+        {
+            let entry = state.transfer_queue.remove(0);
+            if let Some(backend) = state.remote_sessions.get(&entry.remote) {
+                match upload_chunked(backend.as_ref(), &entry.src, &entry.dest) {
+                    Ok(()) => {
+                        state.undo_stack.push(crate::state::UndoableOp::Remote {
+                            tab_id: entry.tab_id,
+                            remote: entry.remote.clone(),
+                            kind: crate::state::RemoteUndo::Create {
+                                path: entry.dest.clone(),
+                                is_dir: false,
+                            },
+                        });
+                    }
+                    Err((_, e)) => {
+                        msg = Some(format!("queue: {} 失败: {e}", entry.src.display()));
+                    }
+                }
+                refresh_tab_panes(&mut state, entry.tab_id);
+            }
         }
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞；
         // 有待决序列时预算收缩到超时余量（AUDIT-6）。
@@ -1129,6 +1161,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                             };
                         }
+                        Outcome::EnterQueue { cursor } => {
+                            mode = InputMode::Queue { cursor };
+                        }
                         Outcome::EnterSortDialog => {
                             // 高亮字段初始 = 当前排序字段（否则 name）。
                             let cur = state
@@ -1278,6 +1313,31 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     if key.kind == KeyEventKind::Press {
                         let _ = index;
                         mode = InputMode::Jobs { cursor: *index };
+                    }
+                }
+                InputMode::Queue { cursor } => {
+                    // M36-7：队列覆盖层——j/k 选择、x 取消条目、Esc 关闭。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                if !state.transfer_queue.is_empty() {
+                                    *cursor = (*cursor + 1).min(state.transfer_queue.len() - 1);
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                *cursor = cursor.saturating_sub(1);
+                            }
+                            KeyCode::Char('x') if *cursor < state.transfer_queue.len() => {
+                                state.transfer_queue.remove(*cursor);
+                                if *cursor >= state.transfer_queue.len()
+                                    && !state.transfer_queue.is_empty()
+                                {
+                                    *cursor = state.transfer_queue.len() - 1;
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 InputMode::ArchiveDialog {

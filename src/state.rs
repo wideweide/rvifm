@@ -268,6 +268,19 @@ pub enum YankSource {
     Remote(String),
 }
 
+/// M36-7：传输队列条目（粘贴入队；顺序消费）。
+#[derive(Debug, Clone)]
+pub struct TransferQueueEntry {
+    pub direction: crate::app::TransferDirection,
+    /// 上传 = 本地源路径；下载 = 远端源路径。
+    pub src: PathBuf,
+    /// 目标（远端路径 / 本地路径）。
+    pub dest: PathBuf,
+    pub tab_id: usize,
+    /// 远端会话名（下载用；上传空）。
+    pub remote: String,
+}
+
 /// M36-5：冲突策略（`[transfer] conflict_policy`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConflictPolicy {
@@ -352,6 +365,8 @@ pub struct AppState {
     pub yank: Option<YankBuffer>,
     /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
+    /// M36-7：传输队列（粘贴入队；`:queue` 覆盖层消费/取消）。
+    pub transfer_queue: Vec<TransferQueueEntry>,
     /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
@@ -403,6 +418,7 @@ impl AppState {
             jobs: Vec::new(),
             yank: None,
             remote_sessions: std::collections::BTreeMap::new(),
+            transfer_queue: Vec::new(),
             watcher: None,
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),

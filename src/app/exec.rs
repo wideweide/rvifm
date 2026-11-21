@@ -1741,7 +1741,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
-                | "compare" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks",
+                | "compare" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks" | "queue",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
@@ -1753,7 +1753,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
                 | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
-                | "touch" | "copy" | "move" | "mk" | "theme",
+                | "touch" | "copy" | "move" | "mk" | "theme" | "queue",
             ) => {}
             Some(other) => {
                 // M22-4：去掉过时的"在 M20 接入"表述。
@@ -3105,7 +3105,7 @@ fn remote_head_hash(backend: &dyn crate::remote::RemoteFs, dest: &Path) -> Optio
 /// 保存 offset 到 `.part.meta`（含头哈希）并返回 Err(offset)；重试时：
 /// `.part.meta` 存在 → `read_range` 校验远端头部哈希一致 → 从 offset 续
 /// （write_range）；不一致/缺失 → 从头。完成（offset==total）→ 删 meta。
-fn upload_chunked(
+pub(crate) fn upload_chunked(
     backend: &dyn crate::remote::RemoteFs,
     src: &Path,
     dest: &Path,
@@ -3208,6 +3208,33 @@ pub(crate) fn paste_yanked_remote(
     let mut done = 0usize;
     let mut first_err: Option<String> = None;
     let tab_id = state.active;
+    // M36-7：[transfer] queue = true 且多文件 → 入队（:queue 顺序消费）。
+    if state.config.transfer.queue && buffer.paths.len() > 1 {
+        for src in &buffer.paths {
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let dest = if dir == std::path::Path::new("/") {
+                PathBuf::from(format!("/{name}"))
+            } else {
+                dir.join(&name)
+            };
+            state.transfer_queue.push(crate::state::TransferQueueEntry {
+                direction: crate::app::TransferDirection::Upload,
+                src: src.clone(),
+                dest,
+                tab_id,
+                remote: remote.clone(),
+            });
+        }
+        *msg = Some(format!(
+            "已入队 {} 项上传（:queue 查看进度）",
+            buffer.paths.len()
+        ));
+        refresh_tab_panes(state, tab_id);
+        return;
+    }
     for src in &buffer.paths {
         let name = src
             .file_name()

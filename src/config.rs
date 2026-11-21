@@ -145,12 +145,15 @@ pub struct KeymapConfig {
 pub struct TransferConfig {
     /// 冲突策略：ask（缺省）/overwrite/skip/rename/newer。
     pub conflict_policy: String,
+    /// M36-7：粘贴入队（true = 多选传输排队顺序执行；缺省 false = 同步直传）。
+    pub queue: bool,
 }
 
 impl Default for TransferConfig {
     fn default() -> Self {
         Self {
             conflict_policy: "ask".to_owned(),
+            queue: false,
         }
     }
 }

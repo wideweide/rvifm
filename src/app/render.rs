@@ -678,6 +678,40 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
+    if let InputMode::Queue { cursor } = mode {
+        // M36-7：传输队列覆盖层（j/k 选择、x 取消条目、Esc 关闭）。
+        let mut lines: Vec<Line> = Vec::new();
+        if state.transfer_queue.is_empty() {
+            lines.push(Line::from("（队列为空）"));
+        } else {
+            for (i, e) in state.transfer_queue.iter().enumerate() {
+                let dir_label = match e.direction {
+                    crate::app::jobs::TransferDirection::Upload => "↑",
+                    crate::app::jobs::TransferDirection::Download => "↓",
+                };
+                let sel = if i == *cursor {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new()
+                };
+                lines.push(Line::styled(
+                    format!(
+                        "{dir_label} {src} → {dest}",
+                        src = e.src.display().to_string().replace('\\', "/"),
+                        dest = e.dest.display().to_string().replace('\\', "/")
+                    ),
+                    sel,
+                ));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered().title("传输队列（j/k=选择 x=取消 Esc=关闭）"),
+            ),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::JobDetail { index } = mode {
         // M28-3：作业详情覆盖层——类型/源/目标/状态/进度/速率/时长。
         let mut lines: Vec<Line> = Vec::new();
@@ -1050,6 +1084,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     let status = match mode {
         InputMode::JobDetail { .. } => {
             Line::from(String::new()) // 详情覆盖层提前 return，不可达（M28-3）
+        }
+        InputMode::Queue { .. } => {
+            Line::from(String::new()) // 队列覆盖层提前 return，不可达（M36-7）
         }
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
         InputMode::ArchiveDialog { input, field, .. } => {
