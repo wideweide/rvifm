@@ -3146,9 +3146,55 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
         }
         Some("jobs") => Ok(ExecOutcome::ShowJobs),
         Some("trash") => {
-            // M13-10：暂存区菜单（staged 仍存在的条目）。
-            let items = crate::ops::read_trash_index();
-            Ok(ExecOutcome::ShowTrash { items })
+            // M13-10：暂存区菜单 + M37-7：clear/purge 子命令。
+            match parts.next() {
+                None => {
+                    let items = crate::ops::read_trash_index();
+                    Ok(ExecOutcome::ShowTrash { items })
+                }
+                Some("clear") => {
+                    // 清空：删除全部 staged 文件 + 索引。
+                    let (removed, errs) = crate::ops::trash_clear_all();
+                    if errs.is_empty() {
+                        Ok(ExecOutcome::Done {
+                            msg: Some(format!("trash: 已清空 {removed} 项（不可恢复）")),
+                        })
+                    } else {
+                        Err(format!(
+                            "trash: {removed} 项清除，失败 {}: {}",
+                            errs.len(),
+                            errs.join("; ")
+                        ))
+                    }
+                }
+                Some("purge") => {
+                    // 按时间清理：--before <天数>（staged 文件 mtime 早于
+                    // N 天前的清除）。
+                    let days: u64 = match parts.next() {
+                        Some(d) if d.starts_with("--before=") => d["--before=".len()..]
+                            .parse()
+                            .map_err(|_| "trash: --before=<天数> 非法".to_owned())?,
+                        _ => return Err("trash: purge 需 --before=<天数>".to_owned()),
+                    };
+                    let (removed, errs) = crate::ops::trash_purge_before(days);
+                    if errs.is_empty() {
+                        Ok(ExecOutcome::Done {
+                            msg: Some(format!(
+                                "trash: 已清理 {removed} 项（{days} 天前，不可恢复）"
+                            )),
+                        })
+                    } else {
+                        Err(format!(
+                            "trash: {removed} 项清理，失败 {}: {}",
+                            errs.len(),
+                            errs.join("; ")
+                        ))
+                    }
+                }
+                Some(other) => Err(format!(
+                    "trash: 未知子命令 {other}（无参=菜单、clear、purge --before=<天数>）"
+                )),
+            }
         }
         Some("history" | "his") => {
             // M16 NAV-2：目录历史菜单（当前 tab back 栈，live 渲染）。

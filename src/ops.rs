@@ -316,6 +316,57 @@ pub fn restore_from_trash(entry: &TrashEntry) -> std::io::Result<PathBuf> {
     Ok(orig.to_path_buf())
 }
 
+/// M37-7：清空暂存区（全部 staged 文件 + 索引删除；不可恢复）。
+/// 返回（清除数, 错误列表）。
+pub fn trash_clear_all() -> (usize, Vec<String>) {
+    let mut removed = 0usize;
+    let mut errs = Vec::new();
+    for entry in read_trash_index() {
+        let staged = Path::new(&entry.staged);
+        match fs::remove_file(staged).or_else(|_| fs::remove_dir_all(staged)) {
+            Ok(()) => removed += 1,
+            Err(e) => errs.push(format!("{}: {e}", staged.display())),
+        }
+        let _ = fs::remove_file(trash_index_dir().join(format!(
+            "{}.json",
+            staged.file_name().unwrap_or_default().to_string_lossy()
+        )));
+    }
+    (removed, errs)
+}
+
+/// M37-7：按时间清理暂存区（staged 文件 mtime 早于 `days` 天 → 清除）。
+pub fn trash_purge_before(days: u64) -> (usize, Vec<String>) {
+    let cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(days * 86400);
+    let mut removed = 0usize;
+    let mut errs = Vec::new();
+    for entry in read_trash_index() {
+        let staged = Path::new(&entry.staged);
+        let old_enough = fs::metadata(staged)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() < cutoff)
+            .unwrap_or(false);
+        if !old_enough {
+            continue;
+        }
+        match fs::remove_file(staged).or_else(|_| fs::remove_dir_all(staged)) {
+            Ok(()) => removed += 1,
+            Err(e) => errs.push(format!("{}: {e}", staged.display())),
+        }
+        let _ = fs::remove_file(trash_index_dir().join(format!(
+            "{}.json",
+            staged.file_name().unwrap_or_default().to_string_lossy()
+        )));
+    }
+    (removed, errs)
+}
+
 /// 重命名（M2-3，`:rename <新名字>`）：仅改文件名，不允许路径分隔符。
 pub fn rename_to(tab_id: usize, path: &Path, new_name: &str) -> std::io::Result<UndoableOp> {
     if new_name.is_empty() {

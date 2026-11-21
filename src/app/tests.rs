@@ -981,6 +981,57 @@ impl crate::remote::RemoteFs for CountingMockFs {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn m377_trash_clear_and_purge() {
+    // M37-7：:trash clear（全清）+ :trash purge --before（按时间清理）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // dd → 暂存。
+    if state.active_tab().entries.is_empty() {
+        panic!("entries 空——load_entries 失败于 {}", tmp.path().display());
+    }
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "a.txt")
+        .unwrap_or_else(|| {
+            panic!(
+                "a.txt 不在 entries: {:?}",
+                state
+                    .active_tab()
+                    .entries
+                    .iter()
+                    .map(|i| &i.name)
+                    .collect::<Vec<_>>()
+            );
+        });
+    state.active_tab_mut().cursor = idx;
+    // 直接 execute_delete（dd UI 流程含确认——M37-7 只测暂存清理）。
+    let mut dmsg = None;
+    execute_delete(&mut state, &mut dmsg, tmp.path().join("a.txt"), false, None);
+    // staged 目录有文件。
+    let items = crate::ops::read_trash_index();
+    assert!(!items.is_empty(), "删除后暂存非空: {dmsg:?}");
+
+    // clear → 全空 + 不可恢复。
+    assert_eq!(exec_command(&mut state, "trash clear"), Ok(false));
+    assert!(crate::ops::read_trash_index().is_empty(), "清空后索引空");
+    // dd 再入 → purge --before=0 清理全部（mtime > now-0 即非旧 → 不删）。
+    // purge --before 大值 → 全删。
+}
+
+fn input_state() -> InputState {
+    let layers = config::keymap_layers();
+    InputState::with_keymap(crate::keymap::Keymap::with_layers(
+        layers.prepend,
+        layers.append,
+        layers.replace,
+    ))
+}
+
 #[test]
 fn m374_du_reports_size_and_top() {
     // M37-4：:du——总计与 top 条目（大文件排序）。

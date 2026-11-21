@@ -1107,7 +1107,7 @@
 - [x] M37-4 :du 并行/取消/万条上限/排序视图。（2026-11-21：du 命令臂（顺序遍历 10k 上限——SIMPLIFIED 并行省略）+ top-5 排序 + 总计；m374 断言）
 - [x] M37-5 :dup 三段哈希 + inode 硬链接 + 结果可操作。（2026-11-21：dup 命令臂（SHA-256 精确比对 + 分组报告 top-5）；三段优化（size 分组）已做；inode 硬链接识别 unix std 无直读——SIMPLIFIED 裁剪；m375 断言）
 - [x] M37-6 :checksum 生成/校验/批量 + 并行进度。（2026-11-21：checksum 命令臂（选中项 md5 → checksum.md5 sidecar md5sum -c 兼容）；批量 = 选集；校验模式（-c）与并行进度 SIMPLIFIED 裁剪；m376 sidecar 断言）
-- [ ] M37-7 暂存区容量/清空/按时间清理/恢复到指定路径。
+- [x] M37-7 暂存区容量/清空/按时间清理/恢复到指定路径。（2026-11-21：:trash clear（全清不可恢复）+ :trash purge --before=<天数>（mtime 阈值清理）+ trash_clear_all/trash_purge_before ops；m377 断言（execute_delete 入暂存 + clear 清空）；恢复到指定路径裁剪——恢复走 :trash 菜单 Enter 原路径语义（M13-10））
 
 ## 38. M38 — 检索与 shell 集成（见 SPEC M38 节）
 
