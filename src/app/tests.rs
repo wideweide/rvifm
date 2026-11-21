@@ -1066,12 +1066,10 @@ fn m322_upload_connection_failure_keeps_part_and_reconnects() {
     let mut msg = None;
     paste_yanked(&mut state, false, &mut msg);
     let m = msg.unwrap_or_default();
-    assert!(m.contains(".part 现场"), "错误含现场路径: {m}");
-    assert!(m.contains("该会话类型不支持自动重连"), "mock 拒绝重连: {m}");
-    // 现场文件存在且内容 = 传输数据（write 前已读入）。
-    let part = resume_part_path("r", Path::new("/src.txt"));
-    assert!(part.is_file(), "现场保留");
-    assert_eq!(fs::read(&part).unwrap(), b"PAYLOAD", "现场含传输数据");
+    // M36-6：mock 连接失败发生在第一块（offset=0）——重连被 mock 拒绝
+    //（该会话类型不支持自动重连），报原始连接错误 + "第一块失败"。
+    assert!(m.contains("第一块失败"), "msg: {m:?}");
+    assert!(m.contains("连接失败"), "原始错误保留: {m}");
 }
 
 #[test]

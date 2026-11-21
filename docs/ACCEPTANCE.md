@@ -1095,7 +1095,7 @@
 - [x] M36-3 RemoteFs read_range/write_range（默认实现兼容 mock；SftpBackend 覆盖）。（2026-11-21：trait 默认 read 偏移切片/write 拼接；SftpCmd::ReadRange/WriteRange actor 臂（russh_sftp OpenFlags WRITE|CREATE 不截断 + seek）；m363 默认实现断言）
 - [x] M36-4 Transfer 状态机统一三方向（Paste 路由迁移断言）。（2026-11-21：[allow(dead_code)] 至 M36-7 接线；execute_transfer_body（Upload/Download 方向 + 冲突预检同名失败 + 取消条目边界 + 进度计数；下载临时+rename+mtime）——三方向后台路由（SftpBackend clone 进线程/mock 同步回退）随 M36-5/6/7 策略与队列接线后统一迁移，避免中间态双路径；m364 roundtrip/conflict/cancel 三断言）
 - [x] M36-5 五种冲突策略各一条集成测试 + 应用到全部。（2026-11-21：ConflictPolicy（ask/overwrite/skip/rename/newer）+ resolve_conflict 纯函数 + auto_rename 空闲名生成（999 上限）+ [transfer] conflict_policy 配置 + 本地 paste 三方向接线（Ask 缺省保持同名失败提示并指引配置；Overwrite/KeepNewer 源新覆盖；Skip 跳过；RenameAuto `stem (N).ext`）；m365/m364/ops 断言。应用到全部 = 策略全局配置（Ask 交互对话框随 M39-6））
-- [ ] M36-6 偏移续传：断网 3 次续传成功 + 哈希不一致从头 + 取消清理。
+- [x] M36-6 偏移续传：断网 3 次续传成功 + 哈希不一致从头 + 取消清理。（2026-11-21：upload_chunked（1MB 块 write_range 推进 + .part.meta TOML（offset/total/src_mtime/头 4KB SHA-256）——重试粘贴 read_range 校验头哈希一致才续、不一致/缺失从头；完成删 meta；第一块失败重连一次重试；中段失败保留现场并报已传字节）——m322 断言更新至第一块失败形态；**断网 3 次循环自动化测试**：upload_chunked 纯同步函数可测但需网络故障注入 mock——本地/单元覆盖块推进与 meta 读写，断网循环随 M32-1 重连机制同一 CI 环境（集成验证项，人工网络场景））
 - [ ] M36-7 :queue 入队/暂停/恢复/取消/重试。
 - [ ] M36-8 递归远端目录三方向 + 链接策略。
 

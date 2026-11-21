@@ -3071,6 +3071,125 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
 
 /// M20-1：远端视图粘贴——yank 路径读出内容 → 后端 write 到当前远端目录；
 /// 逐条入撤销栈（Create，u 可逆）；同名冲突报错不覆盖。
+/// M36-6：`.part.meta` 读写——记录已传偏移/总长/源 mtime/头 4KB 哈希。
+/// 格式：TOML（`offset`/`total`/`src_mtime`/`head_hash`）。
+#[derive(serde::Serialize, serde::Deserialize)]
+struct XferPartMeta {
+    offset: u64,
+    total: u64,
+    src_mtime: u64,
+    head_hash: String,
+}
+
+fn part_meta_path(part: &Path) -> PathBuf {
+    let mut s = part.to_string_lossy().into_owned();
+    s.push_str(".meta");
+    PathBuf::from(s)
+}
+
+/// M36-6：读远端目标前 4KB 计算头部哈希（校验续传现场一致性）。
+fn remote_head_hash(backend: &dyn crate::remote::RemoteFs, dest: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let head = backend.read_range(dest, 0, 4096).ok()?;
+    let mut h = Sha256::new();
+    h.update(&head);
+    Some(
+        h.finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
+    )
+}
+
+/// M36-6：分块上传 + 偏移续传——每 1MB 块 write_range 推进；连接类失败
+/// 保存 offset 到 `.part.meta`（含头哈希）并返回 Err(offset)；重试时：
+/// `.part.meta` 存在 → `read_range` 校验远端头部哈希一致 → 从 offset 续
+/// （write_range）；不一致/缺失 → 从头。完成（offset==total）→ 删 meta。
+fn upload_chunked(
+    backend: &dyn crate::remote::RemoteFs,
+    src: &Path,
+    dest: &Path,
+) -> Result<(), (u64, String)> {
+    const CHUNK: u64 = 1024 * 1024;
+    let src_data = std::fs::read(src).map_err(|e| (0, format!("本地读取失败: {e}")))?;
+    let total = src_data.len() as u64;
+    let src_mtime = std::fs::metadata(src)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let part = resume_part_path("xfer", dest);
+    let meta_p = part_meta_path(&part);
+    // 续传现场判定：meta 存在 + total/mtime/头哈希一致 → 从 offset 续；
+    // 否则从 0（服务器端目标已存在时先截断重写——write_range offset=0
+    // 全量写覆盖）。
+    let mut offset: u64 = 0;
+    let resumed = std::fs::read_to_string(&meta_p)
+        .ok()
+        .and_then(|t| toml::from_str::<XferPartMeta>(&t).ok())
+        .filter(|meta| {
+            meta.total == total
+                && meta.src_mtime == src_mtime
+                && remote_head_hash(backend, dest).as_deref() == Some(meta.head_hash.as_str())
+        });
+    if let Some(meta) = resumed {
+        offset = meta.offset;
+    }
+    // 头哈希（首次写前记录——后续重试校验基准）。
+    if offset == 0 {
+        use sha2::{Digest, Sha256};
+        // 先写第一块（目标此时建立）。
+        let first_end = CHUNK.min(total);
+        backend
+            .write_range(dest, 0, &src_data[..first_end as usize])
+            .map_err(|e| (0, e.to_string()))?;
+        offset = first_end;
+        let mut h = Sha256::new();
+        h.update(&src_data[..first_end as usize]);
+        let meta = XferPartMeta {
+            offset,
+            total,
+            src_mtime,
+            head_hash: h
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+        };
+        let _ = std::fs::write(&meta_p, toml::to_string(&meta).unwrap_or_default());
+    }
+    // 块循环推进。
+    while offset < total {
+        let end = (offset + CHUNK).min(total);
+        backend
+            .write_range(dest, offset, &src_data[offset as usize..end as usize])
+            .map_err(|e| (offset, e.to_string()))?;
+        offset = end;
+        let meta_updated = std::fs::read_to_string(&meta_p)
+            .ok()
+            .and_then(|t| toml::from_str::<XferPartMeta>(&t).ok())
+            .map(|mut meta| {
+                meta.offset = offset;
+                let _ = std::fs::write(&meta_p, toml::to_string(&meta).unwrap_or_default());
+                meta
+            });
+        let _ = meta_updated;
+    }
+    // 完成：远端 mtime 保留 + 删现场。
+    let _ = backend.metadata(dest).map(|meta| {
+        if meta.mtime > 0 {
+            let mt = std::time::UNIX_EPOCH + std::time::Duration::from_secs(meta.mtime);
+            // write_range 后无法在 trait 上直接 set times——保留策略：
+            // rename/recreate 交由后端；此处 mtime 以 write_range 后的
+            // touch_range 不存在而跳过（SIMPLIFIED：上传 mtime 不保留）。
+            let _ = mt;
+        }
+    });
+    let _ = std::fs::remove_file(&meta_p);
+    Ok(())
+}
+
 pub(crate) fn paste_yanked_remote(
     state: &mut AppState,
     buffer: &crate::state::YankBuffer,
@@ -3090,29 +3209,6 @@ pub(crate) fn paste_yanked_remote(
     let mut first_err: Option<String> = None;
     let tab_id = state.active;
     for src in &buffer.paths {
-        let data = match &buffer.source {
-            crate::state::YankSource::Remote(src_remote) => {
-                let r = state
-                    .remote_sessions
-                    .get(src_remote)
-                    .ok_or_else(|| "来源会话已断开".to_owned())
-                    .and_then(|be| be.read(src).map_err(|e| e.to_string()));
-                match r {
-                    Ok(d) => d,
-                    Err(e) => {
-                        first_err = Some(e);
-                        break;
-                    }
-                }
-            }
-            crate::state::YankSource::Local => match std::fs::read(src) {
-                Ok(d) => d,
-                Err(e) => {
-                    first_err = Some(e.to_string());
-                    break;
-                }
-            },
-        };
         let name = src
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -3134,34 +3230,35 @@ pub(crate) fn paste_yanked_remote(
         // M32-2：write 连接类失败 → .part 传输现场保留 + 自动重连一次后
         // 重写（SIMPLIFIED：会话 write 无偏移参数，重连后整文件重写；
         // 显式取消（x）在条目边界，不产生 .part）。
-        let write_err = state
-            .remote_sessions
-            .get(&remote)
-            .and_then(|be| be.write(&dest, &data).err());
-        let upload_err = match write_err {
-            None => None,
-            Some(e) if e.is_connection_class() => {
-                let part = resume_part_path(&remote, &dest);
-                let _ = std::fs::write(&part, &data);
-                match remote_reconnect_session(state, &remote) {
-                    Ok(()) => match state
-                        .remote_sessions
-                        .get(&remote)
-                        .and_then(|be| be.write(&dest, &data).err())
-                    {
-                        None => {
-                            let _ = std::fs::remove_file(&part);
-                            None
+        // M36-6：upload_chunked——1MB 块 write_range 推进 + .part.meta
+        // 偏移现场；连接类失败保存 offset，重试粘贴从偏移续传
+        // （read_range 校验头哈希一致才续，否则从头）。第一块失败重连
+        // 一次重试；中段失败保留现场（重试粘贴续传）。
+        let backend_ref = state.remote_sessions.get(&remote).map(|b| b.as_ref());
+        let upload_err = match backend_ref {
+            None => Some("remote: 会话已断开".to_owned()),
+            Some(backend) => match upload_chunked(backend, src, &dest) {
+                Ok(()) => None,
+                Err((0, e)) => {
+                    // 第一块失败：重连一次重试。
+                    if remote_reconnect_session(state, &remote).is_ok() {
+                        match state
+                            .remote_sessions
+                            .get(&remote)
+                            .map(|b| upload_chunked(b.as_ref(), src, &dest))
+                        {
+                            Some(Ok(())) => None,
+                            Some(Err((_, e2))) => Some(format!("重连后仍失败: {e2}")),
+                            None => Some("remote: 会话已断开".to_owned()),
                         }
-                        Some(e2) => Some(format!(
-                            "重连后仍失败: {e2}（.part 现场: {}）",
-                            part.display()
-                        )),
-                    },
-                    Err(e2) => Some(format!("{e2}（.part 现场: {}）", part.display())),
+                    } else {
+                        Some(format!("{e}（第一块失败）"))
+                    }
                 }
-            }
-            Some(e) => Some(e.to_string()),
+                Err((offset, e)) => Some(format!(
+                    "{e}（已传 {offset} 字节，.part.meta 现场保留——重试粘贴可续传）"
+                )),
+            },
         };
         match upload_err {
             None => {
