@@ -3252,7 +3252,7 @@ pub(crate) fn paste_remote_to_local(
                     let _ = std::fs::File::options()
                         .write(true)
                         .open(&tmp_dest)
-                        .and_then(|mut f| f.set_times(std::fs::FileTimes::new().set_modified(mt)));
+                        .and_then(|f| f.set_times(std::fs::FileTimes::new().set_modified(mt)));
                 }
             }
             std::fs::rename(&tmp_dest, &dest)
