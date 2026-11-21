@@ -778,10 +778,26 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 }
                                 Ok(ExecOutcome::Escalate { op }) => {
                                     // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
-                                    mode = InputMode::AskPass {
-                                        input: String::new(),
-                                        op,
-                                    };
+                                    // M39-5：Windows → UAC 弹窗（ShellExecuteExW runas，
+                                    // 操作级不提升主进程；取消/失败状态不变）。
+                                    #[cfg(windows)]
+                                    {
+                                        msg = match crate::privilege::uac_execute(&op) {
+                                            Ok(()) => {
+                                                let _tid = state.active;
+                                                refresh_tab_panes(&mut state, _tid);
+                                                Some(format!("提权完成: {}", op.describe()))
+                                            }
+                                            Err(e) => Some(format!("提权失败: {e}")),
+                                        };
+                                    }
+                                    #[cfg(not(windows))]
+                                    {
+                                        mode = InputMode::AskPass {
+                                            input: String::new(),
+                                            op,
+                                        };
+                                    }
                                 }
                                 Ok(ExecOutcome::OpenJump { kind, entries }) => {
                                     // M8-12：:j/:J → 分型跳转选择器。

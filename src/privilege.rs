@@ -165,6 +165,22 @@ impl PrivOp {
             PrivOp::CreateFile { path } => format!("新建文件 {}", path.display()),
         }
     }
+
+    /// M39-5：Windows UAC 提权命令（ShellExecuteExW "runas" 的 lpFile +
+    /// lpParameters）——cmd.exe 承载；路径双引号保护（含空格）。
+    #[cfg(windows)]
+    pub fn uac_command(&self) -> (&'static str, String) {
+        let q = |p: &std::path::Path| format!("\"{}\"", p.display());
+        match self {
+            PrivOp::Delete { path } => ("cmd.exe", format!("/c rd /s /q {}", q(path))),
+            PrivOp::Rename { from, to } | PrivOp::Move { from, to } => {
+                ("cmd.exe", format!("/c move /y {} {}", q(from), q(to)))
+            }
+            PrivOp::Copy { from, to } => ("cmd.exe", format!("/c copy /y {} {}", q(from), q(to))),
+            PrivOp::CreateDir { path } => ("cmd.exe", format!("/c mkdir {}", q(path))),
+            PrivOp::CreateFile { path } => ("cmd.exe", format!("/c type nul > {}", q(path))),
+        }
+    }
 }
 
 /// 生成 askpass wrapper 脚本（0700，`/tmp`）：
@@ -254,6 +270,113 @@ pub fn escalate_execute(op: &PrivOp, password: &str) -> Result<(), String> {
         }
         Err(e) => Err(format!("sudo 等待失败: {e}")),
     }
+}
+
+// ── M39-5：Windows UAC 操作级提权（ShellExecuteExW "runas"） ───────────────
+//
+// 边界（SPEC M39-5）：EACCES → UAC 弹窗；失败/取消状态不变；**不提升主
+// 进程**——提权的是 cmd.exe 承载的单个操作（uac_command），rvifm 本体
+// 权限不变。用户在 UAC 弹窗取消 → ERROR_CANCELLED → 可读 Err（TUI 保持
+// 操作前状态，由调用方保证）。
+
+/// ShellExecuteExW 执行信息结构（shellapi.h 精确布局；字段名对齐 SDK）。
+#[cfg(windows)]
+#[repr(C)]
+struct ShellExecuteInfoW {
+    cb_size: u32,
+    f_mask: u32,
+    hwnd: isize,
+    lp_verb: *const u16,
+    lp_file: *const u16,
+    lp_parameters: *const u16,
+    lp_directory: *const u16,
+    n_show: i32,
+    h_inst_app: isize,
+    lp_id_list: *mut core::ffi::c_void,
+    lp_class: *const u16,
+    hkey_class: isize,
+    dw_hot_key: u32,
+    /// union { hIcon: HICON; hMonitor: HANDLE } —— 指针大小。
+    h_icon: isize,
+    h_process: isize,
+}
+
+// FFI 声明（本模块唯一 unsafe 面；Windows Shell/Kernel API）。
+#[cfg(windows)]
+unsafe extern "system" {
+    fn ShellExecuteExW(psei: *mut ShellExecuteInfoW) -> i32;
+    fn GetLastError() -> u32;
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
+    fn GetExitCodeProcess(handle: isize, exit_code: *mut u32) -> i32;
+    fn CloseHandle(handle: isize) -> i32;
+}
+
+/// M39-5：UAC 提权执行（Windows 专用）。
+///
+/// SAFETY：ShellExecuteExW/WaitForSingleObject/CloseHandle/GetLastError
+/// 为 Windows Shell/Kernel API 标准调用——操作级提权的唯一受支持途径
+/// （AGENTS §7 允许的"明确必要 unsafe"）；结构体为 SDK 精确布局、全部
+/// 字符串为 NUL 结尾 UTF-16、句柄在等待后关闭，无跨调用悬垂。
+#[cfg(windows)]
+pub fn uac_execute(op: &PrivOp) -> Result<(), String> {
+    const SEE_MASK_NOCLOSEPROCESS: u32 = 0x0000_0040;
+    const SW_HIDE: i32 = 0;
+    const WAIT_OBJECT_0: u32 = 0;
+    const ERROR_CANCELLED: u32 = 1223;
+    const INVALID_HANDLE: isize = 0;
+
+    let (file, params) = op.uac_command();
+    let to_wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let verb = to_wide("runas");
+    let file_w = to_wide(file);
+    let params_w = to_wide(&params);
+
+    let mut sei = ShellExecuteInfoW {
+        cb_size: std::mem::size_of::<ShellExecuteInfoW>() as u32,
+        f_mask: SEE_MASK_NOCLOSEPROCESS,
+        hwnd: 0,
+        lp_verb: verb.as_ptr(),
+        lp_file: file_w.as_ptr(),
+        lp_parameters: params_w.as_ptr(),
+        lp_directory: std::ptr::null(),
+        n_show: SW_HIDE,
+        h_inst_app: 0,
+        lp_id_list: std::ptr::null_mut(),
+        lp_class: std::ptr::null(),
+        hkey_class: 0,
+        dw_hot_key: 0,
+        h_icon: 0,
+        h_process: INVALID_HANDLE,
+    };
+
+    // SAFETY：见函数级注释；sei 为栈上输出结构，调用后仅读取 h_process。
+    let ok = unsafe { ShellExecuteExW(&mut sei) };
+    if ok == 0 {
+        // SAFETY： GetLastError 线程局部，读取紧随失败调用之后。
+        let err = unsafe { GetLastError() };
+        return Err(if err == ERROR_CANCELLED {
+            "用户取消 UAC 提权（状态不变）".to_owned()
+        } else {
+            format!("UAC 提权启动失败（错误码 {err}）")
+        });
+    }
+    if sei.h_process == INVALID_HANDLE {
+        return Err("UAC 提权未返回进程句柄".to_owned());
+    }
+    // SAFETY：等待提权进程退出后关闭句柄（SEE_MASK_NOCLOSEPROCESS 契约）。
+    let wait = unsafe { WaitForSingleObject(sei.h_process, 0xFFFF_FFFF) };
+    let mut code: u32 = 0;
+    let got = unsafe { GetExitCodeProcess(sei.h_process, &mut code) };
+    unsafe {
+        CloseHandle(sei.h_process);
+    }
+    if wait != WAIT_OBJECT_0 || got == 0 {
+        return Err("UAC 提权进程等待失败".to_owned());
+    }
+    if code != 0 {
+        return Err(format!("提权命令退出码 {code}"));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -364,5 +487,45 @@ mod tests {
         )
         .expect("sudo touch via escalate");
         assert!(target.exists(), "提权创建的文件应存在");
+    }
+}
+
+/// M39-5：Windows UAC 命令构造（纯函数；提权执行本身为手工清单——
+/// UAC 弹窗无法自动化，失败/取消状态不变由 Escalate 消费分支保证）。
+#[cfg(all(test, windows))]
+mod tests_uac {
+    use super::*;
+
+    #[test]
+    fn m395_uac_command_mapping() {
+        let (f, p) = PrivOp::Delete {
+            path: r"C:\Program Data\a b\file.txt".into(),
+        }
+        .uac_command();
+        assert_eq!(f, "cmd.exe");
+        assert!(p.starts_with("/c rd /s /q \""), "路径引号保护: {p}");
+        assert!(p.ends_with("file.txt\""));
+        let (_, p) = PrivOp::Rename {
+            from: r"C:\a".into(),
+            to: r"C:\b".into(),
+        }
+        .uac_command();
+        assert!(p.starts_with("/c move /y"), "p: {p}");
+        let (_, p) = PrivOp::Copy {
+            from: r"C:\a".into(),
+            to: r"C:\b".into(),
+        }
+        .uac_command();
+        assert!(p.starts_with("/c copy /y"), "p: {p}");
+        let (_, p) = PrivOp::CreateDir {
+            path: r"C:\nd".into(),
+        }
+        .uac_command();
+        assert!(p.starts_with("/c mkdir"), "p: {p}");
+        let (_, p) = PrivOp::CreateFile {
+            path: r"C:\nf".into(),
+        }
+        .uac_command();
+        assert!(p.starts_with("/c type nul >"), "p: {p}");
     }
 }
