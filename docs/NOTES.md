@@ -1015,3 +1015,11 @@ rvifm record  → 静默记录访问
 - **基准发现**：load_100k 6.83s ≈ 68µs/条目（每条目 metadata stat 为主）——记入 docs/bench.md 作 1.0 后优化评估点（批量 stat / 并行遍历）；1GB 复制 1.79GB/s 达标。
 - **cargo-fuzz 边界**：libFuzzer 需 nightly+Linux——Windows 本机不可跑，fuzz/ 为独立工作区（主 Cargo.toml [workspace] exclude），CI ubuntu fuzz job 承担 10 分钟自动 fuzz（SPEC SIMPLIFIED 口径）；**24h 本地长跑 deferred**（Linux 开发机执行后回填 NOTES）；fuzz 目标首次 CI 运行若发现崩溃按真实缺陷整改流程处理。
 - **bench 靶口诀**：`cargo bench` 会先跑 lib 测试靶（libtest 不认 criterion 参数）——需 `cargo bench --bench rvifm_bench`；根 Cargo.toml 已设 `[lib] bench = false`。
+
+### 2026-11-21 — M40-3 proptest 抓到真实缺陷：natural_cmp 非全序（已修复）
+
+- **缺陷**：M24-2 逐字符 natural_cmp 在"一侧有数字段、另一侧无"时**丢弃数字信息**——数字段被收集消费后落入 else 分支按裸字符比较，产生非传递 Equal：`"1a" == "a"` 但 `"1a" < "2" < "a"`。std sort（slice sort 共享实现）检测到非全序比较器即 panic——**任意含 "1a"/"2"/"a" 这类混合名的目录按 S=natural 排序可触发运行时崩溃**（M24-2 起随 0.9.0 shipped，本地/CI 测试从未覆盖到该输入组合）。
+- **发现路径**：P7 排序幂等属性（排序两次结果一致）在 std sort panic 处暴露；P5 对称性单独通过（非对称性非唯一违反形态，全序被 Equal 链破坏）。
+- **修复**：分块比较重写——字符串切分为数字段/文本段交替序列逐段比较：数字段按 u64（前导零等值/超长回退 MAX 继续下一段）、文本段字典序、数字段 < 文本段（保持既有"数字在前"排序行为）。语义变化：`"1a" == "a"` → `"1a" < "a"`；`"a0" == "a"` → `"a0" > "a"`（原相等语义本身即缺陷产物）。既有 5 项 M24-2 语义测试全部通过（纯排序用例不受影响）。
+- **回归固化**：m40_3_natural_cmp_total_order_regression 用 std sort 抽样触发序列（34 项含 "0"/"a"/"0a"/"000" 等的列表排序两次幂等）+ 语义断言。
+- **启示**：全序比较器必须属性测试（单点语义测试无法覆盖传递性）；proptest 剩余 6 属性（glob 4 项/对称性/数字感知）首次运行即绿，无假阳性。

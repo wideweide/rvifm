@@ -229,53 +229,61 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// M24-2：大小写敏感的自然排序变体（`ignore_case_sort = false` 时使用）。
+/// M40-3：重写为**分块比较**——字符串切分为数字段/文本段交替序列，逐段
+/// 比较（数字段按 u64 值、文本段按字典序、数字段 < 文本段）。原逐字符
+/// 实现在"一侧有数字段另一侧无"时丢弃数字信息，导致 Equal 非传递
+/// （"1a" == "a" 但 "1a" < "2" < "a"）——std sort 检测到非全序比较器会
+/// panic（M40-3 proptest 抓到的真实缺陷，见 NOTES）。
 pub fn natural_cmp_case(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    let mut ai = a.chars().peekable();
-    let mut bi = b.chars().peekable();
-    let mut a_num = String::new();
-    let mut b_num = String::new();
-    loop {
-        a_num.clear();
-        b_num.clear();
-        // 收集两侧的数字段
-        while let Some(&c) = ai.peek() {
-            if c.is_ascii_digit() {
-                a_num.push(c);
-                ai.next();
-            } else {
-                break;
+
+    /// 切分为 (是否数字段, 段内容) 交替序列。
+    fn chunks(s: &str) -> Vec<(bool, String)> {
+        let mut out: Vec<(bool, String)> = Vec::new();
+        for c in s.chars() {
+            let num = c.is_ascii_digit();
+            match out.last_mut() {
+                Some((n, buf)) if *n == num => buf.push(c),
+                _ => out.push((num, c.to_string())),
             }
         }
-        while let Some(&c) = bi.peek() {
-            if c.is_ascii_digit() {
-                b_num.push(c);
-                bi.next();
-            } else {
-                break;
-            }
-        }
-        // 双方都有数字段 → 按 u64 值比较
-        if !a_num.is_empty() && !b_num.is_empty() {
-            let av: u64 = a_num.parse().unwrap_or(u64::MAX);
-            let bv: u64 = b_num.parse().unwrap_or(u64::MAX);
-            if av != bv {
-                return av.cmp(&bv);
-            }
-            // 数值相等（如前导零），继续下一段
-        } else {
-            // 至少一侧非数字 → 字典序比较
-            let ac = ai.next();
-            let bc = bi.next();
-            match (ac, bc) {
-                (Some(a), Some(b)) if a == b => continue,
-                (Some(_), None) => return Ordering::Greater,
-                (None, Some(_)) => return Ordering::Less,
-                (None, None) => return Ordering::Equal,
-                (Some(a), Some(b)) => return a.cmp(&b),
+        out
+    }
+
+    let ca = chunks(a);
+    let cb = chunks(b);
+    let len = ca.len().max(cb.len());
+    for i in 0..len {
+        match (ca.get(i), cb.get(i)) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some((na, sa)), Some((nb, sb))) => {
+                if *na && *nb {
+                    // 数字段按 u64 值（前导零等值继续下一段；超长段同回退
+                    // u64::MAX 继续下一段，保证全序）。
+                    let av: u64 = sa.parse().unwrap_or(u64::MAX);
+                    let bv: u64 = sb.parse().unwrap_or(u64::MAX);
+                    if av != bv {
+                        return av.cmp(&bv);
+                    }
+                } else if !*na && !*nb {
+                    let o = sa.cmp(sb);
+                    if o != Ordering::Equal {
+                        return o;
+                    }
+                } else {
+                    // 数字段 < 文本段（与既有"数字在前"行为一致）。
+                    return if *na {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    };
+                }
             }
         }
     }
+    Ordering::Equal
 }
 
 /// 搜索状态。`query` 由 `/` 设置、`n/N` 消费（M1-7）。
@@ -1852,6 +1860,30 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn m40_3_natural_cmp_total_order_regression() {
+        // M40-3 proptest 抓到的真实缺陷回归：原逐字符实现的 Equal 非传递
+        // （"1a" == "a" 但 "1a" < "2" < "a"）→ std sort panic。分块实现下
+        // "1a" < "2"（数字段 < 文本段）且 "1a" < "a"，全序成立。
+        // 精确触发序列（std sort 抽样输入）：
+        let v = vec![
+            "a", "0", "a", "0a", "n", "800", "0g", "a", "000", "000", "0", "a", "0", "a", "a", "0",
+            "1", "a", "0", "0", "0", "0", "a", "a", "0", "0", "0", "0", "0", "0", "a", "a", "a",
+            "a",
+        ];
+        let mut sorted = v.clone();
+        sorted.sort_by(|a, b| natural_cmp(a, b));
+        let once = sorted.clone();
+        sorted.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(once, sorted, "排序幂等（全序）");
+        // 语义断言：数字段 < 文本段；"1a" 与 "a" 不再相等。
+        assert_eq!(natural_cmp("1a", "2"), Ordering::Less);
+        assert_eq!(natural_cmp("1a", "a"), Ordering::Less);
+        assert_eq!(natural_cmp("a", "2"), Ordering::Greater);
+        assert_eq!(natural_cmp("00", "0"), Ordering::Equal, "前导零等值保持");
+        assert_eq!(natural_cmp("a0", "a"), Ordering::Greater, "后缀数字段");
+    }
+
+    #[test]
     fn m24_2_natural_sort_digit_aware() {
         // ACCEPTANCE §23 M24-2：1.txt < 2.txt < 10.txt（数字感知）。
         assert_eq!(natural_cmp("1.txt", "2.txt"), Ordering::Less);
@@ -2541,5 +2573,81 @@ mod tests {
         tab.cursor = 1;
         assert_eq!(tab.search_status("src"), (0, 2));
         assert_eq!(tab.search_status("zzz"), (0, 0), "无匹配 → 0/0");
+    }
+}
+
+/// M40-3：属性测试（proptest）——glob 匹配 / 自然排序不变量。
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// P1：`*` 匹配任意名称（任意字符含空串）。
+        #[test]
+        fn glob_star_matches_anything(name in "[^\n]{0,40}") {
+            prop_assert!(glob_match("*", &name));
+        }
+
+        /// P2：无通配符 pattern → 匹配当且仅当小写相等。
+        #[test]
+        fn glob_literal_pattern_is_equality(
+            p in "[a-z0-9._]{0,12}",
+            n in "[a-z0-9._]{0,12}",
+        ) {
+            let expected = p.to_lowercase() == n.to_lowercase();
+            prop_assert_eq!(glob_match(&p, &n), expected);
+        }
+
+        /// P3：`*p*` 等价包含语义（p 不含通配符）。
+        #[test]
+        fn glob_star_p_star_is_contains(
+            p in "[a-z0-9._]{1,12}",
+            n in "[a-z0-9._]{0,20}",
+        ) {
+            let contains = n.to_lowercase().contains(&p.to_lowercase());
+            prop_assert_eq!(glob_match(&format!("*{p}*"), &n), contains);
+        }
+
+        /// P4：`?` 计数——n 个 `?` 匹配当且仅当长度为 n（按字符）。
+        #[test]
+        fn glob_question_marks_count_length(
+            qs in 1usize..6,
+            n in "[a-z0-9]{0,10}",
+        ) {
+            let pattern = "?".repeat(qs);
+            prop_assert_eq!(glob_match(&pattern, &n), n.chars().count() == qs);
+        }
+
+        /// P5：自然排序对称性——cmp(a,b) 与 cmp(b,a) 严格互逆。
+        #[test]
+        fn natural_cmp_symmetric(a in "[a-z0-9]{0,12}", b in "[a-z0-9]{0,12}") {
+            let ab = natural_cmp(&a, &b);
+            let ba = natural_cmp(&b, &a);
+            prop_assert_eq!(ab, ba.reverse());
+        }
+
+        /// P6：数字感知——同数字前缀下 m < n 必排在前（含 10 vs 9 陷阱）。
+        #[test]
+        fn natural_cmp_numeric_aware(
+            prefix in "[a-z]{1,6}",
+            m in 0u64..1_000_000,
+            n in 0u64..1_000_000,
+        ) {
+            prop_assume!(m < n);
+            let a = format!("{prefix}{m}.txt");
+            let b = format!("{prefix}{n}.txt");
+            prop_assert_eq!(natural_cmp(&a, &b), std::cmp::Ordering::Less);
+        }
+
+        /// P7：排序幂等——自然排序两次结果一致。
+        #[test]
+        fn natural_sort_idempotent(names in proptest::collection::vec("[a-z0-9]{1,10}", 0..200)) {
+            let mut v = names;
+            v.sort_by(|a, b| natural_cmp(a, b));
+            let once = v.clone();
+            v.sort_by(|a, b| natural_cmp(a, b));
+            prop_assert_eq!(once, v);
+        }
     }
 }
