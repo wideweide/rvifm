@@ -3239,6 +3239,57 @@ pub(crate) fn paste_yanked_remote(
         refresh_tab_panes(state, tab_id);
         return;
     }
+    // M36-8：任一 src 为目录 → RecurseUpload（walk 展开 + 逐文件）。
+    if buffer.paths.iter().any(|s| s.is_dir()) {
+        let entries: Vec<(PathBuf, PathBuf)> = buffer
+            .paths
+            .iter()
+            .map(|src| {
+                let name = src
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let dest = if dir == std::path::Path::new("/") {
+                    PathBuf::from(format!("/{name}"))
+                } else {
+                    dir.join(&name)
+                };
+                (src.clone(), dest)
+            })
+            .collect();
+        match state.remote_sessions.get(&remote).map(|b| b.as_ref()) {
+            Some(backend) => {
+                let controls = crate::state::JobControls {
+                    cancel: &crate::state::NO_CANCEL,
+                    pause: &crate::state::NO_PAUSE,
+                    progress: &crate::state::JobProgress::empty(),
+                };
+                let (ops, status) = execute_transfer_body(
+                    TransferDirection::RecurseUpload,
+                    backend,
+                    &entries,
+                    tab_id,
+                    &remote,
+                    &controls,
+                );
+                let n = ops.len();
+                for op in ops {
+                    state.undo_stack.push(op);
+                }
+                if let crate::state::JobStatus::Failed { err } = status {
+                    *msg = Some(err);
+                } else {
+                    *msg = Some(format!("已递归上传 {n} 个文件（u 可撤销）"));
+                }
+                refresh_tab_panes(state, tab_id);
+                return;
+            }
+            None => {
+                *msg = Some("remote: 会话已断开".to_owned());
+                return;
+            }
+        }
+    }
     for src in &buffer.paths {
         let name = src
             .file_name()

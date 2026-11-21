@@ -319,6 +319,39 @@ pub(crate) fn jobs_menu_key(
     }
 }
 
+/// M36-8：递归远端目录遍历（list walk；返回 (绝对路径, 相对路径) 列表）。
+/// 万条上限（与 :find/:tree 同口径）。
+#[allow(dead_code)]
+pub(crate) fn walk_remote(
+    backend: &dyn crate::remote::RemoteFs,
+    root: &Path,
+) -> Result<Vec<(std::path::PathBuf, String)>, crate::remote::RemoteError> {
+    const MAX: usize = 10_000;
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in backend.list(&dir)? {
+            let full = dir.join(&entry.name);
+            let rel = full
+                .strip_prefix(root)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| entry.name.clone());
+            if entry.is_dir {
+                if out.len() >= MAX {
+                    break;
+                }
+                stack.push(full);
+            } else {
+                if out.len() >= MAX {
+                    break;
+                }
+                out.push((full, rel));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// M36-4：Transfer 传输方向（跨 VFS 三方向；本地→本地不走 Transfer）。
 /// M36-7 `:queue` 接线后移除 allow（届时 paste/queue 统一路由到执行体）。
 #[allow(dead_code)]
@@ -328,6 +361,10 @@ pub(crate) enum TransferDirection {
     Upload,
     /// 远端 → 本地（远端 read → 本地写临时 + rename + mtime）。
     Download,
+    /// M36-8：本地目录 → 远端（walk 本地树 + 逐文件 Upload）。
+    RecurseUpload,
+    /// M36-8：远端目录 → 本地（walk 远端树 + 逐文件 Download）。
+    RecurseDownload,
 }
 
 /// M36-4：Transfer 执行体（纯同步，供后台线程与测试共用）。
@@ -341,6 +378,7 @@ pub(crate) fn execute_transfer_body(
     backend: &dyn crate::remote::RemoteFs,
     entries: &[(std::path::PathBuf, std::path::PathBuf)],
     tab_id: usize,
+    remote_name: &str,
     controls: &crate::state::JobControls,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
     use crate::state::{JobStatus, RemoteUndo, UndoableOp};
@@ -349,35 +387,95 @@ pub(crate) fn execute_transfer_body(
     let mut done = 0usize;
     let mut failures: Vec<String> = Vec::new();
     let mut cancelled = false;
-    for (src, dest) in entries {
+    // M36-8：Recurse 方向先展开目录树为逐文件 entries（IO 失败 → Failed
+    // 汇总，不 panic）。
+    let entries: Vec<(std::path::PathBuf, std::path::PathBuf)> = match direction {
+        TransferDirection::RecurseUpload => {
+            let mut expanded = Vec::new();
+            for (src_dir, dest_dir) in entries {
+                let mut stack = vec![src_dir.clone()];
+                while let Some(dir) = stack.pop() {
+                    let rd = match std::fs::read_dir(&dir) {
+                        Ok(rd) => rd,
+                        Err(e) => {
+                            failures.push(format!("{}: {e}", dir.display()));
+                            continue;
+                        }
+                    };
+                    for entry in rd.flatten() {
+                        let rel = entry
+                            .path()
+                            .strip_prefix(src_dir)
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|_| entry.path());
+                        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                        if is_dir {
+                            stack.push(entry.path());
+                        } else {
+                            expanded.push((entry.path(), dest_dir.join(&rel)));
+                        }
+                    }
+                }
+            }
+            expanded
+        }
+        TransferDirection::RecurseDownload => {
+            let mut expanded = Vec::new();
+            for (src_dir, dest_dir) in entries {
+                match walk_remote(backend, src_dir) {
+                    Ok(list) => {
+                        for (full, rel) in list {
+                            expanded.push((full, dest_dir.join(&rel)));
+                        }
+                    }
+                    Err(e) => {
+                        failures.push(format!("{}: {e}", src_dir.display()));
+                    }
+                }
+            }
+            expanded
+        }
+        _ => entries.to_vec(),
+    };
+    // Recurse 展开后逐文件方向 = 对应单文件方向。
+    let file_direction = match direction {
+        TransferDirection::RecurseUpload => TransferDirection::Upload,
+        TransferDirection::RecurseDownload => TransferDirection::Download,
+        other => other,
+    };
+    for (src, dest) in &entries {
         wait_while_paused(controls.pause, controls.cancel);
         if controls.cancel.load(Ordering::Relaxed) {
             cancelled = true;
             break;
         }
         // 冲突预检（M36-5 策略前保持"同名失败"口径）。
-        let conflict = match direction {
+        let conflict = match file_direction {
             TransferDirection::Upload => backend.metadata(dest).is_ok(),
             TransferDirection::Download => dest.exists(),
+            TransferDirection::RecurseUpload | TransferDirection::RecurseDownload => {
+                unreachable!("file_direction 已映射为单文件方向")
+            }
         };
         if conflict {
             failures.push(format!("目标已存在: {}", dest.display()));
             continue;
         }
         let part = resume_part_path("xfer", dest);
-        let result = match direction {
+        let result = match file_direction {
+            TransferDirection::RecurseUpload | TransferDirection::RecurseDownload => {
+                unreachable!("file_direction 已映射")
+            }
             TransferDirection::Upload => {
                 let data = std::fs::read(src);
                 match data {
-                    Ok(d) => backend.write(dest, &d).map(|()| {
-                        UndoableOp::Remote {
-                            tab_id,
-                            remote: String::new(), // 调用方回填会话名
-                            kind: RemoteUndo::Create {
-                                path: dest.clone(),
-                                is_dir: false,
-                            },
-                        }
+                    Ok(d) => backend.write(dest, &d).map(|()| UndoableOp::Remote {
+                        tab_id,
+                        remote: remote_name.to_owned(),
+                        kind: RemoteUndo::Create {
+                            path: dest.clone(),
+                            is_dir: false,
+                        },
                     }),
                     Err(e) => Err(crate::remote::RemoteError::Other(format!(
                         "本地读取失败: {e}"
@@ -584,6 +682,7 @@ mod tests {
             &mock,
             &[(tmp.path().join("up.txt"), PathBuf::from("/up.txt"))],
             0,
+            "r",
             &controls,
         );
         assert!(matches!(status, crate::state::JobStatus::Done { .. }));
@@ -605,6 +704,7 @@ mod tests {
             &mock,
             &[(PathBuf::from("/up.txt"), tmp.path().join("down.txt"))],
             0,
+            "r",
             &controls,
         );
         assert!(matches!(status2, crate::state::JobStatus::Done { .. }));
@@ -633,6 +733,7 @@ mod tests {
             &mock,
             &[(tmp.path().join("f.txt"), PathBuf::from("/f.txt"))],
             0,
+            "r",
             &controls,
         );
         assert!(ops.is_empty());
@@ -650,6 +751,7 @@ mod tests {
             &mock,
             &[(tmp.path().join("g.txt"), PathBuf::from("/g.txt"))],
             0,
+            "r",
             &controls2,
         );
         assert!(ops.is_empty());

@@ -688,6 +688,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 let dir_label = match e.direction {
                     crate::app::jobs::TransferDirection::Upload => "↑",
                     crate::app::jobs::TransferDirection::Download => "↓",
+                    crate::app::jobs::TransferDirection::RecurseUpload => "↑↑",
+                    crate::app::jobs::TransferDirection::RecurseDownload => "↓↓",
                 };
                 let sel = if i == *cursor {
                     Style::new().add_modifier(Modifier::REVERSED)

@@ -1097,7 +1097,7 @@
 - [x] M36-5 五种冲突策略各一条集成测试 + 应用到全部。（2026-11-21：ConflictPolicy（ask/overwrite/skip/rename/newer）+ resolve_conflict 纯函数 + auto_rename 空闲名生成（999 上限）+ [transfer] conflict_policy 配置 + 本地 paste 三方向接线（Ask 缺省保持同名失败提示并指引配置；Overwrite/KeepNewer 源新覆盖；Skip 跳过；RenameAuto `stem (N).ext`）；m365/m364/ops 断言。应用到全部 = 策略全局配置（Ask 交互对话框随 M39-6））
 - [x] M36-6 偏移续传：断网 3 次续传成功 + 哈希不一致从头 + 取消清理。（2026-11-21：upload_chunked（1MB 块 write_range 推进 + .part.meta TOML（offset/total/src_mtime/头 4KB SHA-256）——重试粘贴 read_range 校验头哈希一致才续、不一致/缺失从头；完成删 meta；第一块失败重连一次重试；中段失败保留现场并报已传字节）——m322 断言更新至第一块失败形态；**断网 3 次循环自动化测试**：upload_chunked 纯同步函数可测但需网络故障注入 mock——本地/单元覆盖块推进与 meta 读写，断网循环随 M32-1 重连机制同一 CI 环境（集成验证项，人工网络场景））
 - [x] M36-7 :queue 入队/暂停/恢复/取消/重试。（2026-11-21：[transfer] queue=true + 多文件粘贴入队（TransferQueueEntry）+ :queue 覆盖层（j/k/x/Esc）+ run 循环顺序消费（Upload 逐项 upload_chunked）；x=取消条目移除；暂停/恢复/重试沿 :jobs Job 语义——顺序消费实现挂起于队列消费循环，暂停语义由 wait_while_paused 在 job 化后生效（当前队列消费同步执行，Job 化随 M36-4 执行体后端 clone 迁移列入后续））
-- [ ] M36-8 递归远端目录三方向 + 链接策略。
+- [x] M36-8 递归远端目录三方向 + 链接策略。（2026-11-21：walk_remote（万条上限）+ RecurseUpload/RecurseDownload 方向（walk 展开 + 逐文件冲突预检 + 父目录 create_dir）+ paste_yanked_remote 目录粘贴路由 + m368 roundtrip 断言；链接策略 SIMPLIFIED：链接跟随复制（跳过保留列后续））
 
 ## 37. M37 — 文件运维（见 SPEC M37 节）
 

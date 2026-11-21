@@ -281,6 +281,10 @@ pub struct TransferQueueEntry {
     pub remote: String,
 }
 
+/// M32-1/M36：no-op 控制标志（同步粘贴路径的取消/暂停句柄——恒 false）。
+pub static NO_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static NO_PAUSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// M36-5：冲突策略（`[transfer] conflict_policy`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConflictPolicy {

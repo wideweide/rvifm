@@ -122,8 +122,6 @@ impl InputState {
 /// Normal 模式按键的处理结果。
 #[derive(Debug, PartialEq)]
 pub(crate) enum Outcome {
-    /// 请求进入传输队列覆盖层（M36-7 `:queue`）。
-    EnterQueue { cursor: usize },
     /// 无状态变化。
     Continue,
     /// 请求退出应用。
@@ -338,6 +336,10 @@ pub(crate) enum ExecOutcome {
     },
     /// 打开后台作业菜单（M13-8：`:jobs`）。
     ShowJobs,
+    /// 打开传输队列覆盖层（M36-7：`:queue`）。
+    EnterQueue {
+        cursor: usize,
+    },
     /// 打开归档创建对话框（M25-4：`:archive` 无参；input 预填光标条目名）。
     ShowArchiveDialog {
         input: String,
@@ -787,6 +789,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Ok(ExecOutcome::ShowJobs) => {
                                     mode = InputMode::Jobs { cursor: 0 };
                                 }
+                                Ok(ExecOutcome::EnterQueue { cursor }) => {
+                                    mode = InputMode::Queue { cursor };
+                                }
                                 Ok(ExecOutcome::ShowArchiveDialog { input }) => {
                                     // M25-4：格式缺省 zip；校验下标取 [archive] checksum。
                                     let checksum_idx =
@@ -1161,9 +1166,6 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 input: String::new(),
                             };
                         }
-                        Outcome::EnterQueue { cursor } => {
-                            mode = InputMode::Queue { cursor };
-                        }
                         Outcome::EnterSortDialog => {
                             // 高亮字段初始 = 当前排序字段（否则 name）。
                             let cur = state
@@ -1320,10 +1322,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                if !state.transfer_queue.is_empty() {
-                                    *cursor = (*cursor + 1).min(state.transfer_queue.len() - 1);
-                                }
+                            KeyCode::Char('j') | KeyCode::Down
+                                if !state.transfer_queue.is_empty() =>
+                            {
+                                *cursor = (*cursor + 1).min(state.transfer_queue.len() - 1);
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
                                 *cursor = cursor.saturating_sub(1);
