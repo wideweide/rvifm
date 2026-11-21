@@ -76,6 +76,11 @@ proptest = "1"
 [lib]
 bench = false
 
+# M31-5：pdf-visual 护栏实测工具（仅 feature 开启时编译）。
+[[example]]
+name = "pdf_bench"
+required-features = ["pdf-visual"]
+
 [[bench]]
 name = "rvifm_bench"
 harness = false
