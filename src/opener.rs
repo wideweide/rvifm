@@ -301,7 +301,9 @@ pub fn open_with_layers(
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
+    // macOS  对不存在文件返回 0/弹窗（行为差异，M40-6 CI 实测）——
+    // 排除 macos（unix 语义测试保留 Linux）。
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn m21f8_system_open_failure_returns_readable_err() {
         // M21-F8：子进程 IO 静默化（silent()：stdin/stdout/stderr = null，
