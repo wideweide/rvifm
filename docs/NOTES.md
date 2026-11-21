@@ -1037,3 +1037,8 @@ rvifm record  → 静默记录访问
 - **deny.toml 口径**：许可证白名单含 bzip2-1.0.6（libbz2-rs-sys 捆绑许可证名）与 NCSA（fuzz 工作区 libfuzzer-sys——deny 会扫 fuzz/ 子包图）；advisories 默认 fail + 两条带理由豁免：RUSTSEC-2023-0071（rsa Marvin Attack，russh 传递、rvifm 为客户端持钥侧不受 oracle 场景影响）与 RUSTSEC-2024-0320（yaml-rust 弃维护，syntect 传递、输入为内置高亮定义）。audit 豁免在 `.cargo/audit.toml`（工具各自独立配置）。
 - **本机 audit 网络抖动**：cargo audit 拉取 advisory-db（github git）超时——cargo deny 的 advisories 检查（同一 RUSTSEC 库、缓存命中）已全绿；audit 由 CI supply-chain job 承担。
 - **SHA256SUMS.txt**：release job 三归档同目录 sha256sum 生成并随 Release 上传（gh release upload --clobber）。
+
+### 2026-11-21 — M31-5 pdf-visual 护栏实测（本机解锁后补验）
+
+- **环境**：Windows Server 2016 / rustc 1.99.1 / release / exprim（pdf-visual feature）。运行入口：`cargo run --release --example pdf_bench --features pdf-visual`（examples/pdf_bench.rs 保留为可复测工具）。
+- **数据**：A4 页面 1224×1584px（≈194 万像素，护栏 400 万内、未触发缩放）；单页耗时 22–23ms（首启 58ms 含 exprim 初始化）、CJK 无嵌入字体 8ms、损坏文件 0ms 可读拒绝（不 panic）；RGB 内存 ≈5.8MB/页。结论：护栏（200–400 万像素 + 64MB 输入上限）在生产面无性能压力。
