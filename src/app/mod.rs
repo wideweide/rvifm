@@ -1108,9 +1108,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             };
                         }
                         Outcome::EnterSearch => {
+                            // M34-3：origin 取焦点 pane 光标（右 pane Esc 恢复正确）。
+                            let tab = state.active_tab();
+                            let origin = match tab.focus {
+                                crate::tab::Focus::Right => tab.right.cursor,
+                                crate::tab::Focus::Left => tab.cursor,
+                            };
                             mode = InputMode::Search {
                                 input: String::new(),
-                                origin: state.active_tab().cursor,
+                                origin,
                             };
                         }
                         Outcome::EnterFilter => {

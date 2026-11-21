@@ -351,8 +351,9 @@ pub(crate) fn handle_sort_dialog_key(
 }
 
 /// 右 pane 焦点下的按键分发（M14-1）：精简导航集。
-/// SIMPLIFIED：搜索（/）、可视选择（v）、标记（t）、树（:tree 仍可退出）、
-/// 提权（写命令 EACCES 时提示切回左 pane）仅左 pane。
+/// SIMPLIFIED：可视选择（v）、标记（t）、树（:tree 仍可退出）、提权（写
+/// 命令 EACCES 时提示切回左 pane）仅左 pane；搜索（/、n/N）自 M34-3 起
+/// 解除——经上方分派进入与左 pane 共用的搜索链路（作用对象 = 焦点 pane）。
 pub(crate) fn handle_right_key(
     state: &mut AppState,
     msg: &mut Option<String>,
@@ -1207,9 +1208,28 @@ pub(crate) fn handle_key(
         return Outcome::Quit;
     }
 
-    // M14-1：右 pane 焦点——精简导航分支（SIMPLIFIED：搜索/可视选择/标记/
-    // 树/选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
+    // M14-1：右 pane 焦点——精简导航分支（SIMPLIFIED：可视选择/标记/树/
+    // 选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
+    // M34-3：搜索解除 SIMPLIFIED——`/`/n/N 与左 pane 共用 Search 链路，
+    // 作用对象为焦点 pane（Tab::search_move/status 已 focus-aware）。
     if state.active_tab().focus == crate::tab::Focus::Right {
+        match key.code {
+            KeyCode::Char('/') => {
+                input.count = None;
+                return Outcome::EnterSearch;
+            }
+            KeyCode::Char('n') => {
+                input.count = None;
+                run_search(state, msg, true);
+                return Outcome::Continue;
+            }
+            KeyCode::Char('N') => {
+                input.count = None;
+                run_search(state, msg, false);
+                return Outcome::Continue;
+            }
+            _ => {}
+        }
         return handle_right_key(state, msg, key);
     }
 

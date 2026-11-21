@@ -2155,6 +2155,40 @@ fn slash_enters_search_mode() {
 }
 
 #[test]
+fn m34_3_right_pane_search_incsearch_commit_and_nn() {
+    // M34-3：右 pane 搜索链路——live 跳转/提交/n·N 环绕/Esc 取消恢复，
+    // 左 pane 光标不受影响。
+    let tmp = TempDir::new().unwrap();
+    for n in ["alpha.txt", "beta.txt", "gamma.txt"] {
+        fs::write(tmp.path().join(n), "x").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let tab = state.active_tab_mut();
+    tab.right = crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    tab.focus = crate::tab::Focus::Right;
+    let mut msg: Option<String> = None;
+    live_search_jump(&mut state, 0, "beta", &mut msg);
+    assert_eq!(msg, None);
+    assert_eq!(state.active_tab().right.cursor, 1, "incsearch 落到 beta");
+    assert_eq!(state.active_tab().cursor, 0, "左 pane 光标不动");
+    submit_search(&mut state, "a", &mut msg); // beta 含 'a' → 光标保持
+    assert_eq!(state.active_tab().right.cursor, 1);
+    assert_eq!(
+        state.active_tab().search.as_ref().map(|s| s.query.as_str()),
+        Some("a")
+    );
+    run_search(&mut state, &mut msg, true); // beta → gamma
+    assert_eq!(state.active_tab().right.cursor, 2);
+    run_search(&mut state, &mut msg, true); // gamma → 环绕 alpha
+    assert_eq!(state.active_tab().right.cursor, 0);
+    run_search(&mut state, &mut msg, false); // alpha → 反向 gamma
+    assert_eq!(state.active_tab().right.cursor, 2);
+    search_cancel(&mut state, 2); // origin=2：光标回 2、清状态
+    assert_eq!(state.active_tab().right.cursor, 2);
+    assert!(state.active_tab().search.is_none());
+}
+
+#[test]
 fn fix1_live_search_jumps_and_restores_on_no_match_or_empty() {
     let tmp = TempDir::new().unwrap();
     for name in ["alpha", "src.txt", "srconly"] {

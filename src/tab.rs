@@ -685,25 +685,6 @@ impl Tab {
         self.on_parent_row = false;
     }
 
-    /// 环绕查找匹配条目（M1-7）：大小写不敏感子串；`start` 为起始扫描索引。
-    pub fn find_match(&self, query: &str, start: usize, forward: bool) -> Option<usize> {
-        if self.entries.is_empty() || query.is_empty() {
-            return None;
-        }
-        let len = self.entries.len();
-        for i in 0..len {
-            let idx = if forward {
-                (start + i) % len
-            } else {
-                (start + len - i % len) % len
-            };
-            if query_matches(&self.entries[idx].name, query) {
-                return Some(idx);
-            }
-        }
-        None
-    }
-
     /// 首字母快速搜索（M13-1）：从 `start` 沿方向查找**文件名首字符**为
     /// `c` 的条目（环绕列表首尾，官方 f/F 语义）。区分大小写。
     pub fn find_first_char(&self, c: char, start: usize, forward: bool) -> Option<usize> {
@@ -745,16 +726,23 @@ impl Tab {
 
     /// 从当前位置沿 `forward` 方向移动到下一个匹配（M1-7，`n`/`N`）。
     /// 未找到时 cursor 不变并返回 `false`。
+    /// M34-3：作用对象 = 焦点 pane（右 pane 无 `..` 行，无 on_parent_row）。
     pub fn search_move(&mut self, query: &str, forward: bool) -> bool {
-        let start = if forward {
-            self.cursor + 1
-        } else {
-            self.cursor + self.entries.len().saturating_sub(1)
+        let (entries, cursor) = match self.focus {
+            Focus::Right => (&mut self.right.entries, &mut self.right.cursor),
+            Focus::Left => (&mut self.entries, &mut self.cursor),
         };
-        match self.find_match(query, start, forward) {
+        let start = if forward {
+            *cursor + 1
+        } else {
+            *cursor + entries.len().saturating_sub(1)
+        };
+        match find_match_in(entries, query, start, forward) {
             Some(idx) => {
-                self.cursor = idx;
-                self.on_parent_row = false;
+                *cursor = idx;
+                if self.focus == Focus::Left {
+                    self.on_parent_row = false;
+                }
                 true
             }
             None => false,
@@ -763,11 +751,16 @@ impl Tab {
 
     /// 搜索匹配计数（FIX-1）：`(当前匹配序号, 总匹配数)`；光标项不匹配时
     /// 序号为 0（调用方据此显示 `i/N` 或 `0/0`）。
+    /// M34-3：计数对象 = 焦点 pane。
     pub fn search_status(&self, query: &str) -> (usize, usize) {
+        let (entries, cursor) = match self.focus {
+            Focus::Right => (&self.right.entries, &self.right.cursor),
+            Focus::Left => (&self.entries, &self.cursor),
+        };
         let matched = |item: &FileItem| query_matches(&item.name, query);
-        let total = self.entries.iter().filter(|item| matched(item)).count();
-        let cur = match self.entries.get(self.cursor) {
-            Some(item) if matched(item) => self.entries[..=self.cursor]
+        let total = entries.iter().filter(|item| matched(item)).count();
+        let cur = match entries.get(*cursor) {
+            Some(item) if matched(item) => entries[..=*cursor]
                 .iter()
                 .filter(|item| matched(item))
                 .count(),
@@ -1507,6 +1500,31 @@ fn load_archive_entries(host: &Path, inner: &str) -> std::io::Result<Vec<FileIte
 }
 
 /// 智能大小写匹配（M4-1）：查询含大写字母时区分大小写，否则不区分（vim/vifm smartcase）。
+/// 环绕查找切片级实现（M34-3 抽出）：大小写不敏感子串；`start` 为起始
+/// 扫描索引。`Tab::find_match`（左 pane）与右 pane 搜索共用。
+pub(crate) fn find_match_in(
+    entries: &[FileItem],
+    query: &str,
+    start: usize,
+    forward: bool,
+) -> Option<usize> {
+    if entries.is_empty() || query.is_empty() {
+        return None;
+    }
+    let len = entries.len();
+    for i in 0..len {
+        let idx = if forward {
+            (start + i) % len
+        } else {
+            (start + len - i % len) % len
+        };
+        if query_matches(&entries[idx].name, query) {
+            return Some(idx);
+        }
+    }
+    None
+}
+
 fn query_matches(name: &str, query: &str) -> bool {
     if query.chars().any(char::is_uppercase) {
         name.contains(query)
@@ -2293,6 +2311,30 @@ mod tests {
         // 不匹配 / 空查询。
         assert_eq!(match_range("alpha", "zz"), None);
         assert_eq!(match_range("alpha", ""), None);
+    }
+
+    #[test]
+    fn m34_3_right_pane_search_move_and_status() {
+        // M34-3：focus=Right 时搜索作用于 right pane（左 pane 不动）。
+        let tmp = tempfile::TempDir::new().unwrap();
+        for n in ["alpha.txt", "beta.txt", "gamma.txt"] {
+            std::fs::write(tmp.path().join(n), "x").unwrap();
+        }
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.right = Pane::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.focus = Focus::Right;
+        assert_eq!(tab.search_status("gam"), (0, 1), "光标在 alpha → 序号 0");
+        assert!(tab.search_move("gam", true));
+        assert_eq!(tab.right.cursor, 2);
+        assert_eq!(tab.cursor, 0, "左 pane 光标不动");
+        assert_eq!(tab.search_status("gam"), (1, 1));
+        // 单匹配自回绕（M1-7 既有语义）：反向下一个仍是 gamma。
+        assert!(tab.search_move("gam", false));
+        assert_eq!(tab.right.cursor, 2);
+        // 多匹配查询（三个文件名均含 'a'）：反向 → beta（第 2 个匹配）。
+        assert!(tab.search_move("a", false));
+        assert_eq!(tab.right.cursor, 1);
+        assert_eq!(tab.search_status("a"), (2, 3));
     }
 
     #[test]

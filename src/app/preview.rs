@@ -17,7 +17,12 @@ pub(crate) fn pdf_overflow_note(pages: u32, pngs_len: usize) -> Option<&'static 
 
 /// 右 pane 渲染（M14-1；M21-F1 带路径标题与焦点边框）：view 模式 = 活动
 /// pane 光标文件的查看器/图片预览；默认 = 右 pane 独立目录列表（可导航）。
-pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
+pub(crate) fn render_right_pane(
+    frame: &mut Frame,
+    state: &AppState,
+    mode: &InputMode,
+    area: ratatui::layout::Rect,
+) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -317,6 +322,23 @@ pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratat
         );
         rest
     };
+    // M34-3：右 pane 搜索高亮——焦点在右时生效（搜索输入期用实时输入，
+    // 其余用已提交 tab.search；与左 pane FIX-1 同款式）。
+    let active_query: Option<String> = if tab.focus != crate::tab::Focus::Right {
+        None
+    } else {
+        match mode {
+            InputMode::Search { input, .. } => {
+                let q = input.trim();
+                (!q.is_empty()).then(|| q.to_owned())
+            }
+            _ => tab
+                .search
+                .as_ref()
+                .map(|s| s.query.clone())
+                .filter(|q| !q.is_empty()),
+        }
+    };
     let items: Vec<ListItem> = tab
         .right
         .entries
@@ -344,15 +366,40 @@ pub(crate) fn render_right_pane(frame: &mut Frame, state: &AppState, area: ratat
                 (inner.width as usize).saturating_sub(4)
             };
             let display_name = clip_name(&item.name, name_budget);
-            let label = if item.is_dir {
-                format!("{display_name}/")
-            } else {
-                display_name.clone()
-            };
-            let mut spans = vec![
-                Span::from(format!("{} ", item.icon.glyph)),
-                Span::styled(label, filetype_style(item.filetype_class())),
-            ];
+            let ft = filetype_style(item.filetype_class());
+            let mut spans = vec![Span::from(format!("{} ", item.icon.glyph))];
+            match active_query
+                .as_deref()
+                .and_then(|query| crate::tab::match_range(&display_name, query))
+            {
+                // FIX-1 同款：匹配子串黄底黑字（M34-3：右 pane 同等高亮）。
+                Some((start, end)) => {
+                    if !display_name[..start].is_empty() {
+                        spans.push(Span::styled(display_name[..start].to_owned(), ft));
+                    }
+                    spans.push(Span::styled(
+                        display_name[start..end].to_owned(),
+                        Style::new().fg(Color::Black).bg(Color::LightYellow),
+                    ));
+                    let after = &display_name[end..];
+                    let suffix = if item.is_dir {
+                        format!("{after}/")
+                    } else {
+                        after.to_owned()
+                    };
+                    if !suffix.is_empty() {
+                        spans.push(Span::styled(suffix, ft));
+                    }
+                }
+                None => {
+                    let label = if item.is_dir {
+                        format!("{display_name}/")
+                    } else {
+                        display_name.clone()
+                    };
+                    spans.push(Span::styled(label, ft));
+                }
+            }
             if show_attrs {
                 let name_width = display_name.chars().count() + (item.is_dir as usize);
                 let pad = name_budget.saturating_sub(name_width).max(1);

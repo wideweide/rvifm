@@ -868,3 +868,12 @@ rvifm record  → 静默记录访问
 - **辅助灰阶**：原 .vifm 仅 5 色；text.secondary/muted/dim 的 gray1/2/3（#444444/#666666/#999999）为移植补全，TOML 头部与本条双注记。
 - **踩坑**：theme.rs 测试引用 `crate::app::render` 触发 E0603——`render` 模块对 app 外私有（子模块可见性按目录层级，`pub(crate)` 项不等于模块本身可见）；该断言移除，集成覆盖由 app/tests.rs 子模块测试承担。
 - 424 单测（+2：snowwhite 激活/精确取值/图标 Light 联动、捆绑名列表与未知名错误）。
+
+### 2026-11-21 — M34-3 实现：右 pane `/` 搜索（焦点感知搜索链路）
+
+- **链路**：右焦点分支拦截 `/`（EnterSearch）/n/N（keys.rs），与左 pane 共用 Search 输入模式与 `Tab.search` 状态；`Tab::search_move`/`search_status` focus-aware（右 pane 无 `..` 行，`on_parent_row` 离行仅左 pane）；EnterSearch 的 origin 取焦点 pane 光标（mod.rs）；exec.rs 三助手（submit/live/cancel）焦点分派。
+- **渲染**：`render_right_pane` 增加 `mode` 参数——右焦点时 live/committed 高亮（FIX-1 同款黄底黑字）；左 pane 高亮行为不变。**已知边界**：SearchState 为 Tab 级共享（vifm 是 per-pane pattern）——左 pane 高亮不随焦点熄灭，per-pane 化超出本任务范围。
+- **语义注记**：单匹配自回绕（M1-7 既有语义）——n/N 在唯一匹配上原地不动；新测试初版误设"环绕到其它条目"断言，改用多匹配查询（'a' 三文件全中）演示环绕。
+- **清理**：`Tab::find_match` 调用方全部迁至 `find_match_in` 后成死代码 → 删除；切片级 `find_match_in` 抽为 `pub(crate)` 自由函数。
+- **踩坑**：误编辑曾把 find_match 方法体替换成 search_move 签名行（old/new 粘贴错位），Read 现场后按行修复；多字段借用（entries/cursor 与 on_parent_row 写）字段级不相交，NLL 下直接编译通过。
+- 426 单测（+2：tab.rs 右 pane move/status、app 集成链路）+ 9 集成。

@@ -611,7 +611,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
 
     // M11-2→M14-1→M21-F1：右 pane——默认独立目录列表（带路径标题/焦点边框），
     // `w` 视图模式显示查看器/图片预览。
-    render_right_pane(frame, state, right_area);
+    render_right_pane(frame, state, mode, right_area);
 
     if let InputMode::HelpView { scroll, search } = mode {
         // FEAT-4：全屏帮助视图（内容来自内嵌 help.txt，滚动状态独立）。

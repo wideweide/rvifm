@@ -2758,7 +2758,15 @@ pub(crate) fn run_search(state: &mut AppState, msg: &mut Option<String>, forward
 /// （状态栏与列表高亮随之消失）；run 循环与测试共用。
 pub(crate) fn search_cancel(state: &mut AppState, origin: usize) {
     let tab = state.active_tab_mut();
-    tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
+    // M34-3：恢复焦点 pane 光标（右 pane 无 `..` 行语义）。
+    match tab.focus {
+        crate::tab::Focus::Right => {
+            tab.right.cursor = origin.min(tab.right.entries.len().saturating_sub(1));
+        }
+        crate::tab::Focus::Left => {
+            tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
+        }
+    }
     tab.search = None;
 }
 
@@ -2773,20 +2781,28 @@ pub(crate) fn submit_search(state: &mut AppState, line: &str, msg: &mut Option<S
         return;
     }
     let tab = state.active_tab_mut();
-    tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行。
-    let on_match = tab
-        .entries
-        .get(tab.cursor)
+    if tab.focus == crate::tab::Focus::Left {
+        tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行（右 pane 无该行）。
+    }
+    let (entries, cursor) = match tab.focus {
+        crate::tab::Focus::Right => (&tab.right.entries, &tab.right.cursor),
+        crate::tab::Focus::Left => (&tab.entries, &tab.cursor),
+    };
+    let on_match = entries
+        .get(*cursor)
         .is_some_and(|item| crate::tab::match_range(&item.name, &query).is_some());
     if on_match {
         tab.search = Some(SearchState { query });
         *msg = None;
         return;
     }
-    let start = tab.cursor + 1;
-    match tab.find_match(&query, start, true) {
+    let start = *cursor + 1;
+    match crate::tab::find_match_in(entries, &query, start, true) {
         Some(idx) => {
-            tab.cursor = idx;
+            match tab.focus {
+                crate::tab::Focus::Right => tab.right.cursor = idx,
+                crate::tab::Focus::Left => tab.cursor = idx,
+            }
             tab.search = Some(SearchState { query });
             *msg = None;
         }
@@ -2807,19 +2823,35 @@ pub(crate) fn live_search_jump(
 ) {
     let query = input.trim();
     let tab = state.active_tab_mut();
-    tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行。
+    if tab.focus == crate::tab::Focus::Left {
+        tab.on_parent_row = false; // FEAT-2：搜索交互离开 `..` 行（右 pane 无该行）。
+    }
+    let entries = match tab.focus {
+        crate::tab::Focus::Right => &tab.right.entries,
+        crate::tab::Focus::Left => &tab.entries,
+    };
     if query.is_empty() {
-        tab.cursor = origin.min(tab.entries.len().saturating_sub(1));
+        let clamped = origin.min(entries.len().saturating_sub(1));
+        match tab.focus {
+            crate::tab::Focus::Right => tab.right.cursor = clamped,
+            crate::tab::Focus::Left => tab.cursor = clamped,
+        }
         *msg = None;
         return;
     }
-    match tab.find_match(query, origin + 1, true) {
+    match crate::tab::find_match_in(entries, query, origin + 1, true) {
         Some(idx) => {
-            tab.cursor = idx;
+            match tab.focus {
+                crate::tab::Focus::Right => tab.right.cursor = idx,
+                crate::tab::Focus::Left => tab.cursor = idx,
+            }
             *msg = None;
         }
         None => {
-            tab.cursor = origin;
+            match tab.focus {
+                crate::tab::Focus::Right => tab.right.cursor = origin,
+                crate::tab::Focus::Left => tab.cursor = origin,
+            }
             *msg = Some("无匹配".to_owned());
         }
     }
