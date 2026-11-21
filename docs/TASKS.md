@@ -383,7 +383,7 @@
 - [x] M31-2 ACCEPTANCE 补条目（:jobs 取消时延、外部 CLI 双环境验收；见 SPEC M31-2；2026-11-20 完成）
 - [x] M31-3 M11-6 手工验证清单（ACCEPTANCE 独立小节；见 SPEC M31-3；2026-11-20 完成：6 步清单，M11-6 勾选以清单补验为准）
 - [x] M31-4 ACCEPTANCE M0–M13 复选框化（零语义机械转换 + grep 核验；见 SPEC M31-4；2026-11-20 完成：137 条）
-- [~] M31-5 pdf-visual 护栏实测（rustc≥1.97 环境语料耗时/内存数据入 NOTES；见 SPEC M31-5；deferred——2026-11-21 起本机 rustc 1.100 已解锁，语料实测待运行）
+- [x] M31-5 pdf-visual 护栏实测（rustc≥1.97 环境语料耗时/内存数据入 NOTES；见 SPEC M31-5；2026-11-21 完成：examples/pdf_bench 工具 + 本机实测数据入 NOTES——1224×1584px≈194 万像素护栏内、22–23ms/页、CJK 8ms、损坏 0ms 拒绝不 panic）
 
 ## M32 — 远端健壮性与会话扩展（2026-11-20 增补；见 SPEC M32 节，已确认登记）
 
