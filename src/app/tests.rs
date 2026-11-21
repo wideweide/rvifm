@@ -5448,6 +5448,46 @@ fn m38_4_frecency_command_gates() {
 }
 
 #[test]
+fn m38_5_find_named_save_load_and_filters() {
+    // M38-5：命名搜索 save/load（仅内存、同名覆盖、load 未命中列出已保存）
+    // + 过滤器版 :find 走 exec 全链路。
+    let (tmp, mut state) = make_state(3);
+    // 建立结果视图（模式 f0 → f00/f01/f02）。
+    assert!(exec_command_impl(&mut state, "find f0").is_ok());
+    assert!(state.active_tab().results.is_some());
+    // save → 重搜不同模式 → load 恢复。
+    assert!(exec_command_impl(&mut state, "find save 名单").is_ok());
+    assert!(exec_command_impl(&mut state, "find f1").is_ok());
+    assert_eq!(
+        state.active_tab().results.as_ref().unwrap().query,
+        "f1",
+        "重搜替换结果视图"
+    );
+    assert!(exec_command_impl(&mut state, "find load 名单").is_ok());
+    assert_eq!(
+        state.active_tab().results.as_ref().unwrap().query,
+        "f0",
+        "load 恢复已保存结果"
+    );
+    assert_eq!(state.active_tab().results.as_ref().unwrap().items.len(), 3);
+    // save 无结果视图 → 拒绝。
+    let (_t2, mut state2) = make_state(1);
+    let r = exec_command_impl(&mut state2, "find save x");
+    assert!(r.is_err() && r.unwrap_err().contains("save 需当前结果视图"));
+    // load 未知名 → 列出已保存集合。
+    let r = exec_command_impl(&mut state, "find load 不存在");
+    assert!(r.is_err() && r.unwrap_err().contains("已保存：名单"));
+    // 过滤器版 :find 全链路（新文件 mtime=now → -1 命中全部）。
+    fs::write(tmp.path().join("big.dat"), vec![b'x'; 2048]).unwrap();
+    assert!(exec_command_impl(&mut state, "find --size +1k --mtime=-1").is_ok());
+    let results = state.active_tab().results.as_ref().unwrap();
+    assert_eq!(results.items.len(), 1, "仅 big.dat ≥ 1k");
+    // 未知选项可读报错。
+    let r = exec_command_impl(&mut state, "find --bogus 1");
+    assert!(r.is_err() && r.unwrap_err().contains("--bogus"));
+}
+
+#[test]
 fn feat1_mouse_click_focus_then_reclick_opens_dir() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir(tmp.path().join("d1")).unwrap();

@@ -1115,7 +1115,7 @@
 - [x] M38-2 pick 八参数各一条集成测试（未知参数可读错误）。（2026-11-21：parse_pick_options（--query/--multi/--print0/--no-sort/--exit-0/--select-1/--preview/--height 接受忽略）+ cmd_pick 消费（filter 恒全量输出保持 fzf 语义、--multi 交互侧、--print0 NUL、--exit-0 空匹配 0、--select-1 唯一命中直出）；CLI 集成测试验证既有 filter 语义不回归；逐参数独立测试随 CI）
 - [x] M38-3 init 四 shell 输出含 record/pick 接入（脚本语法检查）。（2026-11-21 补验收：cli 集成测试四 shell record/pick 标记 + 未知 shell 报错 + cfg(unix) bash -n 语法检查（CI ubuntu）；PowerShell 脚本补 pick 快捷键（PSReadLine Ctrl-t，原脚本缺失））
 - [x] M38-4 frecency stats/export/purge/prune（purge 需确认）。（2026-11-21：`:frecency` 四子命令——stats（events/snapshot 分 topic/db 大小）/export（JSON 全量 snapshot+events）/purge confirm 二步确认门（表清空 + pending 删除）/prune --before YYYY-MM-DD（纯 std 日期解析，snapshot 不动——分数经 EMS 衰减收敛，见 NOTES）；m38_4 三测试 + 门控测试）
-- [ ] M38-5 find --size/--mtime/--type/--depth + 命名搜索。
+- [x] M38-5 find --size/--mtime/--type/--depth + 命名搜索。（2026-11-21：spec 解析/谓词/参数解析/端到端四测试 + exec 命名 save·load 全链路；远端视图不支持（SIMPLIFIED，GUIDE 注记）；save 需当前结果视图、load 未命中列出已保存名）
 
 ## 39. M39 — 预览与平台（见 SPEC M39 节）
 

@@ -395,6 +395,9 @@ pub struct AppState {
     /// AUDIT-7：block=true opener 待执行命令（open_selected 转交，
     /// run 循环取走并挂起 TUI 执行后清空）。
     pub pending_external: Option<String>,
+    /// M38-5：命名搜索（`:find save <名>` / `:find load <名>`；仅内存
+    /// 不跨会话，SPEC SIMPLIFIED；同名覆盖）。
+    pub named_searches: std::collections::HashMap<String, crate::search::SearchResults>,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -433,6 +436,7 @@ impl AppState {
             git_pending: std::collections::HashSet::new(),
             git_tx: None,
             pending_external: None,
+            named_searches: std::collections::HashMap::new(),
         }
     }
 

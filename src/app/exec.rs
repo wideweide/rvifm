@@ -1785,6 +1785,49 @@ pub(crate) fn jump_to(
     }
 }
 
+/// M38-5：命名搜索子命令（`:find save <名>` / `:find load <名>`；仅内存
+/// 不跨会话，同名覆盖；load 未命中时列出已保存名）。
+fn named_find_op(state: &mut AppState, op: &str, name: &str) -> Result<ExecOutcome, String> {
+    if name.is_empty() || name.chars().count() > 64 {
+        return Err("find: 命名搜索名需 1–64 字符".to_owned());
+    }
+    if op == "save" {
+        let results = state
+            .active_tab()
+            .results
+            .clone()
+            .ok_or_else(|| "find: save 需当前结果视图（先执行 :find）".to_owned())?;
+        let n = results.items.len();
+        let query = results.query.clone();
+        state.named_searches.insert(name.to_owned(), results);
+        return Ok(ExecOutcome::Done {
+            msg: Some(format!(
+                "find: 已保存 {n} 条结果为“{name}”（模式 {query}；仅本会话）"
+            )),
+        });
+    }
+    let Some(results) = state.named_searches.get(name).cloned() else {
+        let names: Vec<&str> = state.named_searches.keys().map(|s| s.as_str()).collect();
+        let hint = if names.is_empty() {
+            "（尚无保存）".to_owned()
+        } else {
+            format!("（已保存：{}）", names.join("、"))
+        };
+        return Err(format!("find: 未找到命名搜索“{name}”{hint}"));
+    };
+    let n = results.items.len();
+    state.active_tab_mut().enter_results(
+        results.kind,
+        results.query.clone(),
+        results.root.clone(),
+        results.items,
+        results.truncated,
+    );
+    Ok(ExecOutcome::Done {
+        msg: Some(format!("find: 已载入“{name}”（{n} 条）")),
+    })
+}
+
 /// 执行最小 `:` 命令（M1-5/M2-6）。
 pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
@@ -1926,7 +1969,44 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
         Some("find" | "grep") => {
             // M17 SRCH-1/2：递归搜索 → 结果虚拟目录（重执行 = 替换）。
             // M22-5：远端视图 → RemoteFs 驱动（无 ignore 语义；上限同源）。
+            // M38-5：find 支持过滤器（--size/--mtime/--type/--depth）与
+            // 命名搜索（save/load，仅内存；远端视图不支持——RemoteFs 链路
+            // 保持 M22-5 既有行为）；grep 仅模式（既有行为）。
             let is_grep = cmd_head == Some("grep");
+            let is_remote = matches!(state.active_tab().location, Location::Remote { .. });
+            if !is_grep && !is_remote {
+                // 命名搜索子命令：`find save <名>` / `find load <名>`（save/
+                // load 无名时回退为普通模式搜索）。
+                let head = parts.next();
+                if let Some(head) = head
+                    && (head == "save" || head == "load")
+                    && let Some(name) = parts.next()
+                {
+                    return named_find_op(state, head, name);
+                }
+                let tokens: Vec<String> = std::iter::once(head.unwrap_or_default().to_owned())
+                    .chain(parts.map(|s| s.to_owned()))
+                    .collect();
+                let (pattern, filter) = crate::search::parse_find_args(&tokens)?;
+                let base = physical_base(state)?;
+                let show_hidden = state.config.show_hidden;
+                let (items, truncated) =
+                    crate::search::find_files_filtered(&base, &pattern, show_hidden, &filter);
+                let n = items.len();
+                state.active_tab_mut().enter_results(
+                    crate::search::SearchKind::Find,
+                    pattern,
+                    base,
+                    items,
+                    truncated,
+                );
+                return Ok(ExecOutcome::Done {
+                    msg: Some(format!(
+                        "find: {n} 个结果{}",
+                        if truncated { "（已截断）" } else { "" }
+                    )),
+                });
+            }
             let pattern = parts.next().unwrap_or("").to_owned();
             if let Location::Remote { remote, path } = state.active_tab().location.clone() {
                 let backend = state

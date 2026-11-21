@@ -979,3 +979,11 @@ rvifm record  → 静默记录访问
 - **prune 设计（SIMPLIFIED 决策）**：只删 `ts < before` 的 events；**snapshot 不动**——snapshot 条目无逐条时间戳（tick/clock 是时钟非墙钟），加字段需 schema 迁移；旧分数经 EMS aging 衰减 + M23-3 容量清理自然收敛，符合数据卫生目标。日期解析用纯 std（Hinnant days_from_civil，UTC 0 点），不引日期 crate（jiff 在依赖树但不为此扩面）。
 - **M38-3 验收补课**：TASKS 勾选但 ACCEPTANCE 未验——补 cli 集成测试（四 shell record/pick 标记 + 未知 shell 报错 + cfg(unix) `bash -n` 语法检查走 CI ubuntu）+ PowerShell 脚本补 pick 快捷键（PSReadLine Ctrl-t）。双重教训：勾选与验收须同步；shell 脚本逐 shell 断言内容而非仅"非空"。
 - **large_directory 时序测试**：本机（Windows）并行负载下高频抖动（当日 3 次，单跑均 5s 绿）——既有先例记录在案，以单跑 + CI 为准。
+
+### 2026-11-21 — M38-5 实现与 M38 批次关闭
+
+- **过滤器边界**：`--type` 未配置时保持既有行为（仅文件）；`--type d` 仅目录。`--depth N` 相对 root（直接子项 = 1）。`--mtime` 单位 = 天（`+N` 早于 N 天前 / `-N` 最近 N 天内）；日期换算纯谓词注入 now 可测。size 规格支持 `--k=v` 与 `--k v` 双形态（与 trash/frecency prune 的 `=`/空格先例一致）。
+- **远端排除（SIMPLIFIED）**：过滤器与命名搜索仅本地视图——远端 `:find` 保持 M22-5 RemoteFs 链路（远端条目无本地 metadata）；GUIDE 注记。
+- **首版缺陷（测试双拦截）**：① find 分支抢在 Remote 判断前——m22_5 集成测试拦下（cd 落点错误），补 `is_remote` 守卫；② walker 产出 root 自身（depth 0）——`--type d` 端到端测试拦下（3 ≠ 2），补 depth==0 跳过。两条都是"验证任务揪真缺陷"的又一例（M21-E6/M34-6 同款）。
+- **命名搜索**：仅内存（AppState.named_searches，不跨会话——SPEC SIMPLIFIED）；save 需当前结果视图；同名覆盖；load 未命中时列出已保存名（可发现性）。保存 = SearchResults 克隆（含 pattern/root/items/truncated），load 走 enter_results 复用结果虚拟目录全链路（可操作 yy/dd 语义随 M38-1）。
+- **M38 批次自此 5/5 关闭**；下一批 M39（预览与平台 6 项）。
