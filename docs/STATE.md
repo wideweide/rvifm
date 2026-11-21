@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-21
-- **当前阶段**：M0–M34 + AUDIT + MISC 全部完成并关闭（v0.11.0 已发布）；**M35 文档与发布一致性执行中**（M36–M40 已登记按序排队，2026-11-21 复核报告蒸馏）；统一目标随批次递进（M35→0.11.1 … M40→1.0.0）
-- **当前任务**：M38-4/5 frecency 管理 + find 过滤器（M38-1/2/3 已于 2026-11-21 完成；**token 预算断点**——断点详情见 NOTES）
-- **阶段状态**：M0–M33 + AUDIT + MISC + **M34 全部完成**（10/10，437 单测 + 9 集成，rustc 1.100 本机门禁绿含 pdf-visual）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（2026-11-21，只发最新）
+- **当前阶段**：M0–M38-3 + AUDIT + MISC + M35/M36/M37 全部完成并关闭（v0.11.1 已发布，crates.io 上线）；M36–M41 不单独发版，全部批次完成后统一发 1.0.0（用户 2026-11-21 决策）；**M41 右栏一致性与交互缺陷修复执行中**（2026-11-21 用户实测蒸馏登记，优先级排高，先于 M38-4/5）
+- **当前任务**：M41-1 右 pane `:` 命令模式与标签切换（M41-1→4 按序；之后 M38-4/5 frecency 管理 + find 过滤器——M38-4 需从零实现，断点勘误见 NOTES）
+- **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
 ## 进行中 / 暂停 / 延期
@@ -17,9 +17,9 @@
 
 ## 下一步
 
-1. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（0.11.0 归档）。
-2. **M31-5 本机补验**：rustc 1.100 已解锁，语料量化随时可跑（用户指令）。
-3. **后续批次**：待用户需求（无排队任务）。
+1. **M41-1→4 按序执行**（完成后接 M38-4/5 → M39 → M40 → 统一 1.0.0）。
+2. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（0.11.x 归档）。
+3. **M31-5 本机补验**：Windows rustc 1.99.1 / Linux 1.100 均 ≥ 1.97 已解锁，语料量化随时可跑（用户指令）。
 
 ## 批次关闭记录
 
@@ -50,13 +50,13 @@
 ## 质量门禁
 
 - 本地：`cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test` → `--version` / `--help` 冒烟。
-- **当前已知门禁偏差**：本机可全量 `cargo test`（418 单测 + 9 集成，rustc 1.100 实测 2026-11-21）；残留以 CI 为准：① `cargo check --target x86_64-unknown-linux-gnu` 的 aws-lc-sys 交叉构建本机不可行（AUDIT-9 固化进 ubuntu job）。**已闭环**：`cargo check --features pdf-visual` 本机恢复可执行（rustup stable 1.100 ≥ exprim MSRV 1.97，2026-11-21 实测通过）。
+- **当前已知门禁偏差**：本机可全量 `cargo test`（450 单测 + 9 集成，checkpoint 2bff891 实测 2026-11-21）；残留以 CI 为准：① `cargo check --target x86_64-unknown-linux-gnu` 的 aws-lc-sys 交叉构建 Windows 本机不可行（AUDIT-9 固化进 ubuntu job）。**已闭环**：`cargo check --features pdf-visual` 双本机均可执行（Windows rustc 1.99.1 / Linux 1.100 ≥ exprim MSRV 1.97）。
 - 含 `cfg(unix)` / `cfg(test)` 改动：Windows 本机不编译 cfg(unix) 测试代码——以 CI ubuntu job 或 Linux 开发机全量运行为准（M12-2/M27-3 两度教训）。
 - CI：`ubuntu-latest` + `windows-latest` 全绿；tag `v*` 触发三 target release 归档。
 
 ## 预算与风险
 
-- 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`；一轮结束自动进入下一轮，无需人工确认（AGENTS §3）；**M34 暂缓期间不得自行启动**。
+- 控制原则：一轮一任务，只注入相关 SPEC 片段；同一任务 3 轮不过验收即缩小范围并 `deferred`；一轮结束自动进入下一轮，无需人工确认（AGENTS §3）；M41 用户实测缺陷批次按 TASKS 节序先行。
 - 主要风险：`pick` 只读红线（结构性保证，回归测试固化）；cfg(unix) 测试代码 Windows 本机不编译——以 CI ubuntu job 与 Linux 开发机全量运行为准（M27-3 连续发现两例潜伏缺陷，见 NOTES）；`pdf-visual` 在 rustc <1.97 的本机不可检查，CI 覆盖。
 - 环境：双本机——Windows Server 2016（`x86_64-pc-windows-msvc`；crates.io 凭据所在）+ Linux 开发机（近期会话所在，foot 实测终端，rustup stable 1.100）；其它平台交给 CI（ubuntu-latest / windows-latest）。
 
@@ -69,7 +69,7 @@
 ## 恢复方式
 
 1. 读本文件确认当前阶段与任务。
-2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前无 `[ ]` 任务：M34 段为 `[~]` 待用户指令，不得自行翻转执行**。
+2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前第一个 `[ ]` = M41-1（M41 批次置于 M38 之前，优先级排高）**。
 3. 读 [AGENTS.md](../AGENTS.md) §3 执行循环。
 4. 只读该任务相关的 [SPEC.md](SPEC.md) 片段与 [ACCEPTANCE.md](ACCEPTANCE.md) 条目。
 5. 完成后更新本文件与 TASKS，再提交。

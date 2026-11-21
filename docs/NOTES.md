@@ -954,3 +954,19 @@ rvifm record  → 静默记录访问
 - **未完成（下会话起点）**：M38-4 frecency 管理（stats/export/purge——实现代码已在工作区 exec.rs frecency 臂，未勾选验收）→ M38-5 find 过滤器 → M39 全部（hex/CSV·PDF/zip 容器/SFTP 硬化/UAC/标签布局）→ M40 全部（基准/fuzz/proptest/覆盖率/供应链/平台/1.0 发布）。
 - **关键事实**：frecency stats/export 臂已实现（exec.rs frecency 臂——cargo fmt 后在位，未加测试/勾选，下会话先验后勾）；443→450 单测演进中；harness_check OK。
 - **发布**：按用户决策 M36–M40 全部完成后再统一发布 1.0.0（各批次不再单独发版）。
+
+### 2026-11-21 — M38-4 断点勘误（未提交代码未随 checkpoint 转移）
+
+- 前条"M38-4 frecency stats/export 臂已在工作区（先验后勾）"指 **Linux 开发机未提交树**——未随 checkpoint 提交 2bff891 转移；Windows 树 grep 证实 `exec.rs`/`main.rs`/`frecency.rs` 无任何 stats/export/purge/prune 代码。**M38-4 需从零实现，"先验后勾"作废**。教训：断点记录中的"工作区在位"若未提交，跨机器不可复现——断点事实必须以提交为准。
+
+### 2026-11-21 — M41 登记（用户实测缺陷，优先级排高）+ 漂移修正
+
+- **来源**：用户 0.11.x 实测反馈四项，登记前逐项代码定位属实：
+  1. 右 pane `:`/`gt`/`gT`/`Ngt` 失效——`handle_right_key`（keys.rs）仅含导航键；`:`（EnterCommand）与 gt 序列分派只存在于左 pane `handle_key`（Action::NextTab/PrevTab + count）。
+  2. 方向键不可用——默认 keymap（keymap.rs `default_map`）无 ↑↓←→ 绑定；右 pane 处理器亦无（parse_key 已支持 "up"/"down"/"left"/"right" 名称，仅缺默认绑定）。
+  3. 鼠标点击不切焦点/不高亮——`handle_mouse` 仅左 pane 几何（M15 FEAT-1 注释明示"右 pane 不响应"），且左 pane 点击不切 `tab.focus`（焦点在右时点左列表只移光标、无 CurrLine 高亮）。用户指令升格为双侧一致。
+  4. 光标底行按 k 视口钉底——`list_offset(cursor, height)`（render.rs:19）每帧由 cursor 无状态重算 `cursor+1-height`，光标 ≥ height 时恒钉视口底行；`Tab.scroll`/`Pane.scroll` 字段已存在但视口未使用（cd 时清零逻辑已在）。
+- **优先级（用户指令"优先级排高"）**：M41 置于 M38-4/5 之前执行（TASKS 节序同 AUDIT 先例）；不单独发版，随 M36–M40 统一 1.0.0（PLAN §4 已同步）。
+- **M37-3 勾选漂移修正**：TASKS 复选框 `[ ]` 而 STATE/NOTES 记 M37 7/7 关闭——按冲突优先级（NOTES > TASKS 勾选状态）翻转为 `[x]`；`:sync` 三策略 deferred 属实（l2r/r2l + --apply/--delete + dry-run 已验收），后续按需补登。
+- **PLAN/AGENTS/STATE 状态漂移一并清零**：PLAN 总表 M35–M38 状态列（实际 M35 5/5、M36 8/8、M37 7/7 已关、M38 3/5 执行中）+ 发布注记 M41；AGENTS §10（原停 M35）；STATE 当前阶段/任务（原停 M35 执行中）。
+- **设计取向**：方向键不新增 Action（复用 CursorUp/CursorDown/ReturnParent/EnterSelected，符合 §5.4 动作驱动约束）；视口偏移有状态化复用既有 scroll 字段；右键菜单保持左 pane（右 pane 文件操作边界不变，SIMPLIFIED）。
