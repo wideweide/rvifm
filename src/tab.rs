@@ -422,6 +422,9 @@ pub struct Tab {
     /// 不进入 entries/搜索/过滤/标记集合）。`l`/Enter = return_parent；
     /// 写操作被守卫拒绝。
     pub on_parent_row: bool,
+    /// M39-6：命名标签（`:tabname <名>`；None = 标签栏显示目录名）。
+    /// 仅内存（会话恢复不保存，SIMPLIFIED）。
+    pub name: Option<String>,
     /// M16 NAV-3：当前视图在 `history` 中的下标（history 从 M16 起为
     /// **完整访问轨迹**，含当前视图；新导航截断 forward）。
     pub hist_pos: usize,
@@ -553,6 +556,7 @@ impl Tab {
             right: Pane::from_physical(dir, config)?,
             focus: Focus::Left,
             on_parent_row: false,
+            name: None,
         })
     }
 
@@ -2292,6 +2296,7 @@ mod tests {
             right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
+            name: None,
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(root));
@@ -2404,6 +2409,7 @@ mod tests {
             right: Pane::from_physical(Path::new("."), Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
+            name: None,
         };
         let cfg = Config::default(); // sort_dirs_first 默认 true（无目录，不影响）
 

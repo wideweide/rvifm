@@ -115,6 +115,46 @@ pub struct UiConfig {
     pub git_column: bool,
     pub theme: Option<String>,
     pub pane_borders: bool,
+    /// M39-6：主区布局（`layout = single|dual|preview-right|preview-bottom`；
+    /// None/未知 = dual 缺省）。
+    pub layout: Option<String>,
+}
+
+/// M39-6：主区布局模式——`[ui] layout`。
+/// - Single：单栏（列表全宽；view 模式查看器占全宽）；
+/// - Dual（缺省）：双栏（查看器按焦点占对侧，M34-4）；
+/// - PreviewRight：view 模式查看器恒在右半；
+/// - PreviewBottom：view 模式查看器占下半全宽（列表上半双栏）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutMode {
+    #[default]
+    Dual,
+    Single,
+    PreviewRight,
+    PreviewBottom,
+}
+
+impl LayoutMode {
+    /// 解析配置串（非法值回落 dual）。
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "single" => Some(Self::Single),
+            "dual" => Some(Self::Dual),
+            "preview-right" => Some(Self::PreviewRight),
+            "preview-bottom" => Some(Self::PreviewBottom),
+            _ => None,
+        }
+    }
+}
+
+impl UiConfig {
+    /// M39-6：布局模式（None/未知回落 Dual）。
+    pub fn layout(&self) -> LayoutMode {
+        self.layout
+            .as_deref()
+            .and_then(LayoutMode::parse)
+            .unwrap_or_default()
+    }
 }
 
 impl Default for UiConfig {
@@ -127,6 +167,7 @@ impl Default for UiConfig {
             // M34-1：默认主题 gruvbox-dark（视觉等价 vifm gruvbox；显式配置覆盖）。
             theme: Some("gruvbox-dark".to_string()),
             pane_borders: false,
+            layout: None,
         }
     }
 }

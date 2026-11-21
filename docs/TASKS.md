@@ -488,7 +488,7 @@
 - [x] M39-3 通用 zip 容器识别（docx/xlsx/pptx/apk/war；见 SPEC M39-3；2026-11-21 完成：ZIP_CONTAINERS 常量表——is_archive_file 与 open_dispatch 共用（M34-6 三表漂移制度化），魔数 PK 由 ZipFs::open 校验（非 zip 内容可读拒绝）；m393 测试（识别/大小写/roundtrip/损坏拒绝），439 单测）
 - [x] M39-4 SFTP 硬化（指纹确认 ask 缺省、ProxyJump、agent、keepalive；见 SPEC M39-4；2026-11-21 完成：strict_host_key = ask|accept|no（缺省 ask——RemoteFingerprint 覆盖层 y/n，accept_new 重连放行；no 等效 known_hosts=false）+ ProxyJump（ssh_config_host_fields 透传，direct-tcpip 二段连接，认证材料同目标 SIMPLIFIED）+ ssh-agent（SSH_AUTH_SOCK，unix-only，密钥→agent→口令序列）+ keepalive 30s/3；RemoteConnectErr 三态共享体；m394 测试（config 解析 + 判定矩阵 + 不可达重连失败状态不变 + sshd 全链路 cfg(unix) CI），441 单测 + 8 cli）
 - [x] M39-5 Windows 操作级 UAC（ShellExecuteEx runas；见 SPEC M39-5；2026-11-21 完成：EACCES → Escalate 消费分支 cfg(windows) 直调 ShellExecuteExW("runas")（cmd.exe 承载单操作、等待退出码、ERROR_CANCELLED 可读"用户取消"、主进程不提升）+ PrivOp::uac_command 六操作映射（路径引号保护）；unsafe 面 = privilege.rs 模块级 FFI（AGENTS §7 注释豁免）；UAC 弹窗手工清单项保留，442 单测）
-- [ ] M39-6 命名标签、溢出滚动、布局选项（见 SPEC M39-6）
+- [x] M39-6 命名标签、溢出滚动、布局选项（见 SPEC M39-6；2026-11-21 完成：`:tabname <名>`（无参清除，仅内存）+ tab_bar_spans 共享（命名显示 + 溢出 ‹› 窗口滚动，三渲染点去重）+ `[ui] layout` 四模式（Single 全宽右零宽 / Dual 现状 / PreviewRight 查看器恒右 / PreviewBottom 下半全宽，pane_layout 布局感知 + viewer_rect + 覆盖守卫（命中测试与渲染同源，Dual 对侧预览覆盖 quirk 顺带修复）；m39_6 测试，443 单测 + 8 cli）
 
 ## M40 — 1.0 稳定化（2026-11-21 增补；见 SPEC M40 节，已确认登记·按序执行）
 

@@ -1001,3 +1001,10 @@ rvifm record  → 静默记录访问
 - **ssh-agent**：russh 0.65 agent 客户端**仅 unix**（`connect_env` cfg(unix)；Windows 命名管道不支持）——cfg(not(unix)) 桩返回 false 静默跳过；认证序列 = 密钥文件 → agent → 口令（M22-3 回退链保持）。agent 不可用/出错静默降级，不阻塞连接。
 - **连接体拆分**：单跳与跳板共用 `authenticate_session`/`open_sftp_session`；`:remote` 臂与确认重连共用 `remote_connect_enter`（RemoteConnectErr 三态装箱 params——clippy result_large_err）。
 - **CI 边界**：sshd 全链路测试（ask→确认→写入→重连成功）在 cfg(unix) 模块（CI ubuntu 覆盖）；Windows 本机仅跑 config 解析与不可达主机失败路径（平台无关）。
+
+### 2026-11-21 — M39 批次 6/6 关闭（预览与平台）
+
+- **M39-6 布局机制**：pane_layout 布局感知（`pane_layout(area, layout, viewing)`）——9 调用点（渲染×2/命中×2/鼠标/视口同步/frecency）统一签名；`viewer_rect` 提供 Single/PreviewBottom 查看器占位；`pane_covered_by_viewer` 守卫（命中测试与渲染同源）——**顺带修复 Dual 对侧预览覆盖 pane 仍可点击的既有 quirk**。frecency 模式忽略布局（保持 M23-6/M34-4 几何）。
+- **标签栏三渲染点去重**：`tab_bar_spans(state, width, borders)` 共享（命名标签 Tab.name 覆盖目录名 + 溢出 ‹› 窗口滚动——宽度按字符数近似 CJK 计 1，SIMPLIFIED）；SessionTab 不含 name（会话恢复不保存命名，SIMPLIFIED）。
+- **M39-5 unsafe 面**：ShellExecuteExW FFI（privilege.rs 模块级声明，SAFETY 注释——AGENTS §7 豁免口径：操作级提权唯一受支持途径）；结构体 112 字节与 SDK x64 布局一致；UAC 弹窗交互为手工清单（ACCEPTANCE §35-D 保留）。
+- **M39-4 CI 边界**：sshd 全链路 ask 流程在 cfg(unix)（CI ubuntu）；Windows 本机跑 config 解析与不可达失败路径。ssh-agent 仅 unix（russh 无 Windows 命名管道支持，cfg(not(unix)) 桩静默跳过）。

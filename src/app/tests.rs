@@ -63,6 +63,7 @@ fn tab_at(path: &str) -> Tab {
         focus: Default::default(),
         view_mode: false,
         on_parent_row: false,
+        name: None,
     }
 }
 
@@ -2711,7 +2712,7 @@ fn m41_3_mouse_click_focus_and_highlight_both_panes() {
         crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
     let mut msg: Option<String> = None;
     let area = ratatui::layout::Rect::new(0, 0, 80, 24);
-    let [_, left, right, _] = pane_layout(area);
+    let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
     let borders = state.config.ui.pane_borders;
     let left_inner = left_list_area(borders, left);
     let right_inner = left_list_area(borders, right);
@@ -5583,6 +5584,95 @@ fn m394_remote_confirm_and_enter_unreachable() {
 }
 
 #[test]
+fn m39_6_layout_modes_tabname_and_overflow() {
+    // M39-6：布局解析/几何（Single 右零宽、PreviewBottom 上半列表）、
+    // 查看器占位、覆盖矩阵、:tabname 设置/清除、标签栏命名与溢出滚动。
+    use crate::config::{LayoutMode, UiConfig};
+    assert_eq!(LayoutMode::parse("single"), Some(LayoutMode::Single));
+    assert_eq!(
+        LayoutMode::parse("preview-bottom"),
+        Some(LayoutMode::PreviewBottom)
+    );
+    assert_eq!(LayoutMode::parse("bogus"), None);
+    let mut ui = UiConfig {
+        layout: Some("preview-right".into()),
+        ..Default::default()
+    };
+    assert_eq!(ui.layout(), LayoutMode::PreviewRight);
+    ui.layout = None;
+    assert_eq!(ui.layout(), LayoutMode::Dual, "缺省 dual");
+    // 几何：dual 基线两 pane 有宽；single 右零宽、左全宽。
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let [_, l, r, _] = pane_layout(area, LayoutMode::Dual, false);
+    assert!(l.width > 0 && r.width > 0);
+    let [_, l, r, _] = pane_layout(area, LayoutMode::Single, false);
+    assert_eq!(r.width, 0, "Single 右 pane 零宽");
+    assert_eq!(l.width, 80, "Single 列表全宽");
+    // PreviewBottom + viewing：列表上半、查看器下半全宽。
+    let [_, l, r, _] = pane_layout(area, LayoutMode::PreviewBottom, true);
+    assert!(r.width > 0 && l.height < 12, "上半高度: {}", l.height);
+    let v = viewer_rect(area, LayoutMode::PreviewBottom, true).unwrap();
+    assert!(v.y >= l.y + l.height, "查看器在列表下方");
+    assert_eq!(v.width, 80, "查看器全宽");
+    // 覆盖矩阵（命中守卫）。
+    assert!(pane_covered_by_viewer(
+        LayoutMode::Single,
+        true,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Left
+    ));
+    assert!(pane_covered_by_viewer(
+        LayoutMode::Dual,
+        true,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Right
+    ));
+    assert!(!pane_covered_by_viewer(
+        LayoutMode::Dual,
+        true,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Left
+    ));
+    assert!(pane_covered_by_viewer(
+        LayoutMode::PreviewRight,
+        true,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Right
+    ));
+    assert!(!pane_covered_by_viewer(
+        LayoutMode::PreviewBottom,
+        true,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Left
+    ));
+    assert!(!pane_covered_by_viewer(
+        LayoutMode::Dual,
+        false,
+        crate::tab::Focus::Left,
+        crate::tab::Focus::Right
+    ));
+    // :tabname 设置/清除。
+    let (_tmp, mut state) = make_state(1);
+    exec_command_impl(&mut state, "tabname 工作").unwrap();
+    assert_eq!(state.active_tab().name.as_deref(), Some("工作"));
+    exec_command_impl(&mut state, "tabname").unwrap();
+    assert!(state.active_tab().name.is_none());
+    // 标签栏：命名显示 + 溢出滚动标记（窄宽多标签）。
+    state.active_tab_mut().name = Some("工作".into());
+    for _ in 0..8 {
+        state.push_tab(tab_at("x"));
+    }
+    state.active = 0; // 活动标签 = 命名标签（溢出窗口以其为中心）
+    let spans = tab_bar_spans(&state, 30, false);
+    let joined: String = spans.iter().map(|s| s.content.clone()).collect();
+    assert!(joined.contains("工作"), "命名标签显示: {joined}");
+    assert!(
+        joined.contains('‹') || joined.contains('›'),
+        "溢出滚动标记: {joined}"
+    );
+}
+
+#[test]
 fn m39_2_pdf_viewer_page_flip_keys() {
     // M39-2：viewer `[`/`]` 翻页——page 状态推进/回退/第 1 页停留。
     let tmp = TempDir::new().unwrap();
@@ -7898,7 +7988,7 @@ fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
 
     // 几何与渲染同源：右 pane 条目首行 = 边框内区首行（无 `..` 行）。
     let area = ratatui::layout::Rect::new(0, 0, 120, 24);
-    let [_, left, right, _] = pane_layout(area);
+    let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
     let l_inner = ratatui::widgets::Block::bordered().inner(left);
     let r_inner = ratatui::widgets::Block::bordered().inner(right);
     // 左 pane 条目 0 在 `..` 行之后（行 = inner.y + 1）；右 pane 无 `..` 行。
@@ -8631,7 +8721,11 @@ fn m21e2_w_preview_cycle_follows_and_restores() {
         terminal.backend().buffer().clone()
     };
     let right_text = |buf: &ratatui::buffer::Buffer| -> String {
-        let [_, left, right, _] = pane_layout(ratatui::layout::Rect::new(0, 0, 120, 24));
+        let [_, left, right, _] = pane_layout(
+            ratatui::layout::Rect::new(0, 0, 120, 24),
+            crate::config::LayoutMode::Dual,
+            false,
+        );
         let _ = left;
         (0..24u16)
             .map(|y| {
@@ -8736,7 +8830,11 @@ fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
             .unwrap();
         terminal.backend().buffer().clone()
     };
-    let [_, left, right, _] = pane_layout(ratatui::layout::Rect::new(0, 0, 120, 24));
+    let [_, left, right, _] = pane_layout(
+        ratatui::layout::Rect::new(0, 0, 120, 24),
+        crate::config::LayoutMode::Dual,
+        false,
+    );
     let _ = left;
     let rgb_cells = |buf: &ratatui::buffer::Buffer| {
         (right.x..right.x + right.width)

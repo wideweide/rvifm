@@ -1124,7 +1124,7 @@
 - [x] M39-3 docx/xlsx/pptx/apk/war 虚拟浏览（魔数 + 白名单）。（2026-11-21：m393 测试——五扩展识别/大小写/roundtrip list+read/非 zip 内容损坏拒绝；is_unsupported_archive 不受影响（仍仅 .rar）；Office 预览提取与归档浏览并存（preview_kind Office 先于归档））
 - [x] M39-4 指纹确认 ask（拒绝则断开）/ProxyJump/agent/keepalive。（2026-11-21：m394 测试——strict 三态解析 + remotes.toml/ssh config 透传（Hostname/Port/User/ProxyJump）+ first_use_allowed 判定矩阵 + 不可达主机确认重连失败状态不变（不注册会话/位置不变）；sshd 全链路 ask→确认→写入→重连在 cfg(unix) CI ubuntu 覆盖；agent 仅 unix（russh 无 Windows 命名管道支持），不可用静默跳过）
 - [x] M39-5 Windows UAC 操作级提权（手工清单；失败/取消状态不变）。（2026-11-21 自动部分：m395 uac_command 六操作映射测试 + ERROR_CANCELLED/退出码分支（结构性）；手工部分保留：真实 UAC 弹窗 y/n（随 §35-D Win2016 清单））
-- [ ] M39-6 命名标签/溢出滚动/布局选项四形态渲染。
+- [x] M39-6 命名标签/溢出滚动/布局选项四形态渲染。（2026-11-21：m39_6 测试——布局解析/几何（Single 右零宽全宽、PreviewBottom 上下半分）/查看器占位/覆盖矩阵/:tabname 设置清除/溢出 ‹› 标记；四形态渲染几何经 pane_layout 布局感知固化，Dual 行为零变化）
 
 ## 40. M40 — 1.0 稳定化（见 SPEC M40 节）
 

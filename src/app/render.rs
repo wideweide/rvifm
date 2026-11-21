@@ -13,22 +13,190 @@ pub(crate) fn context_menu_rect(area: ratatui::layout::Rect) -> ratatui::layout:
     }
 }
 
-/// M21-F1：整体几何——标签栏 1 行 + 双 pane（居中分开，间隔 1 列）+ 状态栏 1 行。
+/// M21-F1：整体几何——标签栏 1 行 + 主区 + 状态栏 1 行。M39-6：主区按
+/// `[ui] layout`——Single = 左全宽（右零宽）；PreviewBottom 且 view 模式 =
+/// 上下半分（列表上半、查看器下半经 `viewer_rect`）；其余左右半分。
 /// 渲染与鼠标命中测试共用同一推导，避免两处几何漂移。
-pub(crate) fn pane_layout(area: ratatui::layout::Rect) -> [ratatui::layout::Rect; 4] {
+pub(crate) fn pane_layout(
+    area: ratatui::layout::Rect,
+    layout: crate::config::LayoutMode,
+    viewing: bool,
+) -> [ratatui::layout::Rect; 4] {
     let [tab_bar, main, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(1),
     ])
     .areas(area);
-    let [left, _gap, right] = Layout::horizontal([
-        Constraint::Ratio(1, 2),
-        Constraint::Length(1),
-        Constraint::Ratio(1, 2),
-    ])
-    .areas(main);
+    let (left, right) = match (layout, viewing) {
+        (crate::config::LayoutMode::Single, _) => (
+            main,
+            ratatui::layout::Rect {
+                x: main.x + main.width,
+                y: main.y,
+                width: 0,
+                height: main.height,
+            },
+        ),
+        (crate::config::LayoutMode::PreviewBottom, true) => {
+            let [top, _bottom] =
+                Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(main);
+            let [l, _gap, r] = Layout::horizontal([
+                Constraint::Ratio(1, 2),
+                Constraint::Length(1),
+                Constraint::Ratio(1, 2),
+            ])
+            .areas(top);
+            (l, r)
+        }
+        _ => {
+            let [l, _gap, r] = Layout::horizontal([
+                Constraint::Ratio(1, 2),
+                Constraint::Length(1),
+                Constraint::Ratio(1, 2),
+            ])
+            .areas(main);
+            (l, r)
+        }
+    };
     [tab_bar, left, right, status]
+}
+
+/// M39-6：view 模式查看器占位（Single = 全宽主区 / PreviewBottom = 主区
+/// 下半；Dual/PreviewRight 经 pane 分派，返回 None）。与 pane_layout 同源
+/// 推导（上下切分对称）。
+pub(crate) fn viewer_rect(
+    area: ratatui::layout::Rect,
+    layout: crate::config::LayoutMode,
+    viewing: bool,
+) -> Option<ratatui::layout::Rect> {
+    if !viewing {
+        return None;
+    }
+    match layout {
+        crate::config::LayoutMode::Single => {
+            let [_, main, _] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .areas(area);
+            Some(main)
+        }
+        crate::config::LayoutMode::PreviewBottom => {
+            let [_, main, _] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .areas(area);
+            let [_top, bottom] =
+                Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(main);
+            Some(bottom)
+        }
+        _ => None,
+    }
+}
+
+/// M39-6：pane 是否被查看器覆盖（命中测试守卫）——Single 全覆盖；
+/// Dual 非焦点侧（M34-4 对侧预览）；PreviewRight 右侧；PreviewBottom
+/// 两 pane 可见（下半为查看器，不在 pane 区域内）。
+pub(crate) fn pane_covered_by_viewer(
+    layout: crate::config::LayoutMode,
+    viewing: bool,
+    focus: crate::tab::Focus,
+    pane: crate::tab::Focus,
+) -> bool {
+    if !viewing {
+        return false;
+    }
+    match layout {
+        crate::config::LayoutMode::Single => true,
+        crate::config::LayoutMode::PreviewRight => pane == crate::tab::Focus::Right,
+        crate::config::LayoutMode::PreviewBottom => false,
+        crate::config::LayoutMode::Dual => pane != focus,
+    }
+}
+
+/// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
+/// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
+/// CJK 全宽忽略——SIMPLIFIED）。
+pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<Span<'static>> {
+    let labels: Vec<String> = state
+        .tabs
+        .iter()
+        .enumerate()
+        .map(|(idx, t)| {
+            let dir = t.name.clone().unwrap_or_else(|| {
+                t.location
+                    .base_dir()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| t.location.display_path())
+            });
+            format!("{}:{} ", idx + 1, dir)
+        })
+        .collect();
+    let widths: Vec<usize> = labels.iter().map(|l| l.chars().count()).collect();
+    let total: usize = widths.iter().sum();
+    let budget = width as usize;
+    let mut visible: Vec<usize> = (0..labels.len()).collect();
+    if total > budget && !labels.is_empty() {
+        // 溢出：自活动标签向两侧交替扩展，直至预算用尽。
+        let active = state.active;
+        visible.clear();
+        let mut used = 0usize;
+        let mut lo = active.min(labels.len().saturating_sub(1));
+        let mut hi = lo;
+        // 活动标签必须可见（自身超宽时独占——后续条目截断由渲染层裁剪）。
+        used += widths[active];
+        let mut push_left = lo > 0;
+        let mut push_right = hi + 1 < labels.len();
+        while used < budget && (push_left || push_right) {
+            if push_right {
+                hi += 1;
+                used += widths[hi];
+                push_right = hi + 1 < labels.len();
+            }
+            if used < budget && push_left {
+                lo = lo.saturating_sub(1);
+                used += widths[lo];
+                push_left = lo > 0;
+            }
+            if !push_left && !push_right {
+                break;
+            }
+        }
+        visible = (lo..=hi).collect();
+    }
+    let mut out: Vec<Span> = Vec::new();
+    if !visible.is_empty() && visible[0] > 0 {
+        out.push(Span::styled("‹ ", Style::new().add_modifier(Modifier::DIM)));
+    }
+    for &idx in &visible {
+        let label = labels[idx].clone();
+        let styled = if idx == state.active {
+            if borders {
+                Span::styled(
+                    label,
+                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                )
+            } else {
+                Span::styled(label, vifm_style("TabLineSel"))
+            }
+        } else if borders {
+            Span::from(label)
+        } else {
+            Span::styled(label, vifm_style("TabLine"))
+        };
+        out.push(styled);
+    }
+    if let Some(last) = visible.last()
+        && *last + 1 < labels.len()
+    {
+        out.push(Span::styled(" ›", Style::new().add_modifier(Modifier::DIM)));
+    }
+    out
 }
 
 /// M21-F1：左 pane 列表内容区（边框内减去 `..` 行）。
@@ -203,9 +371,19 @@ pub(crate) fn hit_entry_index(
     mouse: &MouseEvent,
     area: ratatui::layout::Rect,
 ) -> Option<usize> {
-    let [_, left, _, _] = pane_layout(area);
+    let tab = state.active_tab();
+    // M39-6：查看器覆盖的 pane 不响应命中（覆盖判定与渲染同源）。
+    if pane_covered_by_viewer(
+        state.config.ui.layout(),
+        tab.view_mode,
+        tab.focus,
+        crate::tab::Focus::Left,
+    ) {
+        return None;
+    }
+    let [_, left, _, _] = pane_layout(area, state.config.ui.layout(), tab.view_mode);
     let inner = left_list_area(state.config.ui.pane_borders, left);
-    let has_parent = state.active_tab().has_parent_row() as usize;
+    let has_parent = tab.has_parent_row() as usize;
     if mouse.column < inner.x
         || mouse.column >= inner.x + inner.width
         || mouse.row < inner.y + has_parent as u16
@@ -213,7 +391,6 @@ pub(crate) fn hit_entry_index(
     {
         return None;
     }
-    let tab = state.active_tab();
     let offset = tab.scroll;
     let idx = (mouse.row - inner.y - has_parent as u16) as usize;
     idx.checked_add(offset)?;
@@ -222,13 +399,22 @@ pub(crate) fn hit_entry_index(
 
 /// M41-3：右 pane 命中索引——右 pane 无 `..` 行（M14-1），条目从内区首行
 /// 开始；offset 取 `Pane.scroll`（与渲染 ListState 同源，M41-4 有状态）。
-/// 空列表返回 None。
+/// M39-6：布局感知 + 查看器覆盖守卫。空列表返回 None。
 pub(crate) fn hit_right_index(
     state: &AppState,
     mouse: &MouseEvent,
     area: ratatui::layout::Rect,
 ) -> Option<usize> {
-    let [_, _, right, _] = pane_layout(area);
+    let tab = state.active_tab();
+    if pane_covered_by_viewer(
+        state.config.ui.layout(),
+        tab.view_mode,
+        tab.focus,
+        crate::tab::Focus::Right,
+    ) {
+        return None;
+    }
+    let [_, _, right, _] = pane_layout(area, state.config.ui.layout(), tab.view_mode);
     let inner = left_list_area(state.config.ui.pane_borders, right);
     if inner.width == 0
         || mouse.column < inner.x
@@ -238,7 +424,6 @@ pub(crate) fn hit_right_index(
     {
         return None;
     }
-    let tab = state.active_tab();
     if tab.right.entries.is_empty() {
         return None;
     }
@@ -283,30 +468,11 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         Some(p) => p,
         None => return,
     };
-    let [tab_bar_area, left_area, right_area, status_area] = pane_layout(frame.area());
-    // 标签栏照常渲染。
-    let tab_spans: Vec<Span> = state
-        .tabs
-        .iter()
-        .enumerate()
-        .map(|(idx, t)| {
-            let dir = t
-                .location
-                .base_dir()
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| t.location.display_path());
-            let label = format!("{}:{} ", idx + 1, dir);
-            if idx == state.active {
-                Span::styled(
-                    label,
-                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                )
-            } else {
-                Span::from(label)
-            }
-        })
-        .collect();
+    // M39-6：frecency 模式忽略布局选项（保持 M23-6/M34-4 对侧预览几何）。
+    let [tab_bar_area, left_area, right_area, status_area] =
+        pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
+    // 标签栏照常渲染（M39-6 共享 spans：命名标签 + 溢出滚动）。
+    let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
 
     let focused_is_left = tab.focus == crate::tab::Focus::Left;
@@ -394,8 +560,11 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     let tab = state.active_tab();
-    // M14-2：标签栏（1 行）——每个 tab 的索引与目录名，当前 tab 高亮。
-    let [tab_bar_area, left_area, right_area, status_area] = pane_layout(frame.area());
+    // M14-2：标签栏（1 行）——M39-6：命名标签 + 溢出滚动（共享 spans）。
+    let layout = state.config.ui.layout();
+    let viewing = tab.view_mode;
+    let [tab_bar_area, left_area, right_area, status_area] =
+        pane_layout(frame.area(), layout, viewing);
     // M23-6：Frecency Pane 模式——焦点 pane 显示搜索 UI，对侧显示快速预览。
     if state.active_tab().pane_frecency.is_some() {
         render_frecency_panes(frame, state);
@@ -403,36 +572,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     // M27-2：vifm 风格（pane_borders=false，默认）与旧整框外观（true）双模式。
     let borders = state.config.ui.pane_borders;
-    let tab_spans: Vec<Span> = state
-        .tabs
-        .iter()
-        .enumerate()
-        .map(|(idx, t)| {
-            let dir = t
-                .location
-                .base_dir()
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| t.location.display_path());
-            let label = format!("{}:{} ", idx + 1, dir);
-            if idx == state.active {
-                if borders {
-                    Span::styled(
-                        label,
-                        Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                    )
-                } else {
-                    // TabLineSel：激活标签黑字默认底加粗（16 色回退）。
-                    Span::styled(label, vifm_style("TabLineSel"))
-                }
-            } else if borders {
-                Span::from(label)
-            } else {
-                // TabLine：非激活标签黑字白底。
-                Span::styled(label, vifm_style("TabLine"))
-            }
-        })
-        .collect();
+    // M39-6：标签栏 spans 共享（命名标签 + 溢出滚动）。
+    let tab_spans = tab_bar_spans(state, tab_bar_area.width, borders);
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
     // M21-F1：左右 pane——pane_borders=true 走旧整框外观（焦点边框高亮）；
     // false（默认，M27-2）为 vifm 式：无整框、pane 顶部路径行（TopLine/
@@ -443,8 +584,22 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     let visual_range = tab.visual_range();
     // M34-4：预览渲染在非焦点 pane——焦点右 + view 模式时查看器占左 pane，
     // 右 pane 保持目录列表导航（与焦点左时"查看器在右"对称，共用同一渲染）。
-    let view_in_left = tab.view_mode && tab.focus == crate::tab::Focus::Right;
-    if view_in_left {
+    // M39-6：布局感知——Single 的查看器占全宽（列表隐藏）；PreviewRight
+    // 恒右侧（经 render_right_pane 内部分派）；PreviewBottom 列表上半可见
+    // （查看器下半由 viewer_rect 渲染）。
+    let view_in_left = viewing
+        && layout == crate::config::LayoutMode::Dual
+        && tab.focus == crate::tab::Focus::Right;
+    let single_viewer = viewing && layout == crate::config::LayoutMode::Single;
+    // M39-6：PreviewBottom——查看器占主区下半（全宽）。
+    if viewing
+        && layout == crate::config::LayoutMode::PreviewBottom
+        && let Some(bottom) = viewer_rect(frame.area(), layout, viewing)
+    {
+        crate::app::preview::render_view_content(frame, state, bottom);
+    }
+    // M39-6：Single——查看器占全宽（列表隐藏）；Dual——对侧预览。
+    if single_viewer || view_in_left {
         crate::app::preview::render_view_content(frame, state, left_area);
     } else {
         let left_inner = if borders {
@@ -470,7 +625,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             rest
         };
         // M27-2：pane 间隔列——Border 分隔线（vifm 模式）。
-        if !borders {
+        // M39-6：Single（单栏全宽）无间隔列。
+        if !borders && layout != crate::config::LayoutMode::Single {
             let gap = pane_gap_area(frame.area());
             let lines: Vec<Line> = (0..gap.height).map(|_| Line::from("│")).collect();
             frame.render_widget(Paragraph::new(lines).style(vifm_style("Border")), gap);

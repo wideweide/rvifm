@@ -255,7 +255,12 @@ pub(crate) fn render_right_pane(
     let focused = tab.focus == crate::tab::Focus::Right;
     // M34-4：预览渲染在非焦点 pane——焦点左时查看器占右 pane（M13-9 现状）；
     // 焦点右时右 pane 保持目录列表导航，查看器由左侧渲染（render() 分派）。
-    if tab.view_mode && tab.focus == crate::tab::Focus::Left {
+    // M39-6：PreviewRight 布局——查看器恒在右侧（不看焦点）。
+    let layout = state.config.ui.layout();
+    if tab.view_mode
+        && (layout == crate::config::LayoutMode::PreviewRight
+            || (tab.focus == crate::tab::Focus::Left && layout == crate::config::LayoutMode::Dual))
+    {
         render_view_content(frame, state, area);
         return;
     }

@@ -630,6 +630,7 @@ mod tests {
                 .unwrap(),
             focus: crate::tab::Focus::Left,
             on_parent_row: false,
+            name: None,
         }
     }
 
@@ -658,6 +659,7 @@ mod tests {
                 .unwrap(),
             focus: crate::tab::Focus::Left,
             on_parent_row: false,
+            name: None,
         }
     }
 

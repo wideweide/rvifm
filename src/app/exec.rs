@@ -3014,6 +3014,30 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             state.move_tab(n);
             Ok(ExecOutcome::Done { msg: None })
         }
+        Some("tabname") => {
+            // M39-6：命名标签——`:tabname <名>` 设置（标签栏显示名）；无参清除。
+            // 仅内存（会话恢复不保存，SIMPLIFIED）。
+            let name = parts.next();
+            let tab = state.active_tab_mut();
+            match name {
+                Some(n) => {
+                    tab.name = Some(n.to_owned());
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("tabname: 已命名当前标签为 {n}")),
+                    })
+                }
+                None => {
+                    let had = tab.name.take().is_some();
+                    Ok(ExecOutcome::Done {
+                        msg: Some(if had {
+                            "tabname: 已清除当前标签名".to_owned()
+                        } else {
+                            "tabname: 当前标签无命名".to_owned()
+                        }),
+                    })
+                }
+            }
+        }
         Some("rename") => {
             // M21-E4：无参 `:rename` → $EDITOR 批量（与 cw/R 同管线）；
             // 带参保持 M2-3 单项直改。

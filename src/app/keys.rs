@@ -1673,10 +1673,12 @@ pub(crate) fn handle_mouse(
     if !matches!(mode, InputMode::Normal) {
         return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
     }
-    // 列表几何：与 render 同源（M21-F1）——双 pane 内区；左 pane `..` 行
-    // 占内区首行（FEAT-2，有父行时条目从第 2 行开始），右 pane 无 `..` 行
-    // （M14-1，条目从内区首行开始）。
-    let [_, left, right, _] = pane_layout(area);
+    // 列表几何：与 render 同源（M21-F1）——M39-6 布局感知（Single 右零宽、
+    // PreviewBottom 上半双栏；查看器覆盖 pane 的命中在 hit_*_index 守卫）。
+    // 左 pane `..` 行占内区首行（FEAT-2，有父行时条目从第 2 行开始），
+    // 右 pane 无 `..` 行（M14-1，条目从内区首行开始）。
+    let [_, left, right, _] =
+        pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode);
     let borders = state.config.ui.pane_borders;
     let left_inner = left_list_area(borders, left);
     let right_inner = left_list_area(borders, right);

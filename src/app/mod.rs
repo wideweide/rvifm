@@ -562,7 +562,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         {
             let size = terminal.size()?;
             let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-            let [_, left, _, _] = pane_layout(area);
+            let [_, left, _, _] =
+                pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode);
             let list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
             state.active_tab_mut().sync_viewport_scroll(list_h);
         }

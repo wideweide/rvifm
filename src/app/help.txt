@@ -71,6 +71,9 @@ rvifm 帮助（vim 风格文件管理器）
   :tabnew / :tabclose
   gt / gT / {N}gt 切换标签
   :tabmove {N}    调整标签顺序
+  :tabname <名>   命名当前标签（无参清除；仅本会话）；标签溢出自动滚动（‹ ›）
+  布局选项        [ui] layout = single|dual|preview-right|preview-bottom
+                  （缺省 dual；view 模式查看器占位随布局）
 
 == 视图 ==
   Tab             切换左右 pane 焦点（双栏均可导航）

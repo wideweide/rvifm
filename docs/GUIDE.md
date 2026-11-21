@@ -154,6 +154,7 @@ m{字符}    标记当前条目（".." 行 = 当前目录）
 
 ```
 :tabnew / :tabclose / gt / gT / {N}gt / :tabmove   多标签
+:tabname <名>    命名当前标签（无参清除；仅本会话）；标签溢出自动滚动（‹ ›）
 S                排序对话框；:sort 字段,... 多字段排序
 :tree [depth]    树视图（只读快照）
 :compare [byname|bycontents]   左右 pane 目录对比；dp/do 同步（只读边界内可逆）
@@ -172,6 +173,10 @@ PDF 查看器：`[`/`]` 逐页翻页（任意页按需渲染；`[preview] pdf_im
 或装有 pdftoppm/mutool 时生效，文本层足够且未开 `pdf_prefer_image` 时回退
 文本预览）。CSV/TSV 文件预览为表格对齐形态；图片信息面板显示容器尺寸/格式
 （PNG/JPEG/GIF/BMP 头解析，无 EXIF 全字段）。
+
+布局选项：`[ui] layout = dual|single|preview-right|preview-bottom`（缺省 dual）。
+`single` 单栏全宽（view 模式查看器占全宽）；`preview-right` 查看器恒在右半；
+`preview-bottom` 查看器占下半全宽（列表上半双栏）。
 
 ## 10. 远端（SFTP）
 
