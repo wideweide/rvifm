@@ -445,7 +445,7 @@
 - [x] M36-4 `Transfer` 状态机 + 统一进度（复用 Job/JobProgress/JobControls；见 SPEC M36-4；2026-11-21 完成：execute_transfer_body Upload/Download + m364 三断言，439 单测；Paste 后台路由随 M36-5/6/7 统一迁移）
 - [x] M36-5 冲突策略 Ask/Overwrite/Skip/RenameAuto/KeepNewer（应用到全部；见 SPEC M36-5；2026-11-21 完成：resolve_conflict 纯函数 + [transfer] conflict_policy + paste 接线，443 单测）
 - [x] M36-6 偏移续传（.part + .part.meta + write_range；见 SPEC M36-6；2026-11-21 完成：upload_chunked + XferPartMeta + 头哈希校验，443 单测；断网循环集成验证人工）
-- [ ] M36-7 `:queue` 传输队列（见 SPEC M36-7）
+- [x] M36-7 `:queue` 传输队列（见 SPEC M36-7；2026-11-21 完成：入队判定 + 覆盖层 + run 循环消费，443 单测）
 - [ ] M36-8 递归远端目录传输（三方向 + 链接策略；见 SPEC M36-8）
 
 ## M37 — 文件运维（2026-11-21 增补；见 SPEC M37 节，已确认登记·按序执行）
