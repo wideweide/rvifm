@@ -483,7 +483,7 @@
 
 > 来源：同上。目标 0.14.0。顺序：1（hex）→ 2（CSV/PDF 翻页/EXIF）→ 3（zip 容器）→ 4（SFTP 硬化）→ 5（UAC）→ 6（标签布局）。
 
-- [ ] M39-1 十六进制查看器（偏移跳转、ASCII 侧栏、分块；见 SPEC M39-1）
+- [x] M39-1 十六进制查看器（偏移跳转、ASCII 侧栏、分块；见 SPEC M39-1；2026-11-21 完成：w 打开二进制文件（前 8KB NUL 判定）→ 16 字节/行 hex（偏移+ASCII 侧栏）、viewer_hex_lines 分块读取（视口窗口 ≤1MB）、`:goto 0x…/十进制` 行对齐跳转（结果视图豁免清单加 goto）；m39_1 全链路测试，435 单测）
 - [ ] M39-2 CSV/TSV 预览、PDF 翻页、图片 EXIF 摘要（见 SPEC M39-2）
 - [ ] M39-3 通用 zip 容器识别（docx/xlsx/pptx/apk/war；见 SPEC M39-3）
 - [ ] M39-4 SFTP 硬化（指纹确认 ask 缺省、ProxyJump、agent、keepalive；见 SPEC M39-4）

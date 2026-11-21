@@ -5488,6 +5488,83 @@ fn m38_5_find_named_save_load_and_filters() {
 }
 
 #[test]
+fn m39_1_hex_viewer_binary_and_goto() {
+    // M39-1：二进制文件 w → hex 模式（16 字节/行、ASCII 侧栏、分块读取）；
+    // :goto 偏移跳转（0x/十进制、行对齐钳制）；非 hex 下 goto 拒绝。
+    let tmp = TempDir::new().unwrap();
+    let mut bin = vec![b'A'; 40];
+    bin[10] = 0; // NUL → 二进制判定
+    fs::write(tmp.path().join("prog.bin"), &bin).unwrap();
+    fs::write(tmp.path().join("text.txt"), "hello\nworld\n").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let txt_idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "text.txt")
+        .unwrap();
+    let bin_idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "prog.bin")
+        .unwrap();
+    // 文本文件 → 非 hex（既有文本查看器）。
+    state.active_tab_mut().cursor = txt_idx;
+    state.active_tab_mut().toggle_view();
+    assert!(!state.active_tab().viewer.as_ref().unwrap().hex);
+    state.active_tab_mut().toggle_view();
+    // 二进制 → hex；总行数 = ceil(40/16) = 3。
+    state.active_tab_mut().cursor = bin_idx;
+    state.active_tab_mut().toggle_view();
+    let v = state.active_tab().viewer.as_ref().unwrap();
+    assert!(v.hex);
+    assert_eq!(v.line_count, 3, "40 字节 → 3 行");
+    // 内容行：偏移前缀 + 十六进制 + NUL → '.'（ASCII 侧栏）。
+    let lines = state.active_tab().viewer_hex_lines(10).unwrap();
+    assert_eq!(lines.len(), 3);
+    assert!(lines[0].starts_with("00000000"));
+    assert!(lines[0].contains("41 41 41"), "十六进制字节列");
+    assert!(lines[0].contains("00"), "NUL 字节");
+    assert!(lines[0].contains("|AAA"), "ASCII 侧栏");
+    assert!(lines[2].starts_with("00000020"), "第 3 行偏移 0x20");
+    // :goto 0x20 → 行 2；:goto 100（十进制）→ 行 6 → 钳制到 2。
+    assert!(exec_command_impl(&mut state, "goto 0x20").is_ok());
+    assert_eq!(state.active_tab().viewer.as_ref().unwrap().scroll, 2);
+    assert!(exec_command_impl(&mut state, "goto 100").is_ok());
+    assert_eq!(
+        state.active_tab().viewer.as_ref().unwrap().scroll,
+        2,
+        "超出总行数钳制"
+    );
+    // 非 hex 查看器 → goto 拒绝。
+    state.active_tab_mut().toggle_view();
+    state.active_tab_mut().cursor = txt_idx;
+    state.active_tab_mut().toggle_view();
+    let r = exec_command_impl(&mut state, "goto 0x10");
+    assert!(r.is_err() && r.unwrap_err().contains("需 hex"));
+    // 渲染：hex 行（偏移 + ASCII 侧栏）可见——hex 行约 78 列，需宽终端
+    // （80 列右 pane ~39 列会截断侧栏）。
+    state.active_tab_mut().toggle_view();
+    state.active_tab_mut().cursor = bin_idx;
+    state.active_tab_mut().toggle_view();
+    let backend = ratatui::backend::TestBackend::new(176, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, Some("")))
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let mut s = String::new();
+    for y in 0..12u16 {
+        for x in 0..176u16 {
+            s.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(s.contains("00000000"), "hex 行偏移可见: {s}");
+    assert!(s.contains("AAAAAAAA"), "ASCII 侧栏可见: {s}");
+}
+
+#[test]
 fn feat1_mouse_click_focus_then_reclick_opens_dir() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir(tmp.path().join("d1")).unwrap();

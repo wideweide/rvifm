@@ -1872,7 +1872,10 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     if state.active_tab().in_results() {
         match cmd_head {
             // M29-2：compare 重执行豁免——dp/do 后可重跑对比（结果替换）。
-            Some("find" | "grep" | "sort" | "compare" | "q" | "quit" | "help" | "theme") => {}
+            // M39-1：goto 豁免——仅滚动 hex 查看器（不改结果）。
+            Some(
+                "find" | "grep" | "sort" | "compare" | "goto" | "q" | "quit" | "help" | "theme",
+            ) => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
             }
@@ -2147,6 +2150,27 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     "frecency: 未知子命令 {other}（stats | export <file> | purge confirm | prune --before <日期>）"
                 )),
             }
+        }
+        Some("goto") => {
+            // M39-1：hex 查看器偏移跳转（0x 十六进制或十进制；16 字节行对齐）。
+            let arg = parts
+                .next()
+                .ok_or_else(|| "goto: 缺少偏移（如 0x100 或 256）".to_owned())?;
+            let off = if let Some(h) = arg.strip_prefix("0x") {
+                u64::from_str_radix(h, 16).map_err(|_| format!("goto: 偏移非法：{arg}"))?
+            } else {
+                arg.parse::<u64>()
+                    .map_err(|_| format!("goto: 偏移非法：{arg}"))?
+            };
+            let tab = state.active_tab_mut();
+            let hex_active = tab.view_mode && tab.viewer.as_ref().is_some_and(|v| v.hex);
+            if !hex_active {
+                return Err("goto: 需 hex 查看器激活（对二进制文件按 w 打开完整视图）".to_owned());
+            }
+            tab.viewer_goto_offset(off);
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("goto: 0x{off:x}（行 {}）", off / 16)),
+            })
         }
         Some("queue") => {
             // M36-7：传输队列覆盖层（j/k 选择、x 取消、Esc 关闭）。

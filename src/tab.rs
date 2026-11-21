@@ -501,7 +501,7 @@ pub struct ViewerState {
     /// 视口首行（0-based）。
     pub scroll: usize,
     /// 文件总行数（激活时一次性读取，滚动钳制用；超过 100,000 行封顶，
-    /// 完整行数在 `total_lines`）。
+    /// 完整行数在 `total_lines`）。hex 模式 = 16 字节/行的总行数。
     pub line_count: usize,
     /// 完整行数（M21-E3 截断提示用；未截断时与 `line_count` 相等）。
     pub total_lines: usize,
@@ -509,6 +509,19 @@ pub struct ViewerState {
     pub query: Option<String>,
     /// 当前匹配行（0-based）。
     pub match_line: usize,
+    /// M39-1：hex 模式——二进制文件的完整视图（16 字节/行，分块读取）。
+    pub hex: bool,
+}
+
+/// M39-1：二进制判定——前 8KB 含 NUL 字节即视为二进制（hex 查看器进入）。
+pub(crate) fn looks_binary(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut buf = vec![0u8; 8192];
+    let n = f.read(&mut buf).unwrap_or(0);
+    buf[..n].contains(&0)
 }
 
 impl Tab {
@@ -1063,15 +1076,30 @@ impl Tab {
         self.view_mode = !self.view_mode;
         if self.view_mode {
             // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
-            let hit_line = self
-                .results
-                .as_ref()
-                .and_then(|r| r.items.get(self.cursor))
-                .and_then(|i| i.line);
-            let (capped, total) = self
-                .viewer_lines()
-                .map(|(lines, total)| (lines.len(), total))
-                .unwrap_or((0, 0));
+            // M39-1：二进制文件（前 8KB 含 NUL）→ hex 模式（16 字节/行，
+            // 总行数 = ceil(size/16)，滚动走同一行机制、内容分块读取）。
+            let hex = self.preview_path().is_some_and(|p| looks_binary(&p));
+            let hit_line = if hex {
+                None
+            } else {
+                self.results
+                    .as_ref()
+                    .and_then(|r| r.items.get(self.cursor))
+                    .and_then(|i| i.line)
+            };
+            let (capped, total) = if hex {
+                let size = self
+                    .preview_path()
+                    .and_then(|p| std::fs::metadata(p).ok())
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let total = size.div_ceil(16) as usize;
+                (total, total)
+            } else {
+                self.viewer_lines()
+                    .map(|(lines, total)| (lines.len(), total))
+                    .unwrap_or((0, 0))
+            };
             let scroll = hit_line
                 .map(|l| l.saturating_sub(2))
                 .unwrap_or(0)
@@ -1082,6 +1110,7 @@ impl Tab {
                 total_lines: total,
                 query: None,
                 match_line: 0,
+                hex,
             });
         } else {
             self.viewer = None;
@@ -1097,6 +1126,68 @@ impl Tab {
         let total = text.lines().count();
         let lines = text.lines().take(100_000).map(|l| l.to_owned()).collect();
         Some((lines, total))
+    }
+
+    /// M39-1：hex 查看器内容行——分块读取（仅视口对应窗口，单次读 ≤1MB），
+    /// 16 字节/行：偏移 + 十六进制 + ASCII 侧栏。非 hex 模式返回 None。
+    pub fn viewer_hex_lines(&self, height: usize) -> Option<Vec<String>> {
+        let v = self.viewer.as_ref()?;
+        if !v.hex {
+            return None;
+        }
+        let path = self.preview_path()?;
+        let mut file = std::fs::File::open(&path).ok()?;
+        use std::io::{Read, Seek, SeekFrom};
+        let start = v.scroll.min(v.line_count.saturating_sub(1)) * 16;
+        file.seek(SeekFrom::Start(start as u64)).ok()?;
+        let want = height.saturating_mul(16).min(1024 * 1024);
+        let mut buf = vec![0u8; want];
+        let mut filled = 0usize;
+        while filled < want {
+            let n = file.read(&mut buf[filled..]).ok()?;
+            if n == 0 {
+                break;
+            }
+            filled += n;
+        }
+        let mut out = Vec::with_capacity(height);
+        for row in 0..height {
+            let base = row * 16;
+            if base >= filled {
+                break;
+            }
+            let chunk = &buf[base..(base + 16).min(filled)];
+            let mut hexs = String::with_capacity(49);
+            let mut ascii = String::with_capacity(16);
+            for i in 0..16 {
+                match chunk.get(i) {
+                    Some(&b) => {
+                        hexs.push_str(&format!("{b:02x}"));
+                        ascii.push(if (0x20..0x7f).contains(&b) {
+                            b as char
+                        } else {
+                            '.'
+                        });
+                    }
+                    None => hexs.push_str("  "),
+                }
+                if i == 7 {
+                    hexs.push(' ');
+                }
+                hexs.push(' ');
+            }
+            out.push(format!("{:08x}  {}|{}|", start + base, hexs, ascii));
+        }
+        Some(out)
+    }
+
+    /// M39-1：`:goto <偏移>`——hex 查看器跳到偏移（16 字节行对齐、钳制）。
+    pub fn viewer_goto_offset(&mut self, offset: u64) {
+        let Some(v) = self.viewer.as_mut() else {
+            return;
+        };
+        let line = (offset / 16) as usize;
+        v.scroll = line.min(v.line_count.saturating_sub(1));
     }
 
     /// M17 VIEW-1：查看器滚动（delta 行，钳制到内容范围）。

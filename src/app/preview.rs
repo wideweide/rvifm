@@ -215,6 +215,15 @@ pub(crate) fn render_view_content(
         _ => {}
     }
     // 内容行：行号 gutter + 查询匹配高亮；视口取 viewer.scroll 起。
+    // M39-1：hex 模式——二进制文件 16 字节/行（分块读取；无搜索/高亮）。
+    if viewer.hex {
+        let height = inner.height as usize;
+        let lines = tab.viewer_hex_lines(height).unwrap_or_default();
+        let out: Vec<ratatui::text::Line> =
+            lines.into_iter().map(ratatui::text::Line::from).collect();
+        frame.render_widget(Paragraph::new(out), inner);
+        return;
+    }
     let Ok(text) = std::fs::read_to_string(&path) else {
         // M34-7：读取失败/非 UTF-8 → 结构化信息面板（类型/大小/修改）。
         frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
