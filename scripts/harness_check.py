@@ -95,13 +95,16 @@ n_tests = sum(
     rs.read_text(encoding="utf-8", errors="replace").count("#[test]")
     for rs in (root / "src").rglob("*.rs")
 )
-# 只校验 STATE 阶段状态区（前 2000 字符）——PLAN/历史批次记录中的数字为
+# 只校验 STATE 的"当前阶段/阶段状态"两行——批次关闭记录中的数字为
 # 关闭时点快照（非当前值），不在校验范围。
 if n_tests:
-    for m in re.finditer(r"(\d+) 单测", state[:2000]):
-        if int(m.group(1)) != n_tests:
-            check("R6-COUNT", False,
-                  f"STATE 阶段状态写 {m.group(1)} 单测，实际 {n_tests}（口径：src/ 内 #[test] 计数）")
+    for line in state.splitlines():
+        if line.startswith("- **当前阶段**") or line.startswith("- **阶段状态**"):
+            for m in re.finditer(r"(\d+) 单测", line):
+                if int(m.group(1)) != n_tests:
+                    check("R6-COUNT", False,
+                          f"STATE 状态行写 {m.group(1)} 单测，实际 {n_tests}"
+                          f"（口径：src/ 内 #[test] 计数）: {line[:60]}")
             break
 
 # ── 规则 7：README 版本状态与 STATE 发布状态一致 ──────────────────────
