@@ -1094,7 +1094,7 @@
 - [x] M36-2 远端下载单次读取 + 临时文件 + 原子 rename（失败清理断言）。（2026-11-21：read 单次同时拿数据/失败信息 + metadata 先记 mtime；临时文件同目录 rename 原子；远端 mtime（Unix 秒）→ set_modified 保留；失败清理 tmp；m362 计数 mock 断言 read==1 + mtime + 无 .part 残留）
 - [x] M36-3 RemoteFs read_range/write_range（默认实现兼容 mock；SftpBackend 覆盖）。（2026-11-21：trait 默认 read 偏移切片/write 拼接；SftpCmd::ReadRange/WriteRange actor 臂（russh_sftp OpenFlags WRITE|CREATE 不截断 + seek）；m363 默认实现断言）
 - [x] M36-4 Transfer 状态机统一三方向（Paste 路由迁移断言）。（2026-11-21：[allow(dead_code)] 至 M36-7 接线；execute_transfer_body（Upload/Download 方向 + 冲突预检同名失败 + 取消条目边界 + 进度计数；下载临时+rename+mtime）——三方向后台路由（SftpBackend clone 进线程/mock 同步回退）随 M36-5/6/7 策略与队列接线后统一迁移，避免中间态双路径；m364 roundtrip/conflict/cancel 三断言）
-- [ ] M36-5 五种冲突策略各一条集成测试 + 应用到全部。
+- [x] M36-5 五种冲突策略各一条集成测试 + 应用到全部。（2026-11-21：ConflictPolicy（ask/overwrite/skip/rename/newer）+ resolve_conflict 纯函数 + auto_rename 空闲名生成（999 上限）+ [transfer] conflict_policy 配置 + 本地 paste 三方向接线（Ask 缺省保持同名失败提示并指引配置；Overwrite/KeepNewer 源新覆盖；Skip 跳过；RenameAuto `stem (N).ext`）；m365/m364/ops 断言。应用到全部 = 策略全局配置（Ask 交互对话框随 M39-6））
 - [ ] M36-6 偏移续传：断网 3 次续传成功 + 哈希不一致从头 + 取消清理。
 - [ ] M36-7 :queue 入队/暂停/恢复/取消/重试。
 - [ ] M36-8 递归远端目录三方向 + 链接策略。

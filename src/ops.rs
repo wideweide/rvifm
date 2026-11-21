@@ -44,6 +44,58 @@ fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// 递归复制目录（跨盘回退用）。
+/// M36-5：复制到**已消解**的完整目标路径（Overwrite/RenameAuto 形态；
+/// 冲突策略消解后的落点，绕过 copy_to 的同名拒绝）。目录走 copy_tree，
+/// 单文件走 copy_file_chunked（元数据保留）。M36-5 范围内同步执行。
+pub fn copy_to_resolved(tab_id: usize, path: &Path, dest: &Path) -> std::io::Result<UndoableOp> {
+    let controls = CopyControls::none();
+    if fs::symlink_metadata(path)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
+        copy_tree(path, dest, &controls)?;
+        Ok(UndoableOp::Create {
+            tab_id,
+            path: dest.to_path_buf(),
+            recursive: true,
+        })
+    } else {
+        copy_file_chunked(path, dest, &controls)?;
+        Ok(UndoableOp::Create {
+            tab_id,
+            path: dest.to_path_buf(),
+            recursive: false,
+        })
+    }
+}
+
+/// M36-5：移动到已消解目标（rename 优先；跨盘回退 copy_tree + 删源）。
+pub fn move_to_resolved(tab_id: usize, path: &Path, dest: &Path) -> std::io::Result<UndoableOp> {
+    if fs::rename(path, dest).is_ok() {
+        return Ok(UndoableOp::Move {
+            tab_id,
+            from: path.to_path_buf(),
+            to: dest.to_path_buf(),
+        });
+    }
+    let controls = CopyControls::none();
+    if fs::symlink_metadata(path)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
+        copy_tree(path, dest, &controls)?;
+        fs::remove_dir_all(path)?;
+    } else {
+        copy_file_chunked(path, dest, &controls)?;
+        fs::remove_file(path)?;
+    }
+    Ok(UndoableOp::Move {
+        tab_id,
+        from: path.to_path_buf(),
+        to: dest.to_path_buf(),
+    })
+}
+
 /// M36-1：复制/移动操作的取消与进度句柄（Transfer/后台 job 传入）。
 /// [`CopyControls::none`] = 不取消不计数，但元数据保留仍生效。
 pub struct CopyControls<'a> {
@@ -390,6 +442,28 @@ pub fn create_link(tab_id: usize, target: &Path, link: &Path) -> std::io::Result
         path: link.to_path_buf(),
         recursive: false,
     })
+}
+
+/// M36-5：自动改名——`name` 存在时按 `stem (N).ext` 递增找空闲名
+/// （`free` 判定由调用方传——fs 探测或批内集合）；上限 999。
+pub fn auto_rename(name: &str, free: &dyn Fn(&str) -> bool) -> std::io::Result<String> {
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() && !e.is_empty() => (s, Some(e)),
+        _ => (name, None),
+    };
+    for n in 1..=999u32 {
+        let cand = match ext {
+            Some(e) => format!("{stem} ({n}).{e}"),
+            None => format!("{stem} ({n})"),
+        };
+        if free(&cand) {
+            return Ok(cand);
+        }
+    }
+    Err(std::io::Error::other(format!(
+        "自动改名失败：\'{}\' 的空闲名超上限",
+        name
+    )))
 }
 
 /// 平台链接原语：unix symlink；Windows 文件用 symlink_file、目录用
@@ -1335,6 +1409,24 @@ mod tests {
         let r = copy_file_chunked(&tmp.path().join("f"), &tmp.path().join("dst"), &controls);
         assert!(r.is_err());
         assert!(!tmp.path().join("dst").exists(), "半成品已清理");
+    }
+
+    #[test]
+    fn m365_auto_rename_finds_free_slot() {
+        // M36-5：auto_rename——无冲突原样返回？不——auto_rename 只在冲突时
+        // 调用（调用方保证）；测试冲突场景 (1) 起、扩展名保留、999 上限。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let free = |n: &str| !tmp.path().join(n).exists();
+        assert_eq!(auto_rename("a.txt", &free).unwrap(), "a (1).txt");
+        fs::write(tmp.path().join("a (1).txt"), "A1").unwrap();
+        assert_eq!(auto_rename("a.txt", &free).unwrap(), "a (2).txt");
+        // 无扩展名。
+        fs::write(tmp.path().join("b"), "B").unwrap();
+        assert_eq!(auto_rename("b", &free).unwrap(), "b (1)");
+        // 上限。
+        let always_taken = |_: &str| false;
+        assert!(auto_rename("a.txt", &always_taken).is_err());
     }
 
     #[cfg(unix)]

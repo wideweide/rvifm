@@ -2995,13 +2995,59 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
     };
     let do_move = buffer.cut || force_move;
     let verb = if do_move { "Moved" } else { "Copied" };
+    // M36-5：冲突策略（Ask 缺省保持现行为——同名失败可读提示；
+    // Skip/RenameAuto/KeepNewer/Overwrite 在条目级消解）。
+    let policy = crate::state::ConflictPolicy::parse(&state.config.transfer.conflict_policy)
+        .unwrap_or_default();
     let mut done = 0usize;
     let mut first_err: Option<String> = None;
     for path in &buffer.paths {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let mut dest = base.join(&name);
+        // 冲突消解（目标已存在时）。
+        if dest.exists() {
+            let src_mtime = std::fs::symlink_metadata(path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
+            let dst_mtime = std::fs::metadata(&dest)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
+            match crate::state::resolve_conflict(policy, src_mtime, true, dst_mtime) {
+                crate::state::ConflictDecision::Proceed => {} // Overwrite/KeepNewer(源新)
+                crate::state::ConflictDecision::Skip => {
+                    continue;
+                }
+                crate::state::ConflictDecision::UseName(_) => {
+                    match ops::auto_rename(&name, &|n| !base.join(n).exists()) {
+                        Ok(new_name) => dest = base.join(&new_name),
+                        Err(e) => {
+                            first_err = Some(e.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            if policy == crate::state::ConflictPolicy::Ask {
+                // Ask 缺省 = 同名失败（覆盖确认交互随 M39-6 扩展）。
+                first_err = Some(format!(
+                    "目标已存在（conflict_policy = ask 可改 overwrite/skip/rename/newer）: {}",
+                    dest.display()
+                ));
+                break;
+            }
+        }
+        // 复制/移动到消解后的目标（RenameAuto 已改名；Overwrite 覆盖现有）。
         let result = if do_move {
-            ops::move_to(state.active, path, &base)
+            crate::ops::move_to_resolved(state.active, path, &dest)
         } else {
-            ops::copy_to(state.active, path, &base)
+            crate::ops::copy_to_resolved(state.active, path, &dest)
         };
         match result {
             Ok(op) => {

@@ -175,6 +175,19 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn m363_read_range_write_range_default_impl() {
+        // M36-3：默认实现（mock 未覆盖）——read_range 对 NotFound 路径
+        // Err 不 panic；write_range offset=0 走默认 write（mock → Unimplemented）。
+        let mock = MockFs {
+            entries: Vec::new(),
+        };
+        let r = mock.read_range(Path::new("/x"), 0, 10);
+        assert!(r.is_err(), "mock read 失败路径不 panic");
+        let r = mock.write_range(Path::new("/x"), 0, b"data");
+        assert!(matches!(r, Err(RemoteError::Unimplemented("write"))));
+    }
+
+    #[test]
     fn m321_connection_class_classification() {
         // M32-1：连接类判定——Connect/Timeout true；Auth/NotFound/
         // PermissionDenied/Other false（无意义重试与重连循环防护）。

@@ -28,6 +28,9 @@ pub struct Config {
     /// M27-3：预览选项（[preview] 表——PDF 图像页数/展示优先级）。
     #[serde(default)]
     pub preview: PreviewConfig,
+    /// M36-5：传输选项（[transfer] 表——冲突策略）。
+    #[serde(default)]
+    pub transfer: TransferConfig,
     /// AUDIT-7：[opener] 表——命名 opener 定义（run/block/desc）。
     #[serde(default)]
     pub opener: std::collections::BTreeMap<String, crate::opener::OpenerDef>,
@@ -136,6 +139,22 @@ pub struct KeymapConfig {
     pub seq_timeout_ms: u64,
 }
 
+/// M36-5：传输选项（[transfer] 表——冲突策略）。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct TransferConfig {
+    /// 冲突策略：ask（缺省）/overwrite/skip/rename/newer。
+    pub conflict_policy: String,
+}
+
+impl Default for TransferConfig {
+    fn default() -> Self {
+        Self {
+            conflict_policy: "ask".to_owned(),
+        }
+    }
+}
+
 impl Default for KeymapConfig {
     fn default() -> Self {
         Self {
@@ -154,6 +173,7 @@ impl Default for Config {
             frecency: FrecencyConfig::default(),
             archive: ArchiveConfig::default(),
             preview: PreviewConfig::default(),
+            transfer: TransferConfig::default(),
             opener: std::collections::BTreeMap::new(),
             open: crate::opener::OpenLayers::default(),
             keymap: KeymapConfig::default(),

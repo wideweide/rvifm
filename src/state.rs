@@ -268,6 +268,71 @@ pub enum YankSource {
     Remote(String),
 }
 
+/// M36-5：冲突策略（`[transfer] conflict_policy`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConflictPolicy {
+    /// 逐项询问（首期：覆盖确认对话框）。
+    #[default]
+    Ask,
+    /// 直接覆盖。
+    Overwrite,
+    /// 跳过冲突条目。
+    Skip,
+    /// 自动改名（`name (1).ext` 起递增找空闲）。
+    RenameAuto,
+    /// 保留较新（源 mtime 较新 → 覆盖；否则跳过）。
+    KeepNewer,
+}
+
+impl ConflictPolicy {
+    /// TOML 字符串解析（未知值回退 Ask 并由调用方提示）。
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "ask" => Self::Ask,
+            "overwrite" => Self::Overwrite,
+            "skip" => Self::Skip,
+            "rename" => Self::RenameAuto,
+            "newer" => Self::KeepNewer,
+            _ => return None,
+        })
+    }
+}
+
+/// M36-5：冲突消解结果。
+#[derive(Debug, PartialEq)]
+pub enum ConflictDecision {
+    /// 继续复制/写入目标。
+    Proceed,
+    /// 跳过该条目。
+    Skip,
+    /// 用自动改名后的路径继续。
+    UseName(PathBuf),
+}
+
+/// M36-5：冲突消解纯函数——`src_mtime`（源条目 mtime，秒；不可得 None）、
+/// `dest_exists`（目标已存在）、`dest_mtime`（目标 mtime，秒；不可得 None）。
+/// `dest` 仅 RenameAuto 用（在此生成空闲名，调用方传探名闭包-free 形态：
+/// 生成 `name (N).ext` 递增直到 `free_check` 返回 false）。
+pub fn resolve_conflict(
+    policy: ConflictPolicy,
+    src_mtime: Option<u64>,
+    dest_exists: bool,
+    dest_mtime: Option<u64>,
+) -> ConflictDecision {
+    if !dest_exists {
+        return ConflictDecision::Proceed;
+    }
+    match policy {
+        ConflictPolicy::Overwrite | ConflictPolicy::Ask => ConflictDecision::Proceed,
+        ConflictPolicy::Skip => ConflictDecision::Skip,
+        ConflictPolicy::KeepNewer => match (src_mtime, dest_mtime) {
+            (Some(s), Some(d)) if s > d => ConflictDecision::Proceed,
+            _ => ConflictDecision::Skip,
+        },
+        ConflictPolicy::RenameAuto => ConflictDecision::UseName(PathBuf::new()), // 占位：调用方生成
+    }
+}
+
 /// 应用状态：所有标签 + 当前标签索引 + 全局撤销栈 + 用户配置。
 /// Debug 手工实现（remote_sessions 的 Box<dyn RemoteFs> 无 Debug）。
 pub struct AppState {
@@ -703,5 +768,57 @@ mod tests {
         assert!(!changed);
         assert!(matches!(&s.jobs[0].status, JobStatus::Cancelled { .. }));
         assert_eq!(s.undo_stack.len(), 1, "取消不追加撤销记录");
+    }
+
+    #[test]
+    fn m365_resolve_conflict_policies() {
+        use super::*;
+        // 无冲突 → Proceed。
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::Ask, None, false, None),
+            ConflictDecision::Proceed
+        ));
+        // Overwrite → 恒 Proceed。
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::Overwrite, None, true, None),
+            ConflictDecision::Proceed
+        ));
+        // Skip → 恒 Skip。
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::Skip, Some(5), true, Some(1)),
+            ConflictDecision::Skip
+        ));
+        // KeepNewer：源新 → Proceed；源旧/不可比 → Skip。
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::KeepNewer, Some(10), true, Some(5)),
+            ConflictDecision::Proceed
+        ));
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::KeepNewer, Some(5), true, Some(10)),
+            ConflictDecision::Skip
+        ));
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::KeepNewer, None, true, None),
+            ConflictDecision::Skip
+        ));
+        // RenameAuto → UseName 占位（调用方生成空闲名）。
+        assert!(matches!(
+            resolve_conflict(ConflictPolicy::RenameAuto, None, true, None),
+            ConflictDecision::UseName(_)
+        ));
+    }
+
+    #[test]
+    fn m365_conflict_policy_parse() {
+        use super::*;
+        assert_eq!(
+            ConflictPolicy::parse("overwrite"),
+            Some(ConflictPolicy::Overwrite)
+        );
+        assert_eq!(
+            ConflictPolicy::parse("newer"),
+            Some(ConflictPolicy::KeepNewer)
+        );
+        assert_eq!(ConflictPolicy::parse("bogus"), None);
     }
 }
