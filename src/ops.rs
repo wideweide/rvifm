@@ -54,10 +54,12 @@ pub struct CopyControls<'a> {
 impl CopyControls<'_> {
     fn none() -> CopyControls<'static> {
         static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        static PROGRESS: crate::state::JobProgress = crate::state::JobProgress::EMPTY;
+        static PROGRESS: std::sync::OnceLock<crate::state::JobProgress> =
+            std::sync::OnceLock::new();
+        let progress = PROGRESS.get_or_init(crate::state::JobProgress::empty);
         CopyControls {
             cancel: &CANCEL,
-            progress: &PROGRESS,
+            progress,
         }
     }
 }
@@ -107,7 +109,7 @@ fn preserve_dir_times(from: &Path, to: &Path) {
         Ok(m) => m,
         Err(_) => return,
     };
-    let Ok(mut dst) = fs::File::options().read(true).open(to) else {
+    let Ok(dst) = fs::File::options().read(true).open(to) else {
         return;
     };
     let mut times = std::fs::FileTimes::new();
