@@ -909,7 +909,7 @@ fn zip_err(e: zip::result::ZipError) -> std::io::Error {
 /// tar / tar.gz 打包（flate2 GzEncoder；目录 append_dir_all、
 /// 软链接 append_link 按链接本身收录）。
 /// 7z 编码错误 → 可读 io 错误（sevenz-rust Error 不带 io kind）。
-fn sevenz_err(e: sevenz_rust::Error) -> std::io::Error {
+fn sevenz_err(e: sevenz_rust2::Error) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
 }
 
@@ -1011,13 +1011,13 @@ fn pack_cli(
 /// 文件/软链接 → 读内容为流（SIMPLIFIED：软链接按目标内容收录，
 /// zip 写端的"按链接本身收录"语义在 7z 写端不可表达）。
 fn pack_7z_entry<W: std::io::Write + std::io::Seek>(
-    w: &mut sevenz_rust::SevenZWriter<W>,
+    w: &mut sevenz_rust2::ArchiveWriter<W>,
     arc: String,
     path: &Path,
 ) -> std::io::Result<()> {
     let meta = fs::symlink_metadata(path)?;
     if meta.is_dir() {
-        let mut e = sevenz_rust::SevenZArchiveEntry::new();
+        let mut e = sevenz_rust2::ArchiveEntry::new();
         e.name = format!("{arc}/");
         e.is_directory = true;
         w.push_archive_entry(e, None::<std::io::Empty>)
@@ -1032,7 +1032,7 @@ fn pack_7z_entry<W: std::io::Write + std::io::Seek>(
     } else {
         // 软链接 fs::read 跟随目标（与 tar.gz 写端 read 语义一致）。
         let data = fs::read(path)?;
-        let mut e = sevenz_rust::SevenZArchiveEntry::new();
+        let mut e = sevenz_rust2::ArchiveEntry::new();
         e.name = arc;
         w.push_archive_entry(e, Some(std::io::Cursor::new(data)))
             .map_err(sevenz_err)?;
@@ -1043,7 +1043,7 @@ fn pack_7z_entry<W: std::io::Write + std::io::Seek>(
 /// 7z 归档打包（M26-2，sevenz-rust 0.6 纯 Rust 写端；LZMA2 默认方法）。
 /// 任何失败：半成品文件由调用方清理（M20-3 教训）。
 fn pack_7z(dest: &Path, sources: &[(String, PathBuf)]) -> std::io::Result<()> {
-    let mut w = sevenz_rust::SevenZWriter::create(dest).map_err(sevenz_err)?;
+    let mut w = sevenz_rust2::ArchiveWriter::create(dest).map_err(sevenz_err)?;
     for (name, path) in sources {
         pack_7z_entry(&mut w, name.clone(), path)?;
     }

@@ -1030,3 +1030,10 @@ rvifm record  → 静默记录访问
 - **junction undo EPERM（真缺陷二连，M40-4 create_link 自动化测试抓到）**：M28-1 junction 回退产物在 undo 时报拒绝访问——现代 std（1.99）对 junction 的 symlink_metadata.file_type().is_symlink() 返回 **true**，undo_op Create 臂取 remove_file 分支，但 Windows 删除目录型 reparse point 需要 RemoveDirectoryW（remove_file → EPERM）。修复：remove_dir 优先 + remove_file 回退（unix 文件符号链接/目录符号链接两形态均验证兼容）。二次探针确认 remove_dir(junction) 只删链接本身、目标内容完好。
 - **M28-1 人工项闭环**：junction 回退 + undo 全链路由 create_link_automated_and_undo 测试自动化覆盖（原"Windows junction 回退人工验证 deferred"可勾）。
 - **trash ops 可注入化**：trash_clear_all/purge/read_index 拆 _at(root) 形态（公共包装走全局 trash_dir），测试用临时根——refactor 中一度把 root 当 index 目录传入（测试立即拦下）。
+
+### 2026-11-21 — M40-5 供应链：sevenz-rust → sevenz-rust2 迁移 + deny/audit 豁免口径
+
+- **RUSTSEC-2026-0246**（sevenz-rust 弃维护 + extract 路径穿越，仓库已删）→ 迁移 `sevenz-rust2 0.25`（续维护 fork）。API 映射：SevenZReader→ArchiveReader（open 签名同型）、SevenZWriter→ArchiveWriter（create 同型）、SevenZArchiveEntry→ArchiveEntry、`Error::io_msg` 私有化 → 直接构造 `Error::Io(err, msg.into())`。feature：compress（writer）+ bzip2 显式开启（--no-default-features 下）。read-only 用法（list/read，无 extract-to-disk）回归测试全过；打包（push_archive_entry）同型。jiff/lzma-rust2 随迁。
+- **deny.toml 口径**：许可证白名单含 bzip2-1.0.6（libbz2-rs-sys 捆绑许可证名）与 NCSA（fuzz 工作区 libfuzzer-sys——deny 会扫 fuzz/ 子包图）；advisories 默认 fail + 两条带理由豁免：RUSTSEC-2023-0071（rsa Marvin Attack，russh 传递、rvifm 为客户端持钥侧不受 oracle 场景影响）与 RUSTSEC-2024-0320（yaml-rust 弃维护，syntect 传递、输入为内置高亮定义）。audit 豁免在 `.cargo/audit.toml`（工具各自独立配置）。
+- **本机 audit 网络抖动**：cargo audit 拉取 advisory-db（github git）超时——cargo deny 的 advisories 检查（同一 RUSTSEC 库、缓存命中）已全绿；audit 由 CI supply-chain job 承担。
+- **SHA256SUMS.txt**：release job 三归档同目录 sha256sum 生成并随 Release 上传（gh release upload --clobber）。

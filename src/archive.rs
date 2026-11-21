@@ -250,7 +250,7 @@ pub struct SevenZFs {
 }
 
 /// 7z 打开/读取错误 → 可读 io 错误；加密归档按提示细分。
-fn sevenz_open_err(e: sevenz_rust::Error) -> std::io::Error {
+fn sevenz_open_err(e: sevenz_rust2::Error) -> std::io::Error {
     let msg = e.to_string();
     let lower = msg.to_lowercase();
     let kind_msg = if lower.contains("password") || lower.contains("encrypt") {
@@ -264,7 +264,7 @@ fn sevenz_open_err(e: sevenz_rust::Error) -> std::io::Error {
 impl SevenZFs {
     /// 打开 7z 归档并建立索引（目录条目 + 隐式父目录补全，同 ZipFs 语义）。
     pub(crate) fn open(host: &Path) -> std::io::Result<Self> {
-        let mut reader = sevenz_rust::SevenZReader::open(host, sevenz_rust::Password::empty())
+        let mut reader = sevenz_rust2::ArchiveReader::open(host, sevenz_rust2::Password::empty())
             .map_err(sevenz_open_err)?;
         let mut index = BTreeMap::new();
         let mut dirs = BTreeSet::new();
@@ -323,7 +323,7 @@ impl ArchiveFs for SevenZFs {
         // （恶意 size 谎报时按实际读入量拦截）。
         check_member_size(size, MAX_MEMBER_READ_BYTES)?;
         let mut reader =
-            sevenz_rust::SevenZReader::open(&self.host, sevenz_rust::Password::empty())
+            sevenz_rust2::ArchiveReader::open(&self.host, sevenz_rust2::Password::empty())
                 .map_err(sevenz_open_err)?;
         let mut out: Option<Vec<u8>> = None;
         reader
@@ -335,15 +335,15 @@ impl ArchiveFs for SevenZFs {
                     loop {
                         let n = r
                             .read(&mut buf)
-                            .map_err(|err| sevenz_rust::Error::io_msg(err, "read entry"))?;
+                            .map_err(|err| sevenz_rust2::Error::Io(err, "read entry".into()))?;
                         if n == 0 {
                             break;
                         }
                         total += n as u64;
                         if total > MAX_MEMBER_READ_BYTES {
-                            return Err(sevenz_rust::Error::io_msg(
+                            return Err(sevenz_rust2::Error::Io(
                                 check_member_size(total, MAX_MEMBER_READ_BYTES).expect_err("超限"),
-                                "read entry",
+                                "read entry".into(),
                             ));
                         }
                         data.extend_from_slice(&buf[..n]);

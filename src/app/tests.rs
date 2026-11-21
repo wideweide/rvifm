@@ -1885,12 +1885,12 @@ fn m262_sevenz_create_roundtrip_and_undo() {
     let mut seen: Vec<(String, Vec<u8>)> = Vec::new();
     {
         let mut reader =
-            sevenz_rust::SevenZReader::open(&dest, sevenz_rust::Password::empty()).unwrap();
+            sevenz_rust2::ArchiveReader::open(&dest, sevenz_rust2::Password::empty()).unwrap();
         reader
             .for_each_entries(|e, r| {
                 let mut data = Vec::new();
                 r.read_to_end(&mut data)
-                    .map_err(|e| sevenz_rust::Error::io_msg(e, "test read"))?;
+                    .map_err(|e| sevenz_rust2::Error::Io(e, "test read".into()))?;
                 seen.push((e.name().to_owned(), data));
                 Ok(true)
             })

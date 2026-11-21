@@ -116,6 +116,29 @@ jobs:
             cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096 -max_len=65536
           done
 
+  # M40-5：供应链门禁——cargo-deny（许可证/通告/来源）+ cargo-audit（RUSTSEC）
+  # + CycloneDX SBOM 产物。
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install tooling
+        run: cargo install --locked cargo-deny cargo-audit cargo-cyclonedx
+      - name: cargo deny check
+        run: cargo deny check
+      - name: cargo audit
+        run: cargo audit
+      - name: SBOM (CycloneDX)
+        run: cargo cyclonedx --format json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: rvifm.cdx.json
+
   # M6-5 发布门禁：tag 推送（v*）时双平台 --release 构建并产出归档，
   # 自动创建 GitHub Release 并上传产物（0.2.0 起，页面公开可下载）。
   release:
@@ -158,6 +181,12 @@ jobs:
         run: |
           mkdir -p dist
           tar czf dist/${{ matrix.archive }} -C target/${{ matrix.target }}/release ${{ matrix.binaries }}
+      - name: sha256 checksums (M40-5)
+        shell: bash
+        run: |
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - name: create GitHub Release
         shell: bash
         env:
@@ -166,7 +195,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "rvifm $GITHUB_REF_NAME" \
             --generate-notes --verify-tag || true
-          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS.txt --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: rvifm-${{ matrix.target }}
