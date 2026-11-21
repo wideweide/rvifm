@@ -1130,7 +1130,7 @@
 
 - [x] M40-1 criterion 基准集 + docs/bench.md 基线。（2026-11-21：五组全部实跑——dir_load_small_100 6.60ms / load_100k 6.83s（68µs/条目，记潜在优化点）/ natural_sort 10k 3.26ms（对照 lexical 588µs）/ replay 100k 65ms / copy_1gb 1.79GB/s；环境 Windows rustc 1.99.1；CI 不跑 bench，`cargo check --all-targets` 覆盖编译门禁）
 - [x] M40-2 fuzz 目标三组 + CI 10 分钟 + 本地 24h 记录。（2026-11-21 自动部分：五 fuzz 靶 + CI job（10 分钟总量）入库，首次 CI 运行验证；**deferred**：24h 本地长跑（libFuzzer 需 nightly/Linux，Windows 本机不可跑——随 Linux 开发机执行后回填 NOTES，发现即立 issue 整改））
-- [ ] M40-3 proptest 三组（glob/排序/撤销）。
+- [x] M40-3 proptest 三组（glob/排序/撤销）。（2026-11-21：十属性全绿；**发现 natural_cmp 非全序真实缺陷并修复**——P7 幂等触发 std sort panic，分块比较重写 + 精确触发序列回归测试；proptest-regressions/tab.txt 入库）
 - [ ] M40-4 覆盖率 ≥75%（ops/remote/frecency/archive/keymap）。
 - [ ] M40-5 cargo-deny/audit CI + SBOM + SHA256 校验文件。
 - [ ] M40-6 macOS CI 绿 + aarch64 归档。

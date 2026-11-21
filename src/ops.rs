@@ -1644,3 +1644,109 @@ mod tests {
         assert_eq!(args, vec!["--zstd", "-cf", "/t/o.tar.zst", "b"]);
     }
 }
+
+/// M40-3：属性测试（proptest）——撤销栈逆序恢复（文件系统级 undo_op）。
+#[cfg(test)]
+mod proptests_undo {
+    use super::*;
+    use proptest::prelude::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// 随机安全名（无路径分隔符/非法字符；大小写不敏感文件系统防碰撞——
+    /// 全小写）。
+    fn name_strategy() -> proptest::strategy::BoxedStrategy<String> {
+        proptest::string::string_regex("[a-z0-9]{2,8}[0-9]")
+            .unwrap()
+            .boxed()
+    }
+
+    // P1：rename roundtrip——fs rename + UndoableOp::Rename → undo_op 恢复。
+    proptest! {
+        #[test]
+        fn undo_rename_restores(
+            a in name_strategy(),
+            b in name_strategy(),
+        ) {
+            prop_assume!(a != b);
+            let tmp = TempDir::new().unwrap();
+            let from = tmp.path().join(&a);
+            let to = tmp.path().join(&b);
+            fs::write(&from, "x").unwrap();
+            fs::rename(&from, &to).unwrap();
+            let op = UndoableOp::Rename {
+                tab_id: 0,
+                from: from.clone(),
+                to: to.clone(),
+            };
+            undo_op(&op).unwrap();
+            prop_assert!(from.exists(), "原路径恢复");
+            prop_assert!(!to.exists(), "目标路径移除");
+        }
+
+        /// P2：create roundtrip——mkdir/写文件 + UndoableOp::Create → undo_op 移除。
+        #[test]
+        fn undo_create_removes(path in name_strategy()) {
+            let tmp = TempDir::new().unwrap();
+            let dir = tmp.path().join(&path);
+            fs::create_dir(&dir).unwrap();
+            let op = UndoableOp::Create {
+                tab_id: 0,
+                path: dir.clone(),
+                recursive: false,
+            };
+            undo_op(&op).unwrap();
+            prop_assert!(!dir.exists(), "新建目录被移除");
+        }
+
+        /// P3：多操作逆序恢复——mkdir d → 写 d/f → rename d/f→d/g，逆序
+        /// undo 后回到初始空态（撤销栈 FILO 语义）。
+        #[test]
+        fn undo_stack_reverse_restores(
+            d in name_strategy(),
+            f in name_strategy(),
+            g in name_strategy(),
+        ) {
+            prop_assume!(d != f && f != g && d != g);
+            let tmp = TempDir::new().unwrap();
+            let dir = tmp.path().join(&d);
+            let file1 = dir.join(&f);
+            let file2 = dir.join(&g);
+            fs::create_dir(&dir).unwrap();
+            let mut stack: Vec<UndoableOp> = Vec::new();
+            // 操作 1：mkdir d。
+            fs::create_dir(&dir).ok(); // 已建——防止上面的 create 残留
+            stack.push(UndoableOp::Create {
+                tab_id: 0,
+                path: dir.clone(),
+                recursive: false,
+            });
+            // 操作 2：创建 d/f（UndoableOp::Create 指向文件，undo 移除）。
+            fs::write(&file1, "x").unwrap();
+            stack.push(UndoableOp::Create {
+                tab_id: 0,
+                path: file1.clone(),
+                recursive: false,
+            });
+            // 操作 3：rename d/f → d/g。
+            fs::rename(&file1, &file2).unwrap();
+            stack.push(UndoableOp::Rename {
+                tab_id: 0,
+                from: file1.clone(),
+                to: file2.clone(),
+            });
+            // 逆序撤销：FILO。
+            while let Some(op) = stack.pop() {
+                undo_op(&op).unwrap();
+            }
+            prop_assert!(!file2.exists(), "g 不存在");
+            prop_assert!(!file1.exists(), "f 不存在");
+            prop_assert!(!dir.exists(), "目录移除（初始空态恢复）");
+            prop_assert_eq!(
+                fs::read_dir(tmp.path()).unwrap().count(),
+                0,
+                "tmp 根恢复初始空态"
+            );
+        }
+    }
+}

@@ -496,7 +496,7 @@
 
 - [x] M40-1 criterion 性能基准（启动/10 万项/排序/replay/1GB 吞吐；见 SPEC M40-1；2026-11-21 完成：lib 化（src/lib.rs 模块树共享，main.rs 仅 CLI 分派）+ benches/rvifm_bench.rs 五组 + docs/bench.md 基线（本机 rustc 1.99.1：100k 加载 6.83s≈68µs/条目记为潜在优化点、1GB 复制 1.79GB/s、replay 10 万事件 65ms、自然排序 10k 3.26ms）；顺带修 TransferDirection pub（lib 化 private_interfaces）+ README 状态句漂移，443 单测）
 - [x] M40-2 cargo-fuzz 模糊测试（归档解析/路径规范化/反序列化；见 SPEC M40-2；2026-11-21 完成：fuzz/ 独立工作区（5 靶——zip/tar.gz/7z 解析驱动 + normalize_inner·normalize_lexical 路径 + EntryRecord 反序列化）+ CI fuzz job（ubuntu nightly + cargo-fuzz，3×120s 归档 + 2×60s 路径/反序列化 ≈10 分钟总量，rss/max_len 护栏）；24h 本地长跑 deferred（libFuzzer 需 nightly/Linux——Windows 本机不可跑，随 Linux 开发机执行后回填 NOTES）；normalize_lexical pub 化）
-- [ ] M40-3 proptest 属性测试（glob/自然排序/撤销栈；见 SPEC M40-3）
+- [x] M40-3 proptest 属性测试（glob/自然排序/撤销栈；见 SPEC M40-3；2026-11-21 完成：三组十属性——glob 4（`*` 任意/字面量等值/`*p*` 包含/`?` 计数）+ 自然排序 3（对称性/数字感知/幂等）+ 撤销 3（rename roundtrip/create 移除/逆序恢复空态）；**抓到并修复真实缺陷**——natural_cmp 非全序（Equal 非传递 → std sort panic，M24-2 起 shipped），重写为分块比较 + 回归测试，见 NOTES；454 单测 + 8 cli）
 - [ ] M40-4 覆盖率 ≥75%（核心模块；见 SPEC M40-4）
 - [ ] M40-5 供应链（cargo-deny/audit/SBOM/SHA256；见 SPEC M40-5）
 - [ ] M40-6 macOS CI + aarch64 Linux 归档（见 SPEC M40-6）
