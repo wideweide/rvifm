@@ -2254,6 +2254,62 @@ fn m34_4_view_renders_in_opposite_pane() {
 }
 
 #[test]
+fn m34_5_frecency_pane_title_icons_and_query_echo() {
+    // M34-5：标题固定文案；行 = devicons 图标 + 全路径（无 [目录]/[文件]
+    // 文本标记；✦keyword 保留）；搜索态底部实时回显 query。
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("proj");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("main.rs"), "fn main() {}").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![
+            crate::frecency::ScoredEntry {
+                path: dir.to_string_lossy().into_owned(),
+                topic: "dir".to_owned(),
+                keyword: String::new(),
+                score: 0.0,
+                grade: crate::frecency::Grade::Substring,
+                last_visit: 0,
+            },
+            crate::frecency::ScoredEntry {
+                path: dir.join("main.rs").to_string_lossy().into_owned(),
+                topic: "file".to_owned(),
+                keyword: "rs".to_owned(),
+                score: 0.0,
+                grade: crate::frecency::Grade::NameContains,
+                last_visit: 0,
+            },
+        ],
+        query: "ma".to_owned(),
+        cursor: 1,
+        normal: false,
+        g_pending: false,
+    });
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut s = String::new();
+    for y in 0..12u16 {
+        for x in 0..80u16 {
+            s.push_str(buf[(x, y)].symbol());
+        }
+        s.push('\n');
+    }
+    // CJK 占 2 格、缓冲区按格插空格 → 去空白后断言（标题/回显为连续文案）。
+    let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("Frecency-高频目录/文件搜索"), "标题: {s}");
+    assert!(compact.contains("/ma"), "query 回显: {s}");
+    assert!(compact.contains("✦rs"), "keyword 标记: {s}");
+    assert!(compact.contains("main.rs"), "结果行路径: {s}");
+    assert!(!compact.contains("[目录]"), "文本标记移除: {s}");
+    assert!(!compact.contains("[文件]"), "文本标记移除: {s}");
+}
+
+#[test]
 fn fix1_live_search_jumps_and_restores_on_no_match_or_empty() {
     let tmp = TempDir::new().unwrap();
     for name in ["alpha", "src.txt", "srconly"] {

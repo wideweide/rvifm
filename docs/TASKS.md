@@ -412,7 +412,7 @@
 - [x] M34-2 snowwhite 内置主题移植（vifm-colors 颜色 → opaline TOML 捆绑；见 SPEC M34-2；2026-11-21 完成：捆绑层 `BUNDLED_THEMES`（include_str）+ activate 内置→捆绑→用户三段、`:theme` 列表并入；vifm 高亮组精确值直写命名样式（fg16/bg255、TopLineSel 反转），selected/active_selected=208 橙面，浅色 variant + 图标 Light 联动；424 单测）
 - [x] M34-3 右 pane `/` 搜索（focus 感知分派，解除 M14 SIMPLIFIED；见 SPEC M34-3；2026-11-21 完成：/·n·N 右焦点拦截共用 Search 链路，origin/恢复取焦点 pane 光标，`Tab::search_move`/`search_status` focus-aware，`render_right_pane` 增 mode 参数做同款匹配高亮，`Tab::find_match` 死代码删除（统一走 `find_match_in`）；426 单测）
 - [x] M34-4 对侧预览统一（preview_path 焦点修复 + :view/frecency 共用对侧模型，方案 A；见 SPEC M34-4；2026-11-21 完成：`preview_path` 焦点感知修复右焦点预览错位 + 查看器渲染抽出 `render_view_content`（`render_right_pane`/`render()` 双侧分派——焦点右时查看器占左 pane、右 pane 保持列表导航）；frecency 对侧语义不动；428 单测）
-- [ ] M34-5 frecency Pane 视觉与回显（query 底部回显 + 图标全路径行 + 标题文案；见 SPEC M34-5）
+- [x] M34-5 frecency Pane 视觉与回显（query 底部回显 + 图标全路径行 + 标题文案；见 SPEC M34-5；2026-11-21 完成：标题固定"Frecency - 高频目录/文件搜索"，行=devicons 图标+全路径（目录条目尾斜杠触发文件夹图标）替换 `[目录]/[文件]`，✦keyword 保留，搜索态底部 `/query` 实时回显、计数移至提示行；429 单测）
 - [ ] M34-6 `.jar` 归档识别（zip 后端复用；见 SPEC M34-6）
 - [ ] M34-7 二进制/不可读预览信息面板（大小/时间/类型推断；不执行文件；见 SPEC M34-7）
 - [ ] M34-8 docs/GUIDE.md 用户手册（快速上手 + 键位/命令速查；见 SPEC M34-8）

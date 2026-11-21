@@ -307,12 +307,8 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
 
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
-    let mode_mark = if pane.normal {
-        " · Normal"
-    } else {
-        " · /搜索"
-    };
-    let title = format!("Frecency{mode_mark}（{} 项）", visible.len());
+    // M34-5：标题固定文案（原 `Frecency · Normal（N 项）`——计数移至底部提示行）。
+    let title = "Frecency - 高频目录/文件搜索";
     let frec_block = ratatui::widgets::Block::bordered()
         .title(title)
         .border_style(pane_border_style(true));
@@ -322,17 +318,20 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         .iter()
         .enumerate()
         .map(|(idx, e)| {
-            let topic = if e.topic == "dir" {
-                "[目录]"
+            // M34-5：devicons 图标 + 全路径（替换 [目录]/[文件] 文本标记；
+            // 目录条目路径补尾斜杠触发 devicons 文件夹图标；✦keyword 保留）。
+            let icon_path = if e.topic == "dir" {
+                std::path::PathBuf::from(format!("{}/", e.path))
             } else {
-                "[文件]"
+                std::path::PathBuf::from(&e.path)
             };
+            let icon = crate::icons::icon_for_active(&icon_path);
             let bm = if e.keyword.is_empty() {
                 String::new()
             } else {
                 format!(" ✦{}", e.keyword)
             };
-            ListItem::new(Line::from(format!("{topic}{bm} {}", e.path))).style(
+            ListItem::new(Line::from(format!("{} {}{}", icon.glyph, e.path, bm))).style(
                 if idx == pane.cursor {
                     Style::new().add_modifier(Modifier::REVERSED)
                 } else {
@@ -360,14 +359,21 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         let preview = crate::preview::render_preview(&path, 100);
         frame.render_widget(preview.into_paragraph(), other_inner);
     }
-    frame.render_widget(
-        Paragraph::new(if pane.normal {
-            "j/k/gg/G=移动 l/Enter=跳转 y=复制 e=编辑 w=view Esc=关闭"
-        } else {
-            "输入=筛选 方向键=移动 Enter=跳转 Esc=Normal"
-        }),
-        status_area,
-    );
+    // M34-5：搜索模式底部实时回显当前 query（键入即时更新、清空同步）；
+    // Normal 显示操作提示。计数自标题移至两处提示行。
+    let hint = if pane.normal {
+        format!(
+            "j/k/gg/G=移动 l/Enter=跳转 y=复制 e=编辑 w=view Esc=关闭（{} 项）",
+            visible.len()
+        )
+    } else {
+        format!(
+            "/{}  输入=筛选 Enter=跳转 Esc=Normal（{} 项）",
+            pane.query,
+            visible.len()
+        )
+    };
+    frame.render_widget(Paragraph::new(hint), status_area);
 }
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {

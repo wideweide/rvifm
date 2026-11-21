@@ -885,3 +885,11 @@ rvifm record  → 静默记录访问
 - **模态边界（M17 既有，保持）**：view 模式下查看器吞掉全部按键（含 Tab）——焦点右 + 查看器在左时同样如此，切焦点需先 w/Esc 退出；无新增冲突。
 - **踩坑**：① 左 pane 列表块被 if/else 包装后 `visual_range` 留在 else 内而状态栏公共段仍引用 → 提升至分派之前；② 搬迁尾巴 `return;` 成 needless_return；③ 大块搬迁用 python 行号切割比手写 Edit 稳（先 grep 锚点行号 + 断言首尾）。
 - 428 单测（+2：preview_path 焦点跟随、TestBackend 双焦点放置断言）+ 9 集成。
+
+### 2026-11-21 — M34-5 实现：frecency Pane 视觉与回显
+
+- **标题**：固定 `Frecency - 高频目录/文件搜索`（原 `Frecency · Normal（N 项）`；计数移至底部提示行，Normal/搜索两态均含 `（N 项）`）。
+- **行渲染**：devicons 图标 + 全路径替换 `[目录]/[文件]` 文本标记——目录条目路径补尾斜杠触发 devicons 文件夹判定（其内部 `ends_with('/') || is_dir()`，历史路径不存在也能出文件夹图标）；✦keyword 保留；`icon_for_active` 走激活主题 variant（M9-3/M34-1 明暗联动）。
+- **回显**：搜索态底部 `/query  输入=筛选 Enter=跳转 Esc=Normal（N 项）`——键入即时更新、清空同步（Normal 态提示行不变）。
+- **踩坑**：TestBackend 断言 CJK 文案——缓冲区每格一 symbol、CJK 占 2 格且空位插空格，连续文案 `contains` 必须先去空白（compact）再断言。
+- 429 单测（+1）。
