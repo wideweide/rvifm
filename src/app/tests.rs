@@ -5565,6 +5565,24 @@ fn m39_1_hex_viewer_binary_and_goto() {
 }
 
 #[test]
+fn m394_remote_confirm_and_enter_unreachable() {
+    // M39-4：指纹确认重连（不可达主机）——失败返回可读错误、不注册会话、
+    // TUI 状态不变（SPEC M39-4：失败/取消后状态一致）。
+    let (_tmp, mut state) = make_state(1);
+    let loc_before = state.active_tab().location.clone();
+    let mut params = crate::remote::sftp::SftpParams::new("127.0.0.1");
+    params.port = 1;
+    params.name = "dead".to_owned();
+    let r = remote_confirm_and_enter(&mut state, "dead", &params);
+    assert!(r.is_err());
+    assert!(
+        !state.remote_sessions.contains_key("dead"),
+        "失败不注册会话"
+    );
+    assert_eq!(state.active_tab().location, loc_before, "位置不变");
+}
+
+#[test]
 fn m39_2_pdf_viewer_page_flip_keys() {
     // M39-2：viewer `[`/`]` 翻页——page 状态推进/回退/第 1 页停留。
     let tmp = TempDir::new().unwrap();

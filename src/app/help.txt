@@ -113,6 +113,10 @@ rvifm 帮助（vim 风格文件管理器）
 == 远端（SFTP） ==
   :remote <名>    进入远端（~/.ssh/config 别名 + remotes.toml 覆盖）
   :remote         列出全部远端；远端内 dd/yy/p/P/:mkdir/:find/:grep 同本地
+  首连指纹确认    strict_host_key = ask|accept|no（缺省 ask：y 接受写入
+                  known_hosts / n 拒绝中止；no 等效 known_hosts = false）
+  连接增强        ProxyJump（ssh config 透传）/ ssh-agent 认证（SSH_AUTH_SOCK，
+                  unix）/ keepalive 30s
 
 == 鼠标 ==
   左键单击        切换焦点至点击 pane 并聚焦条目（已聚焦再击 = 打开；

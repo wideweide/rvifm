@@ -38,8 +38,37 @@ pub struct SftpParams {
     pub name: String,
     /// 连接后的初始路径（remotes.toml root；缺省 /）。
     pub root: Option<PathBuf>,
-    /// M22-2：跳过 known_hosts 校验（安全默认 false = 校验）。
+    /// M22-2：跳过 known_hosts 校验（安全默认 false = 校验；M39-4 `no` 等效）。
     pub skip_host_key_check: bool,
+    /// M39-4：首连主机密钥策略（ask 缺省——TOFU 改为交互确认）。
+    pub strict_host_key: StrictHostKey,
+    /// M39-4：指纹确认后重连标志（ask 路径置 true；首连写入放行）。
+    pub accept_new_host_key: bool,
+    /// M39-4：ProxyJump 跳板（`host[:port]`；ssh config 透传）。
+    pub proxy_jump: Option<String>,
+}
+
+/// M39-4：首连主机密钥策略——`strict_host_key = ask|accept|no`（缺省 ask：
+/// 首连交互确认指纹，接受后写入 known_hosts；accept = 旧 TOFU 自动写入；
+/// no = 跳过校验，等效 `known_hosts = false`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StrictHostKey {
+    #[default]
+    Ask,
+    Accept,
+    No,
+}
+
+impl StrictHostKey {
+    /// 解析配置串（非法值回落缺省 ask）。
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "ask" => Some(Self::Ask),
+            "accept" => Some(Self::Accept),
+            "no" => Some(Self::No),
+            _ => None,
+        }
+    }
 }
 
 /// 缺省用户名（USER/USERNAME/root）。
@@ -61,6 +90,9 @@ impl SftpParams {
             name: String::new(),
             root: None,
             skip_host_key_check: false,
+            strict_host_key: StrictHostKey::default(),
+            accept_new_host_key: false,
+            proxy_jump: None,
         }
     }
 }
@@ -629,61 +661,216 @@ async fn connect_async(
     params: &SftpParams,
     password: Option<&str>,
 ) -> Result<SshSession, RemoteError> {
-    let config = client::Config::default();
-    // M22-3：密钥加载失败不再直接报错——回退口令认证。
-    let key = load_user_key(&params.key_path).ok();
-    // M22-2：known_hosts 校验——错误经共享槽带回（russh connect 失败时不
-    // 归还 handler，用 Arc<Mutex> 跨越）。
-    let key_error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(None));
-    let known_hosts_path = if params.skip_host_key_check {
-        None
-    } else {
-        Some(crate::config::known_hosts_path())
-    };
-    let handler = ClientHandler {
-        host: params.host.clone(),
-        port: params.port,
-        known_hosts_path,
-        key_error: std::sync::Arc::clone(&key_error),
-    };
-    let mut handle = client::connect(
-        std::sync::Arc::new(config),
-        (params.host.as_str(), params.port),
-        handler,
-    )
-    .await
-    .map_err(|e| map_connect_err(e, &key_error))?;
-    // M22-3：公钥优先，失败回退口令（口令仅内存传递，不落盘）。
-    let mut authed = false;
-    if let Some(k) = key {
+    // M39-4：ProxyJump——先连跳板（复用同一认证材料，SIMPLIFIED），再经
+    // direct-tcpip 通道连接目标（ssh config 透传）。
+    if let Some(jump) = params.proxy_jump.clone() {
+        return connect_via_jump(params, &jump, password).await;
+    }
+    connect_single_hop(params, password).await
+}
+
+/// M39-4：keepalive + 客户端配置（30s 间隔，3 次无响应断开）。
+fn ssh_client_config() -> std::sync::Arc<client::Config> {
+    std::sync::Arc::new(client::Config {
+        keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    })
+}
+
+/// M39-4：认证序列（共享：单跳与 ProxyJump 跳板/目标一致）——密钥文件 →
+/// ssh-agent（SSH_AUTH_SOCK 在且含可用身份；失败静默跳过）→ 口令回退。
+async fn authenticate_session(
+    handle: &mut client::Handle<ClientHandler>,
+    params: &SftpParams,
+    password: Option<&str>,
+) -> Result<(), RemoteError> {
+    // M22-3：密钥加载失败不再直接报错——回退后续方式。
+    if let Ok(k) = load_user_key(&params.key_path) {
         let key = PrivateKeyWithHashAlg::new(std::sync::Arc::new(k), None);
         let auth = handle
             .authenticate_publickey(&params.user, key)
             .await
             .map_err(map_russh_err)?;
-        authed = auth.success();
-    }
-    if !authed {
-        let Some(pw) = password else {
-            return Err(RemoteError::Auth(format!(
-                "公钥认证失败（user={}）；可用口令认证重试",
-                params.user
-            )));
-        };
-        let auth = handle
-            .authenticate_password(&params.user, pw)
-            .await
-            .map_err(map_russh_err)?;
-        if !auth.success() {
-            return Err(RemoteError::Auth(format!(
-                "口令认证被拒（user={}）",
-                params.user
-            )));
+        if auth.success() {
+            return Ok(());
         }
     }
+    // M39-4：ssh-agent 认证（SSH_AUTH_SOCK；不可用静默跳过）。
+    match try_agent_auth(handle, &params.user).await {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(_) => {} // agent 不可用/出错：跳过（回退口令）
+    }
+    let Some(pw) = password else {
+        return Err(RemoteError::Auth(format!(
+            "公钥认证失败（user={}）；可用口令认证重试",
+            params.user
+        )));
+    };
+    let auth = handle
+        .authenticate_password(&params.user, pw)
+        .await
+        .map_err(map_russh_err)?;
+    if !auth.success() {
+        return Err(RemoteError::Auth(format!(
+            "口令认证被拒（user={}）",
+            params.user
+        )));
+    }
+    Ok(())
+}
+
+/// M39-4：ssh-agent 认证尝试——连接 SSH_AUTH_SOCK（仅 unix；russh agent
+/// 客户端不支持 Windows 命名管道），请求身份逐个尝试；`Ok(true)` = 已认证，
+/// `Ok(false)` = agent 可用但身份全被拒。
+#[cfg(unix)]
+async fn try_agent_auth(
+    handle: &mut client::Handle<ClientHandler>,
+    user: &str,
+) -> Result<bool, RemoteError> {
+    if std::env::var("SSH_AUTH_SOCK").is_err() {
+        return Ok(false);
+    }
+    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
+        .await
+        .map_err(map_russh_err)?;
+    let identities = agent.request_identities().await.map_err(map_russh_err)?;
+    for identity in identities {
+        let pubkey = identity.public_key().into_owned();
+        let auth = handle
+            .authenticate_publickey_with(user, pubkey, None, &mut agent)
+            .await
+            .map_err(map_russh_err)?;
+        if auth.success() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// 非 unix（Windows）：russh agent 客户端不支持命名管道——直接跳过。
+#[cfg(not(unix))]
+async fn try_agent_auth(
+    _handle: &mut client::Handle<ClientHandler>,
+    _user: &str,
+) -> Result<bool, RemoteError> {
+    Ok(false)
+}
+
+/// 单跳连接（M19-3b 主体 + M39-4 keepalive/agent/ask 门控/代理判断抽出）。
+async fn connect_single_hop(
+    params: &SftpParams,
+    password: Option<&str>,
+) -> Result<SshSession, RemoteError> {
+    let config = ssh_client_config();
+    let known_hosts_path = if params.skip_host_key_check {
+        None
+    } else {
+        Some(crate::config::known_hosts_path())
+    };
+    let key_error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let confirm_fp: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let handler = ClientHandler {
+        host: params.host.clone(),
+        port: params.port,
+        known_hosts_path,
+        strict: params.strict_host_key,
+        accept_new: params.accept_new_host_key,
+        key_error: std::sync::Arc::clone(&key_error),
+        confirm_fp: std::sync::Arc::clone(&confirm_fp),
+    };
+    let mut handle = client::connect(config, (params.host.as_str(), params.port), handler)
+        .await
+        .map_err(|e| {
+            // M39-4：ask 首连 → 指纹确认错误（TUI 交互确认后重连）。
+            if let Ok(mut g) = confirm_fp.lock()
+                && let Some(fp) = g.take()
+            {
+                return RemoteError::FingerprintConfirm {
+                    host: params.host.clone(),
+                    port: params.port,
+                    fp,
+                };
+            }
+            map_connect_err(e, &key_error)
+        })?;
+    authenticate_session(&mut handle, params, password).await?;
+    open_sftp_session(handle).await
+}
+
+/// M39-4：ProxyJump 连接——跳板（host[:port]；认证材料同目标，SIMPLIFIED）
+/// → direct-tcpip 通道 → 目标 SSH 会话（connect_stream）。跳板/目标各自
+/// 走完整指纹门控（known_hosts 按 host:port 区分）。
+async fn connect_via_jump(
+    params: &SftpParams,
+    jump: &str,
+    password: Option<&str>,
+) -> Result<SshSession, RemoteError> {
+    let (jh, jport) = match jump.rsplit_once(':') {
+        Some((h, p)) => (h.to_owned(), p.parse::<u16>().unwrap_or(22)),
+        None => (jump.to_owned(), 22),
+    };
+    let mut jump_params = params.clone();
+    jump_params.host = jh;
+    jump_params.port = jport;
+    jump_params.proxy_jump = None;
+    // 跳板握手（复用单跳；目标 known_hosts 与跳板分开记录）。
+    let jump_session = connect_single_hop(&jump_params, password).await?;
+    let channel = jump_session
+        .handle
+        .channel_open_direct_tcpip(
+            params.host.as_str(),
+            u32::from(params.port),
+            "127.0.0.1",
+            0u32,
+        )
+        .await
+        .map_err(map_russh_err)?;
+    let stream = channel.into_stream();
+    let known_hosts_path = if params.skip_host_key_check {
+        None
+    } else {
+        Some(crate::config::known_hosts_path())
+    };
+    let key_error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let confirm_fp: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let handler = ClientHandler {
+        host: params.host.clone(),
+        port: params.port,
+        known_hosts_path,
+        strict: params.strict_host_key,
+        accept_new: params.accept_new_host_key,
+        key_error: std::sync::Arc::clone(&key_error),
+        confirm_fp: std::sync::Arc::clone(&confirm_fp),
+    };
+    let mut handle = client::connect_stream(ssh_client_config(), stream, handler)
+        .await
+        .map_err(|e| {
+            if let Ok(mut g) = confirm_fp.lock()
+                && let Some(fp) = g.take()
+            {
+                return RemoteError::FingerprintConfirm {
+                    host: params.host.clone(),
+                    port: params.port,
+                    fp,
+                };
+            }
+            map_connect_err(e, &key_error)
+        })?;
+    authenticate_session(&mut handle, params, password).await?;
+    open_sftp_session(handle).await
+}
+
+/// SFTP 会话开启（session channel + 子系统；spike 教训：先请求子系统）。
+async fn open_sftp_session(
+    handle: client::Handle<ClientHandler>,
+) -> Result<SshSession, RemoteError> {
     let channel = handle.channel_open_session().await.map_err(map_russh_err)?;
-    // spike 教训：必须先请求 sftp 子系统，否则会话握手超时。
     channel
         .request_subsystem(true, "sftp")
         .await
@@ -702,14 +889,28 @@ fn map_connect_err(e: russh::Error, key_error: &std::sync::Mutex<Option<String>>
     map_russh_err(e)
 }
 
+/// M39-4：首连写入放行判定（纯函数，可测）——accept（旧 TOFU）或指纹
+/// 已确认（accept_new）放行；ask 且未确认 → 交互确认流程。
+fn first_use_allowed(strict: StrictHostKey, accept_new: bool) -> bool {
+    matches!(strict, StrictHostKey::Accept) || accept_new
+}
+
 /// M22-2：known_hosts 校验的 SSH 客户端 handler（原 M19-3b 空结构升级）。
+/// M39-4：strict_host_key 三态门控——FirstUse 时 ask = 填 confirm_fp 槽并
+/// 拒绝本次连接（TUI 交互确认后带 accept_new 重连）；accept = 旧 TOFU。
 struct ClientHandler {
     host: String,
     port: u16,
-    /// None = 用户显式跳过校验（`known_hosts = false`）。
+    /// None = 用户显式跳过校验（`known_hosts = false` / `no`）。
     known_hosts_path: Option<std::path::PathBuf>,
+    /// M39-4：首连策略（ask/accept/no）。
+    strict: StrictHostKey,
+    /// M39-4：确认后重连标志（ask 路径首连写入放行）。
+    accept_new: bool,
     /// 安全拒绝的可读错误（russh connect Err 时不归还 handler，经共享槽带回）。
     key_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// M39-4：ask 首连待确认指纹（connect 失败时取出转 FingerprintConfirm）。
+    confirm_fp: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl client::Handler for ClientHandler {
@@ -752,6 +953,15 @@ impl client::Handler for ClientHandler {
         match crate::remote::known_hosts::check(&entries, &self.host, self.port, &key_str) {
             crate::remote::known_hosts::KeyVerdict::Match => Ok(true),
             crate::remote::known_hosts::KeyVerdict::FirstUse => {
+                // M39-4：ask（缺省）——首连不自动写入：填确认槽、拒绝本次
+                // 连接（TUI 交互确认后带 accept_new_host_key 重连放行）；
+                // accept（旧 TOFU）或已确认重连 → 写入并放行。
+                if !first_use_allowed(self.strict, self.accept_new) {
+                    if let Ok(mut g) = self.confirm_fp.lock() {
+                        *g = Some(fp);
+                    }
+                    return Ok(false);
+                }
                 match crate::remote::known_hosts::append(path, &self.host, self.port, &key_str) {
                     Ok(()) => {
                         eprintln!(
@@ -918,5 +1128,66 @@ mod tests {
             Err(_) => {} // 任何分类错误均可（Connect/Timeout/其他）
             Ok(_) => panic!("不可达端口不应连接成功"),
         }
+    }
+
+    #[test]
+    fn m394_first_use_allowed_matrix() {
+        // M39-4：首连放行判定——accept 恒放行；ask 仅确认后放行。
+        assert!(
+            !first_use_allowed(StrictHostKey::Ask, false),
+            "ask 未确认拒绝"
+        );
+        assert!(
+            first_use_allowed(StrictHostKey::Ask, true),
+            "ask 确认后放行"
+        );
+        assert!(
+            first_use_allowed(StrictHostKey::Accept, false),
+            "accept TOFU 放行"
+        );
+        assert!(first_use_allowed(StrictHostKey::Accept, true));
+    }
+
+    #[test]
+    fn m394_strict_host_key_parse() {
+        assert_eq!(StrictHostKey::parse("ask"), Some(StrictHostKey::Ask));
+        assert_eq!(StrictHostKey::parse("accept"), Some(StrictHostKey::Accept));
+        assert_eq!(StrictHostKey::parse("no"), Some(StrictHostKey::No));
+        assert_eq!(
+            StrictHostKey::parse("NO"),
+            Some(StrictHostKey::No),
+            "大小写不敏感"
+        );
+        assert_eq!(StrictHostKey::parse("bogus"), None);
+        assert_eq!(StrictHostKey::default(), StrictHostKey::Ask, "缺省 ask");
+    }
+
+    #[test]
+    fn m394_ask_gates_first_use_then_accepts_on_confirm() {
+        // 全链路（本机 sshd 可用时；CI ubuntu 覆盖）：ask 首连 →
+        // FingerprintConfirm（带 host:port + 指纹）→ 确认重连成功。
+        if !sshd_available() {
+            return;
+        }
+        let first = SftpParams {
+            strict_host_key: StrictHostKey::Ask,
+            accept_new_host_key: false,
+            skip_host_key_check: false,
+            ..SftpParams::new("127.0.0.1")
+        };
+        let err = SftpBackend::connect(&first).unwrap_err();
+        let (fp, host, port) = match err {
+            RemoteError::FingerprintConfirm { host, port, fp } => (fp, host, port),
+            other => panic!("ask 首连应返回 FingerprintConfirm: {other:?}"),
+        };
+        assert!(!fp.is_empty());
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 22);
+        // 确认重连：accept_new = true → 写入 known_hosts + 连接成功。
+        let confirmed = SftpParams {
+            accept_new_host_key: true,
+            ..first
+        };
+        SftpBackend::connect(&confirmed).expect("确认后重连应成功");
     }
 }

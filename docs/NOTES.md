@@ -993,3 +993,11 @@ rvifm record  → 静默记录访问
 - **三表漂移根治**：M34-6（.jar）暴露的"is_archive_file / open_dispatch / is_unsupported_archive 三处独立清单"改为 `ZIP_CONTAINERS` 常量表——前两处共用（is_unsupported_archive 语义不同仍独立：仅 .rar）；后续新容器只改 ZIP_CONTAINERS 一处。
 - **魔数 PK 校验落位**：SPEC"魔数 PK + 白名单"——白名单在扩展名层（is_archive_file 无 IO）；PK 校验由 `ZipFs::open`（zip crate）承担：非 zip 内容 → 损坏/加密可读错误（M7-7 语义），测试覆盖 bad.docx。
 - **与 Office 预览并存**：docx 等在 preview_kind 中 Office 先于归档命中——预览面板 = Office 文本提取、l/Enter = zip 虚拟浏览，两链路不冲突。
+
+### 2026-11-21 — M39-4 实现决策（SFTP 硬化）
+
+- **指纹确认机制**：check_server_key 在 russh connect 的异步握手中运行，无法直接交互——ask 首连 = FirstUse 时填 `confirm_fp` 共享槽 + `Ok(false)` 拒绝本次 → connect 返回 `RemoteError::FingerprintConfirm`（非连接类，不触发 M32-1 自动重连）→ TUI `RemoteFingerprint` 覆盖层（y/n/Esc）→ 确认后 `accept_new_host_key = true` 重连放行写入。known_hosts 按 host:port 区分，跳板与目标各自门控。
+- **ProxyJump**：仅 `~/.ssh/config` 透传（`ProxyCommand` 不支持，SIMPLIFIED）——`ssh_config_host_fields` 解析 Hostname/Port/User/ProxyJump；连接 = 跳板单跳（认证材料同目标，SIMPLIFIED——跳板独立 user/key 未做）→ `channel_open_direct_tcpip` → `connect_stream` 目标会话。known_hosts 跳板/目标分开记录。
+- **ssh-agent**：russh 0.65 agent 客户端**仅 unix**（`connect_env` cfg(unix)；Windows 命名管道不支持）——cfg(not(unix)) 桩返回 false 静默跳过；认证序列 = 密钥文件 → agent → 口令（M22-3 回退链保持）。agent 不可用/出错静默降级，不阻塞连接。
+- **连接体拆分**：单跳与跳板共用 `authenticate_session`/`open_sftp_session`；`:remote` 臂与确认重连共用 `remote_connect_enter`（RemoteConnectErr 三态装箱 params——clippy result_large_err）。
+- **CI 边界**：sshd 全链路测试（ask→确认→写入→重连成功）在 cfg(unix) 模块（CI ubuntu 覆盖）；Windows 本机仅跑 config 解析与不可达主机失败路径（平台无关）。

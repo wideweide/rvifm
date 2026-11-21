@@ -181,7 +181,11 @@ PDF 查看器：`[`/`]` 逐页翻页（任意页按需渲染；`[preview] pdf_im
 ```
 
 远端内浏览/搜索/文件操作与本地同键；连接失败自动重连一次、失败现场保留
-`.part`；known_hosts 指纹变更默认拒连（`known_hosts = false` 显式跳过）。
+`.part`。首连指纹确认：`strict_host_key = ask|accept|no`（缺省 **ask**——
+覆盖层展示指纹，`y` 接受写入 known_hosts、`n`/Esc 拒绝中止且状态不变；
+`accept` = 旧 TOFU 自动写入；`no` 等效 `known_hosts = false`）；指纹变更
+仍默认拒连。连接增强：ProxyJump（`~/.ssh/config` 透传）、ssh-agent 认证
+（`SSH_AUTH_SOCK`，unix）、keepalive 30s。
 
 ## 11. 配置
 

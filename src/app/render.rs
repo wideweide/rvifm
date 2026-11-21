@@ -1121,6 +1121,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 "远端口令（{name}）: {masked} [Enter=连接 Esc=取消]"
             ))
         }
+        InputMode::RemoteFingerprint { fp, .. } => {
+            // M39-4：首连指纹确认——指纹展示 + y/n。
+            Line::from(format!("主机指纹 {fp} [y=接受并写入 known_hosts n=拒绝]"))
+        }
         InputMode::Rename { input, pos, .. } => {
             // M21-E4：插入光标可视化（'▏' 标记当前插入位）。
             let chars: Vec<char> = input.chars().collect();

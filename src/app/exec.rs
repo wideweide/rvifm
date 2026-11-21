@@ -1033,6 +1033,82 @@ pub(crate) fn cleanup_temp_opens(state: &mut AppState) {
     }
 }
 
+/// M39-4：远端连接结果三态（:remote 臂与指纹确认重连共用）。params 装箱
+/// （clippy result_large_err——SftpParams 体量较大）。
+pub(crate) enum RemoteConnectErr {
+    /// M39-4：ask 首连待确认（覆盖层消费，确认后带 accept_new 重连）。
+    Fingerprint {
+        name: String,
+        params: Box<crate::remote::sftp::SftpParams>,
+        fp: String,
+    },
+    /// M22-3：公钥认证失败 → 口令输入。
+    Auth {
+        name: String,
+        params: Box<crate::remote::sftp::SftpParams>,
+    },
+    /// 其余（可读错误）。
+    Other(String),
+}
+
+/// M39-4：连接远端并进入（:remote 臂与指纹确认 'y' 共用体）——成功返回
+/// 提示；FingerprintConfirm → Fingerprint 分支；Auth → 口令回退。
+pub(crate) fn remote_connect_enter(
+    state: &mut AppState,
+    name: &str,
+    params: crate::remote::sftp::SftpParams,
+) -> Result<String, RemoteConnectErr> {
+    let backend = match crate::remote::sftp::SftpBackend::connect(&params) {
+        Ok(b) => b,
+        Err(crate::remote::RemoteError::FingerprintConfirm { fp, .. }) => {
+            return Err(RemoteConnectErr::Fingerprint {
+                name: name.to_owned(),
+                params: Box::new(params),
+                fp,
+            });
+        }
+        Err(crate::remote::RemoteError::Auth(_)) => {
+            return Err(RemoteConnectErr::Auth {
+                name: name.to_owned(),
+                params: Box::new(params),
+            });
+        }
+        Err(e) => return Err(RemoteConnectErr::Other(format!("remote: {e}"))),
+    };
+    register_remote_session(state, name, Box::new(backend));
+    let root = crate::remote::config::load_remotes_toml(&config::data_dir().join("remotes.toml"))
+        .get(name)
+        .and_then(|e| e.root.clone())
+        .unwrap_or_else(|| PathBuf::from("/"));
+    remote_enter(state, name, &root).map_err(RemoteConnectErr::Other)?;
+    Ok(format!("remote: 已进入 {name}（h 返回本地目录）"))
+}
+
+/// M39-4：指纹确认后的重连（accept_new_host_key = true；known_hosts 写入
+/// 放行）。连接/认证/进入失败均返回可读错误（覆盖层关闭、状态不变）。
+pub(crate) fn remote_confirm_and_enter(
+    state: &mut AppState,
+    name: &str,
+    params: &crate::remote::sftp::SftpParams,
+) -> Result<String, String> {
+    let mut params = params.clone();
+    params.accept_new_host_key = true;
+    match remote_connect_enter(state, name, params) {
+        Ok(m) => Ok(m),
+        Err(RemoteConnectErr::Fingerprint { .. }) => {
+            Err("remote: 指纹确认后仍被拒（known_hosts 写入失败？）".to_owned())
+        }
+        Err(RemoteConnectErr::Auth { name, params }) => {
+            // 确认指纹后认证失败 → 口令回退（沿用 M22-3 流程）。
+            Err(format!(
+                "remote: {name} 认证失败（可用 :remote 重试进入口令流程，参数 user={})",
+                params.user
+            ))
+        }
+        Err(RemoteConnectErr::Other(e)) => Err(e),
+    }
+}
+
 /// M22-3：远端口令连接应用（RemotePass 模式 Enter 共用体）——连接成功
 /// 注册会话并进入；失败返回可读错误（重试经 :remote 重新发起）。
 pub(crate) fn remote_pass_apply(
@@ -2766,18 +2842,25 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                             format!("remote: 未配置 `{name}`（:remote 无参查看）")
                         })?;
                         let params = entry.to_params(name);
-                        let backend = match crate::remote::sftp::SftpBackend::connect(&params) {
-                            Ok(b) => b,
-                            // M22-3：公钥认证失败 → 口令输入（不落盘）。
-                            Err(crate::remote::RemoteError::Auth(_)) => {
-                                return Ok(ExecOutcome::RemotePass {
-                                    name: name.to_owned(),
-                                    params,
+                        match remote_connect_enter(state, name, params) {
+                            Ok(m) => return Ok(ExecOutcome::Done { msg: Some(m) }),
+                            Err(RemoteConnectErr::Fingerprint { name, params, fp }) => {
+                                // M39-4：ask 首连 → 指纹确认覆盖层。
+                                return Ok(ExecOutcome::RemoteFingerprint {
+                                    name,
+                                    params: *params,
+                                    fp,
                                 });
                             }
-                            Err(e) => return Err(format!("remote: {e}")),
-                        };
-                        register_remote_session(state, name, Box::new(backend));
+                            Err(RemoteConnectErr::Auth { name, params }) => {
+                                // M22-3：公钥认证失败 → 口令输入（不落盘）。
+                                return Ok(ExecOutcome::RemotePass {
+                                    name,
+                                    params: *params,
+                                });
+                            }
+                            Err(RemoteConnectErr::Other(e)) => return Err(e),
+                        }
                     }
                     let root = crate::remote::config::load_remotes_toml(
                         &config::data_dir().join("remotes.toml"),

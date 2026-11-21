@@ -286,6 +286,13 @@ pub(crate) enum InputMode {
         params: crate::remote::sftp::SftpParams,
         input: String,
     },
+    /// M39-4：首连指纹确认（strict_host_key = ask）——y 接受（写入
+    /// known_hosts 并重连）、n/Esc 拒绝（中止，TUI 状态不变）。
+    RemoteFingerprint {
+        name: String,
+        params: crate::remote::sftp::SftpParams,
+        fp: String,
+    },
 }
 
 /// 命令行单键处理结果。
@@ -360,6 +367,12 @@ pub(crate) enum ExecOutcome {
     RemotePass {
         name: String,
         params: crate::remote::sftp::SftpParams,
+    },
+    /// M39-4：首连指纹确认（strict_host_key = ask，缺省）。
+    RemoteFingerprint {
+        name: String,
+        params: crate::remote::sftp::SftpParams,
+        fp: String,
     },
     BatchRename {
         base: PathBuf,
@@ -852,6 +865,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         input: String::new(),
                                     };
                                 }
+                                Ok(ExecOutcome::RemoteFingerprint { name, params, fp }) => {
+                                    // M39-4：ask 首连 → 指纹确认覆盖层。
+                                    mode = InputMode::RemoteFingerprint { name, params, fp };
+                                }
                                 Ok(ExecOutcome::RunExternal { cmd }) => {
                                     // M18-4：:! 当前 pane 路径——挂起 TUI 执行后恢复
                                     // （AUDIT-7 起与 block=true opener 共用 suspend_execute）。
@@ -937,6 +954,34 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 chars.insert(*pos, c);
                                 *pos += 1;
                                 *input = chars.into_iter().collect();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                InputMode::RemoteFingerprint { name, params, fp } => {
+                    // M39-4：首连指纹确认——y 接受（写 known_hosts + 重连进入），
+                    // n/Esc 拒绝（中止，TUI 状态不变，SPEC M39-4）。
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                let name = name.clone();
+                                let params = params.clone();
+                                let fp = fp.clone();
+                                match remote_confirm_and_enter(&mut state, &name, &params) {
+                                    Ok(m) => {
+                                        mode = InputMode::Normal;
+                                        msg = Some(m);
+                                    }
+                                    Err(e) => {
+                                        mode = InputMode::Normal;
+                                        msg = Some(format!("{e}（指纹 {fp}）"));
+                                    }
+                                }
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                mode = InputMode::Normal;
+                                msg = Some("remote: 已拒绝主机指纹（连接中止）".to_owned());
                             }
                             _ => {}
                         }

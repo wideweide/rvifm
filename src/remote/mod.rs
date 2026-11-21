@@ -21,6 +21,9 @@ pub enum RemoteError {
     Timeout(String),
     /// 功能未实现（M20 前的写操作占位）。
     Unimplemented(&'static str),
+    /// M39-4：首连指纹待确认（strict_host_key = ask）——host:port + 指纹。
+    /// 交互确认后带 accept_new_host_key 重连；非连接类错误（不自动重连）。
+    FingerprintConfirm { host: String, port: u16, fp: String },
     /// 其他（携带原始描述）。
     Other(String),
 }
@@ -30,7 +33,7 @@ impl RemoteError {
     /// 失效（网络断/握手超时），重连可能恢复；Auth（凭据问题重连同样
     /// 失败，且 M22-3 有独立口令流程）、NotFound/PermissionDenied（远端
     /// 语义错误）、Other（不明）不触发自动重连——避免无意义重试与
-    /// 重连循环。
+    /// 重连循环。M39-4：FingerprintConfirm 走独立交互流程，不自动重连。
     pub fn is_connection_class(&self) -> bool {
         matches!(self, RemoteError::Connect(_) | RemoteError::Timeout(_))
     }
@@ -41,6 +44,9 @@ impl std::fmt::Display for RemoteError {
         match self {
             RemoteError::Connect(d) => write!(f, "连接失败: {d}"),
             RemoteError::Auth(d) => write!(f, "认证失败: {d}"),
+            RemoteError::FingerprintConfirm { host, port, fp } => {
+                write!(f, "首连 {host}:{port} 待确认指纹 {fp}")
+            }
             RemoteError::NotFound(d) => write!(f, "远端路径不存在: {d}"),
             RemoteError::PermissionDenied(d) => write!(f, "权限不足: {d}"),
             RemoteError::Timeout(d) => write!(f, "超时: {d}"),
