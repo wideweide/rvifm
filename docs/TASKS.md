@@ -402,11 +402,11 @@
 - [x] M33-2 模式化消费接线（visual/view 切换换表；未配置零行为变化；[command] 消费面裁剪见 NOTES；见 SPEC M33-2；2026-11-20 完成：switch_mode_map + with_mode_maps，418 单测）
 - [x] M33-3 M33 文档收尾（help/README 键位段 + config 示例；见 SPEC M33-3；2026-11-20 完成，批次 3/3 关闭）
 
-## M34 — 主题、预览统一与文档（2026-11-21 增补；见 SPEC M34 节，已确认登记·执行中）
+## M34 — 主题、预览统一与文档（2026-11-21 增补；见 SPEC M34 节，✅ 已完成 10/10）
 
 > 来源：DeepSeek 讨论蒸馏（2026-11-20 分享稿，用户实测反馈）。登记前经代码现状核查（2026-11-21）：`pick` 双栏预览（AUDIT-3 已覆盖，≥60 列双栏窄端降级）与 dracula/gruvbox 内置可用（opaline 0.4.2 内置 39 主题）不重复登记；右 pane `/` 不可用为 M14 SIMPLIFIED 裁剪（非回归）；核查另发现 `preview_path` 焦点缺陷并入 M34-4。用户裁决（2026-11-21）：预览统一取方案 A（对侧预览）；二进制信息面板裁剪 `--version` 探测（见 NOTES）。顺序：1（默认主题）→ 2（snowwhite）→ 3（右栏搜索）→ 4（预览统一）→ 5（frecency 视觉回显）→ 6（jar）→ 7（二进制信息面板）→ 8（GUIDE）→ 9（预览尺寸适配，2026-11-21 追加）→ 10（文档收尾）。
 
-> ▶ **执行中**（2026-11-21 用户指令"升级后开跑"：本机 rustup stable 1.100 就绪、全门禁绿含 pdf-visual）。按序执行，全部完成后自动发布 0.11.0（PLAN §4）。
+> ✅ 全部完成（2026-11-21，10/10；0.11.0 已发布）。
 
 - [x] M34-1 默认主题 gruvbox（`[ui] theme` 缺省 `gruvbox-dark`；vifm 高亮组映射核查补充；dracula 验证；见 SPEC M34-1；2026-11-21 完成：`vifm_style` 三层解析——主题样式 → 标准 token 推导（accent/bg/text 词表，缺 token 整组回退）→ 16 色；gruvbox 色值断言 + dracula activate/推导验证；README/help 默认值同步，422 单测）
 - [x] M34-2 snowwhite 内置主题移植（vifm-colors 颜色 → opaline TOML 捆绑；见 SPEC M34-2；2026-11-21 完成：捆绑层 `BUNDLED_THEMES`（include_str）+ activate 内置→捆绑→用户三段、`:theme` 列表并入；vifm 高亮组精确值直写命名样式（fg16/bg255、TopLineSel 反转），selected/active_selected=208 橙面，浅色 variant + 图标 Light 联动；424 单测）
@@ -424,6 +424,74 @@
 - [x] PROC-1 预算门控与断点落地协议（已写入 AGENTS §3 + ACCEPTANCE §1；无代码改动；用户 2026-11-19 复核蒸馏准确性后确认生效）
 
 - [x] MISC-1 提供 `rv` 短别名二进制（与 `rvifm` 并存；项目名/crate/主二进制名不变；Cargo `[[bin]]` + 安装产物 + README 说明；2026-11-20 完成：双 [[bin]] 同 main.rs、rv test=false、CI 归档双二进制、冒烟测试）
+
+## M35 — 文档与发布一致性（2026-11-21 增补；见 SPEC M35 节，已确认登记并执行）
+
+> 来源：v0.11.0 复核报告蒸馏（H-1~H-6 + R-12），用户指令"蒸馏并执行"。顺序：1（漂移清零）→ 2（脚本）→ 3（REVIEW 归档）→ 4（CHANGELOG）→ 5（卫生）。
+
+- [x] M35-1 状态漂移清零（AGENTS §10 / SPEC 7z-rar 三处 / STATE-TASKS-PLAN-README 状态句；见 SPEC M35-1；2026-11-21 完成——蒸馏时一并落笔）
+- [ ] M35-2 `scripts/harness_check.py` + CI job + pre-commit 示例（七条规则；见 SPEC M35-2）
+- [ ] M35-3 REVIEW 归档（旧报告移 docs/reviews/，主文只留当前结论 + 索引；见 SPEC M35-3）
+- [ ] M35-4 CHANGELOG.md（0.8.0 → 0.11.0 用户可见变化 + 版本跳过说明；见 SPEC M35-4）
+- [ ] M35-5 依赖与计数卫生（移除 tokio-stream / 清 DBG parsed / 数字脚本校验；见 SPEC M35-5）
+
+## M36 — 传输引擎（2026-11-21 增补；见 SPEC M36 节，已确认登记·按序执行）
+
+> 来源：同上。目标 0.12.0。顺序：1（copy_tree）→ 2（下载单读）→ 3（范围读写）→ 4（Transfer 状态机）→ 5（冲突策略）→ 6（偏移续传）→ 7（:queue）→ 8（递归远端）。
+
+- [ ] M36-1 `copy_tree` 重写（mode/mtime/symlink/进度/取消；见 SPEC M36-1）
+- [ ] M36-2 远端下载单次读取 + 临时文件 + 原子 rename（见 SPEC M36-2）
+- [ ] M36-3 `RemoteFs` 范围读写 read_range/write_range（默认实现兼容 mock；见 SPEC M36-3）
+- [ ] M36-4 `Transfer` 状态机 + 统一进度（复用 Job/JobProgress/JobControls；见 SPEC M36-4）
+- [ ] M36-5 冲突策略 Ask/Overwrite/Skip/RenameAuto/KeepNewer（应用到全部；见 SPEC M36-5）
+- [ ] M36-6 偏移续传（.part + .part.meta + write_range；见 SPEC M36-6）
+- [ ] M36-7 `:queue` 传输队列（见 SPEC M36-7）
+- [ ] M36-8 递归远端目录传输（三方向 + 链接策略；见 SPEC M36-8）
+
+## M37 — 文件运维（2026-11-21 增补；见 SPEC M37 节，已确认登记·按序执行）
+
+> 来源：同上。目标 0.13.0。顺序：1（:chmod）→ 2（:extract）→ 3（:sync）→ 4（:du）→ 5（:dup）→ 6（:checksum）→ 7（暂存区）。
+
+- [ ] M37-1 `:chmod <mode>` 批量属性（八进制/符号、递归；POSIX only；见 SPEC M37-1）
+- [ ] M37-2 `:extract` 归档解压（选中/全部、zip-slip 防护、job 化、u 可逆；见 SPEC M37-2）
+- [ ] M37-3 `:sync` 目录同步（dry-run、三策略、删除显式开关；见 SPEC M37-3）
+- [ ] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4）
+- [ ] M37-5 `:dup` 查重（三段哈希、硬链接识别、结果可操作；见 SPEC M37-5）
+- [ ] M37-6 `:checksum` 生成/校验（并行、sidecar 兼容；见 SPEC M37-6）
+- [ ] M37-7 暂存区增强（容量/清空/按时间清理/恢复到指定路径；见 SPEC M37-7）
+
+## M38 — 检索与 shell 集成（2026-11-21 增补；见 SPEC M38 节，已确认登记·按序执行）
+
+> 来源：同上。目标 0.13.x。顺序：1（结果可操作）→ 2（pick 兼容）→ 3（init）→ 4（frecency 管理）→ 5（find 过滤器）。
+
+- [ ] M38-1 `:find`/`:grep` 结果可操作（yy/dd/p/:tag/:rename 映射真实路径；见 SPEC M38-1）
+- [ ] M38-2 `pick` 兼容面（--query/--multi/--print0/--preview/--height/--no-sort/--exit-0/--select-1；见 SPEC M38-2）
+- [ ] M38-3 `rvifm init bash`/`zsh`/`fish`/`powershell`（见 SPEC M38-3）
+- [ ] M38-4 `:frecency stats`/`export`/`purge`/`prune`（见 SPEC M38-4）
+- [ ] M38-5 `:find` 过滤器（size/mtime/type/depth）+ 命名搜索（见 SPEC M38-5）
+
+## M39 — 预览与平台（2026-11-21 增补；见 SPEC M39 节，已确认登记·按序执行）
+
+> 来源：同上。目标 0.14.0。顺序：1（hex）→ 2（CSV/PDF 翻页/EXIF）→ 3（zip 容器）→ 4（SFTP 硬化）→ 5（UAC）→ 6（标签布局）。
+
+- [ ] M39-1 十六进制查看器（偏移跳转、ASCII 侧栏、分块；见 SPEC M39-1）
+- [ ] M39-2 CSV/TSV 预览、PDF 翻页、图片 EXIF 摘要（见 SPEC M39-2）
+- [ ] M39-3 通用 zip 容器识别（docx/xlsx/pptx/apk/war；见 SPEC M39-3）
+- [ ] M39-4 SFTP 硬化（指纹确认 ask 缺省、ProxyJump、agent、keepalive；见 SPEC M39-4）
+- [ ] M39-5 Windows 操作级 UAC（ShellExecuteEx runas；见 SPEC M39-5）
+- [ ] M39-6 命名标签、溢出滚动、布局选项（见 SPEC M39-6）
+
+## M40 — 1.0 稳定化（2026-11-21 增补；见 SPEC M40 节，已确认登记·按序执行）
+
+> 来源：同上。目标 1.0.0。顺序：1（基准）→ 2（fuzz）→ 3（proptest）→ 4（覆盖率）→ 5（供应链）→ 6（平台）→ 7（发布）。
+
+- [ ] M40-1 criterion 性能基准（启动/10 万项/排序/replay/1GB 吞吐；见 SPEC M40-1）
+- [ ] M40-2 cargo-fuzz 模糊测试（归档解析/路径规范化/反序列化；见 SPEC M40-2）
+- [ ] M40-3 proptest 属性测试（glob/自然排序/撤销栈；见 SPEC M40-3）
+- [ ] M40-4 覆盖率 ≥75%（核心模块；见 SPEC M40-4）
+- [ ] M40-5 供应链（cargo-deny/audit/SBOM/SHA256；见 SPEC M40-5）
+- [ ] M40-6 macOS CI + aarch64 Linux 归档（见 SPEC M40-6）
+- [ ] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io；见 SPEC M40-7）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 

@@ -53,7 +53,7 @@
 - 归档首批支持 `.zip` / `.tar` / `.tar.gz`；压缩 tar 变体随后支持。
 - Office 预览只做文本/Markdown 提取，不保证格式还原。
 - PDF 预览优先文本提取；视觉预览走可选纯 Rust 后端（`pdf-visual` feature）或可选外部工具。
-- `.7z` / `.rar` 不提供虚拟浏览，提示用户解压。
+- `.rar` 不提供虚拟浏览，提示用户解压；`.7z` 虚拟浏览已由 M26-3 交付（加密/损坏可读错误）。
 - 主题数量以 `opaline` 内置为准；主题数量优先时可换 `tui-nuances`。
 - 键位解析优先复用 `keymap-rs` 系列；不达标时降级为轻量自写 Trie。
 
@@ -133,7 +133,7 @@ struct AppState {
 - 只读虚拟文件系统，不依赖 FUSE / `archivemount`。
 - 首批格式：`.zip`、`.tar`、`.tar.gz`。
 - 第二阶段：`.tar.xz`、`.tar.bz2`、`.tar.zst`，通过解码层包一层实现。
-- `.7z` / `.rar` 标记为不支持虚拟浏览，提示用户解压后浏览。
+- `.rar` 不支持虚拟浏览，提示用户解压后浏览；`.7z` 已升级为虚拟浏览（M26-3，加密/损坏可读错误）。
 - 打开归档时建立成员索引；读取时按需解码请求的成员，内存占用不随整个归档体积线性增长。
 - 归档内导航按键与物理目录一致：`j/k/h/l`、`gg/G`、`/` 搜索、`n/N`。
 - 归档内不提供删除、重命名、移动入口（或明确禁用）。
@@ -971,7 +971,7 @@ append_rules = [
 
 **SIMPLIFIED**
 - `.tar.xz` / `.tar.bz2` / `.tar.zst` 作为第二阶段支持。
-- `.7z` / `.rar` 不支持虚拟浏览，给出提示。
+- `.rar` 不支持虚拟浏览，给出解压提示（`.7z` 已由 M26-3 升级为虚拟浏览）。
 - 可复用 `virtual-filesystem` 的 `ZipFS` / `TarFS`，但导航层仍需包一层 `Location`。
 
 **OUT_OF_SCOPE**
@@ -1121,6 +1121,120 @@ append_rules = [
 
 **OUT_OF_SCOPE**
 - 不为整改引入新依赖或重写 TUI 框架。
+
+#### M35 — 文档与发布一致性（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**MUST**
+- **M35-1 状态漂移清零**：AGENTS §10（当前阶段/任务/基线指向 STATE 实际值）、SPEC 7z/rar 三处（已随本蒸馏修正）、STATE"执行中/全部完成"矛盾、TASKS M34 段标题、PLAN 0.10 发布口径、README"发布中"句——六处全部与代码实际一致。
+- **M35-2 harness 一致性脚本**：`scripts/harness_check.py`（CI + 可 pre-commit）至少七条规则——STATE 批次关闭后不得写"执行中"；AGENTS §10 与 STATE 一致；TASKS 批次标题与勾选状态一致；PLAN 版本小节标题与正文一致；SPEC SIMPLIFIED/OUT_OF_SCOPE 与 README 能力表不冲突（人工白名单）；文档测试数字 = `grep -c '#[test]'`；README 版本状态与 STATE 发布状态一致。
+- **M35-3 REVIEW 归档**：旧报告移入 `docs/reviews/REVIEW-<日期>.md`；`REVIEW.md` 只保留当前结论 + 历史索引。
+- **M35-4 CHANGELOG**：`CHANGELOG.md` 补 0.8.0 → 0.11.0 用户可见变化；说明 0.9.0/0.10.0 跳过（用户决策）。
+- **M35-5 依赖与计数卫生**：移除零引用 `tokio-stream`；清 `config.rs` `DBG parsed` 调试输出；文档测试数字由脚本校验。
+
+**SIMPLIFIED**
+- harness 脚本七条规则允许"人工白名单"处理无法自动判定的一致性项；pre-commit 只做示例说明（不强制安装）。
+
+**OUT_OF_SCOPE**
+- 不做全量文档自动生成（标题/表格手写，脚本只校验）。
+
+#### M36 — 传输引擎（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**硬约束**：撤销栈语义不变（成品入栈）；临时文件（`.part`/临时副本）失败可清理或明确标记；不新增重量级依赖（时间戳/权限用 std `File::set_times`/`set_permissions`）；`RemoteFs` 现有 `read`/`write` 签名不变（范围读写为默认实现的增量方法）。
+
+**MUST**
+- **M36-1 `copy_tree` 重写**：本地复制保留 mode/mtime/symlink（`symlink_metadata` 判型，链接不解引用）；分块读写；进度回调（接 `JobProgress`）；支持取消；与 `copy_to`/`move_to` 接线。
+- **M36-2 远端下载单次读取**：消除"成功路径读两遍"；`read` → 本地临时文件 → 校验 → 原子 rename；失败清理临时文件；保留远端 mtime（`metadata` 先查）。
+- **M36-3 `RemoteFs` 范围读写**：`read_range(path, offset, len)` / `write_range(path, offset, data)` 默认实现 = `read`+截拼/整写（兼容 mock 与现有后端）；SftpBackend 覆盖为真范围调用。
+- **M36-4 `Transfer` 状态机**：Pending/Running/Paused/Done/Failed/Cancelled 统一状态 + 进度；复用 `Job`/`JobProgress`/`JobControls`；`paste_yanked*` 三方向（本地/上传/下载）路由到 Transfer。
+- **M36-5 冲突策略**：Ask / Overwrite / Skip / RenameAuto / KeepNewer；策略为纯函数；"应用到全部"；Ask 为覆盖确认对话框扩展。
+- **M36-6 偏移续传**：`.part` + `.part.meta`（offset/size/mtime/分块哈希）；`write_range` 续写；完成原子 rename；取消清理；哈希不一致从头。
+- **M36-7 传输队列 `:queue`**：多选入队、顺序执行、全部暂停/恢复/取消、失败重试；TUI 退出可选持久化（`session.toml` 同目录）。
+- **M36-8 递归远端目录**：list walk + `create_dir` + 逐文件 Transfer；链接策略（跟随/跳过）；三方向（本地↔远端、远端↔远端经本地中转）。
+
+**SIMPLIFIED**
+- 冲突策略"应用到全部"按 (方向+策略) 一次记忆，不做跨会话持久。
+- 队列持久化仅在 `session.queue = true` 时启用（缺省关）。
+- 远端↔远端经本地中转（不做服务器端 copy）。
+
+**OUT_OF_SCOPE**
+- 带宽限制、并行多连接传输。
+- rsync 协议兼容。
+
+#### M37 — 文件运维（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**硬约束**：全部入撤销栈或明确不可逆提示；`:extract` 是"从归档读出写到磁盘"（不写归档内成员——OUT_OF_SCOPE 边界不变）；zip-slip 防护（路径规范化拒绝 `..`/绝对路径成员）。
+
+**MUST**
+- **M37-1 `:chmod <mode>`**：八进制/符号模式；作用于光标/tags/v 选集；`-R` 递归；批量失败逐项报告；POSIX only（Windows 给可读"不支持"）。
+- **M37-2 `:extract [目标]`**：归档内选中项/全部解压到目标目录（缺省 = 当前物理 pane）；zip-slip 防护；单成员 64MB 上限沿用护栏；冲突走 M36-5 策略；后台 job 化；逐条入撤销栈（`u` 可逆）。
+- **M37-3 `:sync left→right|right→left`**：基于 `:compare` 结果的镜像同步；三策略（仅复制缺失/覆盖较新/镜像含删除）；删除需显式 `--delete` 开关 + 确认；先 dry-run 预览再应用。
+- **M37-4 `:du`**：并行遍历当前目录；按大小排序虚拟视图（目录聚合 + 总计）；可取消；万条上限。
+- **M37-5 `:dup`**：三段查重（size → 头部哈希 → 全文 SHA-256）；硬链接识别（inode）；结果虚拟视图可 `dd`/`:tag`。
+- **M37-6 `:checksum [md5|sha256]`**：生成 sidecar（`md5sum -c` 兼容）/ 校验已有 / 批量比对；并行哈希 + 进度。
+- **M37-7 暂存区增强**：容量与条目数配置、`:trash` 清空/按时间清理、恢复到指定路径。
+
+**SIMPLIFIED**
+- `:extract` 首期 zip/tar/tar.gz/7z（与浏览同表）；`.rar` 保持解压提示。
+- `:du` 不做可视化 treemap（列表排序足够）。
+- `:sync` 不做双向合并。
+
+**OUT_OF_SCOPE**
+- 写入归档内成员（不变）；`.rar` 解压（无纯 Rust 解码器，保持提示）。
+
+#### M38 — 检索与 shell 集成（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**MUST**
+- **M38-1 检索结果可操作**：`:find`/`:grep` 结果视图 `yy`/`dd`/`p`/`:tag`/`:rename`/`:chmod`（M37-1 后）映射回真实路径；跨目录去重；只读条目（无对应文件）拒绝写并提示。
+- **M38-2 `pick` 兼容面**：`--query`、`--multi`、`--print0`、`--preview`、`--height`、`--no-sort`、`--exit-0`、`--select-1`（覆盖 fzf 常用子集；未知参数可读错误）。
+- **M38-3 `rvifm init <shell>`**：bash/zsh/fish/powershell 输出初始化脚本（`cd` 后 record、快捷键调 pick）；shell hook 示例文档同步。
+- **M38-4 frecency 管理**：`:frecency stats`（条目数/占用/各 topic 统计）、`export <file>`（JSON）、`purge`（全清，确认）、`prune --before <date>`（按时间清理）。
+- **M38-5 `:find` 过滤器**：`--size`、`--mtime`、`--type`、`--depth` 参数 + 命名搜索（`:find save <名>` / `:find load <名>`，会话内）。
+
+**SIMPLIFIED**
+- `pick --multi` 输出以换行分隔（`--print0` 才是 NUL）。
+- 命名搜索仅内存（不跨会话）。
+
+**OUT_OF_SCOPE**
+- `pick` 完整 fzf 兼容（模糊算法、布局选项）。
+- shell 集成自动安装（init 只输出，不写用户 rc 文件）。
+
+#### M39 — 预览与平台（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**MUST**
+- **M39-1 十六进制查看器**：view 模式二进制文件自动进入 hex；偏移跳转（`:goto`）、ASCII 侧栏、分块读取（1MB 窗口）。
+- **M39-2 预览扩展**：CSV/TSV 表格对齐预览；PDF 翻页（`[`/`]`，基于 pdf_image_pages 机制扩展到任意页）；图片 EXIF 摘要（尺寸/格式，不引依赖——解析文件头）。
+- **M39-3 通用 zip 容器**：`.docx`/`.xlsx`/`.pptx`/`.apk`/`.war` 只读虚拟浏览（魔数 PK + 扩展名白名单；`.docx` 等已有 Office 提取，浏览为增量）。
+- **M39-4 SFTP 硬化**：首次指纹确认（`strict_host_key = ask|accept|no`，缺省 ask——TOFU 改为交互确认）；ProxyJump（ssh config 解析透传）；ssh-agent 认证；keepalive。
+- **M39-5 Windows UAC**：`ShellExecuteExW("runas")` 操作级提权（EACCES → UAC 弹窗）；失败/取消状态不变；不提升主进程。
+- **M39-6 标签与布局**：命名标签（`:tabname <名>`）；标签溢出滚动；`[ui] layout = single|dual|preview-right|preview-bottom`。
+
+**SIMPLIFIED**
+- hex 查看器不做编辑。
+- EXIF 只做容器级摘要（不做 EXIF 全字段）。
+- ProxyJump 只透传 ssh config 已配置项（不做 UI 配置）。
+
+**OUT_OF_SCOPE**
+- hex 编辑、CSV 编辑。
+- Windows UAC 主进程提升（不变）。
+
+#### M40 — 1.0 稳定化（2026-11-21 增补；来源：评估复核报告蒸馏，用户确认执行）
+
+**MUST**
+- **M40-1 性能基准**：criterion 基准集——冷启动、10 万项目录、自然排序、frecency 重放 10 万事件、1GB 复制吞吐；结果入 `docs/bench.md` 基线。
+- **M40-2 模糊测试**：cargo-fuzz 目标——zip/tar/7z 解析、路径规范化、EntryRecord 反序列化；24h 无 crash 记录入 NOTES。
+- **M40-3 属性测试**：proptest——glob 匹配、自然排序、撤销栈逆序恢复。
+- **M40-4 覆盖率**：cargo-llvm-cov；核心模块（ops/remote/frecency/archive/keymap）≥ 75%。
+- **M40-5 供应链**：cargo-deny + cargo-audit（CI job）；SBOM 生成；Release 归档 SHA256 校验文件。
+- **M40-6 平台**：macOS CI job（test + clippy）；aarch64 Linux release 归档。
+- **M40-7 1.0 发布**：CHANGELOG 完整、版本 1.0.0、crates.io 发布、发布说明含迁移提示。
+
+**SIMPLIFIED**
+- fuzz 时长 CI 内 10 分钟（24h 本地跑一次记录）。
+- Win2016 冒烟保持人工清单（无自动机）。
+
+**OUT_OF_SCOPE**
+- 覆盖率目标不含 tests.rs。
+- 文档站（GUIDE.md 已覆盖首版需求）。
 
 ## 6. 待定事项
 

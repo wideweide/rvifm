@@ -1069,3 +1069,69 @@
 
 - A6–A9/A11–A12 同时为 M34 批次的真机复核面（§34 各条已在 TestBackend 层验证）。
 - 历史 ACCEPTANCE 节（M0–M33）的未勾选 `[ ]` 为 M31-4 机械转换产物与时代性验收记录，不代表当前状态；当前版本的实测入口即本节。
+## 35. M35 — 文档与发布一致性（见 SPEC M35 节）
+
+### M35-1 状态漂移清零
+- [x] AGENTS §10 当前阶段/任务/基线与 STATE 一致（不再指向 AUDIT-1/v0.8.0）。（2026-11-21）
+- [x] SPEC 7z/rar 三处与 M26-3 实际能力一致。（2026-11-21）
+- [x] STATE"执行中/全部完成"矛盾消除；TASKS M34 段标题改"已完成"；PLAN 0.10 口径统一为"用户决策跳过"；README"发布中"改"已发布"。（2026-11-21）
+
+### M35-2 harness 一致性脚本
+- [ ] `scripts/harness_check.py` 覆盖七条规则；CI job 挂 required；故意制造漂移时脚本失败。
+
+### M35-3 REVIEW 归档
+- [ ] 旧报告移入 `docs/reviews/REVIEW-2026-11-21.md`；`REVIEW.md` 只保留当前结论 + 历史索引。
+
+### M35-4 CHANGELOG
+- [ ] `CHANGELOG.md` 覆盖 0.8.0 → 0.11.0 用户可见变化；0.9.0/0.10.0 跳过说明。
+
+### M35-5 依赖与计数卫生
+- [ ] `tokio-stream` 移除且 `cargo build` 绿；`DBG parsed` 清除；文档测试数字校验进 harness_check。
+
+## 36. M36 — 传输引擎（见 SPEC M36 节）
+
+- [ ] M36-1 copy_tree 保留 mode/mtime/symlink；分块 + 进度 + 取消（含链接树 roundtrip 测试）。
+- [ ] M36-2 远端下载单次读取 + 临时文件 + 原子 rename（失败清理断言）。
+- [ ] M36-3 RemoteFs read_range/write_range（默认实现兼容 mock；SftpBackend 覆盖）。
+- [ ] M36-4 Transfer 状态机统一三方向（Paste 路由迁移断言）。
+- [ ] M36-5 五种冲突策略各一条集成测试 + 应用到全部。
+- [ ] M36-6 偏移续传：断网 3 次续传成功 + 哈希不一致从头 + 取消清理。
+- [ ] M36-7 :queue 入队/暂停/恢复/取消/重试。
+- [ ] M36-8 递归远端目录三方向 + 链接策略。
+
+## 37. M37 — 文件运维（见 SPEC M37 节）
+
+- [ ] M37-1 :chmod 八进制/符号/递归 + 批量失败逐项（POSIX；Windows 拒绝提示）。
+- [ ] M37-2 :extract 选中/全部 + zip-slip 语料拒绝 + 冲突策略 + job 化 + u 可逆。
+- [ ] M37-3 :sync 三策略 + dry-run + 删除显式开关 + 确认。
+- [ ] M37-4 :du 并行/取消/万条上限/排序视图。
+- [ ] M37-5 :dup 三段哈希 + inode 硬链接 + 结果可操作。
+- [ ] M37-6 :checksum 生成/校验/批量 + 并行进度。
+- [ ] M37-7 暂存区容量/清空/按时间清理/恢复到指定路径。
+
+## 38. M38 — 检索与 shell 集成（见 SPEC M38 节）
+
+- [ ] M38-1 检索结果 yy/dd/p/:tag/:rename/:chmod 映射真实路径 + 去重 + 只读拒绝。
+- [ ] M38-2 pick 八参数各一条集成测试（未知参数可读错误）。
+- [ ] M38-3 init 四 shell 输出含 record/pick 接入（脚本语法检查）。
+- [ ] M38-4 frecency stats/export/purge/prune（purge 需确认）。
+- [ ] M38-5 find --size/--mtime/--type/--depth + 命名搜索。
+
+## 39. M39 — 预览与平台（见 SPEC M39 节）
+
+- [ ] M39-1 hex 查看器（二进制自动进入 + 偏移跳转 + ASCII 侧栏）。
+- [ ] M39-2 CSV 对齐预览 + PDF [ ] 翻页 + EXIF 容器摘要。
+- [ ] M39-3 docx/xlsx/pptx/apk/war 虚拟浏览（魔数 + 白名单）。
+- [ ] M39-4 指纹确认 ask（拒绝则断开）/ProxyJump/agent/keepalive。
+- [ ] M39-5 Windows UAC 操作级提权（手工清单；失败/取消状态不变）。
+- [ ] M39-6 命名标签/溢出滚动/布局选项四形态渲染。
+
+## 40. M40 — 1.0 稳定化（见 SPEC M40 节）
+
+- [ ] M40-1 criterion 基准集 + docs/bench.md 基线。
+- [ ] M40-2 fuzz 目标三组 + CI 10 分钟 + 本地 24h 记录。
+- [ ] M40-3 proptest 三组（glob/排序/撤销）。
+- [ ] M40-4 覆盖率 ≥75%（ops/remote/frecency/archive/keymap）。
+- [ ] M40-5 cargo-deny/audit CI + SBOM + SHA256 校验文件。
+- [ ] M40-6 macOS CI 绿 + aarch64 归档。
+- [ ] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io）。
