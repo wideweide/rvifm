@@ -1928,6 +1928,10 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 )),
             })
         }
+        Some("queue") => {
+            // M36-7：传输队列覆盖层（j/k 选择、x 取消、Esc 关闭）。
+            Ok(ExecOutcome::EnterQueue { cursor: 0 })
+        }
         Some("compare") => {
             // M24-8：左右 pane 目录对比（缺省按文件名+大小）→ 结果虚拟目录。
             // M29-1：`:compare bycontents` 内容判定（SHA-256，护栏内）；
