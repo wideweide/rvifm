@@ -84,6 +84,20 @@ enum SftpCmd {
         data: Vec<u8>,
         resp: std_mpsc::Sender<Result<(), RemoteError>>,
     },
+    /// M36-3：范围读（offset 起 len 字节）。
+    ReadRange {
+        path: String,
+        offset: u64,
+        len: u64,
+        resp: std_mpsc::Sender<Result<Vec<u8>, RemoteError>>,
+    },
+    /// M36-3：范围写（offset 处写入 data）。
+    WriteRange {
+        path: String,
+        offset: u64,
+        data: Vec<u8>,
+        resp: std_mpsc::Sender<Result<(), RemoteError>>,
+    },
     RemoveFile {
         path: String,
         resp: std_mpsc::Sender<Result<(), RemoteError>>,
@@ -232,6 +246,28 @@ impl RemoteFs for SftpBackend {
         Some(self)
     }
 
+    /// M36-3：真范围读（SFTP read + seek——不整读）。
+    fn read_range(&self, path: &Path, offset: u64, len: u64) -> Result<Vec<u8>, RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::ReadRange {
+            path,
+            offset,
+            len,
+            resp,
+        })
+    }
+
+    /// M36-3：真范围写（SFTP open WRITE|CREATE 不截断 + seek 写）。
+    fn write_range(&self, path: &Path, offset: u64, data: &[u8]) -> Result<(), RemoteError> {
+        let path = path_to_string(path);
+        self.call(|resp| SftpCmd::WriteRange {
+            path,
+            offset,
+            data: data.to_vec(),
+            resp,
+        })
+    }
+
     fn list(&self, path: &Path) -> Result<Vec<RemoteEntry>, RemoteError> {
         let path = path_to_string(path);
         self.call(|resp| SftpCmd::List { path, resp })
@@ -377,6 +413,79 @@ async fn handle_cmd(session: &SshSession, cmd: SftpCmd) {
                 .await
                 .map_err(|_| RemoteError::Timeout("read 超时".to_owned()))
                 .and_then(|r| r.map_err(sftp_err));
+            let _ = resp.send(r);
+        }
+        SftpCmd::ReadRange {
+            path,
+            offset,
+            len,
+            resp,
+        } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, async {
+                use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                let mut file = session.sftp.open(&path).await.map_err(sftp_err)?;
+                if offset > 0 {
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| RemoteError::Other(format!("seek io: {e}")))?;
+                }
+                let mut buf = vec![0u8; len as usize];
+                let mut read_total = 0usize;
+                loop {
+                    let n = file
+                        .read(&mut buf[read_total..])
+                        .await
+                        .map_err(|e| RemoteError::Other(format!("read_range io: {e}")))?;
+                    if n == 0 {
+                        break;
+                    }
+                    read_total += n;
+                    if read_total == buf.len() {
+                        break;
+                    }
+                }
+                buf.truncate(read_total);
+                Ok::<_, RemoteError>(buf)
+            })
+            .await
+            .map_err(|_| RemoteError::Timeout("read_range 超时".to_owned()))
+            .and_then(|r| r);
+            let _ = resp.send(r);
+        }
+        SftpCmd::WriteRange {
+            path,
+            offset,
+            data,
+            resp,
+        } => {
+            let r = tokio::time::timeout(OP_TIMEOUT, async {
+                use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+                // WRITE|CREATE 不 TRUNCATE——保留已有前缀（偏移续传写）。
+                let mut file = session
+                    .sftp
+                    .open_with_flags(
+                        &path,
+                        russh_sftp::protocol::OpenFlags::WRITE
+                            | russh_sftp::protocol::OpenFlags::CREATE,
+                    )
+                    .await
+                    .map_err(sftp_err)?;
+                if offset > 0 {
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| RemoteError::Other(format!("seek io: {e}")))?;
+                }
+                file.write_all(&data)
+                    .await
+                    .map_err(|e| RemoteError::Other(format!("write_range io: {e}")))?;
+                file.shutdown()
+                    .await
+                    .map_err(|e| RemoteError::Other(format!("close io: {e}")))?;
+                Ok::<(), RemoteError>(())
+            })
+            .await
+            .map_err(|_| RemoteError::Timeout("write_range 超时".to_owned()))
+            .and_then(|r| r);
             let _ = resp.send(r);
         }
         SftpCmd::Metadata { path, resp } => {

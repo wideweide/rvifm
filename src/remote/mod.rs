@@ -97,6 +97,33 @@ pub trait RemoteFs {
         let _ = (path, data);
         Err(RemoteError::Unimplemented("write"))
     }
+    /// M36-3：范围读（从 `offset` 起读 `len` 字节；默认实现 = read +
+    /// 偏移切片——兼容 mock 与未覆盖后端；SftpBackend 覆盖为真范围请求）。
+    fn read_range(&self, path: &Path, offset: u64, len: u64) -> Result<Vec<u8>, RemoteError> {
+        let data = self.read(path)?;
+        let start = (offset as usize).min(data.len());
+        let end = (start + len as usize).min(data.len());
+        Ok(data[start..end].to_vec())
+    }
+
+    /// M36-3：范围写（`offset` 处写入 `data`——偏移超长时行为 = 追加/截断
+    /// 由后端定义；默认实现 = read 全量 + 拼接 + 整写）。
+    fn write_range(&self, path: &Path, offset: u64, data: &[u8]) -> Result<(), RemoteError> {
+        let mut cur = if offset == 0 {
+            Vec::new()
+        } else {
+            self.read(path).unwrap_or_default()
+        };
+        let start = (offset as usize).min(cur.len());
+        cur.resize(start.max(cur.len()), 0);
+        let end = start + data.len();
+        if end > cur.len() {
+            cur.resize(end, 0);
+        }
+        cur[start..end].copy_from_slice(data);
+        self.write(path, &cur)
+    }
+
     /// 删除文件或空目录（非空目录由调用方先清空）。
     fn remove(&self, path: &Path) -> Result<(), RemoteError> {
         let _ = path;

@@ -441,7 +441,7 @@
 
 - [x] M36-1 `copy_tree` 重写（mode/mtime/symlink/进度/取消；见 SPEC M36-1；2026-11-21 完成：CopyControls + copy_file_chunked + preserve_dir_times，move_path 同享，436 单测）
 - [x] M36-2 远端下载单次读取 + 临时文件 + 原子 rename（见 SPEC M36-2；2026-11-21 完成：CountingMockFs 断言 read==1 + mtime 保留，437 单测）
-- [ ] M36-3 `RemoteFs` 范围读写 read_range/write_range（默认实现兼容 mock；见 SPEC M36-3）
+- [x] M36-3 `RemoteFs` 范围读写 read_range/write_range（默认实现兼容 mock；见 SPEC M36-3；2026-11-21 完成：trait 默认 + SftpCmd 变体 + actor seek 臂，437 单测）
 - [ ] M36-4 `Transfer` 状态机 + 统一进度（复用 Job/JobProgress/JobControls；见 SPEC M36-4）
 - [ ] M36-5 冲突策略 Ask/Overwrite/Skip/RenameAuto/KeepNewer（应用到全部；见 SPEC M36-5）
 - [ ] M36-6 偏移续传（.part + .part.meta + write_range；见 SPEC M36-6）
