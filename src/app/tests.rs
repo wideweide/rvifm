@@ -2189,6 +2189,71 @@ fn m34_3_right_pane_search_incsearch_commit_and_nn() {
 }
 
 #[test]
+fn m34_4_view_renders_in_opposite_pane() {
+    // M34-4：view 模式预览占非焦点 pane——焦点右：查看器在左、右 pane 保持
+    // 目录列表；焦点左：查看器在右（M13-9 现状保持）。
+    let left = TempDir::new().unwrap();
+    fs::write(left.path().join("aa.txt"), "PREVIEW-LEFT-CONTENT").unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(right.path().join("bb.txt"), "PREVIEW-RIGHT-CONTENT").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    let dump = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
+        let buf = terminal.backend().buffer();
+        let mut s = String::new();
+        for y in 0..12u16 {
+            for x in 0..80u16 {
+                s.push_str(buf[(x, y)].symbol());
+            }
+            s.push('\n');
+        }
+        s
+    };
+
+    // 焦点右 + view：查看器（bb.txt 内容）在左 pane；右 pane 保持列表。
+    {
+        let tab = state.active_tab_mut();
+        tab.focus = crate::tab::Focus::Right;
+        tab.view_mode = true;
+    }
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let s = dump(&terminal);
+    assert!(
+        s.contains("PREVIEW-RIGHT-CONTENT"),
+        "查看器内容在左 pane: {s}"
+    );
+    assert!(s.contains("bb.txt"), "右 pane 列表保持: {s}");
+    assert!(
+        !s.contains("PREVIEW-LEFT-CONTENT"),
+        "左 pane 自身文件不进预览: {s}"
+    );
+
+    // 焦点左 + view：查看器（aa.txt 内容）在右 pane（M13-9 现状保持）。
+    {
+        let tab = state.active_tab_mut();
+        tab.focus = crate::tab::Focus::Left;
+        tab.view_mode = true;
+    }
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let s = dump(&terminal);
+    assert!(
+        s.contains("PREVIEW-LEFT-CONTENT"),
+        "查看器内容在右 pane: {s}"
+    );
+    assert!(
+        !s.contains("PREVIEW-RIGHT-CONTENT"),
+        "焦点左时不预览右 pane 文件: {s}"
+    );
+}
+
+#[test]
 fn fix1_live_search_jumps_and_restores_on_no_match_or_empty() {
     let tmp = TempDir::new().unwrap();
     for name in ["alpha", "src.txt", "srconly"] {

@@ -416,201 +416,212 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // false（默认，M27-2）为 vifm 式：无整框、pane 顶部路径行（TopLine/
     // TopLineSel 背景色区分焦点）、间隔列 Border 分隔线。
     let left_focused = tab.focus == crate::tab::Focus::Left;
-    let left_inner = if borders {
-        let left_pane = ratatui::widgets::Block::bordered()
-            .title(tab.location.display_path().replace('\\', "/"))
-            .border_style(pane_border_style(left_focused));
-        let inner = left_pane.inner(left_area);
-        frame.render_widget(left_pane, left_area);
-        inner
-    } else {
-        let [topline, rest] =
-            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_area);
-        let path_style = if left_focused {
-            vifm_style("TopLineSel")
-        } else {
-            vifm_style("TopLine")
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(tab.location.display_path().replace('\\', "/")))
-                .style(path_style),
-            topline,
-        );
-        rest
-    };
-    // M27-2：pane 间隔列——Border 分隔线（vifm 模式）。
-    if !borders {
-        let gap = pane_gap_area(frame.area());
-        let lines: Vec<Line> = (0..gap.height).map(|_| Line::from("│")).collect();
-        frame.render_widget(Paragraph::new(lines).style(vifm_style("Border")), gap);
-    }
-
-    // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
-    // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
-    // M21-F2：非焦点侧的 `..` 行置灰（vifm TopLine 语义——光标行 DIM）。
-    let parent_available = tab.has_parent_row() && !tab.in_results();
-    let parent_area = if parent_available {
-        let [p, rest] =
-            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_inner);
-        let parent_style = if tab.on_parent_row && left_focused {
-            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
-        } else {
-            // 视觉上与普通目录项区分（置灰）。
-            Style::new().add_modifier(Modifier::DIM)
-        };
-        frame.render_widget(Paragraph::new(Line::from("../")).style(parent_style), p);
-        rest
-    } else {
-        left_inner
-    };
-
+    // M3-1：可视范围（状态栏指示 + 列表高亮共用；M34-4 提升至 pane 分派
+    // 之前——查看器占左 pane 时其后置公共段仍在作用域内）。
     let visual_range = tab.visual_range();
-    // FIX-1：当前生效的搜索查询——搜索输入期用实时输入（不回退旧查询，
-    // 清空即无高亮），其余用已提交的 tab.search。
-    let active_query: Option<String> = match mode {
-        InputMode::Search { input, .. } => {
-            let query = input.trim();
-            (!query.is_empty()).then(|| query.to_owned())
-        }
-        _ => tab
-            .search
-            .as_ref()
-            .map(|s| s.query.clone())
-            .filter(|query| !query.is_empty()),
-    };
-    // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
-    let show_attrs = state.config.ui.attrs_column
-        && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
-        && tab.tree.is_none(); // 树视图相对路径较长，不挤属性列
-    // M25-5：git 状态列（属性区内；开关 + 就绪数据，否则占位对齐）。
-    let git_col = show_attrs && state.config.ui.git_column;
-    let git_map = if git_col {
-        match &tab.location {
-            Location::Physical(p) => state.git_cache.get(p).and_then(|o| o.as_ref()),
-            _ => None,
-        }
+    // M34-4：预览渲染在非焦点 pane——焦点右 + view 模式时查看器占左 pane，
+    // 右 pane 保持目录列表导航（与焦点左时"查看器在右"对称，共用同一渲染）。
+    let view_in_left = tab.view_mode && tab.focus == crate::tab::Focus::Right;
+    if view_in_left {
+        crate::app::preview::render_view_content(frame, state, left_area);
     } else {
-        None
-    };
-    let name_budget = if show_attrs {
-        (left_inner.width as usize)
-            .saturating_sub(2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 })
-    } else {
-        (left_inner.width as usize).saturating_sub(4)
-    };
-    let list_items: Vec<ListItem> = tab
-        .entries
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| {
-            // M21-F1：名称按文件类型着色（目录/可执行/链接/归档/图片/视频/代码）。
-            let ft = filetype_style(item.filetype_class());
-            // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
-            // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
-            let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
-            let mut budget = name_budget;
-            if tab.tree.is_some() {
-                let depth = item.name.matches('/').count();
-                spans.push(Span::from("  ".repeat(depth)));
-                budget = budget.saturating_sub(2 * depth);
-            }
-            // M21-E1：显示名按预算截断（搜索/定位仍用全名，仅显示层裁剪）。
-            let display_name = clip_name(&item.name, budget);
-            match active_query
-                .as_deref()
-                .and_then(|query| crate::tab::match_range(&display_name, query))
-            {
-                Some((start, end)) => {
-                    let (before, mid, after) = (
-                        &display_name[..start],
-                        &display_name[start..end],
-                        &display_name[end..],
-                    );
-                    if !before.is_empty() {
-                        spans.push(Span::styled(before.to_owned(), ft));
-                    }
-                    spans.push(Span::styled(
-                        mid.to_owned(),
-                        Style::new().fg(Color::Black).bg(Color::LightYellow),
-                    ));
-                    let suffix = if item.is_dir {
-                        format!("{after}/")
-                    } else {
-                        after.to_owned()
-                    };
-                    if !suffix.is_empty() {
-                        spans.push(Span::styled(suffix, ft));
-                    }
-                }
-                None => {
-                    let label = if item.is_dir {
-                        format!("{display_name}/")
-                    } else {
-                        display_name.clone()
-                    };
-                    spans.push(Span::styled(label, ft));
-                }
-            }
-            // M24-1：名称填充至固定列宽（属性列对齐）+ 属性列（分钟精度日期）。
-            if show_attrs {
-                let name_width = display_name.chars().count() + (item.is_dir as usize);
-                let pad = name_budget.saturating_sub(name_width).max(1);
-                spans.push(Span::from(" ".repeat(pad)));
-                // M25-5：git 状态字符列（占位空格保持列对齐）。
-                match git_map.and_then(|m| m.entries.get(&item.name)) {
-                    Some(st) => spans.push(git_status_span(*st)),
-                    None => spans.push(Span::from(" ".repeat(GIT_STATUS_WIDTH))),
-                }
-                let size = if item.is_dir {
-                    "<DIR>".to_owned()
-                } else {
-                    crate::tab::format_size(item.size)
-                };
-                let attr = format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
-                spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
-            }
-            // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
-            let base_style = crate::theme::style("file_icon");
-            // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
-            // 光标行由 highlight_style 叠加。
-            let mut li = ListItem::new(Line::from(spans)).style(base_style);
-            let mut mods = Modifier::empty();
-            if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
-                mods |= Modifier::REVERSED;
-            }
-            if tab.tags.contains(&item.name) {
-                mods |= Modifier::BOLD;
-            }
-            if mods != Modifier::empty() {
-                li = li.style(Style::new().add_modifier(mods));
-            }
-            li
-        })
-        .collect();
-    // FEAT-2：焦点在 `..` 行时列表无高亮选中项。
-    let mut list_state = ListState::default().with_offset(list_offset(
-        if tab.on_parent_row { 0 } else { tab.cursor },
-        parent_area.height as usize,
-    ));
-    if !tab.on_parent_row {
-        list_state = list_state.with_selected(Some(tab.cursor));
-    }
-    frame.render_stateful_widget(
-        List::new(list_items).highlight_style(
-            // M21-F2：焦点 pane 当前行反显，非焦点侧当前行 DIM 灰化
-            // （vifm TopLineSel/TopLine 语义）。
-            if left_focused {
-                Style::new().add_modifier(Modifier::REVERSED)
+        let left_inner = if borders {
+            let left_pane = ratatui::widgets::Block::bordered()
+                .title(tab.location.display_path().replace('\\', "/"))
+                .border_style(pane_border_style(left_focused));
+            let inner = left_pane.inner(left_area);
+            frame.render_widget(left_pane, left_area);
+            inner
+        } else {
+            let [topline, rest] =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_area);
+            let path_style = if left_focused {
+                vifm_style("TopLineSel")
             } else {
-                Style::new().add_modifier(Modifier::DIM)
-            },
-        ),
-        parent_area,
-        &mut list_state,
-    );
+                vifm_style("TopLine")
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(tab.location.display_path().replace('\\', "/")))
+                    .style(path_style),
+                topline,
+            );
+            rest
+        };
+        // M27-2：pane 间隔列——Border 分隔线（vifm 模式）。
+        if !borders {
+            let gap = pane_gap_area(frame.area());
+            let lines: Vec<Line> = (0..gap.height).map(|_| Line::from("│")).collect();
+            frame.render_widget(Paragraph::new(lines).style(vifm_style("Border")), gap);
+        }
 
-    // M11-2→M14-1→M21-F1：右 pane——默认独立目录列表（带路径标题/焦点边框），
-    // `w` 视图模式显示查看器/图片预览。
+        // FEAT-2：`..` 行——列表顶部独立 1 行（渲染层虚拟条目，不进 entries）。
+        // 物理根目录无父目录 → 不渲染；归档视图恒渲染。
+        // M21-F2：非焦点侧的 `..` 行置灰（vifm TopLine 语义——光标行 DIM）。
+        let parent_available = tab.has_parent_row() && !tab.in_results();
+        let parent_area = if parent_available {
+            let [p, rest] =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(left_inner);
+            let parent_style = if tab.on_parent_row && left_focused {
+                Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            } else {
+                // 视觉上与普通目录项区分（置灰）。
+                Style::new().add_modifier(Modifier::DIM)
+            };
+            frame.render_widget(Paragraph::new(Line::from("../")).style(parent_style), p);
+            rest
+        } else {
+            left_inner
+        };
+
+        // FIX-1：当前生效的搜索查询——搜索输入期用实时输入（不回退旧查询，
+        // 清空即无高亮），其余用已提交的 tab.search。
+        let active_query: Option<String> = match mode {
+            InputMode::Search { input, .. } => {
+                let query = input.trim();
+                (!query.is_empty()).then(|| query.to_owned())
+            }
+            _ => tab
+                .search
+                .as_ref()
+                .map(|s| s.query.clone())
+                .filter(|query| !query.is_empty()),
+        };
+        // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
+        let show_attrs = state.config.ui.attrs_column
+            && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
+            && tab.tree.is_none(); // 树视图相对路径较长，不挤属性列
+        // M25-5：git 状态列（属性区内；开关 + 就绪数据，否则占位对齐）。
+        let git_col = show_attrs && state.config.ui.git_column;
+        let git_map = if git_col {
+            match &tab.location {
+                Location::Physical(p) => state.git_cache.get(p).and_then(|o| o.as_ref()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let name_budget = if show_attrs {
+            (left_inner.width as usize)
+                .saturating_sub(2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 })
+        } else {
+            (left_inner.width as usize).saturating_sub(4)
+        };
+        let list_items: Vec<ListItem> = tab
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                // M21-F1：名称按文件类型着色（目录/可执行/链接/归档/图片/视频/代码）。
+                let ft = filetype_style(item.filetype_class());
+                // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
+                // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
+                let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
+                let mut budget = name_budget;
+                if tab.tree.is_some() {
+                    let depth = item.name.matches('/').count();
+                    spans.push(Span::from("  ".repeat(depth)));
+                    budget = budget.saturating_sub(2 * depth);
+                }
+                // M21-E1：显示名按预算截断（搜索/定位仍用全名，仅显示层裁剪）。
+                let display_name = clip_name(&item.name, budget);
+                match active_query
+                    .as_deref()
+                    .and_then(|query| crate::tab::match_range(&display_name, query))
+                {
+                    Some((start, end)) => {
+                        let (before, mid, after) = (
+                            &display_name[..start],
+                            &display_name[start..end],
+                            &display_name[end..],
+                        );
+                        if !before.is_empty() {
+                            spans.push(Span::styled(before.to_owned(), ft));
+                        }
+                        spans.push(Span::styled(
+                            mid.to_owned(),
+                            Style::new().fg(Color::Black).bg(Color::LightYellow),
+                        ));
+                        let suffix = if item.is_dir {
+                            format!("{after}/")
+                        } else {
+                            after.to_owned()
+                        };
+                        if !suffix.is_empty() {
+                            spans.push(Span::styled(suffix, ft));
+                        }
+                    }
+                    None => {
+                        let label = if item.is_dir {
+                            format!("{display_name}/")
+                        } else {
+                            display_name.clone()
+                        };
+                        spans.push(Span::styled(label, ft));
+                    }
+                }
+                // M24-1：名称填充至固定列宽（属性列对齐）+ 属性列（分钟精度日期）。
+                if show_attrs {
+                    let name_width = display_name.chars().count() + (item.is_dir as usize);
+                    let pad = name_budget.saturating_sub(name_width).max(1);
+                    spans.push(Span::from(" ".repeat(pad)));
+                    // M25-5：git 状态字符列（占位空格保持列对齐）。
+                    match git_map.and_then(|m| m.entries.get(&item.name)) {
+                        Some(st) => spans.push(git_status_span(*st)),
+                        None => spans.push(Span::from(" ".repeat(GIT_STATUS_WIDTH))),
+                    }
+                    let size = if item.is_dir {
+                        "<DIR>".to_owned()
+                    } else {
+                        crate::tab::format_size(item.size)
+                    };
+                    let attr =
+                        format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
+                    spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
+                }
+                // M9-2：图标颜色经 opaline 样式染色（命名样式缺失时回落默认）。
+                let base_style = crate::theme::style("file_icon");
+                // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
+                // 光标行由 highlight_style 叠加。
+                let mut li = ListItem::new(Line::from(spans)).style(base_style);
+                let mut mods = Modifier::empty();
+                if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
+                    mods |= Modifier::REVERSED;
+                }
+                if tab.tags.contains(&item.name) {
+                    mods |= Modifier::BOLD;
+                }
+                if mods != Modifier::empty() {
+                    li = li.style(Style::new().add_modifier(mods));
+                }
+                li
+            })
+            .collect();
+        // FEAT-2：焦点在 `..` 行时列表无高亮选中项。
+        let mut list_state = ListState::default().with_offset(list_offset(
+            if tab.on_parent_row { 0 } else { tab.cursor },
+            parent_area.height as usize,
+        ));
+        if !tab.on_parent_row {
+            list_state = list_state.with_selected(Some(tab.cursor));
+        }
+        frame.render_stateful_widget(
+            List::new(list_items).highlight_style(
+                // M21-F2：焦点 pane 当前行反显，非焦点侧当前行 DIM 灰化
+                // （vifm TopLineSel/TopLine 语义）。
+                if left_focused {
+                    Style::new().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::new().add_modifier(Modifier::DIM)
+                },
+            ),
+            parent_area,
+            &mut list_state,
+        );
+    }
+
+    // M11-2→M14-1→M21-F1→M34-4：右 pane——默认独立目录列表（带路径标题/
+    // 焦点边框）；view 模式且焦点左时显示查看器/图片预览（焦点右时查看器
+    // 已由上方分派到左 pane，右 pane 保持列表导航）。
     render_right_pane(frame, state, mode, right_area);
 
     if let InputMode::HelpView { scroll, search } = mode {

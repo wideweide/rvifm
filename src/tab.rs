@@ -1290,8 +1290,18 @@ impl Tab {
         if let Some(r) = &self.results {
             return r.items.get(self.cursor).map(|i| i.path.clone());
         }
-        match &self.location {
-            Location::Physical(base) => self.entries.get(self.cursor).map(|i| base.join(&i.name)),
+        // M34-4：预览目标 = 焦点 pane 光标文件（修复焦点在右时 :view 预览
+        // 错位到左 pane 文件的缺陷）。
+        let (base, entries, cursor) = match self.focus {
+            Focus::Right => (
+                &self.right.location,
+                &self.right.entries,
+                &self.right.cursor,
+            ),
+            Focus::Left => (&self.location, &self.entries, &self.cursor),
+        };
+        match base {
+            Location::Physical(p) => entries.get(*cursor).map(|i| p.join(&i.name)),
             Location::Archive { .. } | Location::Remote { .. } => None,
         }
     }
@@ -2335,6 +2345,20 @@ mod tests {
         assert!(tab.search_move("a", false));
         assert_eq!(tab.right.cursor, 1);
         assert_eq!(tab.search_status("a"), (2, 3));
+    }
+
+    #[test]
+    fn m34_4_preview_path_follows_focus() {
+        // M34-4：preview_path = 焦点 pane 光标文件（修复右焦点预览错位）。
+        let left = tempfile::TempDir::new().unwrap();
+        std::fs::write(left.path().join("left-a.txt"), "L").unwrap();
+        let right = tempfile::TempDir::new().unwrap();
+        std::fs::write(right.path().join("right-b.txt"), "R").unwrap();
+        let mut tab = Tab::from_physical(left.path(), Config::default()).unwrap();
+        tab.right = Pane::from_physical(right.path(), Config::default()).unwrap();
+        assert_eq!(tab.preview_path(), Some(left.path().join("left-a.txt")));
+        tab.focus = Focus::Right;
+        assert_eq!(tab.preview_path(), Some(right.path().join("right-b.txt")));
     }
 
     #[test]

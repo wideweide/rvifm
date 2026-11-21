@@ -411,7 +411,7 @@
 - [x] M34-1 默认主题 gruvbox（`[ui] theme` 缺省 `gruvbox-dark`；vifm 高亮组映射核查补充；dracula 验证；见 SPEC M34-1；2026-11-21 完成：`vifm_style` 三层解析——主题样式 → 标准 token 推导（accent/bg/text 词表，缺 token 整组回退）→ 16 色；gruvbox 色值断言 + dracula activate/推导验证；README/help 默认值同步，422 单测）
 - [x] M34-2 snowwhite 内置主题移植（vifm-colors 颜色 → opaline TOML 捆绑；见 SPEC M34-2；2026-11-21 完成：捆绑层 `BUNDLED_THEMES`（include_str）+ activate 内置→捆绑→用户三段、`:theme` 列表并入；vifm 高亮组精确值直写命名样式（fg16/bg255、TopLineSel 反转），selected/active_selected=208 橙面，浅色 variant + 图标 Light 联动；424 单测）
 - [x] M34-3 右 pane `/` 搜索（focus 感知分派，解除 M14 SIMPLIFIED；见 SPEC M34-3；2026-11-21 完成：/·n·N 右焦点拦截共用 Search 链路，origin/恢复取焦点 pane 光标，`Tab::search_move`/`search_status` focus-aware，`render_right_pane` 增 mode 参数做同款匹配高亮，`Tab::find_match` 死代码删除（统一走 `find_match_in`）；426 单测）
-- [ ] M34-4 对侧预览统一（preview_path 焦点修复 + :view/frecency 共用对侧模型，方案 A；见 SPEC M34-4）
+- [x] M34-4 对侧预览统一（preview_path 焦点修复 + :view/frecency 共用对侧模型，方案 A；见 SPEC M34-4；2026-11-21 完成：`preview_path` 焦点感知修复右焦点预览错位 + 查看器渲染抽出 `render_view_content`（`render_right_pane`/`render()` 双侧分派——焦点右时查看器占左 pane、右 pane 保持列表导航）；frecency 对侧语义不动；428 单测）
 - [ ] M34-5 frecency Pane 视觉与回显（query 底部回显 + 图标全路径行 + 标题文案；见 SPEC M34-5）
 - [ ] M34-6 `.jar` 归档识别（zip 后端复用；见 SPEC M34-6）
 - [ ] M34-7 二进制/不可读预览信息面板（大小/时间/类型推断；不执行文件；见 SPEC M34-7）

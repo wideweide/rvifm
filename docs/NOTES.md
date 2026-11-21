@@ -877,3 +877,11 @@ rvifm record  → 静默记录访问
 - **清理**：`Tab::find_match` 调用方全部迁至 `find_match_in` 后成死代码 → 删除；切片级 `find_match_in` 抽为 `pub(crate)` 自由函数。
 - **踩坑**：误编辑曾把 find_match 方法体替换成 search_move 签名行（old/new 粘贴错位），Read 现场后按行修复；多字段借用（entries/cursor 与 on_parent_row 写）字段级不相交，NLL 下直接编译通过。
 - 426 单测（+2：tab.rs 右 pane move/status、app 集成链路）+ 9 集成。
+
+### 2026-11-21 — M34-4 实现：对侧预览统一（方案 A）
+
+- **preview_path 焦点感知**：预览目标 = 焦点 pane 光标文件（results 结果视图优先级不变）——修复焦点在右时 `:view` 预览错位到左 pane 文件的缺陷；tab.rs 自身文档"活动 pane 光标文件"自此成立。
+- **放置统一**：查看器渲染抽出 `render_view_content`（preview.rs，263 行脚本搬迁——行号切割 + 锚点断言 + 统一去缩进，AUDIT-5 awk 手法先例）；分派两处：`render_right_pane`（焦点左 → 右 pane 查看器，M13-9 现状）与 `render()`（焦点右 → 查看器占左 pane，右 pane 保持列表导航）。渲染共用同一函数；frecency 对侧预览（M23-6）本就是对侧语义，未动。
+- **模态边界（M17 既有，保持）**：view 模式下查看器吞掉全部按键（含 Tab）——焦点右 + 查看器在左时同样如此，切焦点需先 w/Esc 退出；无新增冲突。
+- **踩坑**：① 左 pane 列表块被 if/else 包装后 `visual_range` 留在 else 内而状态栏公共段仍引用 → 提升至分派之前；② 搬迁尾巴 `return;` 成 needless_return；③ 大块搬迁用 python 行号切割比手写 Edit 稳（先 grep 锚点行号 + 断言首尾）。
+- 428 单测（+2：preview_path 焦点跟随、TestBackend 双焦点放置断言）+ 9 集成。
