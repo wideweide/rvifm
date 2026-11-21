@@ -1073,10 +1073,6 @@ mod tests {
         SftpBackend::connect(&p).ok()
     }
 
-    fn backend() -> SftpBackend {
-        try_backend().expect("127.0.0.1 sshd + 密钥认证不可用")
-    }
-
     #[test]
     fn connect_list_read_metadata_roundtrip() {
         if !sshd_available() {

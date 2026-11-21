@@ -2,4 +2,4 @@ corpus/
 coverage/
 artifacts/
 target/
-Cargo.lock
+# Cargo.lock 提交：锁定 fuzz 工作区解析，CI fuzz job 不再全新 resolve（2026-11-22 CI 修红）。

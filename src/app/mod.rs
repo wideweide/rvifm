@@ -25,7 +25,9 @@ pub(crate) use crate::{config, ops};
 // AUDIT-5：app.rs 按职责分片（keys/exec/jobs/render/preview）——类型与
 // 事件循环 run() 留在根模块（子模块可见父模块私有项，零可见性改动）；
 // 移动的顶层项统一 pub(crate)（兄弟模块互访），根重导出供 tests/tests 同名引用。
-mod exec;
+// 例外：exec pub 化（M40-2 fuzz 靶引用 normalize_lexical；模块内其余项
+// 均 pub(crate)，对外实际仅暴露该函数）。
+pub mod exec;
 mod jobs;
 mod keys;
 mod preview;

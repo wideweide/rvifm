@@ -1049,3 +1049,13 @@ rvifm record  → 静默记录访问
 - **诊断受阻**：GitHub API 匿名限流（60/h 耗尽）+ 日志下载需 admin + digest summary patch 静默失败（gh auth 环境未配全）——远程日志不可读。已增强：clippy/build 步骤 tee + grep 注解（0ef4e60，grep 去锚适配 ANSI 色码）。
 - **下一会话起点**：① Linux 开发机 `cargo build --locked && cargo test --locked` 全量复现（可编译 cfg(unix) 测试 + fuzz 靶，Windows 不编译）→ 定位 E0631/windows test/fuzz 三面；② 修红后推 main，CI 全绿 → M40-7 1.0.0 发布（tag → 三平台+aarch64 归档 + SHA256SUMS → GitHub Release → crates.io，凭据在 Windows 机）；③ M40-7 前置：CHANGELOG 0.8.0→1.0.0 批次并入条目（M35–M41 各节）+ Cargo.toml 版本 1.0.0。
 - **当日已交付**（M41 4/4 + M38 5/5 + M39 6/6 + M40 1–6 + M31-5，22 提交）：三个真实缺陷修复（natural_cmp 非全序 panic / junction undo EPERM / sevenz-rust 弃维护迁移）+ 漂移清零 + 供应链门禁 + 基准/覆盖率/fuzz/proptest 质量基建。
+
+### 2026-11-22 — CI 红灯闭环（fuzz 靶两处编译错误；Windows 门禁天然不可见）
+
+- **四面结论**：ubuntu/macos build、windows test、audit 三面在 0e232c7（M40-6）已绿（匿名 GitHub API job/step 级核实；E0631 确系 M40-6 前修复 + rust-cache 陈旧混合，M40-6 后未再复现）；仅剩 fuzz build 一面红。
+- **fuzz 根因（两处，fuzz 工作区从未在任何环境编译过——Windows 无 nightly/cargo-fuzz，CI 注解被淹没）**：① `fuzz_paths.rs` 引用 `rvifm::app::exec::normalize_lexical`，M40-2 只 pub 了函数没 pub 模块（E0603 module `exec` is private）→ `src/app/mod.rs` `mod exec` → `pub mod exec`（模块内其余项均 pub(crate)，对外实际仅暴露该函数）；② `fuzz_targets/common.rs` `fsx` 缺 `mut`（E0596，`ArchiveFs::list/read` 取 `&mut self`）。
+- **注解误报教训**：CI fuzz annotate 的 `grep -E "error"` 把 crate 名含 "error" 的行（quick-error、thiserror-impl）连 -A4 上下文一起注解，真实错误文本（E0603/E0596）不在注解中——注解通道对 fuzz job 无诊断价值，本次靠 Linux 本地复现定位。
+- **顺带删除**：`src/remote/sftp.rs` tests 模块死函数 `backend()`（M39-4 改 auth-tolerant 后无人调用）——本地 Arch rustc 1.99.1 的 dead-code 比 CI stable（≥1.100）更严，仅本地 clippy -D warnings 报错；CI 与本地结论以 CI 为准（STATE 门禁段已记）。
+- **fuzz/Cargo.lock 转为提交**：原被 cargo-fuzz 模板 .gitignore 忽略，CI fuzz job 每次全新 resolve——锁定解析消除漂移红风险（1.0 前收口）。
+- **环境事实（Linux 开发机已变化）**：rustup 不在（系统 rust 1.99.1）；crates.io index 与 static.rust-lang.org 直连超时（312s 0 字节），依赖下载与 rustup 走用户代理 `socks5://192.168.1.88:15235` 后恢复；gh 未安装，匿名 GitHub API（runs/jobs/check-runs annotations）可用。
+- **验证**：Linux 全量 490 单测 + 12 集成全绿、clippy all-targets 绿、fuzz 工作区 `cargo check` 绿（修复后 EXIT=0）、`--version`/`--help` 冒烟过；M40-2 的 24h fuzz 长跑仍 deferred（需 rustup+nightly，环境事实见上）。

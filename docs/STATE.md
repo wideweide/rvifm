@@ -2,9 +2,9 @@
 
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
-- **更新时间**：2026-11-21
-- **当前阶段**：M0–M39 全部完成关闭（M41 4/4、M38 5/5、M39 6/6、M40 1–6 完成/M40-4 sftp 覆盖 deferred、M31-5 补验完成；v0.11.1 已发布）；M36–M41 不单独发版，统一发 1.0.0（用户决策）；**CI 红灯断点**——自 M39-4 推送（f91317d）起四失败面未定位（ubuntu/macos build、windows test、fuzz build、audit），本地 Windows 459+8 测试全绿，E0631 疑似 rust-cache 陈旧；诊断需 Linux 开发机全量复现或带 token 的 gh 日志（匿名 API 限流耗尽，见 NOTES 断点条目）
-- **当前任务**：**CI 修红**（M39-4 起 unix 构建/测试/fuzz/audit 四面，下一会话起点见 NOTES）→ 全绿后 M40-7 1.0.0 统一发布（CHANGELOG 批次并入 + Cargo.toml 1.0.0 + tag v1.0.0 → 三平台+aarch64 归档+SHA256SUMS → GitHub Release → crates.io）
+- **更新时间**：2026-11-22
+- **当前阶段**：M0–M40-6 全部完成关闭（M41 4/4、M38 5/5、M39 6/6、M40 1–6 完成/M40-4 sftp 覆盖 deferred、M31-5 补验完成；v0.11.1 已发布）；M36–M41 不单独发版，统一发 1.0.0（用户决策）；**CI 红灯已闭环**（2026-11-22 Linux 开发机）——四失败面中 ubuntu/macos build、windows test、audit 三面在 0e232c7 已绿（M40-6 修复生效），仅剩 fuzz build 一面，根因为 fuzz 靶两处编译错误（E0603 `mod exec` 私有 + E0596 `fsx` 缺 mut），从未在任何环境编译过（Windows 无 nightly；CI 注解被 crate 名 grep 误报淹没），已修复并锁定 fuzz/Cargo.lock（见 NOTES）
+- **当前任务**：**M40-7 1.0.0 统一发布**（CHANGELOG 已备 → Cargo.toml 1.0.0 + tag v1.0.0 → 三平台+aarch64 归档+SHA256SUMS → GitHub Release → crates.io；crates.io 凭据在 Windows 机）
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -17,9 +17,8 @@
 
 ## 下一步
 
-1. **M41-1→4 按序执行**（完成后接 M38-4/5 → M39 → M40 → 统一 1.0.0）。
-2. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（0.11.x 归档）。
-3. **M31-5 本机补验**：Windows rustc 1.99.1 / Linux 1.100 均 ≥ 1.97 已解锁，语料量化随时可跑（用户指令）。
+1. **M40-7 按序执行**：Cargo.toml 1.0.0 → tag v1.0.0 → CI release job（三平台+aarch64 归档 + SHA256SUMS + GitHub Release）→ crates.io（凭据在 Windows 机；Linux 机无凭据则该项延至 Windows 执行）。
+2. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（1.0.0 归档）。
 
 ## 批次关闭记录
 
@@ -52,9 +51,10 @@
 ## 质量门禁
 
 - 本地：`cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test` → `--version` / `--help` 冒烟。
-- **当前已知门禁偏差**：本机可全量 `cargo test`（450 单测 + 9 集成，checkpoint 2bff891 实测 2026-11-21）；残留以 CI 为准：① `cargo check --target x86_64-unknown-linux-gnu` 的 aws-lc-sys 交叉构建 Windows 本机不可行（AUDIT-9 固化进 ubuntu job）。**已闭环**：`cargo check --features pdf-visual` 双本机均可执行（Windows rustc 1.99.1 / Linux 1.100 ≥ exprim MSRV 1.97）。
-- 含 `cfg(unix)` / `cfg(test)` 改动：Windows 本机不编译 cfg(unix) 测试代码——以 CI ubuntu job 或 Linux 开发机全量运行为准（M12-2/M27-3 两度教训）。
-- CI：`ubuntu-latest` + `windows-latest` 全绿；tag `v*` 触发三 target release 归档。
+- **当前已知门禁偏差**：Windows 本机不可执行 fuzz 靶编译（需 nightly+Linux）与 aws-lc-sys 交叉构建（AUDIT-9 固化进 ubuntu job）；**Linux 本机已全量绿**（2026-11-22：490 单测 + 12 集成 + fuzz 工作区 `cargo check` + clippy all-targets）。**已闭环**：`cargo check --features pdf-visual` 双本机均可执行（≥ exprim MSRV 1.97）。
+- 含 `cfg(unix)` / `cfg(test)` 改动：Windows 本机不编译 cfg(unix) 测试代码——以 CI ubuntu job 或 Linux 开发机全量运行为准（M12-2/M27-3 两度教训）；**fuzz 靶改动须在 Linux/CI 编译验证**（本轮两处编译错误 Windows 门禁天然不可见，教训见 NOTES）。
+- 本地 rustc（Arch 1.99.1）的 dead-code 分析比 CI stable（≥1.100）更严——sftp 测试 `backend()` 死函数仅本地 clippy 报错，已删除；版本差异本身不构成门禁分叉，以 CI 结论为准。
+- CI：`ubuntu-latest` + `windows-latest` + `macos-latest` 全绿；tag `v*` 触发三 target + aarch64 release 归档。
 
 ## 预算与风险
 
@@ -64,14 +64,14 @@
 
 ## 环境
 
-- 本机：双环境——Windows Server 2016（目标 `x86_64-pc-windows-msvc`；crates.io publish 在此执行）+ Linux 开发机（rustup stable **1.100.0**，`~/.cargo/bin` 优先于 apt 的 /usr/bin 1.95；foot 终端实测）。
-- CI：`ubuntu-latest` + `windows-latest`（fmt --check / clippy -D warnings / build --locked / test --locked / pdf-visual check）。
+- 本机：双环境——Windows Server 2016（目标 `x86_64-pc-windows-msvc`；crates.io publish 在此执行）+ Linux 开发机（CachyOS，系统 rust **1.99.1**，**rustup 已不在**——夜间 fuzz 长跑需先装 rustup+nightly；crates.io 与 static.rust-lang.org 直连超时，走用户代理 `socks5://192.168.1.88:15235`；gh 未安装，匿名 GitHub API 可读 run/job/check-run 注解）；foot 终端实测。
+- CI：`ubuntu-latest` + `windows-latest` + `macos-latest`（fmt --check / clippy -D warnings / build --locked / test --locked / pdf-visual check / fuzz job / supply-chain job）。
 - 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → GitHub Release（crates.io 发布沿用 Windows 机器凭据）。
 
 ## 恢复方式
 
 1. 读本文件确认当前阶段与任务。
-2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前第一个 `[ ]` = M41-1（M41 批次置于 M38 之前，优先级排高）**。
+2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前第一个 `[ ]` = M40-7（1.0.0 发布）**。
 3. 读 [AGENTS.md](../AGENTS.md) §3 执行循环。
 4. 只读该任务相关的 [SPEC.md](SPEC.md) 片段与 [ACCEPTANCE.md](ACCEPTANCE.md) 条目。
 5. 完成后更新本文件与 TASKS，再提交。

@@ -16,7 +16,7 @@ pub fn drive_archive(ext: &str, data: &[u8]) {
     let mut f = std::fs::File::create(&p).unwrap();
     f.write_all(data).unwrap();
     drop(f);
-    if let Ok(fsx) = rvifm::archive::open_dispatch(&p) {
+    if let Ok(mut fsx) = rvifm::archive::open_dispatch(&p) {
         if let Ok(entries) = fsx.list("/") {
             // 有界：仅读取前 1 个非目录成员（read 走 AUDIT-17 上限护栏）。
             for e in entries.iter().take(1) {
