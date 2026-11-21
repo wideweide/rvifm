@@ -6008,7 +6008,7 @@ fn srch1_results_readonly_guards_and_exit() {
     let _ = exec_command_impl(&mut state, "find txt");
     assert!(state.active_tab().in_results());
 
-    // dd 序列被拒绝（DeleteSelected 臂）。
+    // M38-1：find 结果可操作——dd 删除命中文件（真实路径）。
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_keymap(keymap);
@@ -6027,9 +6027,12 @@ fn srch1_results_readonly_guards_and_exit() {
         KeyCode::Char('d'),
         KeyModifiers::NONE,
     );
-    assert_eq!(msg.as_deref(), Some("搜索结果视图只读"));
+    assert!(
+        !tmp.path().join("a.txt").exists(),
+        "结果视图 dd 删除命中文件"
+    );
 
-    // 写命令被拒绝（exec 守卫）。
+    // 写命令仍被拒绝（exec 守卫——rename 不在豁免名单）。
     assert!(exec_command_impl(&mut state, "rename x").is_err());
 
     // yy = 命中文件路径本身；p 在别处可粘贴（既有链路）。

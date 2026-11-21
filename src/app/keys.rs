@@ -784,9 +784,23 @@ pub(crate) fn handle_key(
                 compare_sync(state, msg, matches!(action, Some(Action::DiffPut)));
             }
             Some(Action::DeleteSelected) => {
-                if state.active_tab().in_results() {
+                if state.active_tab().in_results() && !state.active_tab().results_actions_enabled()
+                {
                     *msg = Some("搜索结果视图只读".to_owned());
                     return None;
+                }
+                // M38-1：find/grep 结果视图 Delete → 删除命中文件（真实路径）。
+                if state.active_tab().results_actions_enabled() {
+                    let tab = state.active_tab();
+                    if let Some(path) = tab.result_path_at(tab.cursor) {
+                        let mut m = None;
+                        if execute_delete(state, &mut m, path, false, None).is_some() {
+                            *msg = Some("权限不足（可 l 定位后操作）".to_owned());
+                        } else {
+                            *msg = m;
+                        }
+                        return None;
+                    }
                 }
                 if state.active_tab().on_parent_row {
                     // FEAT-2：`..` 行仅导航。
@@ -973,7 +987,9 @@ pub(crate) fn handle_key(
             }
             Some(Action::RenameBatch) => {
                 // M13-6：cw 批量重命名——收集标记（或光标单条）名单。
-                if state.active_tab().in_results() {
+                // M38-1：find/grep 结果视图可操作（映射真实路径）。
+                if state.active_tab().in_results() && !state.active_tab().results_actions_enabled()
+                {
                     *msg = Some("搜索结果视图只读".to_owned());
                     return None;
                 }

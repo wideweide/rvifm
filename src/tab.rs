@@ -1282,6 +1282,19 @@ impl Tab {
     pub fn in_results(&self) -> bool {
         self.results.is_some()
     }
+    /// M38-1：find/grep 结果视图可操作（Delete/Yank/Rename 映射真实
+    /// 路径）；compare/rename-preview 保持只读。
+    pub fn results_actions_enabled(&self) -> bool {
+        self.results
+            .as_ref()
+            .map(|r| {
+                matches!(
+                    r.kind,
+                    crate::search::SearchKind::Find | crate::search::SearchKind::Grep
+                )
+            })
+            .unwrap_or(false)
+    }
 
     /// M17 SRCH：预览/操作的目标文件路径——结果模式取命中项，
     /// 物理视图取 base.join(name)；归档视图 None（预览未接入）；

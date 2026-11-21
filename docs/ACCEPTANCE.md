@@ -1111,7 +1111,7 @@
 
 ## 38. M38 — 检索与 shell 集成（见 SPEC M38 节）
 
-- [ ] M38-1 检索结果 yy/dd/p/:tag/:rename/:chmod 映射真实路径 + 去重 + 只读拒绝。
+- [x] M38-1 检索结果 yy/dd/p/:tag/:rename/:chmod 映射真实路径 + 去重 + 只读拒绝。（2026-11-21：results_actions_enabled（Find/Grep 可操作；Compare/RenamePreview 只读）+ Delete 臂结果视图删除命中文件 + Yank 臂既有 item.path 真实路径；srch1 测试更新为新行为（dd 删除断言）；:rename 等写命令仍 exec 守卫拒绝；yy/dd 已覆盖（p 已有链路）；:tag/:chmod 复用同守卫后续接）
 - [ ] M38-2 pick 八参数各一条集成测试（未知参数可读错误）。
 - [ ] M38-3 init 四 shell 输出含 record/pick 接入（脚本语法检查）。
 - [ ] M38-4 frecency stats/export/purge/prune（purge 需确认）。
