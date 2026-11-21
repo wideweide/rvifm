@@ -51,12 +51,39 @@ pub(crate) fn reset_active() {
 #[cfg(test)]
 pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// 内置主题名列表（opaline 自动发现，启动时打印枚举供 `:theme` 类命令用）。
+/// 内置主题名列表（opaline 自动发现 + rvifm 捆绑主题；`:theme` 无参列出用）。
 pub fn builtin_names() -> Vec<String> {
-    opaline::builtins::builtin_names()
+    let mut names: Vec<String> = opaline::builtins::builtin_names()
         .iter()
         .map(|(id, _)| id.to_string())
+        .collect();
+    names.extend(bundled_names());
+    names
+}
+
+/// M34-2：rvifm 捆绑主题（include_str! 数据；opaline 内置之外的第二层，
+/// 优先于用户主题目录）。activate 顺序：opaline 内置 → rvifm 捆绑 → 用户。
+const BUNDLED_THEMES: &[(&str, &str)] = &[("snowwhite", include_str!("themes/snowwhite.toml"))];
+
+pub(crate) fn bundled_names() -> Vec<String> {
+    BUNDLED_THEMES
+        .iter()
+        .map(|(n, _)| (*n).to_string())
         .collect()
+}
+
+/// 按名加载并激活捆绑主题；未知名称返回 Err（不 panic）。
+pub(crate) fn set_bundled(name: &str) -> std::io::Result<()> {
+    let src = BUNDLED_THEMES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, s)| *s)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "非捆绑主题"))?;
+    let theme = opaline::loader::load_from_str(src, None)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let variant = theme.meta.variant;
+    set_active(theme, variant);
+    Ok(())
 }
 
 /// 按名加载并激活内置主题；未知名称返回 Err（不 panic）。
@@ -72,17 +99,20 @@ pub fn set_builtin(name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// AUDIT-13：统一激活入口——内置主题优先，其次用户主题目录
-/// （`~/.config/rvifm/themes/`）；两者都未命中/不可读时返回可读 Err
-/// （`[ui] theme` 启动激活与 `:theme` 运行时切换共用）。
+/// AUDIT-13：统一激活入口——opaline 内置主题优先，其次 rvifm 捆绑主题
+/// （M34-2），再次用户主题目录（`~/.config/rvifm/themes/`）；均未命中/
+/// 不可读时返回可读 Err（`[ui] theme` 启动激活与 `:theme` 运行时切换共用）。
 pub fn activate(name: &str) -> std::io::Result<()> {
     if set_builtin(name).is_ok() {
+        return Ok(());
+    }
+    if set_bundled(name).is_ok() {
         return Ok(());
     }
     set_user_theme(name).map_err(|e| {
         std::io::Error::new(
             e.kind(),
-            format!("主题 `{name}` 激活失败（内置与用户主题目录均未命中或不可读）: {e}"),
+            format!("主题 `{name}` 激活失败（内置、捆绑与用户主题目录均未命中或不可读）: {e}"),
         )
     })
 }
@@ -396,6 +426,43 @@ mod tests {
         ));
         let s = derive_vifm_group("StatusLine").expect("dracula 含标准 token 词表");
         assert!(s.fg.is_some() && s.bg.is_some());
+        reset_active();
+    }
+
+    #[test]
+    fn bundled_snowwhite_activates_exact_vifm_values() {
+        // M34-2：snowwhite 捆绑主题——浅色 variant + vifm 高亮组精确值
+        //（TopLine fg16/bg255 黑字浅灰底；selected fg208 橙）。
+        let _guard = TEST_LOCK.lock().unwrap();
+        activate("snowwhite").unwrap();
+        assert!(matches!(
+            active_variant(),
+            opaline::schema::ThemeVariant::Light
+        ));
+        assert!(matches!(icon_theme(), crate::icons::IconTheme::Light));
+        let tl = style("TopLine");
+        assert_eq!(tl.fg, Some(RtColor::Rgb(0, 0, 0)), "TopLine fg=cterm16");
+        assert_eq!(
+            tl.bg,
+            Some(RtColor::Rgb(238, 238, 238)),
+            "TopLine bg=cterm255"
+        );
+        let sel = style("selected");
+        assert_eq!(
+            sel.fg,
+            Some(RtColor::Rgb(255, 135, 0)),
+            "selected fg=cterm208"
+        );
+        reset_active();
+    }
+
+    #[test]
+    fn bundled_names_listed_and_unknown_still_errors() {
+        // M34-2：`:theme` 列表含捆绑主题；未知名可读错误；内置层不受影响。
+        assert!(builtin_names().iter().any(|n| n == "snowwhite"));
+        let _guard = TEST_LOCK.lock().unwrap();
+        assert!(set_bundled("no-such-theme-xyz").is_err());
+        set_builtin("gruvbox-dark").unwrap();
         reset_active();
     }
 

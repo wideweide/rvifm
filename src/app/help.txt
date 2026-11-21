@@ -87,7 +87,7 @@ rvifm 帮助（vim 风格文件管理器）
   :jobs           后台作业列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情、Esc 关闭）
   （跨 VFS 粘贴）  传输连接类失败自动重连一次；失败现场 .part 保留（重试粘贴可续传/诊断）
   :trash          暂存区菜单（恢复误删文件）
-  :theme [名]     切换主题（opaline 内置名或用户 TOML；无参列出；默认 gruvbox-dark）
+  :theme [名]     切换主题（内置名 / 捆绑 snowwhite / 用户 TOML；默认 gruvbox-dark）
 
 == 远端（SFTP） ==
   :remote <名>    进入远端（~/.ssh/config 别名 + remotes.toml 覆盖）

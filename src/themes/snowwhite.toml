@@ -1,0 +1,74 @@
+# Snow White — rvifm 捆绑主题（M34-2）
+# 一次性手工移植：vifm-colors snowwhite.vifm（Jochen Schweizer）
+# cterm 提取：16=#000000 231=#ffffff 255=#eeeeee 208=#ff8700 196=#ff0000
+# 原 .vifm 仅 5 色；text 辅助灰阶（gray1/2/3）为移植补全，不在原文件中（见 NOTES M34-2）。
+
+[meta]
+name = "Snow White"
+author = "Jochen Schweizer (vifm-colors) → rvifm port"
+variant = "light"
+version = "1.0"
+description = "vifm snowwhite 视觉等价（浅色；橙 208 为唯一强调色）"
+
+[palette]
+white = "#ffffff"
+black = "#000000"
+line = "#eeeeee"
+orange = "#ff8700"
+red = "#ff0000"
+gray1 = "#444444"
+gray2 = "#666666"
+gray3 = "#999999"
+
+[tokens]
+"text.primary" = "black"
+"text.secondary" = "gray1"
+"text.muted" = "gray2"
+"text.dim" = "gray3"
+
+"bg.base" = "white"
+"bg.panel" = "line"
+"bg.code" = "white"
+"bg.highlight" = "line"
+"bg.elevated" = "line"
+"bg.active" = "orange"
+"bg.selection" = "line"
+
+"accent.primary" = "orange"
+"accent.secondary" = "red"
+"accent.tertiary" = "gray2"
+"accent.deep" = "black"
+
+success = "gray1"
+error = "red"
+warning = "orange"
+info = "gray1"
+
+"border.focused" = "orange"
+"border.unfocused" = "gray3"
+
+[styles]
+# vifm snowwhite 高亮组精确值（TopLine/StatusLine/Border = fg16/bg255 黑字浅灰底；
+# TopLineSel = fg231/bg16 反转；vifm 无 TabLine 组，镜像 TopLine/TopLineSel）
+TopLine = { fg = "black", bg = "line" }
+TopLineSel = { fg = "white", bg = "black" }
+TabLine = { fg = "black", bg = "line" }
+TabLineSel = { fg = "white", bg = "black" }
+StatusLine = { fg = "black", bg = "line", bold = true }
+Border = { fg = "black", bg = "line" }
+# vifm CurrLine = fg231/bg208；Selected = fg208/默认底
+cursor_line = { fg = "white", bg = "orange" }
+selected = { fg = "orange" }
+active_selected = { fg = "white", bg = "orange" }
+focused_border = { fg = "orange" }
+unfocused_border = { fg = "gray3" }
+keyword = { fg = "black", bold = true }
+line_number = { fg = "gray3" }
+success_style = { fg = "gray1" }
+error_style = { fg = "red" }
+warning_style = { fg = "orange" }
+info_style = { fg = "gray1" }
+dimmed = { fg = "gray3" }
+muted = { fg = "gray2" }
+inline_code = { fg = "black", bg = "line" }
+file_icon = { fg = "black" }

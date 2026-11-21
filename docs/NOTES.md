@@ -860,3 +860,11 @@ rvifm record  → 静默记录访问
 - **CurrLine 等价性（不改）**：vifm gruvbox CurrLine = `bold,inverse`（default fg/bg）——rvifm 既有 `highlight_style(REVERSED)` 语义等价，维持不动；`Selected` 组 rvifm 未消费（选中行另有 styling），映射表不含。
 - **踩坑**：clippy 1.100 新 lint「let-else 可改写为 `?`」只命中返回 Option 的新函数——旧 `style()` 的 else 返回 `Style` 类型不触发；跨 minor 升级的新 lint 按可改写性选择性命中。
 - **文档**：README 两处"20 套"→"39 套"+ 默认 gruvbox-dark；help `:theme` 行补默认值。422 单测（+4：gruvbox 推导断言 / 无主题·缺 token·未知组 None / dracula activate+推导 / vifm_style 集成）。
+
+### 2026-11-21 — M34-2 实现：捆绑 snowwhite 主题（机制 + 取色）
+
+- **机制**：`theme.rs` 新增捆绑层 `BUNDLED_THEMES`（include_str! 数据，首项 `src/themes/snowwhite.toml`）；activate 顺序 opaline 内置 → rvifm 捆绑 → 用户目录；`builtin_names()` 并入捆绑名——`:theme` 无参列表自动含 snowwhite，exec.rs 零改动。
+- **取色**：cterm 提取 16=#000000 / 231=#ffffff / 255=#eeeeee / 208=#ff8700 / 196=#ff0000；vifm 高亮组精确值直写主题命名样式（TopLine/TabLine/StatusLine/Border = fg16/bg255、TopLineSel/TabLineSel 反转 fg231/bg16——vifm 无 TabLine 组，镜像 TopLine）；selected fg208（默认底，同 vifm）、active_selected = CurrLine 面 fg231/bg208 不加粗（vifm cterm=none）。**主题命名样式优先于 M34-1 token 推导**——snowwhite 直接命中，不走推导。
+- **辅助灰阶**：原 .vifm 仅 5 色；text.secondary/muted/dim 的 gray1/2/3（#444444/#666666/#999999）为移植补全，TOML 头部与本条双注记。
+- **踩坑**：theme.rs 测试引用 `crate::app::render` 触发 E0603——`render` 模块对 app 外私有（子模块可见性按目录层级，`pub(crate)` 项不等于模块本身可见）；该断言移除，集成覆盖由 app/tests.rs 子模块测试承担。
+- 424 单测（+2：snowwhite 激活/精确取值/图标 Light 联动、捆绑名列表与未知名错误）。
