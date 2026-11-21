@@ -287,6 +287,94 @@ impl Store {
         tx.commit().map_err(io_err("events 裁剪提交失败"))?;
         Ok(())
     }
+
+    /// M38-4：events 表条数（统计用）。
+    pub fn events_count(&self) -> std::io::Result<usize> {
+        let rx = self.begin_read("events 读事务失败")?;
+        let table = rx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
+        Ok(table.iter().map_err(io_err("events 迭代失败"))?.count())
+    }
+
+    /// M38-4：meta 全部键值（统计/导出用；时钟与 compaction 标记）。
+    pub fn meta_all(&self) -> std::io::Result<Vec<(String, u64)>> {
+        let rx = self.begin_read("meta 读事务失败")?;
+        let table = rx.open_table(META).map_err(io_err("meta 表打开失败"))?;
+        let mut out = Vec::new();
+        for pair in table.iter().map_err(io_err("meta 迭代失败"))? {
+            let (k, v) = pair.map_err(io_err("meta 迭代失败"))?;
+            out.push((k.value().to_owned(), v.value()));
+        }
+        Ok(out)
+    }
+
+    /// M38-4：全清——清空 events/snapshot/meta 三表。返回 (events 删除数,
+    /// snapshot 删除数)。meta（时钟与 last_compaction）一并复位（库退回
+    /// 全新状态）。
+    pub fn purge_all(&self) -> std::io::Result<(usize, usize)> {
+        let tx = self.begin_write("purge 写事务失败")?;
+        let counts = {
+            let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
+            let keys: Vec<u64> = events
+                .iter()
+                .map_err(io_err("events 迭代失败"))?
+                .filter_map(|pair| pair.ok().map(|(k, _)| k.value()))
+                .collect();
+            let ev = keys.len();
+            for k in keys {
+                events.remove(k).map_err(io_err("events 删除失败"))?;
+            }
+            let mut snapshot = tx
+                .open_table(SNAPSHOT)
+                .map_err(io_err("snapshot 表打开失败"))?;
+            let keys: Vec<String> = snapshot
+                .iter()
+                .map_err(io_err("snapshot 迭代失败"))?
+                .filter_map(|pair| pair.ok().map(|(k, _)| k.value().to_owned()))
+                .collect();
+            let sn = keys.len();
+            for k in keys {
+                snapshot
+                    .remove(k.as_str())
+                    .map_err(io_err("snapshot 删除失败"))?;
+            }
+            let mut meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
+            let keys: Vec<String> = meta
+                .iter()
+                .map_err(io_err("meta 迭代失败"))?
+                .filter_map(|pair| pair.ok().map(|(k, _)| k.value().to_owned()))
+                .collect();
+            for k in keys {
+                meta.remove(k.as_str()).map_err(io_err("meta 删除失败"))?;
+            }
+            (ev, sn)
+        };
+        tx.commit().map_err(io_err("purge 提交失败"))?;
+        Ok(counts)
+    }
+
+    /// M38-4：按时间裁剪事件——删除 `ts < before` 的事件。返回删除数。
+    /// snapshot 不动（分数经 EMS 衰减与容量清理自然收敛，见 NOTES M38-4）。
+    pub fn prune_events_before(&self, before: u64) -> std::io::Result<usize> {
+        let tx = self.begin_write("events 裁剪事务失败")?;
+        let removed = {
+            let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
+            let doomed: Vec<u64> = events
+                .iter()
+                .map_err(io_err("events 迭代失败"))?
+                .filter_map(|pair| {
+                    let (k, v) = pair.ok()?;
+                    let record: EntryRecord = serde_json::from_slice(v.value()).ok()?;
+                    (record.ts < before).then(|| k.value())
+                })
+                .collect();
+            for k in &doomed {
+                events.remove(*k).map_err(io_err("events 删除失败"))?;
+            }
+            doomed.len()
+        };
+        tx.commit().map_err(io_err("events 裁剪提交失败"))?;
+        Ok(removed)
+    }
 }
 
 fn io_err<E: std::fmt::Display>(msg: &'static str) -> impl Fn(E) -> std::io::Error {

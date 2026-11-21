@@ -221,3 +221,64 @@ fn maintenance_dispatch_compact_and_missing_subcommand() {
     let stderr = String::from_utf8_lossy(&out2.stderr);
     assert!(stderr.contains("compact"), "stderr: {stderr}");
 }
+
+// ── M38-3：`rvifm init <shell>` 四 shell 初始化脚本（只输出不写 rc） ────────
+
+fn run_init(shell: &str) -> (i32, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+        .arg("init")
+        .arg(shell)
+        .output()
+        .expect("failed to run rvifm init");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn m38_3_init_four_shells_emit_record_and_pick_hooks() {
+    // 四 shell 均输出非空脚本且接入 record（cd 钩子）与 pick（快捷键）。
+    for shell in ["bash", "zsh", "fish", "powershell"] {
+        let (code, stdout, stderr) = run_init(shell);
+        assert_eq!(code, 0, "{shell} init 退出码");
+        assert!(stderr.is_empty(), "{shell} init stderr: {stderr}");
+        assert!(!stdout.trim().is_empty(), "{shell} 脚本非空");
+        assert!(stdout.contains("record"), "{shell} 脚本缺 record 接入");
+        assert!(stdout.contains("pick"), "{shell} 脚本缺 pick 调用");
+    }
+}
+
+#[test]
+fn m38_3_init_unknown_shell_fails() {
+    let (code, _, stderr) = run_init("tcsh");
+    assert_ne!(code, 0);
+    assert!(stderr.contains("未知 shell"), "stderr: {stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn m38_3_init_bash_script_passes_syntax_check() {
+    // bash -n 语法检查（CI ubuntu 覆盖；Windows 不编译 cfg(unix) 测试——
+    // M12-2 教训，bash 由 CI ubuntu job 兜底）。
+    let output = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+        .arg("init")
+        .arg("bash")
+        .output()
+        .expect("init bash");
+    assert!(output.status.success());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("init.sh");
+    std::fs::write(&path, &output.stdout).expect("write script");
+    let check = Command::new("bash")
+        .arg("-n")
+        .arg(&path)
+        .output()
+        .expect("bash -n");
+    assert!(
+        check.status.success(),
+        "bash -n 失败: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+}

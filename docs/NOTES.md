@@ -971,3 +971,11 @@ rvifm record  → 静默记录访问
 - **PLAN/AGENTS/STATE 状态漂移一并清零**：PLAN 总表 M35–M38 状态列（实际 M35 5/5、M36 8/8、M37 7/7 已关、M38 3/5 执行中）+ 发布注记 M41；AGENTS §10（原停 M35）；STATE 当前阶段/任务（原停 M35 执行中）。
 - **设计取向**：方向键不新增 Action（复用 CursorUp/CursorDown/ReturnParent/EnterSelected，符合 §5.4 动作驱动约束）；视口偏移有状态化复用既有 scroll 字段；右键菜单保持左 pane（右 pane 文件操作边界不变，SIMPLIFIED）。
 - **M41-1 实现决策**：右 pane `g` 原为单键直跳顶部（M14-1"无 gg 序列"），与 `gt` 序列冲突——改为 `g` 起始待决序列复用左 pane seq 机制：`gt`/`gT`/`Ngt` 直接命中默认 keymap 的 NextTab/PrevTab（计数行为天然一致），`gg` 顶部经 ToTop 臂焦点化；单键 `g` 直跳语义退役（SPEC M41-1 已记录升格）。`:` 返回 Outcome::EnterCommand，命令作用于焦点 pane 的链路 M14-1 focus_base 既有。
+
+### 2026-11-21 — M38-4 实现与断点记录二次勘误
+
+- **断点勘误（第二次）**：NOTES 前条"M38-4 frecency stats/export 臂已在工作区（未提交）"部分失实——前会话的 `:frecency` 臂（exec.rs:1994）**实际已随 checkpoint 提交**（stats/export/purge，无 prune、无确认门、export 仅 snapshot、PowerShell 脚本缺 pick 钩子）。当次 grep 用"frecency stats"字面量未命中（臂内为"stats"子命令分支）导致误判。教训：**断点核对必须按命令臂/函数名 grep，不能用子命令字面量**。
+- **处置**：旧臂替换为完整实现——四子命令 + `purge confirm` 二步确认门（SPEC M38-4 MUST"确认"；旧版直接删库文件，且 Windows 下有句柄打开时 remove_file 失败风险）+ export 全量（snapshot+events+meta）/purge 改三表清空（不动库文件）/prune --before。
+- **prune 设计（SIMPLIFIED 决策）**：只删 `ts < before` 的 events；**snapshot 不动**——snapshot 条目无逐条时间戳（tick/clock 是时钟非墙钟），加字段需 schema 迁移；旧分数经 EMS aging 衰减 + M23-3 容量清理自然收敛，符合数据卫生目标。日期解析用纯 std（Hinnant days_from_civil，UTC 0 点），不引日期 crate（jiff 在依赖树但不为此扩面）。
+- **M38-3 验收补课**：TASKS 勾选但 ACCEPTANCE 未验——补 cli 集成测试（四 shell record/pick 标记 + 未知 shell 报错 + cfg(unix) `bash -n` 语法检查走 CI ubuntu）+ PowerShell 脚本补 pick 快捷键（PSReadLine Ctrl-t）。双重教训：勾选与验收须同步；shell 脚本逐 shell 断言内容而非仅"非空"。
+- **large_directory 时序测试**：本机（Windows）并行负载下高频抖动（当日 3 次，单跑均 5s 绿）——既有先例记录在案，以单跑 + CI 为准。

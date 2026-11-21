@@ -41,10 +41,16 @@ bind \ct __rvifm_pick
 "#
         }
         "powershell" => {
-            r#"# rvifm shell 集成（PowerShell）：cd 后记录
+            r#"# rvifm shell 集成（PowerShell）：cd 后记录 + Ctrl-T 调 pick
 function prompt {
     command rvifm record --topic dir "$PWD" 2>$null | Out-Null
     "PS $PWD> "
+}
+if (Get-Module -ListAvailable PSReadLine) {
+    Set-PSReadLineKeyHandler -Chord Ctrl+t -ScriptBlock {
+        $sel = command rvifm pick --topic dir 2>$null | Select-Object -First 1
+        if ($sel) { [Microsoft.PowerShell.PSConsoleReadLine]::Insert("$sel") }
+    }
 }
 "#
         }

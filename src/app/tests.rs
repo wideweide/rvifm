@@ -5425,6 +5425,29 @@ fn m41_4_viewport_scroll_sticky_sync() {
 }
 
 #[test]
+fn m38_4_frecency_command_gates() {
+    // M38-4：`:frecency` 命令门控（无参/未知子命令/purge 无 confirm/
+    // prune 缺日期与坏日期）——只测错误分支，不触真实 frecency 库
+    // （核心链路见 frecency::tests::m38_4_stats_export_purge_prune_roundtrip）。
+    let (_tmp, mut state) = make_state(1);
+    let r = exec_command_impl(&mut state, "frecency");
+    assert!(r.is_err() && r.unwrap_err().contains("需子命令"));
+    let r = exec_command_impl(&mut state, "frecency 未知");
+    assert!(r.is_err() && r.unwrap_err().contains("未知子命令"));
+    let r = exec_command_impl(&mut state, "frecency purge");
+    assert!(
+        r.is_err() && r.unwrap_err().contains("purge confirm"),
+        "无 confirm 拒绝执行"
+    );
+    let r = exec_command_impl(&mut state, "frecency prune");
+    assert!(r.is_err() && r.unwrap_err().contains("--before"));
+    let r = exec_command_impl(&mut state, "frecency prune --before 2026-13-01");
+    assert!(r.is_err() && r.unwrap_err().contains("日期非法"));
+    let r = exec_command_impl(&mut state, "frecency export");
+    assert!(r.is_err() && r.unwrap_err().contains("缺少输出文件路径"));
+}
+
+#[test]
 fn feat1_mouse_click_focus_then_reclick_opens_dir() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir(tmp.path().join("d1")).unwrap();

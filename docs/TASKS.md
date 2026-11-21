@@ -476,7 +476,7 @@
 - [x] M38-1 `:find`/`:grep` 结果可操作（yy/dd/p/:tag/:rename 映射真实路径；见 SPEC M38-1；2026-11-21 完成：results_actions_enabled + Delete 臂，450 单测；:tag/:chmod 随守卫复用）
 - [x] M38-2 `pick` 兼容面（--query/--multi/--print0/--preview/--height/--no-sort/--exit-0/--select-1；见 SPEC M38-2；2026-11-21 完成：parse_pick_options + cmd_pick 消费，450 单测）
 - [x] M38-3 `rvifm init bash`/`zsh`/`fish`/`powershell`（见 SPEC M38-3；2026-11-21 完成：shell_init 模块 + main 臂；init 只输出不写 rc）
-- [ ] M38-4 `:frecency stats`/`export`/`purge`/`prune`（见 SPEC M38-4）
+- [x] M38-4 `:frecency stats`/`export`/`purge`/`prune`（见 SPEC M38-4；2026-11-21 完成：四子命令 + purge confirm 确认门 + JSON 全量导出 + prune --before 日期裁剪（snapshot 不动）；发现前会话 :frecency 臂已提交但缺 prune/确认门——替换为完整版，见 NOTES；429 单测 + 8 cli）
 - [ ] M38-5 `:find` 过滤器（size/mtime/type/depth）+ 命名搜索（见 SPEC M38-5）
 
 ## M39 — 预览与平台（2026-11-21 增补；见 SPEC M39 节，已确认登记·按序执行）

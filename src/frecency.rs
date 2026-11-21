@@ -502,6 +502,135 @@ fn open_store_readonly_at(db_path: &Path) -> std::io::Result<Option<Store>> {
     }
 }
 
+// ── M38-4：frecency 数据管理（:frecency stats / export / purge / prune） ──
+
+/// M38-4：frecency 数据库统计快照（只读）。
+#[derive(Debug, serde::Serialize)]
+pub struct FrecencyStats {
+    pub db_path: String,
+    pub db_size_bytes: u64,
+    pub events: usize,
+    /// topic → snapshot 条目数（`dir`/`file`/`cmd`；升序）。
+    pub snapshots_by_topic: Vec<(String, usize)>,
+    /// meta 全部键值（时钟 / last_compaction）。
+    pub meta: Vec<(String, u64)>,
+}
+
+/// M38-4：导出数据（JSON 序列化目标；测试侧 round-trip 反序列化）。
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct FrecencyExport {
+    pub meta: Vec<(String, u64)>,
+    pub snapshot: Vec<SnapshotEntry>,
+    pub events: Vec<(u64, EntryRecord)>,
+}
+
+/// M38-4：`YYYY-MM-DD` → Unix 秒（UTC 0 点）。非法输入返回 None。
+/// 纯 std 实现（Hinnant days_from_civil），不引日期 crate。
+pub(crate) fn parse_date_ts(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let y: i64 = parts[0].parse().ok()?;
+    let m: i64 = parts[1].parse().ok()?;
+    let d: i64 = parts[2].parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let y_adj = if m <= 2 { y - 1 } else { y };
+    let era = y_adj.div_euclid(400);
+    let yoe = y_adj - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400).ok()
+}
+
+/// M38-4：统计（默认库路径；库缺失降级为全 0 统计）。
+pub fn frecency_stats() -> std::io::Result<FrecencyStats> {
+    frecency_stats_at(&crate::config::frecency_db_path())
+}
+
+/// 注入路径形态（测试用）。
+fn frecency_stats_at(db_path: &Path) -> std::io::Result<FrecencyStats> {
+    let zero = FrecencyStats {
+        db_path: db_path.display().to_string(),
+        db_size_bytes: std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0),
+        events: 0,
+        snapshots_by_topic: Vec::new(),
+        meta: Vec::new(),
+    };
+    let Some(store) = open_store_readonly_at(db_path)? else {
+        return Ok(zero);
+    };
+    let events = store.events_count()?;
+    let snapshot = store.snapshot_all()?;
+    let mut by_topic: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for e in &snapshot {
+        *by_topic.entry(e.topic.clone()).or_default() += 1;
+    }
+    Ok(FrecencyStats {
+        db_path: db_path.display().to_string(),
+        db_size_bytes: std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0),
+        events,
+        snapshots_by_topic: by_topic.into_iter().collect(),
+        meta: store.meta_all()?,
+    })
+}
+
+/// M38-4：导出 JSON 到文件（默认库路径）。返回导出的事件条数。
+/// 库缺失 → 空数据文件（meta/snapshot/events 全空）。
+pub fn frecency_export(file: &str) -> std::io::Result<usize> {
+    frecency_export_at(&crate::config::frecency_db_path(), file)
+}
+
+/// 注入路径形态（测试用）。
+fn frecency_export_at(db_path: &Path, file: &str) -> std::io::Result<usize> {
+    let data = match open_store_readonly_at(db_path)? {
+        Some(store) => FrecencyExport {
+            meta: store.meta_all()?,
+            snapshot: store.snapshot_all()?,
+            events: store.events_since(0)?,
+        },
+        None => FrecencyExport {
+            meta: Vec::new(),
+            snapshot: Vec::new(),
+            events: Vec::new(),
+        },
+    };
+    let n = data.events.len();
+    let json = serde_json::to_vec_pretty(&data).map_err(std::io::Error::other)?;
+    std::fs::write(file, json)?;
+    Ok(n)
+}
+
+/// M38-4：全清（写路径；pending 降级文件一并删除）。返回 (events, snapshot)
+/// 删除数。库缺失 → 先建空库再清（结果 (0, 0)）。
+pub fn frecency_purge() -> std::io::Result<(usize, usize)> {
+    let counts = frecency_purge_at(&crate::config::frecency_db_path())?;
+    let _ = std::fs::remove_file(pending_path());
+    Ok(counts)
+}
+
+/// 注入路径形态（测试用；仅库内三表，不动全局 pending 文件）。
+fn frecency_purge_at(db_path: &Path) -> std::io::Result<(usize, usize)> {
+    let store = Store::open(db_path)?;
+    store.purge_all()
+}
+
+/// M38-4：按时间裁剪事件（写路径）——删除 `ts < before` 的事件；snapshot
+/// 不动（分数经 EMS 衰减与容量清理自然收敛，见 NOTES M38-4）。返回删除数。
+pub fn frecency_prune_before(before: u64) -> std::io::Result<usize> {
+    frecency_prune_before_at(&crate::config::frecency_db_path(), before)
+}
+
+/// 注入路径形态（测试用）。
+fn frecency_prune_before_at(db_path: &Path, before: u64) -> std::io::Result<usize> {
+    let store = Store::open(db_path)?;
+    store.prune_events_before(before)
+}
+
 /// TUI 启动合并钩子（AUDIT-1）：把上次降级的 `events.pending` 合并进库。
 /// 合并只发生在 `record` 写路径与 TUI 启动；`pick` / 跳转选择器纯只读。
 /// 打开失败静默跳过（保留 pending，下次启动或 record 再试）。
@@ -2477,5 +2606,84 @@ mod tests {
         assert!(!text2.contains("预览"), "窄终端单栏无预览: {text2}");
         // 列表可见性不在此断言——候选全路径长度随宿主变化（AUDIT-18 坑），
         // 40 列必然截断；列表渲染已由宽终端用例覆盖。
+    }
+
+    #[test]
+    fn m38_4_parse_date_ts() {
+        // M38-4：YYYY-MM-DD → Unix 秒（UTC 0 点）。
+        assert_eq!(parse_date_ts("1970-01-01"), Some(0));
+        assert_eq!(parse_date_ts("2026-01-01"), Some(1_767_225_600));
+        assert_eq!(parse_date_ts("2026-11-21"), Some(1_795_219_200));
+        assert_eq!(parse_date_ts("2026-13-01"), None);
+        assert_eq!(parse_date_ts("2026-00-10"), None);
+        assert_eq!(parse_date_ts("20260101"), None);
+        assert_eq!(parse_date_ts("abc"), None);
+    }
+
+    #[test]
+    fn m38_4_stats_export_purge_prune_roundtrip() {
+        // M38-4：stats/export/purge/prune 全链路（注入路径，不触真实库）。
+        let tmp = TempDir::new().unwrap();
+        let db = tmp.path().join("f.redb");
+        {
+            let store = Store::open(&db).unwrap();
+            store.append_event(&rec("/a", 1000)).unwrap();
+            store.append_event(&rec("/b", 2000)).unwrap();
+            store.append_event(&rec("/c", 3000)).unwrap();
+            store.snapshot_upsert(&snap("/a", "", 1.0)).unwrap();
+            store
+                .snapshot_upsert(&SnapshotEntry {
+                    path: "/cmd1".to_owned(),
+                    topic: "cmd".to_owned(),
+                    keyword: String::new(),
+                    score: 1.0,
+                    tick: 3,
+                    clock: 3,
+                })
+                .unwrap();
+        }
+        // 统计：events=3，snapshot 按 topic 分组 dir=1、cmd=1。
+        let st = frecency_stats_at(&db).unwrap();
+        assert_eq!(st.events, 3);
+        assert!(st.db_size_bytes > 0);
+        assert_eq!(
+            st.snapshots_by_topic,
+            vec![("cmd".to_owned(), 1), ("dir".to_owned(), 1)]
+        );
+        assert!(st.meta.iter().any(|(k, _)| k == "global_tick"));
+        // 导出：JSON 含全部事件与快照（round-trip 校验）。
+        let out = tmp.path().join("export.json");
+        let n = frecency_export_at(&db, out.to_str().unwrap()).unwrap();
+        assert_eq!(n, 3);
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert!(text.contains("\"/a\"") && text.contains("\"cmd\""));
+        let parsed: FrecencyExport = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed.events.len(), 3);
+        assert_eq!(parsed.snapshot.len(), 2);
+        // 按时间裁剪：before=2000 → 仅 /a（ts=1000）满足 ts<before 被删；
+        // snapshot 不动（分数经衰减/容量清理收敛）。
+        let removed = frecency_prune_before_at(&db, 2000).unwrap();
+        assert_eq!(removed, 1, "仅 /a（ts=1000）被裁剪");
+        let st = frecency_stats_at(&db).unwrap();
+        assert_eq!(st.events, 2);
+        assert_eq!(st.snapshots_by_topic.len(), 2, "snapshot 不受 prune 影响");
+        // 全清：events+snapshot 归零，meta 复位（pending 降级文件删除在
+        // 公开包装 frecency_purge() 内——全局路径，测试不触碰）。
+        let (ev, sn) = frecency_purge_at(&db).unwrap();
+        assert_eq!((ev, sn), (2, 2));
+        let st = frecency_stats_at(&db).unwrap();
+        assert_eq!(st.events, 0);
+        assert_eq!(st.snapshots_by_topic.len(), 0);
+        assert_eq!(st.meta.len(), 0, "meta 时钟复位");
+        // 缺失库：stats 全 0、export 空文件。
+        let missing = tmp.path().join("missing.redb");
+        let st = frecency_stats_at(&missing).unwrap();
+        assert_eq!(st.events, 0);
+        assert_eq!(st.db_size_bytes, 0);
+        let out2 = tmp.path().join("empty.json");
+        frecency_export_at(&missing, out2.to_str().unwrap()).unwrap();
+        let parsed: FrecencyExport =
+            serde_json::from_str(&std::fs::read_to_string(out2).unwrap()).unwrap();
+        assert!(parsed.events.is_empty() && parsed.snapshot.is_empty());
     }
 }

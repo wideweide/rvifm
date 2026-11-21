@@ -133,6 +133,8 @@ rvifm 帮助（vim 风格文件管理器）
   ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
                   本会话未入库命令并入；Enter 执行，Esc 取消）
   Tab（命令行内） 补全当前词为条目名（前缀匹配循环；~ 展开 HOME）
+  :frecency stats 导出/管理 frecency 数据库（export <file> JSON；
+                  purge confirm 全清；prune --before <日期> 按时间裁剪）
   :cmdmark <tag>  命令书签（写入 frecency cmd topic；命令行内 ' 展开标签）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 

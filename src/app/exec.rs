@@ -1992,59 +1992,80 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             })
         }
         Some("frecency") => {
-            // M38-4：frecency 管理——stats/export/purge/prune。
+            // M38-4：frecency 数据管理——stats / export / purge / prune。
             match parts.next() {
+                None => Err(
+                    "frecency: 需子命令 stats | export <file> | purge confirm | prune --before <YYYY-MM-DD>"
+                        .to_owned(),
+                ),
                 Some("stats") => {
-                    let store = match crate::frecency::open_store_readonly() {
-                        Ok(Some(s)) => s,
-                        Ok(None) => {
-                            return Ok(ExecOutcome::Done {
-                                msg: Some("frecency: 无数据（库缺失）".to_owned()),
-                            });
-                        }
-                        Err(e) => return Err(format!("frecency: {e}")),
-                    };
-                    let snapshot = store.snapshot_all().map_err(|e| format!("frecency: {e}"))?;
-                    let dir_n = snapshot.iter().filter(|e| e.topic == "dir").count();
-                    let file_n = snapshot.iter().filter(|e| e.topic == "file").count();
-                    let cmd_n = snapshot.iter().filter(|e| e.topic == "cmd").count();
-                    let kw_n = snapshot.iter().filter(|e| !e.keyword.is_empty()).count();
+                    let st = crate::frecency::frecency_stats()
+                        .map_err(|e| format!("frecency: 统计失败: {e}"))?;
+                    let topics = st
+                        .snapshots_by_topic
+                        .iter()
+                        .map(|(t, n)| format!("{t}={n}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     Ok(ExecOutcome::Done {
                         msg: Some(format!(
-                            "frecency: dir {dir_n} · file {file_n} · cmd {cmd_n} · 书签 {kw_n}"
+                            "frecency: events={} snapshot[{topics}] db={}B",
+                            st.events, st.db_size_bytes
                         )),
                     })
                 }
                 Some("export") => {
-                    let path = parts
+                    let file = parts
                         .next()
-                        .ok_or_else(|| "frecency: export 缺少文件路径".to_owned())?;
-                    let store = match crate::frecency::open_store_readonly() {
-                        Ok(Some(s)) => s,
-                        Ok(None) => return Err("frecency: 无数据".to_owned()),
-                        Err(e) => return Err(format!("frecency: {e}")),
-                    };
-                    let snapshot = store.snapshot_all().map_err(|e| format!("frecency: {e}"))?;
-                    let json = serde_json::to_string_pretty(&snapshot)
-                        .map_err(|e| format!("frecency: 序列化失败: {e}"))?;
-                    std::fs::write(path, json).map_err(|e| format!("frecency: 导出失败: {e}"))?;
+                        .ok_or_else(|| "frecency: export 缺少输出文件路径".to_owned())?;
+                    let n = crate::frecency::frecency_export(file)
+                        .map_err(|e| format!("frecency: 导出失败: {e}"))?;
                     Ok(ExecOutcome::Done {
-                        msg: Some(format!("frecency: 已导出 {} 条到 {path}", snapshot.len())),
+                        msg: Some(format!("frecency: 已导出 {n} 条事件 → {file}（JSON）")),
                     })
                 }
                 Some("purge") => {
-                    // 全清（确认走现有 Confirm 模式过重——直接执行 + 不可恢复提示）。
-                    let db_path = crate::config::frecency_db_path();
-                    std::fs::remove_file(&db_path)
-                        .map_err(|e| format!("frecency: 清除失败: {e}"))?;
+                    // 全清确认门：`purge confirm` 二步确认（SPEC M38-4），防误触。
+                    if parts.next() != Some("confirm") {
+                        return Err(
+                            "frecency: purge 将清空全部历史（不可恢复）；确认请执行 :frecency purge confirm"
+                                .to_owned(),
+                        );
+                    }
+                    let (ev, sn) = crate::frecency::frecency_purge()
+                        .map_err(|e| format!("frecency: 清空失败: {e}"))?;
                     Ok(ExecOutcome::Done {
-                        msg: Some("frecency: 已清除全部数据（不可恢复）".to_owned()),
+                        msg: Some(format!(
+                            "frecency: 已清空 events {ev} 条 + snapshot {sn} 条（不可恢复）"
+                        )),
+                    })
+                }
+                Some("prune") => {
+                    // --before <YYYY-MM-DD> 或 --before=<YYYY-MM-DD>（UTC 0 点）。
+                    let before = match parts.next() {
+                        Some(v) if v.starts_with("--before=") => v["--before=".len()..].to_owned(),
+                        Some("--before") => parts
+                            .next()
+                            .ok_or_else(|| "frecency: prune --before 缺少日期".to_owned())?
+                            .to_owned(),
+                        _ => {
+                            return Err(
+                                "frecency: prune 需 --before <YYYY-MM-DD>（如 2026-01-01）"
+                                    .to_owned()
+                            )
+                        }
+                    };
+                    let ts = crate::frecency::parse_date_ts(&before)
+                        .ok_or_else(|| format!("frecency: 日期非法（需 YYYY-MM-DD）：{before}"))?;
+                    let removed = crate::frecency::frecency_prune_before(ts)
+                        .map_err(|e| format!("frecency: 裁剪失败: {e}"))?;
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("frecency: 已清理 {removed} 条 {before} 之前的事件")),
                     })
                 }
                 Some(other) => Err(format!(
-                    "frecency: 未知子命令 {other}（stats/export/purge）"
+                    "frecency: 未知子命令 {other}（stats | export <file> | purge confirm | prune --before <日期>）"
                 )),
-                None => Err("frecency: 需要子命令（stats/export/purge）".to_owned()),
             }
         }
         Some("queue") => {
