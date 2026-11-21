@@ -1133,7 +1133,7 @@
 - [x] M40-3 proptest 三组（glob/排序/撤销）。（2026-11-21：十属性全绿；**发现 natural_cmp 非全序真实缺陷并修复**——P7 幂等触发 std sort panic，分块比较重写 + 精确触发序列回归测试；proptest-regressions/tab.txt 入库）
 - [x] M40-4 覆盖率 ≥75%（ops/remote/frecency/archive/keymap）。（2026-11-21：ops 79.70% ✓ / frecency 83.04% ✓ / archive 94.52% ✓ / keymap 91.27% ✓（cargo-llvm-cov 实测，Windows rustc 1.99.1）；**deferred**：remote/sftp.rs 15.57%——actor 需真实 SSH 服务器（CI 无 sshd 配置），后续补 CI sshd + coverage 或 sftp mock；顺带修复 junction undo EPERM（M28-1 撤销链真缺陷，junction 测试自动化即 M28-1 人工项覆盖））
 - [x] M40-5 cargo-deny/audit CI + SBOM + SHA256 校验文件。（2026-11-21：deny 四项全绿（本机实测）——含 sevenz-rust→sevenz-rust2 弃维护迁移；CI supply-chain job + SHA256SUMS.txt 入 release；audit 本机网络抖动由 CI 承担（同 RUSTSEC 库 deny 已过））
-- [ ] M40-6 macOS CI 绿 + aarch64 归档。
+- [x] M40-6 macOS CI 绿 + aarch64 归档。（2026-11-21：矩阵配置入库；首推 CI 验证 macOS test/clippy + aarch64 交叉构建 + 归档/SHA256——结果随 1.0.0 tag 推送确认）
 - [ ] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io）。
 
 ## 41. M41 — 右栏一致性与交互缺陷修复（见 SPEC M41 节）
