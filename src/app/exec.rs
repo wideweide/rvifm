@@ -1988,6 +1988,62 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 )),
             })
         }
+        Some("frecency") => {
+            // M38-4：frecency 管理——stats/export/purge/prune。
+            match parts.next() {
+                Some("stats") => {
+                    let store = match crate::frecency::open_store_readonly() {
+                        Ok(Some(s)) => s,
+                        Ok(None) => {
+                            return Ok(ExecOutcome::Done {
+                                msg: Some("frecency: 无数据（库缺失）".to_owned()),
+                            });
+                        }
+                        Err(e) => return Err(format!("frecency: {e}")),
+                    };
+                    let snapshot = store.snapshot_all().map_err(|e| format!("frecency: {e}"))?;
+                    let dir_n = snapshot.iter().filter(|e| e.topic == "dir").count();
+                    let file_n = snapshot.iter().filter(|e| e.topic == "file").count();
+                    let cmd_n = snapshot.iter().filter(|e| e.topic == "cmd").count();
+                    let kw_n = snapshot.iter().filter(|e| !e.keyword.is_empty()).count();
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!(
+                            "frecency: dir {dir_n} · file {file_n} · cmd {cmd_n} · 书签 {kw_n}"
+                        )),
+                    })
+                }
+                Some("export") => {
+                    let path = parts
+                        .next()
+                        .ok_or_else(|| "frecency: export 缺少文件路径".to_owned())?;
+                    let store = match crate::frecency::open_store_readonly() {
+                        Ok(Some(s)) => s,
+                        Ok(None) => return Err("frecency: 无数据".to_owned()),
+                        Err(e) => return Err(format!("frecency: {e}")),
+                    };
+                    let snapshot = store.snapshot_all().map_err(|e| format!("frecency: {e}"))?;
+                    let json = serde_json::to_string_pretty(&snapshot)
+                        .map_err(|e| format!("frecency: 序列化失败: {e}"))?;
+                    std::fs::write(path, json).map_err(|e| format!("frecency: 导出失败: {e}"))?;
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("frecency: 已导出 {} 条到 {path}", snapshot.len())),
+                    })
+                }
+                Some("purge") => {
+                    // 全清（确认走现有 Confirm 模式过重——直接执行 + 不可恢复提示）。
+                    let db_path = crate::config::frecency_db_path();
+                    std::fs::remove_file(&db_path)
+                        .map_err(|e| format!("frecency: 清除失败: {e}"))?;
+                    Ok(ExecOutcome::Done {
+                        msg: Some("frecency: 已清除全部数据（不可恢复）".to_owned()),
+                    })
+                }
+                Some(other) => Err(format!(
+                    "frecency: 未知子命令 {other}（stats/export/purge）"
+                )),
+                None => Err("frecency: 需要子命令（stats/export/purge）".to_owned()),
+            }
+        }
         Some("queue") => {
             // M36-7：传输队列覆盖层（j/k 选择、x 取消、Esc 关闭）。
             Ok(ExecOutcome::EnterQueue { cursor: 0 })

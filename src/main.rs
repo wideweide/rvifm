@@ -20,6 +20,7 @@ mod ops;
 mod pdf;
 mod preview;
 mod privilege;
+mod shell_init;
 // M19-2/M19-3b 接入导航与后端；本阶段仅 trait 层（测试使用）。
 #[allow(dead_code)]
 mod remote;
@@ -48,6 +49,22 @@ fn main() -> std::io::Result<()> {
         // M8-6：只读模糊选择器；M8-5：compaction 子命令。
         Some("pick") => {
             return frecency::cmd_pick(args.collect());
+        }
+        // M38-3：shell 集成初始化脚本（一行接入）。
+        Some("init") => {
+            return match args.next().as_deref() {
+                Some(shell @ ("bash" | "zsh" | "fish" | "powershell")) => {
+                    print!("{}", crate::shell_init::script(shell));
+                    Ok(())
+                }
+                other => {
+                    eprintln!(
+                        "init: 未知 shell {}（支持 bash/zsh/fish/powershell）",
+                        other.unwrap_or("<缺省>")
+                    );
+                    std::process::exit(2);
+                }
+            };
         }
         Some("maintenance") => {
             return match args.next().as_deref() {

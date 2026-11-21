@@ -465,8 +465,8 @@
 > 来源：同上。目标 0.13.x。顺序：1（结果可操作）→ 2（pick 兼容）→ 3（init）→ 4（frecency 管理）→ 5（find 过滤器）。
 
 - [x] M38-1 `:find`/`:grep` 结果可操作（yy/dd/p/:tag/:rename 映射真实路径；见 SPEC M38-1；2026-11-21 完成：results_actions_enabled + Delete 臂，450 单测；:tag/:chmod 随守卫复用）
-- [ ] M38-2 `pick` 兼容面（--query/--multi/--print0/--preview/--height/--no-sort/--exit-0/--select-1；见 SPEC M38-2）
-- [ ] M38-3 `rvifm init bash`/`zsh`/`fish`/`powershell`（见 SPEC M38-3）
+- [x] M38-2 `pick` 兼容面（--query/--multi/--print0/--preview/--height/--no-sort/--exit-0/--select-1；见 SPEC M38-2；2026-11-21 完成：parse_pick_options + cmd_pick 消费，450 单测）
+- [x] M38-3 `rvifm init bash`/`zsh`/`fish`/`powershell`（见 SPEC M38-3；2026-11-21 完成：shell_init 模块 + main 臂；init 只输出不写 rc）
 - [ ] M38-4 `:frecency stats`/`export`/`purge`/`prune`（见 SPEC M38-4）
 - [ ] M38-5 `:find` 过滤器（size/mtime/type/depth）+ 命名搜索（见 SPEC M38-5）
 

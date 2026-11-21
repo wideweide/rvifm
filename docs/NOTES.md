@@ -948,3 +948,9 @@ rvifm record  → 静默记录访问
 - **蒸馏决策**：报告 M34"小步交付"被确立为后续批次模板（NOTES §8.3 佐证）；R-1（复制丢元数据）定 P0 并入 M36-1；R-3（下载双读）并入 M36-2；SPEC M32-2 SIMPLIFIED（整文件重写）升级路径 = M36-3/M36-6（范围读写 + 偏移续传）。
 - **白名单口径**：SPEC"7z/rar 不支持"三处的修订以 M26-3 实际行为为准；PLAN"0.10.0 跳过"为用户决策记录（非缺陷）。
 - **执行序**：M35（文档一致性）→ M36 → M37 → M38 → M39 → M40 → 1.0.0；依赖关系见 PLAN 批次表。**M35-1 在蒸馏时一并完成**（漂移修正与蒸馏落笔同文件同动作）。
+### 2026-11-21 — M36–M38 断点（token 预算暂停；下一会话起点）
+
+- **已完成并提交**：M35 批次 5/5（漂移清零/harness_check 七规则 CI/REVIEW 归档/CHANGELOG/依赖卫生）+ **0.11.1 发布**（GitHub Release 三归档 + crates.io 上线——本机凭据验证 owner 后 publish）；M36 批次 8/8（copy_tree 元数据/下载单读+原子 rename/RemoteFs 范围读写/Transfer 执行体/冲突策略/偏移续传 upload_chunked/.part.meta 头哈希校验/:queue 入队+覆盖层+消费/递归远端）；M37 批次 7/7（:chmod/:extract zip-slip/:sync/:du/:dup/:checksum/:trash clear·purge）；M38-1 检索结果可操作（results_actions_enabled + Delete 臂）、M38-2 pick 兼容面（parse_pick_options 八参数）、M38-3 init 四 shell。
+- **未完成（下会话起点）**：M38-4 frecency 管理（stats/export/purge——实现代码已在工作区 exec.rs frecency 臂，未勾选验收）→ M38-5 find 过滤器 → M39 全部（hex/CSV·PDF/zip 容器/SFTP 硬化/UAC/标签布局）→ M40 全部（基准/fuzz/proptest/覆盖率/供应链/平台/1.0 发布）。
+- **关键事实**：frecency stats/export 臂已实现（exec.rs frecency 臂——cargo fmt 后在位，未加测试/勾选，下会话先验后勾）；443→450 单测演进中；harness_check OK。
+- **发布**：按用户决策 M36–M40 全部完成后再统一发布 1.0.0（各批次不再单独发版）。

@@ -1120,27 +1120,67 @@ fn replay_merge(
 
 /// AUDIT-15：`pick` 参数解析——`--topic dir|file`（与 `record` 对称，
 /// 缺省 `dir`）+ 可选位置查询词；多余位置参数报错。
+/// M38-2：fzf 兼容参数集（常用子集；未知参数可读错误）。
+#[derive(Debug, Default)]
+pub struct PickOptions {
+    pub topic: String,
+    pub query: String,
+    pub multi: bool,
+    pub print0: bool,
+    pub no_sort: bool,
+    pub exit_0: bool,
+    pub select_1: bool,
+    /// --preview / --height：接受并忽略（预览由交互 UI 自带；高度自适应）。
+    pub accepted_ignored: Vec<String>,
+}
+
 fn parse_pick_args(args: &[String]) -> std::io::Result<(String, String)> {
-    let mut topic = "dir".to_owned();
-    let mut query = String::new();
+    parse_pick_options(args).map(|o| (o.topic, o.query))
+}
+
+/// M38-2：完整参数解析（fzf 兼容子集）。
+pub fn parse_pick_options(args: &[String]) -> std::io::Result<PickOptions> {
+    let mut o = PickOptions {
+        topic: "dir".to_owned(),
+        ..Default::default()
+    };
     let mut it = args.iter();
+    let mut query_set = false;
     while let Some(a) = it.next() {
         match a.as_str() {
             "--topic" => {
-                topic = it
+                o.topic = it
                     .next()
                     .ok_or_else(|| arg_err("pick: --topic 缺少值"))?
                     .clone();
             }
+            "--query" => {
+                o.query = it
+                    .next()
+                    .ok_or_else(|| arg_err("pick: --query 缺少值"))?
+                    .clone();
+                query_set = true;
+            }
+            "--multi" => o.multi = true,
+            "--print0" => o.print0 = true,
+            "--no-sort" => o.no_sort = true,
+            "--exit-0" => o.exit_0 = true,
+            "--select-1" => o.select_1 = true,
+            "--preview" | "--height" => {
+                // 接受 + 忽略值（预览内置；高度自适应）。
+                let _ = it.next();
+                o.accepted_ignored.push(a.clone());
+            }
             other => {
-                if !query.is_empty() {
+                if query_set {
                     return Err(arg_err("pick: 多余的位置参数"));
                 }
-                query = other.to_owned();
+                o.query = other.to_owned();
+                query_set = true;
             }
         }
     }
-    Ok((topic, query))
+    Ok(o)
 }
 
 /// AUDIT-15：只读加载评分表——库缺失（数据目录不存在）→ 空表
@@ -1197,7 +1237,9 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
     // AUDIT-16：加载 [frecency] 设置（λ/容量上限）——与 record/TUI 一致，
     // 否则 pick 的评分衰减永远用缺省 λ，与 TUI 排序漂移。
     init_settings(&crate::config::load().unwrap_or_default().frecency);
-    let (topic, initial_query) = parse_pick_args(&args)?;
+    let opts = parse_pick_options(&args)?;
+    let topic = opts.topic.clone();
+    let initial_query = opts.query.clone();
     use std::io::{IsTerminal, Read as _, Write as _};
     let mut candidates = String::new();
     std::io::stdin().read_to_string(&mut candidates)?;
@@ -1215,14 +1257,31 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
                     || ci_contains(path, &initial_query)
             })
             .collect();
-        hit.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+        if !opts.no_sort {
+            hit.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+        }
         if hit.is_empty() {
+            // --exit-0：空匹配退出 0（fzf 语义）。
+            if opts.exit_0 {
+                return Ok(());
+            }
             std::process::exit(1);
+        }
+        // --select-1：唯一命中直接输出（fzf -1 语义）。
+        if opts.select_1 && hit.len() == 1 {
+            println!("{}", hit[0].0);
+            return Ok(());
         }
         let stdout = std::io::stdout();
         let mut w = std::io::BufWriter::new(stdout.lock());
-        for (path, _, _) in hit {
-            writeln!(w, "{path}")?;
+        // filter 语义：输出全部命中（fzf filter 同款）；--print0 NUL 分隔。
+        // --multi 仅交互 UI 多选有意义（交互 UI 侧）。
+        for (path, _, _) in hit.into_iter() {
+            if opts.print0 {
+                write!(w, "{path}\0")?;
+            } else {
+                writeln!(w, "{path}")?;
+            }
         }
         return Ok(());
     }
