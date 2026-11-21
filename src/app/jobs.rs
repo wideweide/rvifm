@@ -354,9 +354,10 @@ pub(crate) fn walk_remote(
 
 /// M36-4：Transfer 传输方向（跨 VFS 三方向；本地→本地不走 Transfer）。
 /// M36-7 `:queue` 接线后移除 allow（届时 paste/queue 统一路由到执行体）。
-#[allow(dead_code)]
+/// M40-1：pub（lib 化——state::TransferQueueEntry 公开字段引用此类型，
+/// private_interfaces lint）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TransferDirection {
+pub enum TransferDirection {
     /// 本地 → 远端（本地 read → 远端 write）。
     Upload,
     /// 远端 → 本地（远端 read → 本地写临时 + rename + mtime）。

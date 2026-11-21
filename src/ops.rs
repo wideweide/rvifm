@@ -104,7 +104,8 @@ pub struct CopyControls<'a> {
 }
 
 impl CopyControls<'_> {
-    fn none() -> CopyControls<'static> {
+    /// M40-1：bench/外部复用入口。
+    pub fn none() -> CopyControls<'static> {
         static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         static PROGRESS: std::sync::OnceLock<crate::state::JobProgress> =
             std::sync::OnceLock::new();
@@ -117,7 +118,7 @@ impl CopyControls<'_> {
 }
 
 /// 分块复制单文件（1MB 块；逐块取消检查）并保留元数据（mode + mtime/atime）。
-fn copy_file_chunked(from: &Path, to: &Path, controls: &CopyControls) -> std::io::Result<()> {
+pub fn copy_file_chunked(from: &Path, to: &Path, controls: &CopyControls) -> std::io::Result<()> {
     use std::io::{Read, Write};
     use std::sync::atomic::Ordering;
     let mut src = fs::File::open(from)?;

@@ -1128,7 +1128,7 @@
 
 ## 40. M40 — 1.0 稳定化（见 SPEC M40 节）
 
-- [ ] M40-1 criterion 基准集 + docs/bench.md 基线。
+- [x] M40-1 criterion 基准集 + docs/bench.md 基线。（2026-11-21：五组全部实跑——dir_load_small_100 6.60ms / load_100k 6.83s（68µs/条目，记潜在优化点）/ natural_sort 10k 3.26ms（对照 lexical 588µs）/ replay 100k 65ms / copy_1gb 1.79GB/s；环境 Windows rustc 1.99.1；CI 不跑 bench，`cargo check --all-targets` 覆盖编译门禁）
 - [ ] M40-2 fuzz 目标三组 + CI 10 分钟 + 本地 24h 记录。
 - [ ] M40-3 proptest 三组（glob/排序/撤销）。
 - [ ] M40-4 覆盖率 ≥75%（ops/remote/frecency/archive/keymap）。

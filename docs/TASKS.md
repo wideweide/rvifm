@@ -494,7 +494,7 @@
 
 > 来源：同上。目标 1.0.0。顺序：1（基准）→ 2（fuzz）→ 3（proptest）→ 4（覆盖率）→ 5（供应链）→ 6（平台）→ 7（发布）。
 
-- [ ] M40-1 criterion 性能基准（启动/10 万项/排序/replay/1GB 吞吐；见 SPEC M40-1）
+- [x] M40-1 criterion 性能基准（启动/10 万项/排序/replay/1GB 吞吐；见 SPEC M40-1；2026-11-21 完成：lib 化（src/lib.rs 模块树共享，main.rs 仅 CLI 分派）+ benches/rvifm_bench.rs 五组 + docs/bench.md 基线（本机 rustc 1.99.1：100k 加载 6.83s≈68µs/条目记为潜在优化点、1GB 复制 1.79GB/s、replay 10 万事件 65ms、自然排序 10k 3.26ms）；顺带修 TransferDirection pub（lib 化 private_interfaces）+ README 状态句漂移，443 单测）
 - [ ] M40-2 cargo-fuzz 模糊测试（归档解析/路径规范化/反序列化；见 SPEC M40-2）
 - [ ] M40-3 proptest 属性测试（glob/自然排序/撤销栈；见 SPEC M40-3）
 - [ ] M40-4 覆盖率 ≥75%（核心模块；见 SPEC M40-4）

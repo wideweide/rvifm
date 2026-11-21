@@ -1749,7 +1749,7 @@ pub fn filter_matches(pattern: &str, name: &str) -> bool {
 }
 
 /// 读取并排序目录条目：按配置决定隐藏文件与排序（M5-2）。
-fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
+pub fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem>> {
     let mut items = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;

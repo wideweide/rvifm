@@ -4,32 +4,11 @@
 //!
 //! M0-6 起支持 `--version` / `--help`；无参数时进入 TUI（SPEC §5 M0）。
 //! M8 将扩展 `pick` / `record` 子命令。
+//!
+//! M40-1：模块树移入 `lib.rs`（bench 共用）；本文件只保留 CLI 分派与
+//! TUI 启动（`use rvifm::` 引入 lib 项）。
 
-mod app;
-mod archive;
-mod config;
-mod frecency;
-mod git;
-mod highlight;
-mod icons;
-mod image;
-mod keymap;
-mod office;
-mod opener;
-mod ops;
-mod pdf;
-mod preview;
-mod privilege;
-mod shell_init;
-// M19-2/M19-3b 接入导航与后端；本阶段仅 trait 层（测试使用）。
-#[allow(dead_code)]
-mod remote;
-mod search;
-mod session;
-mod state;
-mod store;
-mod tab;
-mod theme;
+use rvifm::{app, frecency, privilege};
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -54,7 +33,7 @@ fn main() -> std::io::Result<()> {
         Some("init") => {
             return match args.next().as_deref() {
                 Some(shell @ ("bash" | "zsh" | "fish" | "powershell")) => {
-                    print!("{}", crate::shell_init::script(shell));
+                    print!("{}", rvifm::shell_init::script(shell));
                     Ok(())
                 }
                 other => {
