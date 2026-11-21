@@ -618,6 +618,19 @@ impl Tab {
         }
     }
 
+    /// M41-4：视口偏移同步（每帧输入处理后、绘制前调用）——左/右 pane
+    /// 各自按光标与既有偏移重算：光标在窗口内 → 偏移不变（列表不动、
+    /// 高亮上移）；越界 → 光标贴顶/贴底。左 pane `..` 行占用首行
+    /// （结果视图除外，与渲染同口径），右 pane 无 `..` 行。
+    /// `list_h` 为单 pane 内区行数（左右同高）。
+    pub fn sync_viewport_scroll(&mut self, list_h: usize) {
+        let parent_taken = self.has_parent_row() && !self.in_results();
+        let left_h = list_h.saturating_sub(parent_taken as usize);
+        let left_cur = if self.on_parent_row { 0 } else { self.cursor };
+        self.scroll = list_offset_sticky(left_cur, left_h, self.scroll);
+        self.right.scroll = list_offset_sticky(self.right.cursor, list_h, self.right.scroll);
+    }
+
     /// 焦点 pane 的基准目录（M14-1）：exec 写命令作用于焦点 pane。
     pub fn focus_base(&self) -> &Path {
         match self.focus {
@@ -1484,6 +1497,26 @@ impl Tab {
 /// 直接按原名匹配；条目被隐藏/过滤时返回 None，调用方回落 cursor 0）。
 fn locate_entry(entries: &[FileItem], name: &str) -> Option<usize> {
     entries.iter().position(|i| i.name == name)
+}
+
+/// FEAT-1/M41-4：列表视口偏移——保证光标可见（offset ≤ cursor <
+/// offset+height）。渲染（ListState.with_offset）与鼠标命中测试共用同一
+/// 推导，避免偏差。
+/// M41-4 修复：**有状态**——光标在既有窗口 [prev, prev+height) 内时保持
+/// prev（列表不动、高亮上移）；越出上界光标贴顶、越出下界光标贴底。prev
+/// 取 `Tab.scroll` / `Pane.scroll`（每帧 `sync_viewport_scroll` 落盘）；
+/// 原无状态推导每帧由 cursor 重算，会把光标钉在视口底行。
+pub(crate) fn list_offset_sticky(cursor: usize, height: usize, prev: usize) -> usize {
+    if height == 0 {
+        return 0;
+    }
+    if cursor >= prev && cursor < prev + height {
+        prev
+    } else if cursor < prev {
+        cursor
+    } else {
+        cursor + 1 - height
+    }
 }
 
 /// 列出归档虚拟目录条目（M7-4）：`ArchiveEntry` → `FileItem`

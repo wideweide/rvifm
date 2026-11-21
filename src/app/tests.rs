@@ -5370,10 +5370,58 @@ fn fix4_close_selector_restores_list_and_cursor() {
 
 #[test]
 fn feat1_list_offset_matches_cursor_visibility() {
-    assert_eq!(list_offset(0, 10), 0);
-    assert_eq!(list_offset(9, 10), 0);
-    assert_eq!(list_offset(15, 10), 6);
-    assert_eq!(list_offset(0, 0), 0);
+    // M41-4：有状态偏移（list_offset_sticky）——窗口内保持 prev；
+    // 越上界贴顶、越下界贴底；height 0 → 0。
+    assert_eq!(crate::tab::list_offset_sticky(0, 10, 0), 0);
+    assert_eq!(crate::tab::list_offset_sticky(9, 10, 0), 0, "窗口内不动");
+    assert_eq!(crate::tab::list_offset_sticky(15, 10, 6), 6, "底行可见保持");
+    // 钉底修复核心用例：底行（15=6+9）按 k 上移到 14 → 偏移不变（原无状态
+    // 推导会滚到 5、光标继续钉在底行）。
+    assert_eq!(crate::tab::list_offset_sticky(14, 10, 6), 6);
+    assert_eq!(
+        crate::tab::list_offset_sticky(16, 10, 6),
+        7,
+        "越下界光标贴底"
+    );
+    assert_eq!(
+        crate::tab::list_offset_sticky(3, 10, 6),
+        3,
+        "越上界光标贴顶"
+    );
+    assert_eq!(crate::tab::list_offset_sticky(0, 0, 0), 0);
+}
+
+#[test]
+fn m41_4_viewport_scroll_sticky_sync() {
+    // M41-4：sync_viewport_scroll——列表不动、高亮上移；越界才滚动；
+    // 左/右 pane 独立同步（右 pane 无 `..` 行）。
+    let (tmp, mut state) = make_state(30);
+    let _ = &tmp;
+    {
+        let tab = state.active_tab_mut();
+        tab.cursor = 15;
+        tab.right.entries = tab.entries.clone();
+        tab.right.cursor = 25;
+    }
+    // 首帧：cursor 15 越出窗口 → 贴底。左 pane 有 `..` 行（TempDir 有父
+    // 目录）→ 条目高 9：偏移 15+1-9=7；右 pane 无 `..` 行（高 10）：16。
+    state.active_tab_mut().sync_viewport_scroll(10);
+    assert_eq!(
+        state.active_tab().scroll,
+        7,
+        "左 pane 越下界贴底（..行占 1）"
+    );
+    assert_eq!(state.active_tab().right.scroll, 16, "右 pane 独立贴底");
+    // k 上移：cursor 14 仍在窗口 [7,16) → 偏移不变（列表不动、高亮上移）。
+    state.active_tab_mut().cursor = 14;
+    state.active_tab_mut().right.cursor = 24;
+    state.active_tab_mut().sync_viewport_scroll(10);
+    assert_eq!(state.active_tab().scroll, 7, "窗口内列表不动");
+    assert_eq!(state.active_tab().right.scroll, 16, "右 pane 窗口内不动");
+    // 越上界：cursor 3 → 贴顶。
+    state.active_tab_mut().cursor = 3;
+    state.active_tab_mut().sync_viewport_scroll(10);
+    assert_eq!(state.active_tab().scroll, 3, "越上界光标贴顶");
 }
 
 #[test]

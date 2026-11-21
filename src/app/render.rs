@@ -13,17 +13,6 @@ pub(crate) fn context_menu_rect(area: ratatui::layout::Rect) -> ratatui::layout:
     }
 }
 
-/// FEAT-1：列表视口偏移——保证光标可见（offset ≤ cursor < offset+height）。
-/// 渲染（ListState.with_offset）与鼠标命中测试共用同一推导，避免偏差；
-/// 与 ratatui List 从 0 起自动调整的结果一致。
-pub(crate) fn list_offset(cursor: usize, height: usize) -> usize {
-    if height == 0 || cursor < height {
-        0
-    } else {
-        cursor + 1 - height
-    }
-}
-
 /// M21-F1：整体几何——标签栏 1 行 + 双 pane（居中分开，间隔 1 列）+ 状态栏 1 行。
 /// 渲染与鼠标命中测试共用同一推导，避免两处几何漂移。
 pub(crate) fn pane_layout(area: ratatui::layout::Rect) -> [ratatui::layout::Rect; 4] {
@@ -217,7 +206,6 @@ pub(crate) fn hit_entry_index(
     let [_, left, _, _] = pane_layout(area);
     let inner = left_list_area(state.config.ui.pane_borders, left);
     let has_parent = state.active_tab().has_parent_row() as usize;
-    let view_h = inner.height.saturating_sub(has_parent as u16) as usize;
     if mouse.column < inner.x
         || mouse.column >= inner.x + inner.width
         || mouse.row < inner.y + has_parent as u16
@@ -226,15 +214,15 @@ pub(crate) fn hit_entry_index(
         return None;
     }
     let tab = state.active_tab();
-    let offset = list_offset(if tab.on_parent_row { 0 } else { tab.cursor }, view_h);
+    let offset = tab.scroll;
     let idx = (mouse.row - inner.y - has_parent as u16) as usize;
     idx.checked_add(offset)?;
     Some(idx.min(tab.entries.len().saturating_sub(1)))
 }
 
 /// M41-3：右 pane 命中索引——右 pane 无 `..` 行（M14-1），条目从内区首行
-/// 开始；offset 推导与 render_right_pane 的 ListState 一致（with_selected
-/// 从 0 起自动调整 = list_offset）。空列表返回 None。
+/// 开始；offset 取 `Pane.scroll`（与渲染 ListState 同源，M41-4 有状态）。
+/// 空列表返回 None。
 pub(crate) fn hit_right_index(
     state: &AppState,
     mouse: &MouseEvent,
@@ -254,7 +242,7 @@ pub(crate) fn hit_right_index(
     if tab.right.entries.is_empty() {
         return None;
     }
-    let offset = list_offset(tab.right.cursor, inner.height as usize);
+    let offset = tab.right.scroll;
     let idx = (mouse.row - inner.y) as usize;
     idx.checked_add(offset)?;
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
@@ -631,10 +619,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             })
             .collect();
         // FEAT-2：焦点在 `..` 行时列表无高亮选中项。
-        let mut list_state = ListState::default().with_offset(list_offset(
-            if tab.on_parent_row { 0 } else { tab.cursor },
-            parent_area.height as usize,
-        ));
+        // M41-4：偏移有状态（Tab.scroll，每帧 sync_viewport_scroll 落盘）。
+        let mut list_state = ListState::default().with_offset(tab.scroll);
         if !tab.on_parent_row {
             list_state = list_state.with_selected(Some(tab.cursor));
         }

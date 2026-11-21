@@ -438,6 +438,10 @@ pub(crate) fn render_right_pane(
             li
         })
         .collect();
-    let mut list_state = ListState::default().with_selected(Some(tab.right.cursor));
+    // M41-4：偏移有状态（Pane.scroll，每帧 sync_viewport_scroll 落盘）；
+    // 不再依赖 ListState 从 0 起的自动调整（会把光标钉在视口底行）。
+    let mut list_state = ListState::default()
+        .with_offset(tab.right.scroll)
+        .with_selected(Some(tab.right.cursor));
     frame.render_stateful_widget(ratatui::widgets::List::new(items), inner, &mut list_state);
 }

@@ -544,6 +544,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     )>();
     state.git_tx = Some(git_tx);
     loop {
+        // M41-4：视口偏移同步（上一帧输入处理后的光标落点落盘 Tab/Pane
+        // scroll；渲染与鼠标命中测试共用同一偏移）。
+        {
+            let size = terminal.size()?;
+            let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+            let [_, left, _, _] = pane_layout(area);
+            let list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
+            state.active_tab_mut().sync_viewport_scroll(list_h);
+        }
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
         let viewport_h = terminal.size()?.height.saturating_sub(1);
