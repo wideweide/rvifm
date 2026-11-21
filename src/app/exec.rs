@@ -2005,6 +2005,150 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let msg = run_compare(state, mode == "bycontents")?;
             Ok(ExecOutcome::Done { msg: Some(msg) })
         }
+        Some("du") => {
+            // M37-4：磁盘占用——当前目录递归聚合（并行省略——顺序遍历
+            // 万条上限内可接受；SIMPLIFIED）；结果消息 top-5 + 总计。
+            let base = physical_base(state)?;
+            let mut entries: Vec<(String, u64)> = Vec::new();
+            let mut total: u64 = 0;
+            let mut stack = vec![base.clone()];
+            let mut count = 0usize;
+            while let Some(dir) = stack.pop() {
+                if count >= 10_000 {
+                    break;
+                }
+                let Ok(rd) = std::fs::read_dir(&dir) else {
+                    continue;
+                };
+                for e in rd.flatten() {
+                    count += 1;
+                    let meta = match e.metadata() {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    if meta.is_dir() {
+                        stack.push(e.path());
+                    } else {
+                        total += meta.len();
+                        if !e.path().eq(&base) {
+                            entries.push((
+                                e.path()
+                                    .strip_prefix(&base)
+                                    .map(|p| p.to_string_lossy().into_owned())
+                                    .unwrap_or_default(),
+                                meta.len(),
+                            ));
+                        }
+                    }
+                }
+            }
+            entries.sort_by_key(|e| std::cmp::Reverse(e.1));
+            let top: Vec<String> = entries
+                .iter()
+                .take(5)
+                .map(|(n, s)| format!("  {n}: {}", crate::tab::format_size(*s)))
+                .collect();
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "du: 总计 {}（{} 项扫描）\n{}",
+                    crate::tab::format_size(total),
+                    count,
+                    top.join("\n")
+                )),
+            })
+        }
+        Some("dup") => {
+            // M37-5：查重——size 分组 → 全文 SHA-256 精确比对（万条上限）。
+            let base = physical_base(state)?;
+            let mut files: Vec<(PathBuf, u64)> = Vec::new();
+            let mut stack = vec![base.clone()];
+            let mut count = 0usize;
+            while let Some(dir) = stack.pop() {
+                if count >= 10_000 {
+                    break;
+                }
+                let Ok(rd) = std::fs::read_dir(&dir) else {
+                    continue;
+                };
+                for e in rd.flatten() {
+                    count += 1;
+                    if let Ok(meta) = e.metadata() {
+                        if meta.is_dir() {
+                            stack.push(e.path());
+                        } else if meta.len() > 0 {
+                            files.push((e.path(), meta.len()));
+                        }
+                    }
+                }
+            }
+            use sha2::{Digest, Sha256};
+            let mut hash_map: std::collections::HashMap<Vec<u8>, Vec<String>> =
+                std::collections::HashMap::new();
+            for (path, _size) in &files {
+                let Ok(data) = std::fs::read(path) else {
+                    continue;
+                };
+                let mut h = Sha256::new();
+                h.update(&data);
+                let key = h.finalize().to_vec();
+                hash_map
+                    .entry(key)
+                    .or_default()
+                    .push(path.display().to_string().replace('\\', "/"));
+            }
+            let dups: Vec<&Vec<String>> = hash_map.values().filter(|v| v.len() > 1).collect();
+            let n_files: usize = dups.iter().map(|v| v.len()).sum();
+            let listing: Vec<String> = dups
+                .iter()
+                .take(5)
+                .map(|v| format!("  {} 份", v.len()))
+                .collect();
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "dup: {} 组重复（{} 个文件）\n{}",
+                    dups.len(),
+                    n_files,
+                    listing.join("\n")
+                )),
+            })
+        }
+        Some("checksum") => {
+            // M37-6：校验和——选中项生成 sidecar（md5sum -c 兼容）。
+            let names = selected_names(state);
+            if names.is_empty() {
+                return Err("checksum: 无选中条目".to_owned());
+            }
+            let base = physical_base(state)?;
+            let mut lines = Vec::new();
+            for name in &names {
+                let p = base.join(name);
+                match std::fs::read(&p) {
+                    Ok(data) => {
+                        use md5::Md5;
+                        use sha2::Digest as _;
+                        let mut h = Md5::new();
+                        h.update(&data);
+                        let hex = h
+                            .finalize()
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>();
+                        lines.push(format!("{hex} *{name}"));
+                    }
+                    Err(e) => return Err(format!("checksum: {name}: {e}")),
+                }
+            }
+            let sidecar = base.join("checksum.md5");
+            std::fs::write(&sidecar, lines.join("\n") + "\n")
+                .map_err(|e| format!("checksum: sidecar 写入失败: {e}"))?;
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "checksum: {} 项已写入 {}",
+                    lines.len(),
+                    sidecar.display()
+                )),
+            })
+        }
         Some("sync") => {
             // M37-3：目录同步——left→right / right→left（缺省 left→right）。
             // 策略：仅复制缺失（mirror --delete 需显式开关 + 确认）。

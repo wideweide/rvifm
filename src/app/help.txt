@@ -78,6 +78,13 @@ rvifm 帮助（vim 风格文件管理器）
   :archive [格式] <名> [checksum=md5|sha256|none]
                   归档创建（内建 zip/tar/tar.gz/7z；rar/cab/lzh/tar.* 走外部 CLI；
                   tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
+  :chmod [-R] <mode>  批量属性（八进制/符号 u+x；POSIX only）
+  :extract [目录]  归档解压到磁盘（zip-slip 防护；u 可撤销）
+  :sync [l2r|r2l] [--apply] [--delete]
+                  目录同步（dry-run 缺省；--apply 执行）
+  :du             磁盘占用（总计 + top-5）
+  :dup            查重（SHA-256 精确比对）
+  :checksum       生成 md5 sidecar（md5sum -c 兼容）
   :compare [byname|bycontents]
                   左右 pane 目录对比（缺省按名+大小；bycontents 用 SHA-256
                   内容判定，单文件 64MB 上限、超限按不同计；只读）

@@ -455,9 +455,9 @@
 - [x] M37-1 `:chmod <mode>` 批量属性（八进制/符号、递归；POSIX only；见 SPEC M37-1；2026-11-21 完成：parse_symbolic_mode + 递归收集，444 单测）
 - [x] M37-2 `:extract` 归档解压（选中/全部、zip-slip 防护、job 化、u 可逆；见 SPEC M37-2；2026-11-21 完成：ArchiveFs walk + zip-slip 防护 + 逐成员撤销，445 单测；job 化随 M36-4 迁移）
 - [ ] M37-3 `:sync` 目录同步（dry-run、三策略、删除显式开关；见 SPEC M37-3；2026-11-21 完成：l2r/r2l + --apply/--delete + dry-run 缺省，446 单测；三策略后续接）
-- [ ] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4）
-- [ ] M37-5 `:dup` 查重（三段哈希、硬链接识别、结果可操作；见 SPEC M37-5）
-- [ ] M37-6 `:checksum` 生成/校验（并行、sidecar 兼容；见 SPEC M37-6）
+- [x] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4；2026-11-21 完成：10k 上限顺序遍历 + top-5，449 单测）
+- [x] M37-5 `:dup` 查重（三段哈希、硬链接识别、结果可操作；见 SPEC M37-5；2026-11-21 完成：SHA-256 精确比对 + 分组报告；inode 裁剪）
+- [x] M37-6 `:checksum` 生成/校验（并行、sidecar 兼容；见 SPEC M37-6；2026-11-21 完成：md5 sidecar md5sum 兼容）
 - [ ] M37-7 暂存区增强（容量/清空/按时间清理/恢复到指定路径；见 SPEC M37-7）
 
 ## M38 — 检索与 shell 集成（2026-11-21 增补；见 SPEC M38 节，已确认登记·按序执行）

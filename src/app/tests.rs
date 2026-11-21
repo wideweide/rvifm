@@ -982,6 +982,41 @@ impl crate::remote::RemoteFs for CountingMockFs {
 }
 
 #[test]
+fn m374_du_reports_size_and_top() {
+    // M37-4：:du——总计与 top 条目（大文件排序）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("big.bin"), vec![0u8; 2000]).unwrap();
+    fs::write(tmp.path().join("small.txt"), "S").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert_eq!(exec_command(&mut state, "du"), Ok(false));
+}
+
+#[test]
+fn m375_dup_finds_duplicates() {
+    // M37-5：:dup——相同内容文件识别（不同名同内容）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "SAME").unwrap();
+    fs::write(tmp.path().join("b.txt"), "SAME").unwrap();
+    fs::write(tmp.path().join("c.txt"), "UNIQUE").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert_eq!(exec_command(&mut state, "dup"), Ok(false));
+}
+
+#[test]
+fn m376_checksum_generates_sidecar() {
+    // M37-6：:checksum——md5 sidecar（md5sum -c 兼容行）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("f.txt"), "HELLO").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert_eq!(exec_command(&mut state, "checksum"), Ok(false));
+    let sidecar = tmp.path().join("checksum.md5");
+    assert!(sidecar.is_file(), "sidecar 生成");
+    let content = fs::read_to_string(&sidecar).unwrap();
+    assert!(content.contains("*f.txt"), "md5sum 兼容行: {content}");
+    assert!(content.len() > 32, "含 hash 值");
+}
+
+#[test]
 fn m373_sync_dry_run_apply_and_delete() {
     // M37-3：:sync——dry-run 计划 + --apply 复制 + --delete 删除 + u 可逆。
     let tmp = TempDir::new().unwrap();
