@@ -853,3 +853,10 @@ rvifm record  → 静默记录访问
 - **口径同步**：STATE 质量门禁"已知偏差"仅剩 aws-lc-sys cross-check 一项（pdf-visual 项移入"已闭环"）；M31-5 自本机可执行（仍 deferred 待运行）；环境记录 rustup 1.100。
 - **观察（不处理）**：cargo manifest 警告 unused dep `tokio-stream`（既有，非本次引入），留待后续卫生项。
 - **M34-1 映射基准**：vifm-colors `gruvbox.vifm`（cterm 提取）→ opaline gruvbox-dark token（bg.panel/bg.highlight/accent.primary/text.muted/text.dim 等标准词表）；TopLineSel bg cterm237 #3a3a3a ≈ gruvbox bg1 #3c3836（bg.highlight）几乎重合；CurrLine（vifm bold+inverse）与 rvifm 既有 `highlight_style(REVERSED)` 等价，不改动。
+
+### 2026-11-21 — M34-1 实现：默认主题 gruvbox-dark（映射表 + 踩坑）
+
+- **映射实现**：`vifm_style` 三层解析——主题命名样式优先 → `theme::derive_vifm_group` 标准 token 推导（TopLine/TopLineSel/TabLine/TabLineSel/StatusLine/Border → accent.primary / bg.panel / bg.highlight / text.secondary / text.muted / text.dim，任一所需 token 缺失整组回退）→ M27-2 16 色回退。gruvbox-dark 实测值：TopLine fg #fe8019 / bg #282828；TopLineSel bg #3c3836；StatusLine fg #bdae93（≈vifm cterm144 #afaf87）；Border fg #a89984。
+- **CurrLine 等价性（不改）**：vifm gruvbox CurrLine = `bold,inverse`（default fg/bg）——rvifm 既有 `highlight_style(REVERSED)` 语义等价，维持不动；`Selected` 组 rvifm 未消费（选中行另有 styling），映射表不含。
+- **踩坑**：clippy 1.100 新 lint「let-else 可改写为 `?`」只命中返回 Option 的新函数——旧 `style()` 的 else 返回 `Style` 类型不触发；跨 minor 升级的新 lint 按可改写性选择性命中。
+- **文档**：README 两处"20 套"→"39 套"+ 默认 gruvbox-dark；help `:theme` 行补默认值。422 单测（+4：gruvbox 推导断言 / 无主题·缺 token·未知组 None / dracula activate+推导 / vifm_style 集成）。

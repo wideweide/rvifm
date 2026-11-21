@@ -99,8 +99,8 @@ pub struct FrecencyConfig {
 /// `session_restore`（M25-1）：退出保存/启动恢复会话（tabs），默认开；
 /// false = 不读不写。
 /// `git_column`（M25-5）：文件列表 git 状态字符列，默认开；非仓库隐藏。
-/// `theme`（AUDIT-13）：opaline 内置主题名或用户主题文件名；None = 不激活
-/// （图标默认 Dark、样式走 16 色回退）。
+/// `theme`（AUDIT-13；M34-1 默认 `gruvbox-dark`）：opaline 内置主题名或
+/// 用户主题文件名；None = 不激活（图标默认 Dark、样式走 16 色回退）。
 /// `pane_borders`（M27-2）：true = 旧整框边框外观；false（默认）= vifm
 /// 风格布局（无整框、pane 顶部路径行 TopLine/TopLineSel、间隔列分隔线）。
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -121,7 +121,8 @@ impl Default for UiConfig {
             attrs_column: true,
             session_restore: true,
             git_column: true,
-            theme: None,
+            // M34-1：默认主题 gruvbox-dark（视觉等价 vifm gruvbox；显式配置覆盖）。
+            theme: Some("gruvbox-dark".to_string()),
             pane_borders: false,
         }
     }
@@ -516,7 +517,11 @@ append_rules = [
         assert!(cfg.open.prepend_rules.is_empty());
         assert!(cfg.open.append_rules.is_empty());
         assert!(cfg.open.rules.is_none());
-        assert!(cfg.ui.theme.is_none(), "未配置主题 → None（默认 Dark）");
+        assert_eq!(
+            cfg.ui.theme.as_deref(),
+            Some("gruvbox-dark"),
+            "未配置主题 → 默认 gruvbox-dark（M34-1）"
+        );
     }
 
     #[test]

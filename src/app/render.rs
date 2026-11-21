@@ -73,15 +73,19 @@ pub(crate) fn pane_gap_area(area: ratatui::layout::Rect) -> ratatui::layout::Rec
 }
 
 /// M27-2：vifm 命名样式（TabLine/TopLine/StatusLine/Border/Selected…）——
-/// 主题（激活 opaline 主题）提供该命名样式时优先；未激活/缺失时回退
-/// vifm Default 风格的 16 色（vifm_fallback）。
+/// 主题提供该命名样式时优先；缺失时按标准 token 推导（M34-1）；未激活/
+/// 缺 token 时回退 vifm Default 风格的 16 色（vifm_fallback）。
 pub(crate) fn vifm_style(name: &str) -> Style {
     let s = crate::theme::style(name);
     if s.fg.is_some() || s.bg.is_some() {
-        s
-    } else {
-        vifm_fallback(name)
+        return s;
     }
+    // M34-1：主题缺该命名样式时按标准 token 通用推导（gruvbox 等内置主题
+    // 的高亮组映射面）；推导不可用（无主题/缺 token/未知组）回退 16 色。
+    if let Some(derived) = crate::theme::derive_vifm_group(name) {
+        return derived;
+    }
+    vifm_fallback(name)
 }
 
 /// M27-2：vifm Default 风格回退值（NOTES M27-2 调研口径）。

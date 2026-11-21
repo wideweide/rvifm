@@ -201,6 +201,34 @@ pub fn style(style_name: &str) -> RtStyle {
     rt
 }
 
+/// M34-1：vifm 高亮组 → 主题标准 token 通用推导（数据驱动，无主题分支）。
+/// 主题直接提供该命名样式时由 `vifm_style` 优先采用；缺失时按组从 opaline
+/// 内置主题通用词表（accent/bg/text）推导；任一所需 token 缺失返回 None
+/// （整组回退 16 色，调用方处理）。
+pub(crate) fn derive_vifm_group(name: &str) -> Option<RtStyle> {
+    let slot = ACTIVE.read().ok()?;
+    let state = slot.as_ref()?;
+    let (fg_token, bg_token, bold) = match name {
+        "TopLine" => ("accent.primary", Some("bg.panel"), false),
+        "TopLineSel" => ("accent.primary", Some("bg.highlight"), true),
+        "TabLine" => ("text.secondary", Some("bg.panel"), false),
+        "TabLineSel" => ("accent.primary", Some("bg.highlight"), true),
+        "StatusLine" => ("text.muted", Some("bg.panel"), true),
+        "Border" => ("text.dim", None, false),
+        _ => return None,
+    };
+    let fg = state.theme.try_color(fg_token).map(|c| to_rt_color(&c))?;
+    let mut s = RtStyle::new().fg(fg);
+    if let Some(token) = bg_token {
+        let bg = state.theme.try_color(token).map(|c| to_rt_color(&c))?;
+        s = s.bg(bg);
+    }
+    if bold {
+        s = s.add_modifier(RtModifier::BOLD);
+    }
+    Some(s)
+}
+
 fn to_rt_color(c: &opaline::color::OpalineColor) -> RtColor {
     RtColor::Rgb(c.r, c.g, c.b)
 }
@@ -302,6 +330,72 @@ mod tests {
         let err = activate("no-such-theme-xyz").unwrap_err();
         assert!(err.to_string().contains("no-such-theme-xyz"));
         assert_eq!(active_variant(), variant_before);
+        reset_active();
+    }
+
+    #[test]
+    fn derive_vifm_groups_under_gruvbox_dark() {
+        // M34-1：gruvbox-dark 下 vifm 组经标准 token 推导（视觉等价 vifm gruvbox）。
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_builtin("gruvbox-dark").unwrap();
+        let tl = derive_vifm_group("TopLine").unwrap();
+        assert_eq!(
+            tl.fg,
+            Some(RtColor::Rgb(254, 128, 25)),
+            "TopLine fg=accent.primary"
+        );
+        assert_eq!(tl.bg, Some(RtColor::Rgb(40, 40, 40)), "TopLine bg=bg.panel");
+        let tls = derive_vifm_group("TopLineSel").unwrap();
+        assert_eq!(
+            tls.bg,
+            Some(RtColor::Rgb(60, 56, 54)),
+            "TopLineSel bg=bg.highlight"
+        );
+        assert!(tls.add_modifier.contains(RtModifier::BOLD));
+        let b = derive_vifm_group("Border").unwrap();
+        assert_eq!(
+            b.fg,
+            Some(RtColor::Rgb(168, 153, 132)),
+            "Border fg=text.dim"
+        );
+        assert_eq!(b.bg, None);
+        reset_active();
+    }
+
+    #[test]
+    fn derive_vifm_group_none_without_theme_or_tokens() {
+        // M34-1：无主题 / 主题缺标准 token / 未知组名 → None（整组 16 色回退）。
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_active();
+        assert!(derive_vifm_group("TopLine").is_none());
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("themes");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("mini.toml"),
+            "[meta]\nname = \"Mini\"\nvariant = \"dark\"\n\n[palette]\nbg = \"#111111\"\n",
+        )
+        .unwrap();
+        set_user_theme_from(&dir, "mini").unwrap();
+        assert!(
+            derive_vifm_group("TopLine").is_none(),
+            "缺 accent token → None"
+        );
+        assert!(derive_vifm_group("WildMenu").is_none(), "未知组名 → None");
+        reset_active();
+    }
+
+    #[test]
+    fn dracula_builtin_activates_and_derives() {
+        // M34-1 验证项：`[ui] theme = "dracula"` 生效（activate 链 + 通用推导）。
+        let _guard = TEST_LOCK.lock().unwrap();
+        activate("dracula").unwrap();
+        assert!(matches!(
+            active_variant(),
+            opaline::schema::ThemeVariant::Dark
+        ));
+        let s = derive_vifm_group("StatusLine").expect("dracula 含标准 token 词表");
+        assert!(s.fg.is_some() && s.bg.is_some());
         reset_active();
     }
 

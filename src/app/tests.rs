@@ -4910,6 +4910,24 @@ fn feat3_file_command_shows_info() {
 }
 
 #[test]
+fn m34_1_vifm_style_prefers_theme_derivation_over_16color_fallback() {
+    // M34-1：激活主题后 vifm 组走 token 推导（gruvbox 色板）；无主题回退
+    // M27-2 的 16 色。持 TEST_LOCK 与颜色敏感测试串行。
+    let _guard = crate::theme::TEST_LOCK.lock().unwrap();
+    crate::theme::set_builtin("gruvbox-dark").unwrap();
+    let s = crate::app::render::vifm_style("TopLine");
+    assert_eq!(s.fg, Some(ratatui::style::Color::Rgb(254, 128, 25)));
+    assert_eq!(s.bg, Some(ratatui::style::Color::Rgb(40, 40, 40)));
+    crate::theme::reset_active();
+    let f = crate::app::render::vifm_style("TopLine");
+    assert_eq!(f.fg, Some(ratatui::style::Color::Black));
+    assert_eq!(f.bg, Some(ratatui::style::Color::White));
+    let f2 = crate::app::render::vifm_style("TabLineSel");
+    assert_eq!(f2.fg, Some(ratatui::style::Color::Black));
+    assert!(f2.add_modifier.contains(ratatui::style::Modifier::BOLD));
+}
+
+#[test]
 fn audit13_theme_command_switches_lists_and_errors() {
     // AUDIT-13：`:theme` 运行时切换（内置优先）；无参列出可用主题；
     // 未知主题可读错误（不 panic）。列表/图标渲染经 theme::style /

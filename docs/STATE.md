@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-21
 - **当前阶段**：M0–M27 + AUDIT + M28–M33 + MISC 全部完成并关闭；**M34 批次（主题、预览统一与文档，10 任务）执行中**（用户 2026-11-21 指令"升级后开跑"：本机 rustup stable 1.100 就绪、全门禁绿）；统一目标 0.11.0
-- **当前任务**：M34-1 默认主题 gruvbox（`[ui] theme` 缺省 `gruvbox-dark` + vifm 高亮组 token 推导 + dracula 验证）
+- **当前任务**：M34-2 snowwhite 内置主题移植（vifm-colors 颜色 → opaline TOML 捆绑）
 - **阶段状态**：0.10.0 发布收尾仅剩 crates.io——GitHub Release 已发布验证（三归档含 rvifm+rv）；crates.io 停在 0.8.0，0.9.0/0.10.0 待 Windows 机器凭据（用户操作，非停止条件）；M11-6 清单第 1 项 foot 已过
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
