@@ -987,3 +987,9 @@ rvifm record  → 静默记录访问
 - **首版缺陷（测试双拦截）**：① find 分支抢在 Remote 判断前——m22_5 集成测试拦下（cd 落点错误），补 `is_remote` 守卫；② walker 产出 root 自身（depth 0）——`--type d` 端到端测试拦下（3 ≠ 2），补 depth==0 跳过。两条都是"验证任务揪真缺陷"的又一例（M21-E6/M34-6 同款）。
 - **命名搜索**：仅内存（AppState.named_searches，不跨会话——SPEC SIMPLIFIED）；save 需当前结果视图；同名覆盖；load 未命中时列出已保存名（可发现性）。保存 = SearchResults 克隆（含 pattern/root/items/truncated），load 走 enter_results 复用结果虚拟目录全链路（可操作 yy/dd 语义随 M38-1）。
 - **M38 批次自此 5/5 关闭**；下一批 M39（预览与平台 6 项）。
+
+### 2026-11-21 — M39-3 实现：zip 容器白名单制度化
+
+- **三表漂移根治**：M34-6（.jar）暴露的"is_archive_file / open_dispatch / is_unsupported_archive 三处独立清单"改为 `ZIP_CONTAINERS` 常量表——前两处共用（is_unsupported_archive 语义不同仍独立：仅 .rar）；后续新容器只改 ZIP_CONTAINERS 一处。
+- **魔数 PK 校验落位**：SPEC"魔数 PK + 白名单"——白名单在扩展名层（is_archive_file 无 IO）；PK 校验由 `ZipFs::open`（zip crate）承担：非 zip 内容 → 损坏/加密可读错误（M7-7 语义），测试覆盖 bad.docx。
+- **与 Office 预览并存**：docx 等在 preview_kind 中 Office 先于归档命中——预览面板 = Office 文本提取、l/Enter = zip 虚拟浏览，两链路不冲突。

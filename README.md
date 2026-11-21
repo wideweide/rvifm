@@ -37,7 +37,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 | 能力 | vifm 的做法 | rvifm 的做法 |
 |---|---|---|
-| **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.jar` / `.tar` / `.tar.gz` / `.tgz` / `.7z` / `.tar.xz` / `.tar.bz2` / `.tar.zst` 直接当目录浏览，**无内核模块、无外部工具** |
+| **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.jar` / `.docx` / `.xlsx` / `.pptx` / `.apk` / `.war` / `.tar` / `.tar.gz` / `.tgz` / `.7z` / `.tar.xz` / `.tar.bz2` / `.tar.zst` 直接当目录浏览，**无内核模块、无外部工具** |
 | **图标** | 装 Nerd Font + 装插件 + 改 `vifmrc` | 编译期集成 `devicons`，一行调用返回图标与颜色；**只需装字体** |
 | **主题** | 手动配置颜色方案 | 集成 `opaline`，内置 39 套 + 捆绑 `snowwhite`（浅色）主题、TOML 定义，默认 `gruvbox-dark`；`[ui] theme` 配置与 `:theme` 运行时切换已接线 |
 | **图片预览** | 调用外部 GUI 看图工具 | `ratatui-image` 统一协议适配，**原生协议 → halfblocks 无条件回退**，任何终端都有图可看；小图原尺寸居中、大图按窗格宽适配 |
@@ -49,7 +49,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ### 关键提升逐条说明
 
-**归档即目录，不依赖 FUSE。** vifm 的归档浏览需要系统安装 FUSE 或 archivemount，这在许多受限环境（容器、Windows、无 root 的机器）里直接不可用。`rvifm` 在导航层引入 `Location` 抽象，把物理目录和归档内路径统一成同一种可浏览对象。`.zip` / `.tar` / `.tar.gz` 首批支持，`.tar.xz` / `.tar.bz2` / `.tar.zst` 随后；`.7z` 已升级为虚拟浏览（M26-3），`.jar`（zip 容器）按 zip 路径浏览（M34-6），`.rar` 保持"请解压后浏览"提示。归档内**只读**，不污染撤销栈。
+**归档即目录，不依赖 FUSE。** vifm 的归档浏览需要系统安装 FUSE 或 archivemount，这在许多受限环境（容器、Windows、无 root 的机器）里直接不可用。`rvifm` 在导航层引入 `Location` 抽象，把物理目录和归档内路径统一成同一种可浏览对象。`.zip` / `.tar` / `.tar.gz` 首批支持，`.tar.xz` / `.tar.bz2` / `.tar.zst` 随后；`.7z` 已升级为虚拟浏览（M26-3），zip 容器白名单（`.jar` / `.docx` / `.xlsx` / `.pptx` / `.apk` / `.war`，M34-6/M39-3）按 zip 路径浏览，`.rar` 保持"请解压后浏览"提示。归档内**只读**，不污染撤销栈。
 
 **图标与主题内建，不靠插件。** `devicons` 直接返回 glyph 和关联颜色，内置 Dark/Light 两套图标配色；`opaline` 提供 TOML 驱动的主题引擎和 39 套内置主题，另有捆绑 `snowwhite`（浅色）主题（默认 `gruvbox-dark`；`[ui] theme` 配置与 `:theme` 运行时切换已接线）。文件列表、预览窗格、归档浏览共享同一套视觉语义。用户仍然需要 Nerd Font，但**插件安装、配置片段、运行时外部进程全部消失**。
 

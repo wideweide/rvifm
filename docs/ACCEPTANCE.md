@@ -1121,7 +1121,7 @@
 
 - [x] M39-1 hex 查看器（二进制自动进入 + 偏移跳转 + ASCII 侧栏）。（2026-11-21：m39_1 测试——NUL 判定进入/总行数 ceil(size/16)/字节列与侧栏渲染/`:goto` 0x+十进制+钳制/非 hex 拒绝；大文件分块读取（≤1MB 视口窗口）为结构性保证）
 - [x] M39-2 CSV 对齐预览 + PDF [ ] 翻页 + EXIF 容器摘要。（2026-11-21：m39_2 四测试——CSV 列宽/短行/TSV、PNG·JPEG·GIF·BMP 头解析 + 信息面板、PDF 单页缓存门控（Text 无 prefer → None，失败缓存一致）、viewer [ ] page 状态推进/停留；翻页渲染需 pdf_image_pages>0 或外部工具）
-- [ ] M39-3 docx/xlsx/pptx/apk/war 虚拟浏览（魔数 + 白名单）。
+- [x] M39-3 docx/xlsx/pptx/apk/war 虚拟浏览（魔数 + 白名单）。（2026-11-21：m393 测试——五扩展识别/大小写/roundtrip list+read/非 zip 内容损坏拒绝；is_unsupported_archive 不受影响（仍仅 .rar）；Office 预览提取与归档浏览并存（preview_kind Office 先于归档））
 - [ ] M39-4 指纹确认 ask（拒绝则断开）/ProxyJump/agent/keepalive。
 - [ ] M39-5 Windows UAC 操作级提权（手工清单；失败/取消状态不变）。
 - [ ] M39-6 命名标签/溢出滚动/布局选项四形态渲染。

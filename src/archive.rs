@@ -631,13 +631,23 @@ impl ArchiveFs for TarFs {
     }
 }
 
+/// M39-3：zip 容器扩展名白名单（zip/jar + Office 三件套 + APK/WAR）——
+/// 只读虚拟浏览复用 ZipFs；**is_archive_file 与 open_dispatch 共用本表**
+/// （M34-6 三表漂移教训的制度化：新容器只改这一处）。魔数 PK 校验在
+/// `ZipFs::open`（非 zip 内容 → 损坏/加密可读错误，M7-7）。
+const ZIP_CONTAINERS: &[&str] = &[".zip", ".jar", ".docx", ".xlsx", ".pptx", ".apk", ".war"];
+
+/// zip 容器判定（小写名）。
+fn is_zip_container(n: &str) -> bool {
+    ZIP_CONTAINERS.iter().any(|e| n.ends_with(e))
+}
+
 /// 判断文件名是否为支持虚拟浏览的归档（M7-4 + M26-3 扩展 `.7z` + M34-6
-/// 扩展 `.jar`——zip 容器，复用 ZipFs）。`.rar` 不在内——按 M7-9 提示
-/// 解压（调用方负责）。
+/// 扩展 `.jar`——zip 容器，复用 ZipFs + M39-3 白名单）。`.rar` 不在内——
+/// 按 M7-9 提示解压（调用方负责）。
 pub fn is_archive_file(name: &str) -> bool {
     let n = name.to_lowercase();
-    n.ends_with(".zip")
-        || n.ends_with(".jar")
+    is_zip_container(&n)
         || n.ends_with(".tar")
         || n.ends_with(".tar.gz")
         || n.ends_with(".tgz")
@@ -661,8 +671,8 @@ pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let n = name.to_lowercase();
-    if n.ends_with(".zip") || n.ends_with(".jar") {
-        // M34-6：.jar = zip 容器（与 is_archive_file 扩展同步）。
+    if is_zip_container(&n) {
+        // M34-6/M39-3：zip 容器白名单（与 is_archive_file 共用常量表）。
         Ok(Box::new(ZipFs::open(host)?))
     } else if n.ends_with(".tar")
         || n.ends_with(".tar.gz")
@@ -1119,6 +1129,42 @@ mod tests {
         assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
         assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
         assert!(fsx.read("/a.txt").unwrap() == b"AAA");
+    }
+
+    #[test]
+    fn m393_zip_container_whitelist() {
+        // M39-3：通用 zip 容器白名单——docx/xlsx/pptx/apk/war 虚拟浏览；
+        // 单一常量表（is_archive_file 与 open_dispatch 共用，M34-6 三表
+        // 漂移制度化）；is_unsupported_archive 不受影响（仍仅 .rar）。
+        for ext in [".docx", ".xlsx", ".pptx", ".apk", ".war"] {
+            let name = format!("doc{ext}");
+            assert!(is_archive_file(&name), "{name} 入支持列表");
+            assert!(
+                is_archive_file(&format!("DOC{ext}").to_uppercase()),
+                "大小写不敏感"
+            );
+            assert!(!is_unsupported_archive(&name), "{name} 非不支持归档");
+        }
+        // roundtrip：zip 改名 .docx → ZipFs 浏览/读取；非 zip 内容 → 可读错误。
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "AAA").unwrap();
+        crate::ops::create_archive(
+            0,
+            tmp.path(),
+            "t.zip",
+            crate::ops::ArchiveFormat::Zip,
+            &["a.txt".to_owned()],
+        )
+        .unwrap();
+        let docx = tmp.path().join("doc.docx");
+        std::fs::rename(tmp.path().join("t.zip"), &docx).unwrap();
+        let mut fsx = open_dispatch(&docx).unwrap();
+        assert!(fsx.list("/").unwrap().iter().any(|i| i.path == "a.txt"));
+        assert_eq!(fsx.read("/a.txt").unwrap(), b"AAA");
+        // 魔数校验（ZipFs::open）：非 zip 内容的 .docx → 损坏可读错误。
+        let bad = tmp.path().join("bad.docx");
+        std::fs::write(&bad, b"not a zip at all").unwrap();
+        assert!(open_dispatch(&bad).is_err(), "非 zip 内容可读拒绝");
     }
 
     #[test]
