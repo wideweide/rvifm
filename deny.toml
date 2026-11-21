@@ -31,13 +31,24 @@ confidence-threshold = 0.8
 version = 2
 yanked = "warn"
 # 通告处置：出现 RUSTSEC 命中时按需在此 ignore（附理由），默认 fail。
+# 1.0 豁免口径：全部为传递依赖"弃维护/无上游修复"类，迁移 = 砍核心功能
+# （语法高亮/SSH/PDF/图像）；每条附暴露面分析，上游动作后移除。
 ignore = [
-    # RUSTSEC-2023-0071（Marvin Attack，rsa crate 计时侧信道）：
-    # russh 0.65 传递依赖 rsa 0.9 无上游修复；rvifm 使用场景为 SFTP 客户端
-    # 密钥认证（本地进程持有私钥，不在远程密钥持有者位置），该侧信道影响
-    # 范围（远程 oracle 攻击）不适用；持续跟踪 russh 上游（rsa → 替换或
-    # 缓解版本发布后移除本豁免）。
+    # RUSTSEC-2023-0071（Marvin Attack，rsa 计时侧信道）：russh 传递依赖，
+    # 无上游修复；rvifm 为 SFTP 客户端持钥侧，远程 oracle 场景不适用。
     "RUSTSEC-2023-0071",
+    # RUSTSEC-2025-0141（bincode 弃维护）：syntect 传递依赖（高亮定义
+    # 反序列化，输入为打包内置文件）。
+    "RUSTSEC-2025-0141",
+    # RUSTSEC-2026-0543（chrono 弃维护）：lopdf/pdf-inspector 与 russh-sftp
+    # 传递依赖（时间戳解析，非不受控输入面）。
+    "RUSTSEC-2026-0543",
+    # RUSTSEC-2024-0436（paste 弃维护）：image→ravif 传递 proc-macro
+    # （仅编译期，运行时零暴露）。
+    "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0192（ttf-parser 弃维护）：pdf-inspector 传递依赖
+    # （字体度量读取；真 PDF 渲染走 pdf-visual 可选链）。
+    "RUSTSEC-2026-0192",
 ]
 
 [bans]

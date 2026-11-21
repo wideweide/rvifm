@@ -1,8 +1,17 @@
 [advisories]
-# M40-5：供应链审计豁免（附理由；上游修复后移除）。
+# M40-5：供应链审计豁免（附理由；上游修复后移除）。与 deny.toml ignore
+# 口径一致（1.0 豁免 = 传递依赖弃维护类，迁移 = 砍核心功能）。
 ignore = [
-    # RUSTSEC-2024-0320：yaml-rust 弃维护——syntect（语法高亮）传递依赖，
-    # 无直接使用面（仅解析高亮定义 YAML，输入为打包内置文件，不受控输入
-    # 不经过该路径）；等 syntect 更换 yaml 解析后移除本豁免。
+    # yaml-rust 弃维护——syntect 传递依赖（高亮定义解析，内置输入面）。
     "RUSTSEC-2024-0320",
+    # rsa Marvin Attack——russh 传递依赖，客户端持钥侧场景不适用。
+    "RUSTSEC-2023-0071",
+    # bincode 弃维护——syntect 传递依赖（内置文件反序列化）。
+    "RUSTSEC-2025-0141",
+    # chrono 弃维护——lopdf/pdf-inspector、russh-sftp 传递依赖。
+    "RUSTSEC-2026-0543",
+    # paste 弃维护——image→ravif 编译期 proc-macro，运行时零暴露。
+    "RUSTSEC-2024-0436",
+    # ttf-parser 弃维护——pdf-inspector 传递依赖（字体度量）。
+    "RUSTSEC-2026-0192",
 ]

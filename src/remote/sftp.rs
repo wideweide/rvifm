@@ -732,16 +732,21 @@ async fn try_agent_auth(
     if std::env::var("SSH_AUTH_SOCK").is_err() {
         return Ok(false);
     }
+    // M40-2 CI 修复：agent 客户端返回 keys::Error（非 russh::Error）——
+    // map_russh_err 签名不匹配（E0631，ubuntu CI 首次编译 cfg(unix) 暴露）。
     let mut agent = russh::keys::agent::client::AgentClient::connect_env()
         .await
-        .map_err(map_russh_err)?;
-    let identities = agent.request_identities().await.map_err(map_russh_err)?;
+        .map_err(|e| RemoteError::Auth(format!("ssh-agent 不可用: {e}")))?;
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|e| RemoteError::Auth(format!("ssh-agent 身份获取失败: {e}")))?;
     for identity in identities {
         let pubkey = identity.public_key().into_owned();
         let auth = handle
             .authenticate_publickey_with(user, pubkey, None, &mut agent)
             .await
-            .map_err(map_russh_err)?;
+            .map_err(|e| RemoteError::Auth(format!("ssh-agent 认证失败: {e}")))?;
         if auth.success() {
             return Ok(true);
         }

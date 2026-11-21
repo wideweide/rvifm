@@ -3,6 +3,67 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.0.0] — 2026-11-21
+
+1.0 稳定化统一发布：M35–M41 各批次并入（发布节奏按用户决策，中间版本不单独发版）。自 0.8.0 以来的全部用户可见变化如下（分批次小节）。
+
+### 新增（M35–M41 并入）
+
+**传输引擎（M36）**
+- `copy_tree` 重写：保留 mode/mtime/symlink、进度、取消（跨盘 move 同享）。
+- 远端下载单次读取 + 临时文件 + 原子 rename；`RemoteFs` 范围读写（read_range/write_range）。
+- `Transfer` 状态机统一进度；冲突策略五态（Ask/Overwrite/Skip/RenameAuto/KeepNewer，`[transfer] conflict_policy`）。
+- 大文件偏移续传（.part + .part.meta 头哈希校验）；`:queue` 传输队列；递归远端目录传输（三方向）。
+
+**文件运维（M37）**
+- `:chmod <mode>`（八进制/符号、-R 递归；POSIX）。
+- `:extract` 归档解压（zip-slip 防护、job 化、u 可撤销）。
+- `:sync` 目录同步（dry-run 缺省、--apply/--delete；l2r/r2l）。
+- `:du` 磁盘占用（top-5）、`:dup` 查重（SHA-256）、`:checksum` md5 sidecar（md5sum 兼容）。
+- `:trash clear` / `:trash purge --before=<天数>`。
+
+**检索与 shell 集成（M38）**
+- `:find`/`:grep` 结果可操作（yy/dd/p/:tag/:rename/:chmod 映射真实路径；跨目录去重；只读条目拒绝）。
+- `pick` fzf 兼容参数八项（--query/--multi/--print0/--preview/--height/--no-sort/--exit-0/--select-1）。
+- `rvifm init bash|zsh|fish|powershell`（cd 后 record、快捷键调 pick；只输出不写 rc）。
+- `:frecency stats | export <file> | purge confirm | prune --before <日期>`（JSON 全量导出、二步确认门、按时间裁剪）。
+- `:find` 过滤器 `--size [+-=]N[bkmg]`、`--mtime [+-]N(天)`、`--type f|d`、`--depth N`；命名搜索 `:find save/load <名>`（仅本会话）。
+
+**预览与平台（M39）**
+- hex 查看器（二进制文件 w 进入：16 字节/行 + ASCII 侧栏、分块读取 ≤1MB；`:goto 0x…/十进制` 跳转）。
+- CSV/TSV 表格对齐预览；PDF 查看器 `[`/`]` 任意页翻页；图片信息面板容器尺寸/格式（PNG/JPEG/GIF/BMP 头解析）。
+- 通用 zip 容器虚拟浏览（.docx/.xlsx/.pptx/.apk/.war）。
+- SFTP 硬化：首连指纹确认（`strict_host_key = ask|accept|no`，缺省 ask）+ ProxyJump（ssh config 透传）+ ssh-agent 认证（unix）+ keepalive。
+- Windows UAC 操作级提权（ShellExecuteExW "runas"；不提升主进程；取消状态不变）。
+- 命名标签（`:tabname <名>`）、标签溢出滚动（‹ ›）、`[ui] layout = single|dual|preview-right|preview-bottom`。
+
+**右栏一致性与交互修复（M41，用户实测）**
+- 右 pane `:` 命令模式（命令作用于焦点 pane）+ `gt`/`gT`/`Ngt`/`gg`（与左栏一致）。
+- 方向键 `↑↓←→` = k/j/h/l 等价（双栏一致、计数/环绕/`..` 行全保持）。
+- 鼠标单击切换焦点 pane 并聚焦条目（左右一致；已聚焦再击打开；滚轮作用于焦点 pane）。
+- 视口滚动有状态化：光标底行按 k 列表不动、高亮上移（原实现钉底）。
+
+**质量与工程（M40）**
+- criterion 基准集五组（`cargo bench --bench rvifm_bench`；基线 docs/bench.md）。
+- cargo-fuzz 五靶 + CI 10 分钟 fuzz；proptest 三组十属性。
+- cargo-deny/audit + CycloneDX SBOM + Release SHA256SUMS.txt。
+- macOS CI（test + clippy）+ aarch64 Linux 归档。
+- src/lib 化（bench/fuzz 导入内部函数）。
+
+### 修复
+- **natural_cmp 非全序**（M40-3 proptest 抓获）：Equal 非传递可致 std sort panic——重写为分块比较（数字段/文本段交替；数字段 < 文本段）。**含日常文件名排序崩溃风险，升级强烈建议**。
+- **junction undo EPERM**（M40-4）：Windows 目录联接撤销报拒绝访问——改 remove_dir 优先（reparse point 删除语义），M28-1 撤销链自动化验证。
+- **sevenz-rust 弃维护**（RUSTSEC-2026-0246，M40-5）：迁移 sevenz-rust2 0.25（API 映射 + 打包/读端回归通过）。
+- :sync 仅实现 l2r/r2l 与 --apply/--delete（三策略 deferred，见 SPEC M37-3）。
+
+### 平台
+- CI：test 矩阵 ubuntu/windows/**macOS**；release 归档 linux-musl / linux-gnu / **linux-aarch64-gnu** / windows + SHA256SUMS.txt；fuzz 与 supply-chain 独立 job。
+- crates.io：1.0.0 统一发布（0.9.0/0.10.0 跳过；0.11.0/0.11.1 已先行上线）。
+
+### 迁移提示
+- 0.8.0 → 1.0.0 无配置破坏性变更；新增配置段：`[transfer] conflict_policy`、`[preview] pdf_image_pages/pdf_prefer_image`（1.0.0 起支持任意页翻页）、`[ui] layout`。默认键位不变；右栏 `g` 单键直跳顶部改为 `gg` 序列（与左栏统一）。
+- 依赖变化：`sevenz-rust` → `sevenz-rust2`（7z 读/写行为不变；若从源码构建需重新解析依赖树）。
+
 ## [0.11.1] — 2026-11-21
 
 ### 新增
