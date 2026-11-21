@@ -912,3 +912,11 @@ rvifm record  → 静默记录访问
 - 13 节（ranger(1) 式分节）：安装与启动 → 5 分钟快速上手（浏览/操作撤销闭环/归档/frecency）→ 浏览 → 文件操作（含可逆性标注表）→ 选择与批量 → 搜索与过滤 → 归档 → 跳转（含隐私注记）→ 视图与标签 → 远端 → 配置（文件表 + 最小 TOML 示例）→ 键位速查表 → 命令速查表。
 - 内容来源：help.txt（权威键位/命令）+ README 事实（安装/配置路径/边界）；与 help.txt 分工——help = TUI 内速查，GUIDE = 仓库侧手册；README 未扩写（指针随 M34-10）。
 - 纯文档任务，无代码改动；门禁照跑全绿（431+9 不变）。
+
+### 2026-11-21 — M34-9 实现：图片/PDF 预览尺寸适配
+
+- **实现点**：`ImageEngine::render_file` 单点重写——查看器图片、PDF 页、pick 全部调用方同源受益。三分支：① 原始尺寸 ≤ 窗格 → `Resize::Fit` 天然不放大 + 窗格内居中子矩形；② 超出但 fit-width 后纵向放得下 → 协议按 (窗格宽, 等比高) 构建 + 纵向居中；③ fit-width 后仍超高 → `SlicedProtocol::new_with_resize` + `SlicedImage` position(0,0) 顶部切片（窗格内裁剪，kitty/sixel/halfblocks 通用）。
+- **格子换算**：`picker.font_size()`（像素/格；halfblocks 回退 10×20）——cell = ceil(像素/格宽)；fit-width scale = 窗格宽×格宽 / 图像宽。
+- **保持**：`Fill` 不使用（会放大，禁用）；图像纵向滚动不在范围（SPEC SIMPLIFIED——SlicedImage 机制已为查看器图像滚动留路）。
+- **踩坑**：`font_size()` 返回 `FontSize` 结构体（非元组）；`SignedPosition` 的 From 是 `(i16, i16)`。
+- 433 单测（+2：小图居中不顶格、大图 fit-width 到达右缘 + 切片不越界；不透明像素 PNG 生成器）。

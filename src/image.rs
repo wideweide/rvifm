@@ -77,8 +77,11 @@ impl ImageEngine {
         }
     }
 
-    /// 将图片文件渲染到预览区域（`Resize::Fit` 等比缩放）。
-    /// 解码失败返回 Err，由调用方降级为文本/提示行，不 panic。
+    /// 将图片文件渲染到预览区域（M34-9 尺寸语义）：
+    /// 原始尺寸 ≤ 窗格 → 不放大（`Resize::Fit` 天然行为）且在窗格内居中；
+    /// 超出窗格 → 缩放至窗格**宽度**（fit-width），高度超出部分只显示顶部
+    /// （普通预览窗格不滚动；SlicedImage 顶部切片）。解码失败返回 Err，
+    /// 由调用方降级为文本/提示行，不 panic。
     pub fn render_file(
         &self,
         frame: &mut Frame<'_>,
@@ -89,11 +92,79 @@ impl ImageEngine {
             .with_guessed_format()?
             .decode()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let protocol = self
-            .picker
-            .new_protocol(img, Size::new(area.width, area.height), Resize::Fit(None))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        frame.render_widget(Image::new(&protocol), area);
+        self.render_dynamic(frame, area, img)
+    }
+
+    /// M34-9：已解码图像的尺寸适配渲染（render_file 内部实现）。
+    fn render_dynamic(
+        &self,
+        frame: &mut Frame<'_>,
+        area: Rect,
+        img: image::DynamicImage,
+    ) -> std::io::Result<()> {
+        if area.width == 0 || area.height == 0 {
+            return Ok(());
+        }
+        let fs = self.picker.font_size();
+        let fw = fs.width.max(1) as f64;
+        let fh = fs.height.max(1) as f64;
+        let iw = img.width() as f64;
+        let ih = img.height() as f64;
+        // 图像占用的格子尺寸（像素 / 每格像素，向上取整）。
+        let cell_w = (iw / fw).ceil().max(1.0);
+        let cell_h = (ih / fh).ceil().max(1.0);
+        // 小于窗格：原尺寸（Fit 不放大），窗格内居中。
+        if cell_w <= area.width as f64 && cell_h <= area.height as f64 {
+            let w = (cell_w as u16).clamp(1, area.width);
+            let h = (cell_h as u16).clamp(1, area.height);
+            let rect = Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            };
+            let protocol = self
+                .picker
+                .new_protocol(img, Size::new(w, h), Resize::Fit(None))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            frame.render_widget(Image::new(&protocol), rect);
+            return Ok(());
+        }
+        // 超出窗格：fit-width——缩放至窗格宽度，高度按比例。
+        let scale = (area.width as f64 * fw) / iw;
+        let dw = area.width;
+        let dh = ((ih * scale / fh).ceil() as u16).max(1);
+        if dh <= area.height {
+            // fit-width 后纵向放得下：纵向居中。
+            let rect = Rect {
+                x: area.x,
+                y: area.y + (area.height - dh) / 2,
+                width: dw,
+                height: dh,
+            };
+            let protocol = self
+                .picker
+                .new_protocol(img, Size::new(dw, dh), Resize::Fit(None))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            frame.render_widget(Image::new(&protocol), rect);
+            return Ok(());
+        }
+        // 超高：顶部切片（SlicedImage position 0）——普通预览窗格显示顶部；
+        // 图像纵向滚动不在本任务范围（SPEC SIMPLIFIED）。
+        let sliced = ratatui_image::sliced::SlicedProtocol::new_with_resize(
+            &self.picker,
+            img,
+            Size::new(dw, dh),
+            Resize::Fit(None),
+        )
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        frame.render_widget(
+            ratatui_image::sliced::SlicedImage::new(
+                &sliced,
+                ratatui_image::sliced::SignedPosition::from((0i16, 0i16)),
+            ),
+            area,
+        );
         Ok(())
     }
 }
@@ -175,5 +246,85 @@ mod tests {
     fn tiny_png_decodes() {
         let bytes = tiny_png();
         assert!(bytes.len() > 8);
+    }
+
+    /// 生成不透明纯色 PNG（半块渲染必然出内容，供尺寸断言）。
+    fn opaque_png(w: u32, h: u32) -> Vec<u8> {
+        let mut rgba = image::RgbaImage::new(w, h);
+        for px in rgba.pixels_mut() {
+            *px = image::Rgba([255, 0, 0, 255]);
+        }
+        let img = image::DynamicImage::ImageRgba8(rgba);
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+
+    /// 收集非空白单元（symbol 非空格或背景非默认）坐标。
+    fn content_cells(buf: &ratatui::buffer::Buffer) -> Vec<(u16, u16)> {
+        buf.content
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.symbol() != " " || c.bg != ratatui::style::Color::Reset)
+            .map(|(i, _)| {
+                let x = i as u16 % buf.area().width;
+                let y = i as u16 / buf.area().width;
+                (x, y)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn m34_9_small_image_renders_centered_not_upscaled() {
+        // M34-9：小于窗格 → 原尺寸（不放大）居中——内容不再顶格。
+        let engine = ImageEngine::halfblocks();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("small.png");
+        std::fs::write(&path, opaque_png(8, 8)).unwrap();
+        let backend = TestBackend::new(40, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let _ = engine.render_file(f, f.area(), &path);
+            })
+            .unwrap();
+        let cells = content_cells(terminal.backend().buffer());
+        assert!(!cells.is_empty(), "内容存在");
+        let min_x = cells.iter().map(|c| c.0).min().unwrap();
+        assert!(min_x >= 10, "居中：最左内容列 {min_x}（旧实现顶格为 0）");
+        assert!(
+            cells
+                .iter()
+                .all(|(x, y)| (10..30).contains(x) && (2..10).contains(y)),
+            "全部内容落在中央区: {cells:?}"
+        );
+    }
+
+    #[test]
+    fn m34_9_large_image_fit_width_top_slice() {
+        // M34-9：大于窗格 → fit-width（内容到达右缘；旧 Fit 受高度约束缩在
+        // 中部）+ 超高部分顶部切片不越界。
+        let engine = ImageEngine::halfblocks();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("big.png");
+        std::fs::write(&path, opaque_png(600, 600)).unwrap();
+        let backend = TestBackend::new(40, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                let _ = engine.render_file(f, f.area(), &path);
+            })
+            .unwrap();
+        let cells = content_cells(terminal.backend().buffer());
+        assert!(!cells.is_empty(), "内容存在");
+        assert!(
+            cells.iter().any(|(x, _)| *x >= 38),
+            "fit-width：内容到达右缘"
+        );
+        assert!(
+            cells.iter().all(|(x, y)| *x < 40 && *y < 12),
+            "切片不越界: {:?}",
+            cells.iter().max().unwrap()
+        );
     }
 }
