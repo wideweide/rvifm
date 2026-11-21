@@ -66,7 +66,7 @@ jobs:
             exit 0
           else
             # 失败行以 ::error:: 注解输出（check-run annotations 匿名可读）。
-            grep -E "^test .* FAILED|panicked at" test-output.txt | head -20 | while IFS= read -r line; do
+            grep -E "FAILED|panicked at" -A2 test-output.txt | head -40 | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit 1
@@ -112,7 +112,15 @@ jobs:
           rustup toolchain install nightly --profile minimal
           cargo install cargo-fuzz --locked
       - name: build fuzz targets
-        run: cargo +nightly fuzz build -O --debug-assertions
+        shell: bash
+        run: |
+          set +e
+          cargo +nightly fuzz build -O --debug-assertions 2>&1 | tee fuzz-build.txt
+          rc=${PIPESTATUS[0]}
+          grep -E "error" -A4 fuzz-build.txt | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit $rc
       - name: fuzz archive parsers (3 x 120s)
         run: |
           for t in fuzz_zip fuzz_tar fuzz_7z; do
@@ -139,7 +147,15 @@ jobs:
       - name: cargo deny check
         run: cargo deny check
       - name: cargo audit
-        run: cargo audit
+        shell: bash
+        run: |
+          set +e
+          cargo audit 2>&1 | tee audit-output.txt
+          rc=${PIPESTATUS[0]}
+          grep -E "RUSTSEC|error|Crate" -A2 audit-output.txt | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit $rc
       - name: SBOM (CycloneDX)
         run: cargo cyclonedx --format json
       - uses: actions/upload-artifact@v4
