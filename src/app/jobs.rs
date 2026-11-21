@@ -320,6 +320,8 @@ pub(crate) fn jobs_menu_key(
 }
 
 /// M36-4：Transfer 传输方向（跨 VFS 三方向；本地→本地不走 Transfer）。
+/// M36-7 `:queue` 接线后移除 allow（届时 paste/queue 统一路由到执行体）。
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransferDirection {
     /// 本地 → 远端（本地 read → 远端 write）。
@@ -332,6 +334,8 @@ pub(crate) enum TransferDirection {
 /// `entries` = (来源路径, 目标路径) 对；冲突（目标已存在）→ 逐项失败
 /// 汇总 Failed（M36-5 策略层接管前保持"同名失败"口径）；取消在条目边界；
 /// 下载写走本地临时文件 + 原子 rename + 远端 mtime 保留；失败清理现场。
+/// M36-7 `:queue` 接线后移除 allow（届时 paste/queue 统一路由到执行体）。
+#[allow(dead_code)]
 pub(crate) fn execute_transfer_body(
     direction: TransferDirection,
     backend: &dyn crate::remote::RemoteFs,
@@ -387,17 +391,17 @@ pub(crate) fn execute_transfer_body(
                         // 本地临时文件 + 原子 rename（半成品不可见）+ mtime。
                         let tmp = dest.with_extension("part-dl");
                         let w = std::fs::write(&tmp, &d).and_then(|()| {
-                            if let Ok(meta) = backend.metadata(src) {
-                                if meta.mtime > 0 {
-                                    let mt = std::time::UNIX_EPOCH
-                                        + std::time::Duration::from_secs(meta.mtime);
-                                    let _ = std::fs::File::options()
+                            // 远端 mtime > 0 时保留（嵌套 if 合并——clippy collapsible）。
+                            if let Some(meta) = backend.metadata(src).ok().filter(|m| m.mtime > 0) {
+                                let mt = std::time::UNIX_EPOCH
+                                    + std::time::Duration::from_secs(meta.mtime);
+                                let _ =
+                                    std::fs::File::options()
                                         .write(true)
                                         .open(&tmp)
                                         .and_then(|f| {
                                             f.set_times(std::fs::FileTimes::new().set_modified(mt))
                                         });
-                                }
                             }
                             std::fs::rename(&tmp, dest)
                         });
