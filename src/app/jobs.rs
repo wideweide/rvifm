@@ -319,6 +319,137 @@ pub(crate) fn jobs_menu_key(
     }
 }
 
+/// M36-4：Transfer 传输方向（跨 VFS 三方向；本地→本地不走 Transfer）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransferDirection {
+    /// 本地 → 远端（本地 read → 远端 write）。
+    Upload,
+    /// 远端 → 本地（远端 read → 本地写临时 + rename + mtime）。
+    Download,
+}
+
+/// M36-4：Transfer 执行体（纯同步，供后台线程与测试共用）。
+/// `entries` = (来源路径, 目标路径) 对；冲突（目标已存在）→ 逐项失败
+/// 汇总 Failed（M36-5 策略层接管前保持"同名失败"口径）；取消在条目边界；
+/// 下载写走本地临时文件 + 原子 rename + 远端 mtime 保留；失败清理现场。
+pub(crate) fn execute_transfer_body(
+    direction: TransferDirection,
+    backend: &dyn crate::remote::RemoteFs,
+    entries: &[(std::path::PathBuf, std::path::PathBuf)],
+    tab_id: usize,
+    controls: &crate::state::JobControls,
+) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    use crate::state::{JobStatus, RemoteUndo, UndoableOp};
+    use std::sync::atomic::Ordering;
+    let mut ops = Vec::new();
+    let mut done = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+    let mut cancelled = false;
+    for (src, dest) in entries {
+        wait_while_paused(controls.pause, controls.cancel);
+        if controls.cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
+        // 冲突预检（M36-5 策略前保持"同名失败"口径）。
+        let conflict = match direction {
+            TransferDirection::Upload => backend.metadata(dest).is_ok(),
+            TransferDirection::Download => dest.exists(),
+        };
+        if conflict {
+            failures.push(format!("目标已存在: {}", dest.display()));
+            continue;
+        }
+        let part = resume_part_path("xfer", dest);
+        let result = match direction {
+            TransferDirection::Upload => {
+                let data = std::fs::read(src);
+                match data {
+                    Ok(d) => backend.write(dest, &d).map(|()| {
+                        UndoableOp::Remote {
+                            tab_id,
+                            remote: String::new(), // 调用方回填会话名
+                            kind: RemoteUndo::Create {
+                                path: dest.clone(),
+                                is_dir: false,
+                            },
+                        }
+                    }),
+                    Err(e) => Err(crate::remote::RemoteError::Other(format!(
+                        "本地读取失败: {e}"
+                    ))),
+                }
+            }
+            TransferDirection::Download => {
+                let data = backend.read(src);
+                match data {
+                    Ok(d) => {
+                        // 本地临时文件 + 原子 rename（半成品不可见）+ mtime。
+                        let tmp = dest.with_extension("part-dl");
+                        let w = std::fs::write(&tmp, &d).and_then(|()| {
+                            if let Ok(meta) = backend.metadata(src) {
+                                if meta.mtime > 0 {
+                                    let mt = std::time::UNIX_EPOCH
+                                        + std::time::Duration::from_secs(meta.mtime);
+                                    let _ = std::fs::File::options()
+                                        .write(true)
+                                        .open(&tmp)
+                                        .and_then(|f| {
+                                            f.set_times(std::fs::FileTimes::new().set_modified(mt))
+                                        });
+                                }
+                            }
+                            std::fs::rename(&tmp, dest)
+                        });
+                        match w {
+                            Ok(()) => Ok(UndoableOp::Create {
+                                tab_id,
+                                path: dest.clone(),
+                                recursive: false,
+                            }),
+                            Err(e) => {
+                                let _ = std::fs::remove_file(&tmp);
+                                Err(crate::remote::RemoteError::Other(format!(
+                                    "本地写入失败: {e}"
+                                )))
+                            }
+                        }
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        };
+        match result {
+            Ok(op) => {
+                ops.push(op);
+                done += 1;
+                controls.progress.processed.fetch_add(1, Ordering::Relaxed);
+                controls.progress.record();
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&part);
+                failures.push(format!("{}: {e}", src.display()));
+            }
+        }
+    }
+    let status = if cancelled {
+        JobStatus::Cancelled {
+            summary: format!("transfer: 已取消（{done} 项完成）"),
+        }
+    } else if failures.len() == entries.len() && !entries.is_empty() {
+        JobStatus::Failed {
+            err: failures.join("; "),
+        }
+    } else {
+        let mut summary = format!("transfer: {done} 项完成");
+        if !failures.is_empty() {
+            summary.push_str(&format!("; 失败 {}: {}", failures.len(), failures[0]));
+        }
+        JobStatus::Done { summary }
+    };
+    (ops, status)
+}
+
 /// M24-9：作业参数包（降低 spawn_job_thread 参数量；语义同 M13-8）。
 pub(crate) struct JobSpec<'a> {
     pub(crate) op: &'a str,
@@ -366,6 +497,160 @@ mod tests {
     use std::fs;
     use std::sync::atomic::AtomicBool;
     use tempfile::TempDir;
+
+    /// M36-4 mock：read/write/metadata 存储（上传/下载执行体测试）。
+    struct TransferMockFs {
+        store: std::sync::Mutex<std::collections::BTreeMap<String, Vec<u8>>>,
+    }
+
+    impl TransferMockFs {
+        fn new() -> Self {
+            Self {
+                store: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            }
+        }
+        fn put(&self, path: &str, data: &[u8]) {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(path.to_owned(), data.to_vec());
+        }
+    }
+
+    impl crate::remote::RemoteFs for TransferMockFs {
+        fn list(
+            &self,
+            _path: &Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            Ok(Vec::new())
+        }
+        fn read(&self, path: &Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            self.store
+                .lock()
+                .unwrap()
+                .get(&path.to_string_lossy().into_owned())
+                .cloned()
+                .ok_or_else(|| {
+                    crate::remote::RemoteError::NotFound(path.to_string_lossy().into_owned())
+                })
+        }
+        fn metadata(
+            &self,
+            path: &Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            let s = self.store.lock().unwrap();
+            match s.get(&path.to_string_lossy().into_owned()) {
+                Some(d) => Ok(crate::remote::RemoteMeta {
+                    size: d.len() as u64,
+                    mtime: 0,
+                    is_dir: false,
+                }),
+                None => Err(crate::remote::RemoteError::NotFound(
+                    path.to_string_lossy().into_owned(),
+                )),
+            }
+        }
+        fn write(&self, path: &Path, data: &[u8]) -> Result<(), crate::remote::RemoteError> {
+            self.store
+                .lock()
+                .unwrap()
+                .insert(path.to_string_lossy().into_owned(), data.to_vec());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn m364_transfer_upload_and_download_roundtrip() {
+        // M36-4：Upload（本地 → 远端 write）+ Download（远端 → 本地临时
+        // + rename）往返一致；进度计数递增。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("up.txt"), b"UP").unwrap();
+        let mock = TransferMockFs::new();
+        let cancel = AtomicBool::new(false);
+        let pause = AtomicBool::new(false);
+        let progress = crate::state::JobProgress::default();
+        let controls = crate::state::JobControls {
+            cancel: &cancel,
+            pause: &pause,
+            progress: &progress,
+        };
+
+        let (ops, status) = execute_transfer_body(
+            TransferDirection::Upload,
+            &mock,
+            &[(tmp.path().join("up.txt"), PathBuf::from("/up.txt"))],
+            0,
+            &controls,
+        );
+        assert!(matches!(status, crate::state::JobStatus::Done { .. }));
+        assert_eq!(
+            crate::remote::RemoteFs::read(&mock, Path::new("/up.txt")).unwrap(),
+            b"UP"
+        );
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(ops[0], crate::state::UndoableOp::Remote { .. }));
+        assert_eq!(
+            progress
+                .processed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+
+        let (ops2, status2) = execute_transfer_body(
+            TransferDirection::Download,
+            &mock,
+            &[(PathBuf::from("/up.txt"), tmp.path().join("down.txt"))],
+            0,
+            &controls,
+        );
+        assert!(matches!(status2, crate::state::JobStatus::Done { .. }));
+        assert_eq!(fs::read(tmp.path().join("down.txt")).unwrap(), b"UP");
+        assert_eq!(ops2.len(), 1);
+        assert!(matches!(ops2[0], crate::state::UndoableOp::Create { .. }));
+    }
+
+    #[test]
+    fn m364_transfer_conflict_and_cancel() {
+        // M36-4：目标已存在 → Failed 汇总（M36-5 策略前同名失败）；
+        // 取消 → Cancelled。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("f.txt"), b"F").unwrap();
+        let mock = TransferMockFs::new();
+        mock.put("/f.txt", b"EXIST");
+        let pause = AtomicBool::new(false);
+        let progress = crate::state::JobProgress::default();
+        let controls = crate::state::JobControls {
+            cancel: &AtomicBool::new(false),
+            pause: &pause,
+            progress: &progress,
+        };
+        let (ops, status) = execute_transfer_body(
+            TransferDirection::Upload,
+            &mock,
+            &[(tmp.path().join("f.txt"), PathBuf::from("/f.txt"))],
+            0,
+            &controls,
+        );
+        assert!(ops.is_empty());
+        assert!(matches!(status, crate::state::JobStatus::Failed { .. }));
+
+        // 取消 → Cancelled。
+        let controls2 = crate::state::JobControls {
+            cancel: &AtomicBool::new(true),
+            pause: &pause,
+            progress: &progress,
+        };
+        fs::write(tmp.path().join("g.txt"), b"G").unwrap();
+        let (ops, status) = execute_transfer_body(
+            TransferDirection::Upload,
+            &mock,
+            &[(tmp.path().join("g.txt"), PathBuf::from("/g.txt"))],
+            0,
+            &controls2,
+        );
+        assert!(ops.is_empty());
+        assert!(matches!(status, crate::state::JobStatus::Cancelled { .. }));
+    }
 
     #[test]
     fn wait_while_paused_returns_immediately_when_cancelled() {
