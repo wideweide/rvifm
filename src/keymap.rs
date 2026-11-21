@@ -235,6 +235,12 @@ impl Keymap {
         let pairs: Vec<(Vec<Key>, Action)> = vec![
             (vec![k(Char('j'))], CursorDown),
             (vec![k(Char('k'))], CursorUp),
+            // M41-2：方向键与 k/j/h/l 同语义（内建分支别名优先，注册与
+            // j/k 同模式；用户显式绑定经 is_explicit 前置拦截覆盖）。
+            (vec![k(Up)], CursorUp),
+            (vec![k(Down)], CursorDown),
+            (vec![k(Left)], ReturnParent),
+            (vec![k(Right)], EnterSelected),
             (vec![k(Char('l'))], EnterSelected),
             (vec![k(Enter)], EnterSelected),
             (vec![k(Char('h'))], ReturnParent),
@@ -394,6 +400,22 @@ mod tests {
             Some(Action::HalfPageDown)
         );
         assert_eq!(k.lookup(&[Key::ctrl(Char('u'))]), Some(Action::HalfPageUp));
+    }
+
+    #[test]
+    fn m41_2_default_map_binds_arrow_keys() {
+        // M41-2：方向键默认绑定（内建分支别名优先；用户显式绑定可覆盖）。
+        let k = km();
+        assert_eq!(k.lookup(&[plain(KeyCode::Up)]), Some(Action::CursorUp));
+        assert_eq!(k.lookup(&[plain(KeyCode::Down)]), Some(Action::CursorDown));
+        assert_eq!(
+            k.lookup(&[plain(KeyCode::Left)]),
+            Some(Action::ReturnParent)
+        );
+        assert_eq!(
+            k.lookup(&[plain(KeyCode::Right)]),
+            Some(Action::EnterSelected)
+        );
     }
 
     #[test]

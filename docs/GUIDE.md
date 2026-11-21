@@ -198,7 +198,7 @@ prepend_keymap = [
 
 | 分类 | 键位 |
 |---|---|
-| 导航 | `j/k` `l/Enter` `h` `gg/G` `Ctrl-d/u` `..` |
+| 导航 | `j/k` `↑↓←→`（同 k/j/h/l）`l/Enter` `h` `gg/G` `Ctrl-d/u` `..` |
 | 焦点/视图 | `Tab` `w`/`:view` `S` `:sort` `:tree` `:theme` `Ctrl-G` |
 | 搜索 | `/` `n/N` `={glob}` `f/F{字符}` `:find` `:grep` |
 | 选择/批量 | `v` `V` `t` `:select` `:unselect` `:tag` |

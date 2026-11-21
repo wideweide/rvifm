@@ -371,14 +371,14 @@ pub(crate) fn handle_right_key(
             // M21-F2：焦点经边框/当前行样式呈现，状态栏不再提示焦点文字。
             tab.focus = crate::tab::Focus::Left;
         }
-        KeyCode::Char('j') if !ctrl => tab.right.move_cursor(1),
-        KeyCode::Char('k') if !ctrl => tab.right.move_cursor(-1),
+        KeyCode::Char('j') | KeyCode::Down if !ctrl => tab.right.move_cursor(1),
+        KeyCode::Char('k') | KeyCode::Up if !ctrl => tab.right.move_cursor(-1),
         KeyCode::Char('d') if ctrl => tab.right.move_cursor(half),
         KeyCode::Char('u') if ctrl => tab.right.move_cursor(-half),
         // M41-1：`g` 序列（gt/gT/Ngt/gg）已由 handle_key 右 pane 分支拦截，
         // 此处不再有直跳顶部的单键 `g`（与左 pane gg 序列语义统一）。
         KeyCode::Char('G') if !ctrl => tab.right.cursor_bottom(),
-        KeyCode::Enter | KeyCode::Char('l') if !ctrl => {
+        KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right if !ctrl => {
             if let Err(e) = tab.right.enter_selected(cfg) {
                 *msg = Some(format!("进入失败: {e}"));
             } else {
@@ -387,7 +387,7 @@ pub(crate) fn handle_right_key(
                 record_live_visit(state, tab_id, 'R');
             }
         }
-        KeyCode::Char('h') if !ctrl => {
+        KeyCode::Char('h') | KeyCode::Left if !ctrl => {
             if let Err(e) = tab.right.return_parent(cfg) {
                 *msg = Some(format!("返回失败: {e}"));
             }
@@ -1436,7 +1436,7 @@ pub(crate) fn handle_key(
     }
 
     // M13-7：树视图只读——写操作与导航入口拒绝（l/Enter/h/dd/DD/cw 前缀/u）。
-    // Ctrl-d/u 半页滚动放行（ctrl 排除）。
+    // Ctrl-d/u 半页滚动放行（ctrl 排除）。M41-2：←/→ 与 h/l 同受守卫。
     if state.active_tab().in_tree()
         && !ctrl
         && matches!(
@@ -1444,6 +1444,8 @@ pub(crate) fn handle_key(
             KeyCode::Char('l')
                 | KeyCode::Enter
                 | KeyCode::Char('h')
+                | KeyCode::Right
+                | KeyCode::Left
                 | KeyCode::Char('d')
                 | KeyCode::Char('D')
                 | KeyCode::Char('c')
@@ -1455,6 +1457,8 @@ pub(crate) fn handle_key(
         return Outcome::Continue;
     }
 
+    // M41-2：方向键 ↑↓←→ 与 k/j/l/h 别名进同款臂——环绕、计数前缀、
+    // `..` 行、M21-F4 返回定位等行为完全一致。
     match key.code {
         KeyCode::Char('G') => state.active_tab_mut().cursor_bottom(),
         KeyCode::Char('d') if ctrl => state.active_tab_mut().move_cursor(half),
@@ -1463,7 +1467,7 @@ pub(crate) fn handle_key(
             input.count = None;
             undo_last(state, msg);
         }
-        KeyCode::Char('j') => {
+        KeyCode::Char('j') | KeyCode::Down => {
             // M13-4/M24-5：j/k 环绕 + 计数前缀 N 消耗。
             let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
@@ -1471,18 +1475,18 @@ pub(crate) fn handle_key(
                 state.active_tab_mut().move_cursor_wrap(1);
             }
         }
-        KeyCode::Char('k') => {
+        KeyCode::Char('k') | KeyCode::Up => {
             let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
             for _ in 0..n {
                 state.active_tab_mut().move_cursor_wrap(-1);
             }
         }
-        KeyCode::Char('l') | KeyCode::Enter => {
+        KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
             input.count = None;
             open_selected(state, msg);
         }
-        KeyCode::Char('h') => {
+        KeyCode::Char('h') | KeyCode::Left => {
             let n = input.count.take().unwrap_or(1).max(1);
             input.count = None;
             for _ in 0..n {

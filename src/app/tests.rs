@@ -2615,6 +2615,88 @@ fn m41_1_right_pane_command_mode_and_tab_switch() {
 }
 
 #[test]
+fn m41_2_arrow_keys_match_jkhl_both_panes() {
+    // M41-2：方向键与 k/j/l/h 等价——左 pane（计数/进入/返回定位）与
+    // 右 pane（焦点 pane 内导航/进入/返回）。
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("sub")).unwrap();
+    for n in ["a.txt", "b.txt", "c.txt"] {
+        fs::write(tmp.path().join(n), "x").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut input = InputState::default();
+    // 左 pane：↓ = j、↑ = k。
+    assert_eq!(
+        press(&mut state, &mut input, KeyCode::Down, KeyModifiers::NONE),
+        Outcome::Continue
+    );
+    assert_eq!(state.active_tab().cursor, 1, "↓ 下移一条");
+    assert_eq!(
+        press(&mut state, &mut input, KeyCode::Up, KeyModifiers::NONE),
+        Outcome::Continue
+    );
+    assert_eq!(state.active_tab().cursor, 0, "↑ 上移一条");
+    // 计数前缀：3↓ = 3j。
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('3'),
+        KeyModifiers::NONE,
+    );
+    press(&mut state, &mut input, KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(state.active_tab().cursor, 3, "3↓ 消耗计数");
+    // → = l：进入目录（目录优先排序下 sub 在首位附近；用名字定位）。
+    let sub_idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "sub")
+        .unwrap();
+    state.active_tab_mut().cursor = sub_idx;
+    press(&mut state, &mut input, KeyCode::Right, KeyModifiers::NONE);
+    assert_eq!(
+        state.active_tab().location.base_dir(),
+        tmp.path().join("sub"),
+        "→ 进入目录"
+    );
+    // ← = h：返回父目录并定位来源条目（M21-F4）。
+    press(&mut state, &mut input, KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(
+        state.active_tab().location.base_dir(),
+        tmp.path(),
+        "← 返回父目录"
+    );
+    assert_eq!(state.active_tab().cursor, sub_idx, "← 定位来源条目");
+    // 右 pane：焦点右后 ↓/↑ 移右栏光标，→ 进入，← 返回。
+    {
+        let tab = state.active_tab_mut();
+        tab.right = crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.focus = crate::tab::Focus::Right;
+    }
+    press(&mut state, &mut input, KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(state.active_tab().right.cursor, 1, "右 pane ↓");
+    // 右 pane 打开 = M14-1 仅物理目录：定位到 sub（索引 0，目录优先）再按 →。
+    state.active_tab_mut().right.cursor = 0;
+    press(&mut state, &mut input, KeyCode::Right, KeyModifiers::NONE);
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        tmp.path().join("sub"),
+        "右 pane → 进入目录"
+    );
+    press(&mut state, &mut input, KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        tmp.path(),
+        "右 pane ← 返回"
+    );
+    assert_eq!(
+        state.active_tab().location.base_dir(),
+        tmp.path(),
+        "左 pane 不受影响"
+    );
+}
+
+#[test]
 fn m34_4_view_renders_in_opposite_pane() {
     // M34-4：view 模式预览占非焦点 pane——焦点右：查看器在左、右 pane 保持
     // 目录列表；焦点左：查看器在右（M13-9 现状保持）。
