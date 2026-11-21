@@ -4,8 +4,8 @@
 
 - **更新时间**：2026-11-21
 - **当前阶段**：M0–M27 + AUDIT + M28–M33 + MISC 全部完成并关闭；**M34 批次（主题、预览统一与文档，10 任务）执行中**（用户 2026-11-21 指令"升级后开跑"：本机 rustup stable 1.100 就绪、全门禁绿）；统一目标 0.11.0
-- **当前任务**：M34-10 M34 文档收尾（help/README/ACCEPTANCE §34 同步）→ 0.11.0 自动发布
-- **阶段状态**：0.10.0 发布收尾仅剩 crates.io——GitHub Release 已发布验证（三归档含 rvifm+rv）；crates.io 停在 0.8.0，0.9.0/0.10.0 待 Windows 机器凭据（用户操作，非停止条件）；M11-6 清单第 1 项 foot 已过
+- **当前任务**：0.11.0 发布中（tag 推送 → CI 三 target 归档 + GitHub Release）；**crates.io publish 待 Windows 机器凭据**（0.9.0/0.10.0/0.11.0——实查 crates.io 停在 0.8.0，用户操作）
+- **阶段状态**：M0–M33 + AUDIT + MISC + **M34 全部完成**（10/10，433 单测 + 9 集成，rustc 1.100 本机门禁绿含 pdf-visual）；M11-6 清单第 1 项 foot 已过
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
 ## 进行中 / 暂停 / 延期
@@ -17,12 +17,14 @@
 
 ## 下一步
 
-1. **M34 批次按序执行（自动续轮）**：M34-1 默认主题 → M34-2 snowwhite → M34-3 右栏搜索 → M34-4 预览统一 → M34-5 frecency 视觉回显 → M34-6 jar → M34-7 信息面板 → M34-8 GUIDE → M34-9 预览尺寸适配 → M34-10 文档收尾；全部完成后自动发布 0.11.0（PLAN §4）。
-2. **Windows 侧收尾（用户执行）**：crates.io publish 0.9.0/0.10.0（检出对应 tag；或只发 0.10.0）→ 补 `release: x.y.z verified`；Win2016 冒烟；顺带 M11-6 清单 2–6 / junction / 7z 人工项。
-3. **M31-5 本机补验**：rustc 1.100 已解锁，可随 M34 期间或用户指令执行语料量化。
+1. **0.11.0 发布外循环**：确认 tag `v0.11.0` 的 CI run 全绿（失败按 tag 重指向处置，0.9.0/0.10.0 先例）；GitHub Release 由 release job 产出。
+2. **Windows 侧收尾（用户执行）**：crates.io publish（检出 `v0.9.0`/`v0.10.0`/`v0.11.0` 对应 tag 逐个发布，或只发 0.11.0）→ 补 `release: x.y.z verified`；Win2016 冒烟；顺带 M11-6 清单 2–6 / M28-1 junction / M31-2 7z 人工项。
+3. **M31-5 本机补验**：rustc 1.100 已解锁，语料量化随时可跑（用户指令）。
+4. **批次关闭记录**：M34 批次关闭（见下）后 PLAN §4 自动发布条款已触发。
 
 ## 批次关闭记录
 
+- M34：主题、预览统一与文档 10 项全部完成（2026-11-21）——M34-1 默认 gruvbox-dark（vifm 高亮组三层解析）、M34-2 捆绑 snowwhite、M34-3 右 pane `/` 搜索（焦点感知）、M34-4 对侧预览统一（preview_path 焦点修复 + render_view_content）、M34-5 frecency 视觉回显、M34-6 `.jar`、M34-7 二进制信息面板、M34-8 GUIDE.md、M34-9 预览尺寸适配（Fit 居中/fit-width/顶部切片）；433 单测 + 9 集成，本机 rustc 1.100 门禁绿（含 pdf-visual）。
 - 0.10.0 发布（2026-11-21）：M28–M33 全部完成后自动发布——GitHub Release 三归档发布并验证（CI 5 job 全绿；发布期间修复 windows clippy dead-code 与 M32-3 Windows 盘符路径两缺陷，tag 重指向 2 次，CI 诊断注解通道固化，见 NOTES）；crates.io 停在 0.8.0，0.9.0/0.10.0 待 Windows（用户执行）。
 - M0–M6：核心浏览、多标签、`u` 撤销闭环、选择批量、搜索过滤、配置与 v0.1.0 发布。
 - M7–M11：只读归档 VFS、frecency（`pick`/`record`）、图标主题、声明式键位、预览与打开；M11-6 真实终端验证 deferred。

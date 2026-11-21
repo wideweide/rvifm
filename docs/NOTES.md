@@ -920,3 +920,9 @@ rvifm record  → 静默记录访问
 - **保持**：`Fill` 不使用（会放大，禁用）；图像纵向滚动不在范围（SPEC SIMPLIFIED——SlicedImage 机制已为查看器图像滚动留路）。
 - **踩坑**：`font_size()` 返回 `FontSize` 结构体（非元组）；`SignedPosition` 的 From 是 `(i16, i16)`。
 - 433 单测（+2：小图居中不顶格、大图 fit-width 到达右缘 + 切片不越界；不透明像素 PNG 生成器）。
+
+### 2026-11-21 — M34-10 文档收尾 + 0.11.0 自动发布触发
+
+- **文档同步**：ACCEPTANCE §34（逐任务勾选）、README 状态句（v0.11.0/补 M34/GUIDE 指针）、图片预览行（尺寸语义）、help `w` 行、PLAN（M34 ✅ 10/10、§4 0.11.0 发布中）、STATE（批次关闭 + 下一步重写）。
+- **版本 bump**：Cargo.toml 0.10.0 → **0.11.0**（Cargo.lock 随构建更新）；发布外循环 = tag `v0.11.0` 推送 → CI 三 target 归档 + GitHub Release；crates.io 凭据仅在 Windows（0.9.0/0.10.0/0.11.0 由用户逐 tag 发布）。
+- **M34 全程注记**：批次在本机（Linux，rustup 1.100）执行；每任务独立提交 + 推送 + 全门禁；用户裁决两处（方案 A 对侧预览、--version 探测裁剪）+ 追加任务一处（M34-9 用户实测反馈）。

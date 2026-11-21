@@ -974,3 +974,29 @@
 - [x] 发布归档包含双二进制。（2026-11-20：ci.yml release 矩阵 `binaries: rvifm rv`（windows 含 .exe），tar 打包同步）
 - [x] README 说明 rv 别名；项目名/crate 名/主二进制名仍为 `rvifm`。（2026-11-20：快速开始/二进制布局/运行段三处）
 - [x] 默认依赖树不变（无新增 crate；`cargo tree` 无 exprim）。（2026-11-20）
+
+## 34. M34 — 主题、预览统一与文档（见 SPEC M34 节；目标 0.11.0）
+
+### M34-1 默认主题 gruvbox
+- [x] `[ui] theme` 未配置时默认 `gruvbox-dark`（显式配置覆盖；16 色回退保留为无主题兜底）。（2026-11-21：config 默认值 + 单测）
+- [x] vifm 高亮组三层解析：主题命名样式 → 标准 token 推导（accent/bg/text 词表，缺 token 整组回退）→ 16 色；gruvbox 色值断言。（2026-11-21：`vifm_style` 三层 + `derive_vifm_group`）
+- [x] `[ui] theme = "dracula"` / `:theme dracula` 生效（activate 链 + 通用推导）。（2026-11-21）
+### M34-2 snowwhite 捆绑主题
+- [x] `snowwhite` 经 `activate`/`:theme` 可选（opaline 内置 → rvifm 捆绑 → 用户目录三段）；浅色 variant + 图标 Light 联动；vifm 高亮组精确值（fg16/bg255 等）。（2026-11-21）
+### M34-3 右 pane `/` 搜索
+- [x] 焦点在右 pane：`/` 进入搜索（incsearch 跳转/高亮/计数）、`n`/`N` 环绕、Esc 取消恢复 origin；左 pane 光标不受影响。（2026-11-21：tab.rs + 集成测试）
+### M34-4 对侧预览统一
+- [x] `preview_path()` = 焦点 pane 光标文件（修复右焦点 `:view` 预览错位）。（2026-11-21）
+- [x] view 模式预览占非焦点 pane：焦点左 → 查看器在右 pane（M13-9 现状）；焦点右 → 查看器在左 pane、右 pane 保持目录列表导航。（2026-11-21：render_view_content 抽出 + 双侧分派）
+### M34-5 frecency Pane 视觉与回显
+- [x] 顶部标题 `Frecency - 高频目录/文件搜索`；结果行 = devicons 图标 + 全路径（`[目录]/[文件]` 移除、✦keyword 保留）；搜索态底部 `/query` 实时回显。（2026-11-21）
+### M34-6 `.jar` 归档识别
+- [x] `.jar` 按 zip 路径虚拟浏览（roundtrip list/read；大小写不敏感；is_archive_file + open_dispatch 同步）。（2026-11-21）
+### M34-7 二进制/不可读预览信息面板
+- [x] 二进制（NUL）/非 UTF-8/读取失败 → 结构化面板（类型魔数嗅探/大小/修改时间），无乱码；不执行文件（零子进程）。（2026-11-21）
+### M34-8 GUIDE 用户手册
+- [x] `docs/GUIDE.md`（13 节：快速上手/键位速查/命令速查）与 help.txt（TUI 内速查）分工。（2026-11-21）
+### M34-9 预览尺寸适配
+- [x] 小图原尺寸居中不放大；大图 fit-width（内容到达窗格右缘）；超高顶部切片不越界。（2026-11-21：ImageEngine 单点三分支 + TestBackend 断言）
+### M34-10 文档收尾
+- [x] README（状态句/GUIDE 指针/预览语义）与 help 同步；ACCEPTANCE §34 勾选完成 → 批次关闭。（2026-11-21）

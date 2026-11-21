@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v0.10.0 已发布；任务列表全部完成（M0–M27、AUDIT 18/18、M26–M27、M28 运维操作、M29 对比增强、M30 frecency 通用化、M31 文档验收、M32 远端健壮性、M33 键位分层）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v0.11.0 发布中；任务列表全部完成（M0–M27、AUDIT 18/18、M26–M33、M34 主题/预览统一/文档）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -40,7 +40,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 | **归档浏览** | 依赖 FUSE / archivemount 挂载 | 内置只读 VFS，`.zip` / `.jar` / `.tar` / `.tar.gz` / `.7z` / `.tar.xz` / `.tar.bz2` / `.tar.zst` 直接当目录浏览，**无内核模块、无外部工具** |
 | **图标** | 装 Nerd Font + 装插件 + 改 `vifmrc` | 编译期集成 `devicons`，一行调用返回图标与颜色；**只需装字体** |
 | **主题** | 手动配置颜色方案 | 集成 `opaline`，内置 39 套 + 捆绑 `snowwhite`（浅色）主题、TOML 定义，默认 `gruvbox-dark`；`[ui] theme` 配置与 `:theme` 运行时切换已接线 |
-| **图片预览** | 调用外部 GUI 看图工具 | `ratatui-image` 统一协议适配，**原生协议 → halfblocks 无条件回退**，任何终端都有图可看 |
+| **图片预览** | 调用外部 GUI 看图工具 | `ratatui-image` 统一协议适配，**原生协议 → halfblocks 无条件回退**，任何终端都有图可看；小图原尺寸居中、大图按窗格宽适配 |
 | **文件打开** | 逐条写 `filetype` / `filextype` | 默认走系统 opener（`gio open` / `xdg-open` / `open` / `start`），**零配置可用**；TOML 分层定制（`[opener]`+`[open]`，mime/name 规则）已接线 |
 | **模糊跳转** | 依赖 fzf 薄插件 + SQLite | 原生 `pick` / `record` 子命令，redb 存储，**无 fzf、无 SQLite**，可作为独立程序供 bash/fish 使用 |
 | **文档预览** | 无内建能力 | Office 纯 Rust 内建预览；PDF 探测式回退 |
