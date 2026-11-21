@@ -2004,6 +2004,107 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let msg = run_compare(state, mode == "bycontents")?;
             Ok(ExecOutcome::Done { msg: Some(msg) })
         }
+        Some("extract") => {
+            // M37-2：归档解压——光标条目为归档文件 → 全量解压到目标目录
+            //（缺省当前物理目录）；ArchiveFs 逐成员 read → 本地写；
+            // zip-slip 防护（成员路径规范化拒绝 .. / 绝对路径）；单成员
+            // 64MB 上限沿用护栏；逐成员入撤销栈（u 可逆）。
+            let dest_dir = match parts.next() {
+                Some(d) => {
+                    let base = physical_base(state)?;
+                    let p = std::path::Path::new(d);
+                    if p.is_absolute() {
+                        p.to_path_buf()
+                    } else {
+                        base.join(p)
+                    }
+                }
+                None => physical_base(state)?,
+            };
+            if !dest_dir.is_dir() {
+                return Err(format!("extract: 目标目录不存在: {}", dest_dir.display()));
+            }
+            // 光标条目 = 归档文件。
+            let tab = state.active_tab();
+            let Some(item) = tab.entries.get(tab.cursor) else {
+                return Err("extract: 无选中条目".to_owned());
+            };
+            let host = tab.location.base_dir().join(&item.name);
+            if !crate::archive::is_archive_file(&item.name) {
+                return Err(format!("extract: {} 不是受支持的归档格式", item.name));
+            }
+            // 打开归档 VFS + 逐成员解压（walk list 树；zip-slip 防护；
+            // 单成员 64MB 上限；逐成员入撤销栈 u 可逆）。
+            let mut archive_fs = crate::archive::open_dispatch(&host)
+                .map_err(|e| format!("extract: 归档打开失败: {e}"))?;
+            let mut stack = vec![String::new()];
+            let mut applied = 0usize;
+            let mut failures: Vec<String> = Vec::new();
+            let tab_id = state.active;
+            while let Some(inner) = stack.pop() {
+                let entries = match archive_fs.list(&inner) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        failures.push(format!("{inner}: {e}"));
+                        continue;
+                    }
+                };
+                for entry in entries {
+                    let member_path = if inner.is_empty() {
+                        PathBuf::from(&entry.path)
+                    } else {
+                        PathBuf::from(format!("{inner}/{}", entry.path))
+                    };
+                    if entry.is_dir {
+                        stack.push(member_path.to_string_lossy().into_owned());
+                        continue;
+                    }
+                    // zip-slip 防护：成员路径规范化后不得逃逸 dest_dir。
+                    let dest = dest_dir.join(&member_path);
+                    let normalized = normalize_lexical(&dest);
+                    if !normalized.starts_with(&dest_dir) {
+                        failures.push(format!("zip-slip 拒绝: {}", member_path.display()));
+                        continue;
+                    }
+                    // 单成员 64MB 护栏。
+                    if entry.size > 64 * 1024 * 1024 {
+                        failures.push(format!("{}: 超出 64MB 单成员上限", member_path.display()));
+                        continue;
+                    }
+                    if let Some(parent) = dest.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match archive_fs.read(&member_path.to_string_lossy()) {
+                        Ok(data) => match std::fs::write(&dest, &data) {
+                            Ok(()) => {
+                                state.undo_stack.push(crate::state::UndoableOp::Create {
+                                    tab_id,
+                                    path: dest.clone(),
+                                    recursive: false,
+                                });
+                                applied += 1;
+                            }
+                            Err(e) => failures.push(format!("{}: {e}", dest.display())),
+                        },
+                        Err(e) => failures.push(format!("{}: {e}", member_path.display())),
+                    }
+                }
+            }
+            if failures.is_empty() {
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!(
+                        "extract: {applied} 个成员已解压到 {}（u 可撤销）",
+                        dest_dir.display()
+                    )),
+                })
+            } else {
+                Err(format!(
+                    "extract: {applied} 项成功，失败 {}: {}",
+                    failures.len(),
+                    failures.join("; ")
+                ))
+            }
+        }
         Some("chmod") => {
             // M37-1：批量 chmod（八进制/符号；tags/v 选集/光标；-R 递归）。
             // POSIX only（std::os::unix::fs::PermissionsExt）——Windows 可读拒绝。

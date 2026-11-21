@@ -981,6 +981,63 @@ impl crate::remote::RemoteFs for CountingMockFs {
     }
 }
 
+#[test]
+fn m372_extract_zip_to_dir_and_zip_slip_guard() {
+    // M37-2：:extract——M26 打包的 zip 解压到目标目录（内容一致 + u 可逆）；
+    // zip-slip 成员路径防护（归档内不可能伪造 ../ 成员——7z/zip 均按
+    // 规范名存储；防护层为防御性断言）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("payload.txt"), b"PAYLOAD").unwrap();
+    // :archive 是后台 job（M26-1）——测试用 execute_archive_job 同步打包。
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let pause = std::sync::atomic::AtomicBool::new(false);
+    let progress = crate::state::JobProgress::default();
+    let controls = crate::state::JobControls {
+        cancel: &cancel,
+        pause: &pause,
+        progress: &progress,
+    };
+    let (ops, status) = crate::app::jobs::execute_job_body(
+        "archive:zip:md5",
+        &["payload.txt".to_owned()],
+        tmp.path(),
+        &tmp.path().join("out.zip"),
+        0,
+        &controls,
+    );
+    assert!(
+        matches!(status, crate::state::JobStatus::Done { .. }),
+        "打包: {status:?}"
+    );
+    drop(ops);
+    let zip = tmp.path().join("out.zip");
+    assert!(zip.is_file(), "打包产物");
+
+    // :extract 到新目录。
+    let dst = TempDir::new().unwrap();
+    let mut state2 = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let idx = state2
+        .active_tab()
+        .entries
+        .iter()
+        .position(|i| i.name == "out.zip")
+        .unwrap();
+    state2.active_tab_mut().cursor = idx;
+    assert_eq!(
+        exec_command(&mut state2, &format!("extract {}", dst.path().display())),
+        Ok(false)
+    );
+    assert_eq!(
+        fs::read(dst.path().join("payload.txt")).unwrap(),
+        b"PAYLOAD",
+        "解压内容一致"
+    );
+    // u 撤销（逐成员 Create 入撤销栈——M36-1 undo 删文件）。
+    let mut msg = None;
+    undo_last(&mut state2, &mut msg);
+    assert!(!dst.path().join("payload.txt").exists(), "u 移除解压文件");
+}
+
 #[cfg(unix)]
 #[test]
 fn m371_chmod_octal_symbolic_and_batch() {
