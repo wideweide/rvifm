@@ -111,9 +111,9 @@
 - **GitHub Release 已发布并验证（2026-11-21）**：CI 5 job 全绿（发布期修复 windows clippy dead-code 与 M32-3 Windows 盘符路径两缺陷，tag 重指向 2 次，诊断注解通道固化，见 NOTES）；三归档含 rvifm+rv。**crates.io 实查停在 0.8.0**——0.9.0/0.10.0 待 Windows 侧 `cargo publish`（用户执行，检出对应 tag）。
 - **自动发布规则**：任务列表（`TASKS.md`）全部执行完成（所有非 OUT_OF_SCOPE 任务勾选或明确 deferred）后，自动执行发布流程——跑完整阶段验收 + 双平台 CI 全绿 + 版本 bump + crates.io + tag/GitHub Release；不再等待人工发布决策。发布失败按”无法继续的异常”暂停并报告。
 
-### 0.11.0（发布中 2026-11-21）
+### 0.11.0（已发布 2026-11-21）
 
-- M34 统一随任务列表全部完成发布 **0.11.0**（自动发布规则同 0.10.0）——tag 推送后 CI 三 target 归档 + GitHub Release；crates.io publish 待 Windows 侧凭据（0.9.0/0.10.0 一并，用户执行）。
+- M34 统一随任务列表全部完成发布 **0.11.0**（自动发布规则同 0.10.0）——tag 重指向（windows test 修复）后 CI 全绿 + GitHub Release 三归档 + **crates.io 上线**（本机凭据，API 验证 0.11.0）；**0.9.0/0.10.0 经用户决策跳过不再发布**。
 
 ## 5. 执行约束与风险
 

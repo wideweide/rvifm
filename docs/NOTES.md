@@ -931,3 +931,9 @@ rvifm record  → 静默记录访问
 
 - tag `v0.11.0` 首推 windows test 失败：`m34_5_frecency_pane_title_icons_and_query_echo` 的 ✦rs/main.rs 断言——**runner 临时目录名过长**（`C:\Users\RUNNER~1\AppData\Local\Temp\...`），frecency 结果行超出 pane 宽度被截断。修复：测试改短合成路径（`"p"` / `"p/main.rs"`——frecency 记录允许不存在的历史路径，图标按尾斜杠/扩展名推断），平台无关。ubuntu job 同 run 全绿、release job 因此 skipped。
 - **教训**：渲染类测试断言含"路径尾部内容"（如 keyword 后缀）时，必须用合成短路径，禁用宿主 TempDir 全路径（M24-9 教训的变体——宿主路径长度依赖）。
+
+### 2026-11-21 — 0.11.0 crates.io 发布（verified）+ 旧版跳过决策
+
+- **发布**：tag 重指向 CI 全绿（16 分钟，windows test 修复生效）→ `cargo publish` 上线 **rvifm 0.11.0**（dry-run 预检先行）→ crates.io API 验证（0.11.0 未 yank）。凭据由用户部署到本机（`~/.cargo/credentials.toml`）。
+- **用户决策（2026-11-21）**：**0.9.0 / 0.10.0 跳过不再发布**，只发最新——版本序列 0.8.0 → 0.11.0；crates.io 不要求连续发布，旧版对应 tag 保留可随时追发。
+- **流程注记**：发布外循环全流程首次在本机（Linux）闭环——bump/tag/GitHub Release/crates.io 均无 Windows 依赖；Windows 侧仅剩人工验证项。
