@@ -90,6 +90,32 @@ jobs:
           name: test-output-${{ matrix.os }}
           path: test-output.txt
 
+  # M40-2：cargo-fuzz 模糊测试（SPEC M40-2 SIMPLIFIED——CI 内 10 分钟总量；
+  # 24h 本地长跑记录随 Linux 开发机，见 NOTES）。libFuzzer 需 nightly。
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - name: install nightly + cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: build fuzz targets
+        run: cargo +nightly fuzz build -O --debug-assertions
+      - name: fuzz archive parsers (3 x 120s)
+        run: |
+          for t in fuzz_zip fuzz_tar fuzz_7z; do
+            cargo +nightly fuzz run "$t" -- -max_total_time=120 -rss_limit_mb=4096 -max_len=1048576
+          done
+      - name: fuzz paths + entry record (2 x 60s)
+        run: |
+          for t in fuzz_paths fuzz_entry_record; do
+            cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096 -max_len=65536
+          done
+
   # M6-5 发布门禁：tag 推送（v*）时双平台 --release 构建并产出归档，
   # 自动创建 GitHub Release 并上传产物（0.2.0 起，页面公开可下载）。
   release:

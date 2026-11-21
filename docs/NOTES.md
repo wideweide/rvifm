@@ -1008,3 +1008,10 @@ rvifm record  → 静默记录访问
 - **标签栏三渲染点去重**：`tab_bar_spans(state, width, borders)` 共享（命名标签 Tab.name 覆盖目录名 + 溢出 ‹› 窗口滚动——宽度按字符数近似 CJK 计 1，SIMPLIFIED）；SessionTab 不含 name（会话恢复不保存命名，SIMPLIFIED）。
 - **M39-5 unsafe 面**：ShellExecuteExW FFI（privilege.rs 模块级声明，SAFETY 注释——AGENTS §7 豁免口径：操作级提权唯一受支持途径）；结构体 112 字节与 SDK x64 布局一致；UAC 弹窗交互为手工清单（ACCEPTANCE §35-D 保留）。
 - **M39-4 CI 边界**：sshd 全链路 ask 流程在 cfg(unix)（CI ubuntu）；Windows 本机跑 config 解析与不可达失败路径。ssh-agent 仅 unix（russh 无 Windows 命名管道支持，cfg(not(unix)) 桩静默跳过）。
+
+### 2026-11-21 — M40-1/2 实现决策（基准 + fuzz）
+
+- **lib 化**（M40-1 前置）：`src/lib.rs` 模块树共享（main.rs 只留 CLI 分派 + `use rvifm::`）；模块内 `crate::` 路径在 lib 根同样成立、纯搬移零行为变化。连带修两处潜伏可见性问题：`TransferDirection` pub（state::TransferQueueEntry 公开字段引用，private_interfaces lint）、`load_entries`/`copy_file_chunked`/`CopyControls::none`/`normalize_lexical` pub 化（bench/fuzz 导入面）。
+- **基准发现**：load_100k 6.83s ≈ 68µs/条目（每条目 metadata stat 为主）——记入 docs/bench.md 作 1.0 后优化评估点（批量 stat / 并行遍历）；1GB 复制 1.79GB/s 达标。
+- **cargo-fuzz 边界**：libFuzzer 需 nightly+Linux——Windows 本机不可跑，fuzz/ 为独立工作区（主 Cargo.toml [workspace] exclude），CI ubuntu fuzz job 承担 10 分钟自动 fuzz（SPEC SIMPLIFIED 口径）；**24h 本地长跑 deferred**（Linux 开发机执行后回填 NOTES）；fuzz 目标首次 CI 运行若发现崩溃按真实缺陷整改流程处理。
+- **bench 靶口诀**：`cargo bench` 会先跑 lib 测试靶（libtest 不认 criterion 参数）——需 `cargo bench --bench rvifm_bench`；根 Cargo.toml 已设 `[lib] bench = false`。

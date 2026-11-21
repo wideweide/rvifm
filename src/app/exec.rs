@@ -4962,7 +4962,7 @@ pub(crate) fn collect_session_records(state: &AppState) -> Vec<crate::frecency::
 
 /// M22-1：词法归一化——解析 `.`/`..` 段（不触文件系统、不解析符号链接，
 /// 保持逻辑路径与 vifm 一致）；输入需为绝对路径。
-pub(crate) fn normalize_lexical(p: &std::path::Path) -> std::path::PathBuf {
+pub fn normalize_lexical(p: &std::path::Path) -> std::path::PathBuf {
     use std::path::Component;
     let mut out: Vec<Component> = Vec::new();
     for c in p.components() {

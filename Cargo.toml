@@ -7,6 +7,10 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wideweide/rvifm"
 
+# M40-2：fuzz/ 独立工作区（cargo-fuzz，nightly+libFuzzer；不进主构建）。
+[workspace]
+exclude = ["fuzz"]
+
 [dependencies]
 russh = "0.65"
 russh-sftp = "3.0"

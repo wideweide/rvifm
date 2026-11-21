@@ -1,0 +1,50 @@
+[package]
+name = "rvifm-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rvifm = { path = ".." }
+serde_json = "1"
+
+[[bin]]
+name = "fuzz_zip"
+path = "fuzz_targets/fuzz_zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_tar"
+path = "fuzz_targets/fuzz_tar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_7z"
+path = "fuzz_targets/fuzz_7z.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_paths"
+path = "fuzz_targets/fuzz_paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_entry_record"
+path = "fuzz_targets/fuzz_entry_record.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
