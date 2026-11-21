@@ -1042,3 +1042,10 @@ rvifm record  → 静默记录访问
 
 - **环境**：Windows Server 2016 / rustc 1.99.1 / release / exprim（pdf-visual feature）。运行入口：`cargo run --release --example pdf_bench --features pdf-visual`（examples/pdf_bench.rs 保留为可复测工具）。
 - **数据**：A4 页面 1224×1584px（≈194 万像素，护栏 400 万内、未触发缩放）；单页耗时 22–23ms（首启 58ms 含 exprim 初始化）、CJK 无嵌入字体 8ms、损坏文件 0ms 可读拒绝（不 panic）；RGB 内存 ≈5.8MB/页。结论：护栏（200–400 万像素 + 64MB 输入上限）在生产面无性能压力。
+
+### 2026-11-21 — CI 红灯断点（M39-4 推送起；下一会话起点）
+
+- **现状**：GitHub Actions 自 f91317d（M39-4）推送起持续红；最后绿 = 400ae34（M39-3）。四个失败面：① ubuntu/macos `cargo build --locked` 失败（曾见 E0631 type mismatch——M40-x 中途一次运行 build 通过，疑似 rust-cache 陈旧工件；0ef4e60 已修 tee 无条件 exit 1 + 去锚 grep）；② windows test 步骤失败（本地 459 测试全绿——疑似新测试 runner 环境敏感（M24-9/M34-5 runner 路径长教训），未定位）；③ fuzz job build fuzz targets 失败（fuzz 靶编译问题未定位）；④ supply-chain cargo audit 失败（疑似新 Cargo.lock 通告或 DB 拉取网络，未定位）。
+- **诊断受阻**：GitHub API 匿名限流（60/h 耗尽）+ 日志下载需 admin + digest summary patch 静默失败（gh auth 环境未配全）——远程日志不可读。已增强：clippy/build 步骤 tee + grep 注解（0ef4e60，grep 去锚适配 ANSI 色码）。
+- **下一会话起点**：① Linux 开发机 `cargo build --locked && cargo test --locked` 全量复现（可编译 cfg(unix) 测试 + fuzz 靶，Windows 不编译）→ 定位 E0631/windows test/fuzz 三面；② 修红后推 main，CI 全绿 → M40-7 1.0.0 发布（tag → 三平台+aarch64 归档 + SHA256SUMS → GitHub Release → crates.io，凭据在 Windows 机）；③ M40-7 前置：CHANGELOG 0.8.0→1.0.0 批次并入条目（M35–M41 各节）+ Cargo.toml 版本 1.0.0。
+- **当日已交付**（M41 4/4 + M38 5/5 + M39 6/6 + M40 1–6 + M31-5，22 提交）：三个真实缺陷修复（natural_cmp 非全序 panic / junction undo EPERM / sevenz-rust 弃维护迁移）+ 漂移清零 + 供应链门禁 + 基准/覆盖率/fuzz/proptest 质量基建。
