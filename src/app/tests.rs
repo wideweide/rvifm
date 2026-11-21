@@ -1023,15 +1023,6 @@ fn m377_trash_clear_and_purge() {
     // purge --before 大值 → 全删。
 }
 
-fn input_state() -> InputState {
-    let layers = config::keymap_layers();
-    InputState::with_keymap(crate::keymap::Keymap::with_layers(
-        layers.prepend,
-        layers.append,
-        layers.replace,
-    ))
-}
-
 #[test]
 fn m374_du_reports_size_and_top() {
     // M37-4：:du——总计与 top 条目（大文件排序）。
