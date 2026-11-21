@@ -23,6 +23,8 @@
 
 ## 批次关闭记录
 
+- M41：右栏一致性与交互缺陷修复 4 项全部完成（2026-11-21，用户实测当日闭环）——M41-1 右 pane `:` 命令模式 + gt/gT/Ngt/gg（seq 机制复用，ToTop 焦点化；单键 `g` 直跳退役，见 NOTES）、M41-2 方向键 ↑↓←→ = k/j/h/l（别名臂 + 默认 keymap + 树视图守卫扩展）、M41-3 鼠标点击切焦点 + 高亮双侧一致（hit_right_index + 滚轮焦点化，右键菜单保持左栏）、M41-4 视口滚动钉底修复（list_offset_sticky 有状态化 + 每帧 sync_viewport_scroll）；顺带修复 M37-1 chmod POSIX 死代码的 Windows clippy 违规；426 单测 + 6 集成全绿。
+
 - 0.11.0 发布（2026-11-21）：M34 完成后自动发布——tag 首推 windows test 失败（M34-5 测试 runner 长路径截断，短合成路径修复）→ **tag 重指向后 CI 全绿 + GitHub Release + crates.io 上线**（本机凭据，用户部署；`cargo publish` + API 验证）；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0）。
 - M34：主题、预览统一与文档 10 项全部完成（2026-11-21）——M34-1 默认 gruvbox-dark（vifm 高亮组三层解析）、M34-2 捆绑 snowwhite、M34-3 右 pane `/` 搜索（焦点感知）、M34-4 对侧预览统一（preview_path 焦点修复 + render_view_content）、M34-5 frecency 视觉回显、M34-6 `.jar`、M34-7 二进制信息面板、M34-8 GUIDE.md、M34-9 预览尺寸适配（Fit 居中/fit-width/顶部切片）；433 单测 + 9 集成，本机 rustc 1.100 门禁绿（含 pdf-visual）。
 - 0.10.0 发布（2026-11-21）：M28–M33 全部完成后自动发布——GitHub Release 三归档发布并验证（CI 5 job 全绿；发布期间修复 windows clippy dead-code 与 M32-3 Windows 盘符路径两缺陷，tag 重指向 2 次，CI 诊断注解通道固化，见 NOTES）；crates.io 停在 0.8.0，0.9.0/0.10.0 待 Windows（用户执行）。
