@@ -218,3 +218,31 @@
 4. 在 0.9.0 发布前，至少完成 AUDIT-1/9/13/14/15 与一次双平台 + tmux 环境的门禁复跑。
 
 在此之前，README 与 STATE 不应再出现“M0–M25 全部关闭”这类结论；本轮已按事实改写。
+
+## 11. 2026-11-21 — 0.11.0 发布后全量一致性审计（第三轮）
+
+**范围与方法**：发布后全量核查——① README/help/GUIDE 的 21 组能力声明 vs 实现（Explore 只读代理逐项 file:line 取证）；② harness 文档交叉自查（TASKS 勾选/STATE/PLAN/ACCEPTANCE/NOTES）；③ 遗漏项梳理。背景：0.11.0 当日完成 M34 批次 + 双渠道发布，本审计为确保"文档=代码"并为用户全量实测提供入口。
+
+**结论：总体一致，无功能性遗漏。** 21 组声明中 12 组完全一致；发现 **6 类文档漂移（当日全部修复）**：
+
+| # | 漂移 | 修复 |
+|---|---|---|
+| 1 | `remotes.toml` 文档写在配置目录，实际加载自**数据目录**（`~/.local/share/rvifm/`，Windows `%LOCALAPPDATA%`，exec.rs 4 处） | GUIDE §11 表修正 |
+| 2 | `:cmdmark`（M30-4）已实现且 README 记载，但 help.txt/GUIDE 缺失 | help「其他」节 + GUIDE §13 补 |
+| 3 | 内建 **7z 创建**（M26-2）未进 help `:archive` 简写与 GUIDE §2.3/§7 | 三处同步 |
+| 4 | README「当前仅 `[normal]` 模式可配」——M33 已加 `[visual]`/`[view]` | 修正 |
+| 5 | README 归档浏览行缺 `.tgz`；里程碑表止于 AUDIT（缺 M28–M34 行） | 补齐（表加 7 行） |
+| 6 | 「内置 20 套主题」残留于 SPEC M9 节（实际 39 + 捆绑 snowwhite）；PLAN 0.9.0/0.10.0 节 crates.io 措辞未反映"跳过"决策 | SPEC 修正；PLAN 同步 |
+
+**观察项（记录，不修）**：
+- `tokio-stream` 为未使用依赖（manifest 警告，既有）——留给后续卫生批次；
+- `record --keyword` 为未文档化 flag、`--askpass` 刻意不入 `--help`（内部助手）——维持现状；
+- `:quit`/`:his` 别名本轮已补入 help（属修复 2 的同类）；
+- ACCEPTANCE 存量 184 个 `[ ]` 为 M31-4 机械转换产物与时代性验收记录（M0–M13 各节 + 0.5.0/0.6.0 版本特定清单），不代表当前状态；当前版本实测入口 = ACCEPTANCE §35；
+- SPEC/NOTES 的历史措辞（20 套等）仅 SPEC 需求面已修，NOTES 为历史决策记录不改写。
+
+**遗漏项**：未发现"文档已声明但代码未接线"类功能遗漏（第一轮 AUDIT 的核心问题类）；M31-5（pdf-visual 语料量化）与 M11-6（真实终端）仍为唯一 deferred 项，且前者已被 rustc 1.100 升级解锁、后者由 ACCEPTANCE §35 吸收。
+
+**人工验证**：ACCEPTANCE **§35「0.11.0 全量人工验证清单」**（A Linux 图形终端 18 项 / B tmux 2 / C 特殊环境 5 / D Windows 5 / E SFTP 2 / F CLI 2 / G 数据边界 2，合计 36 项）——合并 M11-6 步骤 2–6、M28-1 junction、M31-2 7z 等全部历史手工项，作为 0.11.0 全量实测的唯一入口。
+
+**本轮限制**：审计基于静态取证（grep/读码），未复跑 Windows CI（已由 tag run 全绿背书）；SFTP/junction/7z 项留待用户按 §35 实测。

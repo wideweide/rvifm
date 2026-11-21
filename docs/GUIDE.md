@@ -53,7 +53,7 @@ h          在归档根返回归档所在物理目录
 :archive                无参打开交互对话框（格式/校验文件可选）
 ```
 
-创建支持 zip / tar / tar.gz（内建）与 rar / cab / lzh / tar.xz / tar.bz2 /
+创建支持 zip / tar / tar.gz / **7z**（内建）与 rar / cab / lzh / tar.xz / tar.bz2 /
 tar.zst（外部 CLI 降级，需 PATH 有对应工具）；完成后生成校验文件
 （默认 md5，可 sha256/none）。`.rar` 不支持虚拟浏览（提示解压）。
 
@@ -126,7 +126,7 @@ f / F {字符}  首字符快速定位
 
 - **浏览**：`.zip` `.jar` `.tar` `.tar.gz` `.tgz` `.tar.bz2` `.tar.zst`
   `.tar.xz` `.7z` 直接当目录浏览（只读；归档内不进撤销栈）。
-- **创建**：`:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]`；
+- **创建**：`:archive [zip|tar|tar.gz|7z] <名> [checksum=md5|sha256|none]`（内建四种）；
   rar/cab/lzh/tar.xz/tar.bz2/tar.zst 走外部 CLI（PATH 探测，缺失时优雅终止）。
 - 大目录打包后台执行（`:jobs` 可见/可取消）；完成后生成校验文件。
 - 归档成员读取有 64MB 上限、xz 有解压上限——超限给可读错误，不会 OOM。
@@ -141,8 +141,8 @@ m{字符}    标记当前条目（".." 行 = 当前目录）
            书签命令族（与 marks 共用 frecency 数据；清除保留累积分数）
 ```
 
-隐私：命令文本与访问记录会写入 frecency 存储；`IGNORE_PATTERNS` 可排除
-敏感目录（见 README 配置说明）。
+隐私：命令文本与访问记录会写入 frecency 存储；`[frecency] ignore_patterns`
+可排除敏感路径与命令（见 README 配置说明）。
 
 ## 9. 视图与标签
 
@@ -175,7 +175,7 @@ S                排序对话框；:sort 字段,... 多字段排序
 |---|---|
 | `config.toml` | 键位分层（`[normal]`/`[visual]`/`[view]` 的 prepend/append/replace）、opener 规则、`[ui]`（theme/pane_borders/attrs_column…）、`[preview]`、`[frecency]`、`[keymap]` |
 | `themes/<名>.toml` | 用户主题（opaline TOML） |
-| `remotes.toml` | SFTP 远端覆盖 |
+| `remotes.toml` | SFTP 远端覆盖（在**数据目录**：Linux/macOS `~/.local/share/rvifm/`、Windows `%LOCALAPPDATA%\rvifm\`） |
 | `session.toml` | 会话自动保存（可关） |
 
 最小示例（键位 + 主题）：
@@ -202,7 +202,7 @@ prepend_keymap = [
 | 搜索 | `/` `n/N` `={glob}` `f/F{字符}` `:find` `:grep` |
 | 选择/批量 | `v` `V` `t` `:select` `:unselect` `:tag` |
 | 文件操作 | `yy` `p/P` `dd` `DD` `u` `cw` `:rename` `:copy` `:move` `:link` `:mkdir` `:touch` `:mk` `y/yn/yf/yc` |
-| 跳转 | `o` `:j/:J` `:recent` `'{字符}` `m{字符}` `:bmark` 族 |
+| 跳转 | `o` `:j/:J` `:recent` `'{字符}` `m{字符}` `:bmark` 族 `:cmdmark` |
 | 标签/历史 | `:tabnew` `gt/gT` `:tabmove` `:histprev` `:histnext` `:history` |
 | 归档/对比/作业 | `:archive` `:compare` `dp/do` `:jobs` `:trash` |
 | 远端 | `:remote` |

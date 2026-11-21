@@ -75,8 +75,9 @@ rvifm 帮助（vim 风格文件管理器）
   S               排序对话框（字母直接应用 / 空格切换方向 / 回车确认）
   :sort 字段,...  多字段排序（name/natural/mtime/size/ext，逗号分隔 + asc/desc）
   :tree           树视图（只读，depth 可选；再执行恢复平铺）
-  :archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]
-                  归档创建（tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
+  :archive [格式] <名> [checksum=md5|sha256|none]
+                  归档创建（内建 zip/tar/tar.gz/7z；rar/cab/lzh/tar.* 走外部 CLI；
+                  tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
   :compare [byname|bycontents]
                   左右 pane 目录对比（缺省按名+大小；bycontents 用 SHA-256
                   内容判定，单文件 64MB 上限、超限按不同计；只读）
@@ -102,7 +103,7 @@ rvifm 帮助（vim 风格文件管理器）
 == 历史 ==
   :histprev       目录历史后退（当前 tab 独立）
   :histnext       目录历史前进
-  :history        目录历史菜单（j/k 移动，Enter/l 导航，dd 移除）
+  :history / :his 目录历史菜单（j/k 移动，Enter/l 导航，dd 移除）
 
   推荐键位映射（config.toml 的 [normal] 段，注意 Ctrl-I 与 Tab 同键码、
   rvifm 已把 Tab 用于 pane 焦点切换，故不设默认键）：
@@ -113,12 +114,13 @@ rvifm 帮助（vim 风格文件管理器）
     ]
 
 == 其他 ==
-  :q              退出
+  :q / :quit      退出
   :help           本帮助页
   Esc             关闭当前覆盖层/退出可视选择
   ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
                   本会话未入库命令并入；Enter 执行，Esc 取消）
   Tab（命令行内） 补全当前词为条目名（前缀匹配循环；~ 展开 HOME）
+  :cmdmark <tag>  命令书签（写入 frecency cmd topic；命令行内 ' 展开标签）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 
 提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap]）。

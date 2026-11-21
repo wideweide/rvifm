@@ -698,7 +698,7 @@ redb 三表，无后台守护进程：
 ### 4.7 图标与主题
 
 - 图标：`devicons`，默认 Dark，支持 Light；覆盖常见文件类型与特殊文件名（Dockerfile、Makefile 等）。
-- 主题：`opaline`，TOML 定义，token 驱动，内置 20 套主题，支持运行时切换、深色/浅色变体、渐变，`zero unsafe`。
+- 主题：`opaline`，TOML 定义，token 驱动，内置 39 套主题（另含 rvifm 捆绑 snowwhite，M34-2），支持运行时切换、深色/浅色变体、渐变，`zero unsafe`。
 - 图标颜色与主题语义色协调；文件列表、预览、归档浏览共用同一套渲染。
 - 终端不支持 Nerd Font 或设置 `NO_COLOR` 时，图标降级为纯文本，不 panic。
 - 不实现 vifm 风格的图标插件或 `vifmrc` 注入；不嵌入 SVG 或字体文件。

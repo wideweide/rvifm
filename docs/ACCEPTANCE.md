@@ -1000,3 +1000,72 @@
 - [x] 小图原尺寸居中不放大；大图 fit-width（内容到达窗格右缘）；超高顶部切片不越界。（2026-11-21：ImageEngine 单点三分支 + TestBackend 断言）
 ### M34-10 文档收尾
 - [x] README（状态句/GUIDE 指针/预览语义）与 help 同步；ACCEPTANCE §34 勾选完成 → 批次关闭。（2026-11-21）
+
+## 35. 0.11.0 全量人工验证清单（2026-11-21 审计新增；发布后实测入口）
+
+> **使用说明**：按环境分组逐项勾选；失败项在 NOTES 记录现象并按 AGENTS §8.3
+> 走 FIX 登记。本清单合并历史手工项（M11-6 步骤 2–6 = B1/C1–C4；M28-1
+> junction = D2；M31-2 7z = D3）。全部勾选后：M11-6 关闭（NOTES 记终端
+> 名称/版本/是否 tmux 内），并视为 0.11.0 完整实测验收。
+
+### A. Linux 真实图形终端（foot / Alacritty / Kitty 任一）
+
+- [ ] A1 启动/退出/二次启动：tabs 与光标恢复（session.toml；`[ui] session_restore` 默认开）。
+- [ ] A2 默认主题 `gruvbox-dark` 生效（M34-1）；`:theme snowwhite` 切浅色且图标跟随 Light；`:theme dracula`；`:theme` 无参列出含 `snowwhite`。
+- [ ] A3 双栏：`Tab` 焦点切换（当前行反显/非焦点 DIM）；右 pane 独立 `j/k/l/h` 导航；`..` 行返回上级。
+- [ ] A4 右 pane `/` 搜索：incsearch 跳转 + 高亮 + 计数 `i/N`；`n`/`N` 环绕；Esc 恢复（M34-3）。
+- [ ] A5 对侧预览：焦点左 + `w` → 查看器在右 pane；焦点右 + `w` → 查看器在左 pane 且右 pane 保持列表导航（M34-4）。
+- [ ] A6 图片预览尺寸（M34-9）：小图原尺寸**居中不放大**；大图按窗格宽适配；超高显示顶部。
+- [ ] A7 PDF：无文本语料首页图像（略慢属预期）；有文本语料文本/图像分流（`[preview] pdf_image_pages`/`pdf_prefer_image`）。
+- [ ] A8 二进制/非 UTF-8 文件预览 → 信息面板（类型魔数/大小/修改；无乱码）（M34-7）。
+- [ ] A9 frecency：`o`/`:j`/`:J`/`:recent` 标题"高频目录/文件搜索"、图标行、✦keyword、搜索态底部 `/query` 回显（M34-5）。
+- [ ] A10 marks/书签/命令书签：`m{字符}`/`'{字符}`；`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks`；`:cmdmark` + 命令行内 `'` 展开。
+- [ ] A11 文件操作闭环：`yy`/`p`/`dd`/`u`（含跨 tab 撤销）/`cw`/`:rename` 结构化（y 应用整批）/`DD` 强提示/`:link`（目录 junction 由 D2 覆盖）/`:mk`。
+- [ ] A12 归档：zip/jar/7z 虚拟浏览；`:archive zip` 创建 + 校验文件 + `:jobs` 取消；大目录打包不阻塞 UI。
+- [ ] A13 搜索套件：`={glob}`、`f/F/;/,`、`:find`/`:grep` 虚拟目录 + `w` 查看器（行号/搜索高亮）。
+- [ ] A14 排序/对比：`S` 对话框、`:sort` 多字段、`:compare` byname/bycontents、`dp`/`do` + `u`。
+- [ ] A15 复制序列 `y`/`yn`/`yf`/`yc`（OSC52 需终端支持）。
+- [ ] A16 git：仓库内状态列/状态栏分支；`gi` 探测 gitui→ziggity→lazygit（装任一即验）。
+- [ ] A17 鼠标：单击聚焦/再击打开/双击直接打开/右键菜单/滚轮。
+- [ ] A18 `:jobs` 后台作业、`:trash` 暂存恢复、`:file`、`Ctrl-G` 详情。
+
+### B. tmux（3.3+）
+
+- [ ] B1 `allow-passthrough on` 下图片可见（M11-6 步骤 2）。
+- [ ] B2 `:!{cmd}` 新窗口执行；退出后 TUI 状态一致（M18-4）。
+
+### C. 特殊环境
+
+- [ ] C1 无图形协议终端：halfblocks 兜底出块（M11-6 步骤 3）。
+- [ ] C2 `NO_COLOR=1` 启动：无 panic、降级正常（M11-6 步骤 4）。
+- [ ] C3 损坏图片文件：可读提示不 panic（M11-6 步骤 5）。
+- [ ] C4 大图（>400 万像素）：可读提示或缩放，不 OOM（M11-6 步骤 6）。
+- [ ] C5 窄终端（<60 列）`pick` 单栏降级（AUDIT-3）。
+
+### D. Windows（Win2016）
+
+- [ ] D1 安装冒烟：`cargo install rvifm`（或 GitHub 归档解包）后 `rvifm`/`rv` `--version`/`--help`。
+- [ ] D2 `:link` 对目录创建 junction 回退（M28-1；撤销可逆）。
+- [ ] D3 装 7z 环境：`:archive cab|lzh` 提示区分"工具缺失 vs 格式不支持"（M31-2）。
+- [ ] D4 Windows Terminal 图片预览（M11-6 清单 §H Windows 部分）。
+- [ ] D5 `remotes.toml` 位于数据目录（`%LOCALAPPDATA%\rvifm\`）且可被 `:remote` 读取。
+
+### E. SFTP（如有可达远端）
+
+- [ ] E1 `:remote <名>` 进入/浏览/写操作（dd/p/P/:mkdir）；断线自动重连一次；失败现场 `.part`。
+- [ ] E2 known_hosts 首连写入；指纹变更拒连（改 `known_hosts = false` 验证跳过）。
+
+### F. CLI（非 TUI）
+
+- [ ] F1 `rvifm pick`（TTY 交互双栏预览 + `--topic dir|file`）；`rvifm record --keyword`。
+- [ ] F2 `rvifm maintenance compact`（或 TUI 启动阈值触发）。
+
+### G. 数据边界
+
+- [ ] G1 `[frecency] ignore_patterns` 排除敏感路径与命令（命令文本不入库）。
+- [ ] G2 会话文件损坏静默降级（手改 `session.toml` 为非法内容后启动不 panic）。
+
+### 说明
+
+- A6–A9/A11–A12 同时为 M34 批次的真机复核面（§34 各条已在 TestBackend 层验证）。
+- 历史 ACCEPTANCE 节（M0–M33）的未勾选 `[ ]` 为 M31-4 机械转换产物与时代性验收记录，不代表当前状态；当前版本的实测入口即本节。
