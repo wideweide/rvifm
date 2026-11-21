@@ -3182,50 +3182,51 @@ pub(crate) fn paste_remote_to_local(
     let mut first_err: Option<String> = None;
     let tab_id = state.active;
     for src in &buffer.paths {
-        // M32-2：read 连接类失败 → .part 现场保留 + 自动重连一次后重新
-        // read（SIMPLIFIED：会话 read 无偏移参数，重连后整文件重读）。
-        let first_err_read = state
+        // M36-2：**单次 read**（消除 R-3 双读——read 一次同时拿数据与
+        // 失败信息；metadata 先记远端 mtime）；连接类失败 → .part 现场
+        // 保留 + 自动重连一次后重新 read。写入走临时文件 + 原子 rename。
+        let (read_out, src_meta) = state
             .remote_sessions
             .get(remote)
-            .and_then(|be| be.read(src).err());
-        let data = match first_err_read {
-            None => state
-                .remote_sessions
-                .get(remote)
-                .and_then(|be| be.read(src).ok()),
-            Some(e) if e.is_connection_class() => {
+            .map(|be| (be.read(src), be.metadata(src).ok()))
+            .unwrap_or((
+                Err(crate::remote::RemoteError::Other("会话已断开".into())),
+                None,
+            ));
+        let data = match read_out {
+            Ok(d) => d,
+            Err(e) if e.is_connection_class() => {
                 let part = resume_part_path(remote, src);
                 let _ = std::fs::write(&part, b"");
                 match remote_reconnect_session(state, remote) {
-                    Ok(()) => match state
-                        .remote_sessions
-                        .get(remote)
-                        .and_then(|be| be.read(src).err())
-                    {
-                        None => state
+                    Ok(()) => {
+                        let retry = state
                             .remote_sessions
                             .get(remote)
-                            .and_then(|be| be.read(src).ok()),
-                        Some(e2) => {
-                            first_err = Some(format!(
-                                "重连后仍读取失败: {e2}（.part 现场: {}）",
-                                part.display()
-                            ));
-                            break;
+                            .ok_or_else(|| "remote: 会话已断开".to_owned())
+                            .and_then(|be| be.read(src).map_err(|e2| e2.to_string()));
+                        match retry {
+                            Ok(d) => d,
+                            Err(e2) => {
+                                first_err = Some(format!(
+                                    "重连后仍读取失败: {e2}（.part 现场: {}）",
+                                    part.display()
+                                ));
+                                break;
+                            }
                         }
-                    },
+                    }
                     Err(e2) => {
                         first_err = Some(format!("{e2}（.part 现场: {}）", part.display()));
                         break;
                     }
                 }
             }
-            Some(e) => {
+            Err(e) => {
                 first_err = Some(e.to_string());
                 break;
             }
         };
-        let data = data.unwrap_or_default();
         let name = src
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -3235,7 +3236,28 @@ pub(crate) fn paste_remote_to_local(
             first_err = Some(format!("目标已存在: {}", dest.display()));
             break;
         }
-        match std::fs::write(&dest, &data) {
+        // M36-2：临时文件写入（同目录保证 rename 原子性）；远端 mtime
+        // 保留（metadata 可得时）；失败清理临时文件。
+        let tmp_dest = dest.with_extension(format!(
+            "{}.part-dl",
+            dest.extension()
+                .map(|e| e.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ));
+        let write_r = std::fs::write(&tmp_dest, &data).and_then(|()| {
+            if let Some(meta) = &src_meta {
+                // 远端 mtime（Unix 秒）→ SystemTime → 本地文件保留。
+                if meta.mtime > 0 {
+                    let mt = std::time::UNIX_EPOCH + std::time::Duration::from_secs(meta.mtime);
+                    let _ = std::fs::File::options()
+                        .write(true)
+                        .open(&tmp_dest)
+                        .and_then(|mut f| f.set_times(std::fs::FileTimes::new().set_modified(mt)));
+                }
+            }
+            std::fs::rename(&tmp_dest, &dest)
+        });
+        match write_r {
             Ok(()) => {
                 state.undo_stack.push(crate::state::UndoableOp::Create {
                     tab_id,
@@ -3245,6 +3267,7 @@ pub(crate) fn paste_remote_to_local(
                 done += 1;
             }
             Err(e) => {
+                let _ = std::fs::remove_file(&tmp_dest);
                 first_err = Some(e.to_string());
                 break;
             }

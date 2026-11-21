@@ -947,6 +947,84 @@ impl crate::remote::RemoteFs for ReconnectMockFs {
     }
 }
 
+/// M36-2 计数 mock：read 成功 + 计数（验证单次读取——R-3 双读修复）。
+struct CountingMockFs {
+    content: Vec<u8>,
+    mtime: u64,
+    read_count: std::sync::atomic::AtomicUsize,
+}
+
+impl crate::remote::RemoteFs for CountingMockFs {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+    fn list(
+        &self,
+        _path: &Path,
+    ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+        Ok(Vec::new())
+    }
+    fn read(&self, _path: &Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+        self.read_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(self.content.clone())
+    }
+    fn metadata(
+        &self,
+        _path: &Path,
+    ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+        Ok(crate::remote::RemoteMeta {
+            size: self.content.len() as u64,
+            mtime: self.mtime,
+            is_dir: false,
+        })
+    }
+}
+
+#[test]
+fn m362_download_single_read_and_tempfile_rename() {
+    // M36-2：下载 read **一次**（R-3 双读修复）+ 临时文件 rename 后
+    // 目标 mtime 保留远端值；无 .part 残留（成功路径）。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.remote_sessions.insert(
+        "r".to_owned(),
+        Box::new(CountingMockFs {
+            content: b"REMOTE".to_vec(),
+            mtime: 1_700_000_000,
+            read_count: std::sync::atomic::AtomicUsize::new(0),
+        }),
+    );
+    let buf = crate::state::YankBuffer {
+        paths: vec![PathBuf::from("/f.bin")],
+        cut: false,
+        source: crate::state::YankSource::Remote("r".to_owned()),
+    };
+    let mut msg = None;
+    paste_remote_to_local(&mut state, "r", &buf, false, &mut msg);
+    assert!(msg.as_deref().unwrap().contains("Copied 1"), "msg: {msg:?}");
+    // read 计数 == 1（双读则 2+）。
+    let n = state
+        .remote_sessions
+        .get("r")
+        .map(|b| {
+            b.as_any()
+                .and_then(|a| a.downcast_ref::<CountingMockFs>())
+                .map(|c| c.read_count.load(std::sync::atomic::Ordering::Relaxed))
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    assert_eq!(n, 1, "单次 read（R-3 修复）");
+    // 目标存在 + mtime 保留远端值。
+    let dest = tmp.path().join("f.bin");
+    assert_eq!(fs::read(&dest).unwrap(), b"REMOTE");
+    let mt = fs::metadata(&dest).unwrap().modified().unwrap();
+    let expect = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    assert_eq!(mt, expect, "远端 mtime 保留");
+    // 无临时残留。
+    assert!(!tmp.path().join("f.bin.part-dl").exists());
+}
+
 #[test]
 fn m322_resume_part_path_deterministic_and_clean_removal() {
     // M32-2：.part 路径——同 (remote, dest) 确定性命中、不同 dest 不同
