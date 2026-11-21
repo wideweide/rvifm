@@ -3,6 +3,18 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.11.1] — 2026-11-21
+
+### 新增
+- harness 一致性检查脚本 `scripts/harness_check.py`（七条规则，CI required check）。
+- `CHANGELOG.md` 本文件（0.8.0 → 0.11.0 用户可见变化回填）。
+- REVIEW 评估报告归档制（`docs/reviews/REVIEW-<日期>.md`）。
+
+### 修复
+- 文档状态漂移六处（AGENTS §10 过期任务指针、SPEC 7z/rar 能力三处、STATE/TASKS/PLAN/README 状态句矛盾）。
+- 依赖卫生：移除零引用 `tokio-stream`；清理测试调试输出。
+- 文档测试计数与实际代码一致（437）。
+
 ## [0.11.0] — 2026-11-21
 
 ### 新增
