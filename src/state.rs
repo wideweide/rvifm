@@ -166,6 +166,13 @@ pub struct JobProgress {
 }
 
 impl JobProgress {
+    /// M36-1：空进度实例（同步复制路径的 no-op 控制句柄）。
+    pub(crate) const EMPTY: JobProgress = JobProgress {
+        processed: std::sync::atomic::AtomicU64::new(0),
+        bytes: std::sync::atomic::AtomicU64::new(0),
+        samples: std::sync::Mutex::new(Vec::new()),
+    };
+
     pub(crate) fn record(&self) {
         use std::sync::atomic::Ordering;
         let now = std::time::Instant::now();

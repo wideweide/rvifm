@@ -31,27 +31,125 @@ fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
     if fs::rename(from, to).is_ok() {
         return Ok(());
     }
+    // 跨盘回退：copy_tree（M36-1，保留 mode/mtime/symlink）+ 删源。
     if from.is_dir() {
-        copy_dir(from, to)?;
+        let controls = CopyControls::none();
+        copy_tree(from, to, &controls)?;
         fs::remove_dir_all(from)
     } else {
-        fs::copy(from, to)?;
+        let controls = CopyControls::none();
+        copy_file_chunked(from, to, &controls)?;
         fs::remove_file(from)
     }
 }
 
 /// 递归复制目录（跨盘回退用）。
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+/// M36-1：复制/移动操作的取消与进度句柄（Transfer/后台 job 传入）。
+/// [`CopyControls::none`] = 不取消不计数，但元数据保留仍生效。
+pub struct CopyControls<'a> {
+    pub cancel: &'a std::sync::atomic::AtomicBool,
+    pub progress: &'a crate::state::JobProgress,
+}
+
+impl CopyControls<'_> {
+    fn none() -> CopyControls<'static> {
+        static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static PROGRESS: crate::state::JobProgress = crate::state::JobProgress::EMPTY;
+        CopyControls {
+            cancel: &CANCEL,
+            progress: &PROGRESS,
+        }
+    }
+}
+
+/// 分块复制单文件（1MB 块；逐块取消检查）并保留元数据（mode + mtime/atime）。
+fn copy_file_chunked(from: &Path, to: &Path, controls: &CopyControls) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+    use std::sync::atomic::Ordering;
+    let mut src = fs::File::open(from)?;
+    let mut dst = fs::File::create(to)?;
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        if controls.cancel.load(Ordering::Relaxed) {
+            let _ = fs::remove_file(to);
+            return Err(std::io::Error::other("已取消"));
+        }
+        let n = src.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])?;
+        controls
+            .progress
+            .bytes
+            .fetch_add(n as u64, Ordering::Relaxed);
+    }
+    dst.flush()?;
+    let src_meta = fs::metadata(from)?;
+    dst.set_permissions(src_meta.permissions())?;
+    let mut times = std::fs::FileTimes::new();
+    if let Ok(a) = src_meta.accessed() {
+        times = times.set_accessed(a);
+    }
+    if let Ok(m) = src_meta.modified() {
+        times = times.set_modified(m);
+    }
+    dst.set_times(times)?;
+    controls.progress.processed.fetch_add(1, Ordering::Relaxed);
+    controls.progress.record();
+    Ok(())
+}
+
+/// 目录元数据回填（mode + times；子项复制会刷新父目录 mtime，故后序
+/// 设置）。打开失败静默（尽力保留，不阻塞复制成功）。
+fn preserve_dir_times(from: &Path, to: &Path) {
+    let src_meta = match fs::metadata(from) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let Ok(mut dst) = fs::File::options().read(true).open(to) else {
+        return;
+    };
+    let mut times = std::fs::FileTimes::new();
+    if let Ok(a) = src_meta.accessed() {
+        times = times.set_accessed(a);
+    }
+    if let Ok(m) = src_meta.modified() {
+        times = times.set_modified(m);
+    }
+    let _ = dst.set_times(times);
+    let _ = dst.set_permissions(src_meta.permissions());
+}
+
+/// M36-1：递归复制树——**保留 mode/mtime/symlink**（链接按原样复制
+/// 不解引用；断链目标判型失败按文件链接处理）；分块 + 取消 + 进度。
+/// 子项冲突不存在（目标树为新建；copy_to 已预检顶层冲突）。
+fn copy_tree(from: &Path, to: &Path, controls: &CopyControls) -> std::io::Result<()> {
+    use std::sync::atomic::Ordering;
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
+        if controls.cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::other("已取消"));
+        }
+        // symlink_metadata 判型——符号链接不解引用（R-1 修复核心）。
+        let meta = fs::symlink_metadata(entry.path())?;
+        if meta.file_type().is_symlink() {
+            // 链接复制：目标判型（跟随一次；断链按文件链接）。
+            let target_is_dir = fs::metadata(entry.path())
+                .map(|m| m.is_dir())
+                .unwrap_or(false);
+            fs::remove_file(&target).ok();
+            fs_symlink(&entry.path(), &target, target_is_dir)?;
+            controls.progress.record();
+        } else if meta.is_dir() {
+            copy_tree(&entry.path(), &target, controls)?;
         } else {
-            fs::copy(entry.path(), target)?;
+            copy_file_chunked(&entry.path(), &target, controls)?;
         }
     }
+    preserve_dir_times(from, to);
     Ok(())
 }
 
@@ -252,15 +350,17 @@ pub fn copy_to(tab_id: usize, path: &Path, target_dir: &Path) -> std::io::Result
             "不能把目录复制到其自身内部",
         ));
     }
+    // M36-1：统一走 copy_tree（mode/mtime/symlink 保留；分块 + 取消句柄）。
+    let controls = CopyControls::none();
     if path.is_dir() {
-        copy_dir(path, &to)?;
+        copy_tree(path, &to, &controls)?;
         Ok(UndoableOp::Create {
             tab_id,
             path: to,
             recursive: true,
         })
     } else {
-        fs::copy(path, &to)?;
+        copy_file_chunked(path, &to, &controls)?;
         Ok(UndoableOp::Create {
             tab_id,
             path: to,
@@ -1151,6 +1251,109 @@ mod tests {
         );
         undo_op(&op).unwrap();
         assert!(!dst.path().join("tree").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn m361_copy_tree_preserves_metadata_and_symlinks() {
+        // M36-1 核心：复制树保留 mode/mtime/symlink（链接不解引用）。
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let from = tmp.path().join("src");
+        fs::create_dir_all(from.join("sub")).unwrap();
+        fs::write(from.join("sub").join("f.txt"), "F").unwrap();
+        // 只读文件（mode 保留断言）。
+        let ro = from.join("sub").join("ro.txt");
+        fs::write(&ro, "RO").unwrap();
+        fs::set_permissions(&ro, fs::Permissions::from_mode(0o444)).unwrap();
+        // 符号链接（指向树内文件——不解引用成实体文件）。
+        std::os::unix::fs::symlink(from.join("sub").join("f.txt"), from.join("link")).unwrap();
+        // 断链。
+        std::os::unix::fs::symlink(from.join("no-such"), from.join("broken")).unwrap();
+
+        let to = tmp.path().join("dst");
+        let controls = CopyControls::none();
+        copy_tree(&from, &to, &controls).unwrap();
+
+        // mode 保留（0o444）。
+        let dst_ro = to.join("sub").join("ro.txt");
+        assert_eq!(
+            fs::metadata(&dst_ro).unwrap().permissions().mode() & 0o777,
+            0o444,
+            "只读位保留"
+        );
+        // mtime 保留（秒级断言——set_times 精度纳秒，取整比较）。
+        let src_mtime = fs::metadata(from.join("sub").join("f.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let dst_mtime = fs::metadata(to.join("sub").join("f.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(src_mtime, dst_mtime, "mtime 保留");
+        // symlink 原样复制（仍是链接，未解引用成实体文件）。
+        let dst_link = to.join("link");
+        assert!(
+            fs::symlink_metadata(&dst_link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "链接原样复制"
+        );
+        // 链接指向（copy_tree 用 entry.path() 绝对路径建链）→ 解引用内容一致。
+        assert_eq!(
+            std::fs::read(&dst_link).unwrap(),
+            std::fs::read(from.join("link")).unwrap(),
+            "链接解引用内容一致"
+        );
+        // 断链也复制。
+        assert!(
+            fs::symlink_metadata(to.join("broken"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        // 内容正确。
+        assert_eq!(fs::read(to.join("sub").join("f.txt")).unwrap(), b"F");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn m361_copy_file_cancel_removes_partial() {
+        // M36-1：取消句柄——预置取消 → 分块复制中止且删除半成品。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("f"), "DATA").unwrap();
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+        let progress = crate::state::JobProgress::default();
+        let controls = CopyControls {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let r = copy_file_chunked(&tmp.path().join("f"), &tmp.path().join("dst"), &controls);
+        assert!(r.is_err());
+        assert!(!tmp.path().join("dst").exists(), "半成品已清理");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn m361_copy_to_preserves_mtime() {
+        // M36-1：copy_to（`:co` 用户入口）走 copy_tree——mtime 保留。
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "A").unwrap();
+        let dst = TempDir::new().unwrap();
+        let op = copy_to(0, &tmp.path().join("a.txt"), dst.path()).unwrap();
+        let src_mtime = fs::metadata(tmp.path().join("a.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let dst_mtime = fs::metadata(dst.path().join("a.txt"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(src_mtime, dst_mtime, "copy_to 保留 mtime");
+        undo_op(&op).unwrap();
+        assert!(!dst.path().join("a.txt").exists());
     }
 
     #[cfg(unix)]

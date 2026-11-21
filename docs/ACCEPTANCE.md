@@ -1090,7 +1090,7 @@
 
 ## 36. M36 — 传输引擎（见 SPEC M36 节）
 
-- [ ] M36-1 copy_tree 保留 mode/mtime/symlink；分块 + 进度 + 取消（含链接树 roundtrip 测试）。
+- [x] M36-1 copy_tree 保留 mode/mtime/symlink；分块 + 进度 + 取消（含链接树 roundtrip 测试）。（2026-11-21：copy_file_chunked（1MB 块 + File::set_times mode/atime/mtime）+ copy_tree（symlink_metadata 判型不解引用、断链按文件链接、目录 times 回填）+ CopyControls（cancel/progress，none 形态元数据保留仍生效）；move_path 跨盘回退同享；m361 三测试——metadata/symlink roundtrip、取消清半成品、copy_to mtime）
 - [ ] M36-2 远端下载单次读取 + 临时文件 + 原子 rename（失败清理断言）。
 - [ ] M36-3 RemoteFs read_range/write_range（默认实现兼容 mock；SftpBackend 覆盖）。
 - [ ] M36-4 Transfer 状态机统一三方向（Paste 路由迁移断言）。
