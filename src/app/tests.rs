@@ -982,6 +982,41 @@ impl crate::remote::RemoteFs for CountingMockFs {
 }
 
 #[test]
+fn m373_sync_dry_run_apply_and_delete() {
+    // M37-3：:sync——dry-run 计划 + --apply 复制 + --delete 删除 + u 可逆。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("l.txt"), "L").unwrap();
+    let r = TempDir::new().unwrap();
+    fs::write(r.path().join("r-only.txt"), "R").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(r.path(), Config::default()).unwrap();
+
+    // dry-run（缺省）：计划描述，无文件改动。
+    assert_eq!(exec_command(&mut state, "sync l2r"), Ok(false));
+    assert!(!r.path().join("l.txt").exists(), "dry-run 不执行");
+
+    // --apply：复制缺失。
+    assert_eq!(exec_command(&mut state, "sync l2r --apply"), Ok(false));
+    assert_eq!(fs::read(r.path().join("l.txt")).unwrap(), b"L", "已同步");
+    // u 撤销复制。
+    let mut msg = None;
+    undo_last(&mut state, &mut msg);
+    assert!(!r.path().join("l.txt").exists(), "u 撤销");
+
+    // --apply --delete：删除目标独有。
+    assert_eq!(
+        exec_command(&mut state, "sync l2r --apply --delete"),
+        Ok(false)
+    );
+    assert!(r.path().join("l.txt").exists(), "重新同步");
+    assert!(!r.path().join("r-only.txt").exists(), "目标独有被删");
+
+    // 未知参数。
+    assert!(exec_command(&mut state, "sync bogus").is_err());
+}
+
+#[test]
 fn m372_extract_zip_to_dir_and_zip_slip_guard() {
     // M37-2：:extract——M26 打包的 zip 解压到目标目录（内容一致 + u 可逆）；
     // zip-slip 成员路径防护（归档内不可能伪造 ../ 成员——7z/zip 均按

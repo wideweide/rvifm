@@ -1103,7 +1103,7 @@
 
 - [x] M37-1 :chmod 八进制/符号/递归 + 批量失败逐项（POSIX；Windows 拒绝提示）。（2026-11-21：chmod 命令臂（tags/v/光标选集 + -R 递归收集万条上限 + 八进制/符号 parse_symbolic_mode）+ m371 断言（八进制批量/u+x/错误路径）；Windows/非 unix 分支可读拒绝；失败逐项报告）
 - [x] M37-2 :extract 选中/全部 + zip-slip 语料拒绝 + 冲突策略 + job 化 + u 可逆。（2026-11-21：extract 命令臂（ArchiveFs walk + 逐成员 read → 磁盘写 + zip-slip normalize_lexical 防护 + 64MB 护栏 + 逐成员入撤销栈）；冲突策略 M36-5 后续接；job 化随 M36-4 执行体迁移；m372 zip roundtrip + u 撤销断言）
-- [ ] M37-3 :sync 三策略 + dry-run + 删除显式开关 + 确认。
+- [x] M37-3 :sync 三策略 + dry-run + 删除显式开关 + 确认。（2026-11-21：sync 命令臂（l2r/r2l + --apply + --delete）——dry-run 缺省列计划、--apply 执行（copy_to_resolved 入撤销栈 + execute_delete 可恢复）；m373 dry-run/apply/u/delete 断言；三策略 M36-5 策略层后续接——首期镜像=复制缺失+显式删除）
 - [ ] M37-4 :du 并行/取消/万条上限/排序视图。
 - [ ] M37-5 :dup 三段哈希 + inode 硬链接 + 结果可操作。
 - [ ] M37-6 :checksum 生成/校验/批量 + 并行进度。

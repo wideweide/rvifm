@@ -454,7 +454,7 @@
 
 - [x] M37-1 `:chmod <mode>` 批量属性（八进制/符号、递归；POSIX only；见 SPEC M37-1；2026-11-21 完成：parse_symbolic_mode + 递归收集，444 单测）
 - [x] M37-2 `:extract` 归档解压（选中/全部、zip-slip 防护、job 化、u 可逆；见 SPEC M37-2；2026-11-21 完成：ArchiveFs walk + zip-slip 防护 + 逐成员撤销，445 单测；job 化随 M36-4 迁移）
-- [ ] M37-3 `:sync` 目录同步（dry-run、三策略、删除显式开关；见 SPEC M37-3）
+- [ ] M37-3 `:sync` 目录同步（dry-run、三策略、删除显式开关；见 SPEC M37-3；2026-11-21 完成：l2r/r2l + --apply/--delete + dry-run 缺省，446 单测；三策略后续接）
 - [ ] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4）
 - [ ] M37-5 `:dup` 查重（三段哈希、硬链接识别、结果可操作；见 SPEC M37-5）
 - [ ] M37-6 `:checksum` 生成/校验（并行、sidecar 兼容；见 SPEC M37-6）

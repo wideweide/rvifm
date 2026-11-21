@@ -1800,7 +1800,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
-                | "compare" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks" | "queue",
+                | "compare" | "sync" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks"
+                | "queue",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
@@ -2003,6 +2004,122 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             }
             let msg = run_compare(state, mode == "bycontents")?;
             Ok(ExecOutcome::Done { msg: Some(msg) })
+        }
+        Some("sync") => {
+            // M37-3：目录同步——left→right / right→left（缺省 left→right）。
+            // 策略：仅复制缺失（mirror --delete 需显式开关 + 确认）。
+            // dry-run = 缺省（列出计划）；--apply 才执行。
+            let args: Vec<&str> = parts.collect();
+            let mut direction = "left-to-right";
+            let mut apply = false;
+            let mut delete = false;
+            for a in &args {
+                match *a {
+                    "left-to-right" | "l2r" => direction = "left-to-right",
+                    "right-to-left" | "r2l" => direction = "right-to-left",
+                    "--apply" => apply = true,
+                    "--delete" => delete = true,
+                    other => {
+                        return Err(format!(
+                            "sync: 未知参数 {other}（left-to-right|right-to-left [--apply] [--delete]）"
+                        ));
+                    }
+                }
+            }
+            let (left_base, left_items) = {
+                let tab = state.active_tab();
+                match &tab.location {
+                    Location::Physical(p) => (p.clone(), tab.entries.clone()),
+                    _ => return Err("sync: 需要 pane 为物理目录视图".to_owned()),
+                }
+            };
+            let (right_base, right_items) = {
+                let tab = state.active_tab();
+                match &tab.right.location {
+                    Location::Physical(p) => (p.clone(), tab.right.entries.clone()),
+                    _ => return Err("sync: 需要 pane 为物理目录视图".to_owned()),
+                }
+            };
+            let (src_base, src_items, dst_base) = if direction == "left-to-right" {
+                (&left_base, &left_items, &right_base)
+            } else {
+                (&right_base, &right_items, &left_base)
+            };
+            // 镜像计划：源有目标无 → 复制；--delete 且目标有源无 → 删除。
+            let mut to_copy: Vec<PathBuf> = Vec::new();
+            let dst_items = if direction == "left-to-right" {
+                &right_items
+            } else {
+                &left_items
+            };
+            let mut to_delete: Vec<PathBuf> = Vec::new();
+            for item in src_items.iter().filter(|i| !i.is_dir) {
+                let dst = dst_base.join(&item.name);
+                if !dst.exists() {
+                    to_copy.push(item.name.clone().into());
+                }
+            }
+            if delete {
+                for item in dst_items.iter().filter(|i| !i.is_dir) {
+                    let src = src_base.join(&item.name);
+                    if !src.exists() {
+                        to_delete.push(dst_base.join(&item.name));
+                    }
+                }
+            }
+            let _ = (src_base, src_items, dst_base);
+            if !apply {
+                return Ok(ExecOutcome::Done {
+                    msg: Some(format!(
+                        "sync({direction}) 计划: 复制 {} 项、删除 {} 项（--apply 执行、--delete 启用删除）",
+                        to_copy.len(),
+                        to_delete.len()
+                    )),
+                });
+            }
+            // --apply 执行。
+            let mut applied = 0usize;
+            let mut failures: Vec<String> = Vec::new();
+            let tab_id = state.active;
+            for name in &to_copy {
+                let (src, dst) = if direction == "left-to-right" {
+                    (left_base.join(name), right_base.join(name))
+                } else {
+                    (right_base.join(name), left_base.join(name))
+                };
+                match crate::ops::copy_to_resolved(tab_id, &src, &dst) {
+                    Ok(op) => {
+                        state.undo_stack.push(op);
+                        applied += 1;
+                    }
+                    Err(e) => failures.push(format!("{}: {e}", name.display())),
+                }
+            }
+            for path in &to_delete {
+                let mut m = None;
+                execute_delete(state, &mut m, path.clone(), false, None);
+                if m.is_none() {
+                    applied += 1;
+                } else {
+                    failures.push(format!(
+                        "删除 {}: {}",
+                        path.display(),
+                        m.unwrap_or_default()
+                    ));
+                }
+            }
+            refresh_tab_panes(state, tab_id);
+            if failures.is_empty() {
+                Ok(ExecOutcome::Done {
+                    msg: Some(format!("sync({direction}): {applied} 项已应用（u 可撤销）")),
+                })
+            } else {
+                Err(format!(
+                    "sync: {applied} 项成功，失败 {}: {}",
+                    failures.len(),
+                    failures.join("; ")
+                ))
+            }
         }
         Some("extract") => {
             // M37-2：归档解压——光标条目为归档文件 → 全量解压到目标目录
