@@ -631,11 +631,13 @@ impl ArchiveFs for TarFs {
     }
 }
 
-/// 判断文件名是否为支持虚拟浏览的归档（M7-4 + M26-3 扩展 `.7z`）。
-/// `.rar` 不在内——按 M7-9 提示解压（调用方负责）。
+/// 判断文件名是否为支持虚拟浏览的归档（M7-4 + M26-3 扩展 `.7z` + M34-6
+/// 扩展 `.jar`——zip 容器，复用 ZipFs）。`.rar` 不在内——按 M7-9 提示
+/// 解压（调用方负责）。
 pub fn is_archive_file(name: &str) -> bool {
     let n = name.to_lowercase();
     n.ends_with(".zip")
+        || n.ends_with(".jar")
         || n.ends_with(".tar")
         || n.ends_with(".tar.gz")
         || n.ends_with(".tgz")
@@ -659,7 +661,8 @@ pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let n = name.to_lowercase();
-    if n.ends_with(".zip") {
+    if n.ends_with(".zip") || n.ends_with(".jar") {
+        // M34-6：.jar = zip 容器（与 is_archive_file 扩展同步）。
         Ok(Box::new(ZipFs::open(host)?))
     } else if n.ends_with(".tar")
         || n.ends_with(".tar.gz")
@@ -1083,6 +1086,39 @@ mod tests {
         assert!(err.to_string().contains("超过上限"), "err: {err}");
         // 正常上限：同文件解码成功（64B ≤ 256MB）。
         Decoder::open_with_xz_cap(&xz_path, TarKind::Xz, MAX_XZ_DECODED_BYTES).unwrap();
+    }
+
+    #[test]
+    fn m346_jar_recognized_as_zip_archive() {
+        // M34-6：.jar（zip 容器）入支持列表——浏览/预览/搜索链路自动生效。
+        assert!(is_archive_file("app.jar"));
+        assert!(is_archive_file("APP.JAR"), "大小写不敏感");
+        assert!(!is_unsupported_archive("app.jar"));
+        // roundtrip：内建 zip 创建 → 改名 .jar → open_dispatch 浏览/读取。
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "AAA").unwrap();
+        std::fs::write(tmp.path().join("sub/b.txt"), "BBB").unwrap();
+        crate::ops::create_archive(
+            0,
+            tmp.path(),
+            "t.zip",
+            crate::ops::ArchiveFormat::Zip,
+            &["a.txt".to_owned(), "sub".to_owned()],
+        )
+        .unwrap();
+        let jar = tmp.path().join("app.jar");
+        std::fs::rename(tmp.path().join("t.zip"), &jar).unwrap();
+        let mut fsx = open_dispatch(&jar).unwrap();
+        let names: Vec<String> = fsx
+            .list("/")
+            .unwrap()
+            .iter()
+            .map(|i| i.path.clone())
+            .collect();
+        assert!(names.contains(&"a.txt".to_owned()), "names: {names:?}");
+        assert!(names.contains(&"sub".to_owned()), "names: {names:?}");
+        assert!(fsx.read("/a.txt").unwrap() == b"AAA");
     }
 
     #[test]

@@ -893,3 +893,9 @@ rvifm record  → 静默记录访问
 - **回显**：搜索态底部 `/query  输入=筛选 Enter=跳转 Esc=Normal（N 项）`——键入即时更新、清空同步（Normal 态提示行不变）。
 - **踩坑**：TestBackend 断言 CJK 文案——缓冲区每格一 symbol、CJK 占 2 格且空位插空格，连续文案 `contains` 必须先去空白（compact）再断言。
 - 429 单测（+1）。
+
+### 2026-11-21 — M34-6 实现：.jar 归档识别（双表同步教训）
+
+- **扩展维护点有三处**：`is_archive_file`、`open_dispatch`（独立扩展分派表！）、`is_unsupported_archive`——首版只改第一处，roundtrip 测试立刻暴露 open_dispatch 漏接（`.jar` → "不支持的归档格式"）。**后续加格式必须三处核对**。
+- 取路径：`.jar` → ZipFs（zip crate 复用）；浏览/预览/搜索链路经 is_archive_file 自动生效；`:archive` 创建不覆盖 `.jar`（创建产物为 `.zip`，SPEC OUT_OF_SCOPE）。
+- README 浏览列表与对比段补 `.jar`；430 单测（+1：识别/大小写/roundtrip list+read）。
