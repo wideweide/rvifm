@@ -270,8 +270,12 @@ fn record_staging(trash_root: &Path, staged: &Path, orig: &Path) {
 
 /// 读取暂存区索引：仅返回 staged 仍存在的条目（已恢复/已撤销的过滤）。
 pub fn read_trash_index() -> Vec<TrashEntry> {
-    let dir = trash_index_dir();
-    let Ok(rd) = fs::read_dir(&dir) else {
+    read_trash_index_at(&trash_index_dir())
+}
+
+/// M40-4：注入目录形态（测试用）。
+pub fn read_trash_index_at(dir: &Path) -> Vec<TrashEntry> {
+    let Ok(rd) = fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -320,15 +324,20 @@ pub fn restore_from_trash(entry: &TrashEntry) -> std::io::Result<PathBuf> {
 /// M37-7：清空暂存区（全部 staged 文件 + 索引删除；不可恢复）。
 /// 返回（清除数, 错误列表）。
 pub fn trash_clear_all() -> (usize, Vec<String>) {
+    trash_clear_all_at(&trash_dir())
+}
+
+/// M40-4：注入根形态（测试用；公共包装走 trash_dir()）。
+pub fn trash_clear_all_at(root: &Path) -> (usize, Vec<String>) {
     let mut removed = 0usize;
     let mut errs = Vec::new();
-    for entry in read_trash_index() {
+    for entry in read_trash_index_at(&root.join("index")) {
         let staged = Path::new(&entry.staged);
         match fs::remove_file(staged).or_else(|_| fs::remove_dir_all(staged)) {
             Ok(()) => removed += 1,
             Err(e) => errs.push(format!("{}: {e}", staged.display())),
         }
-        let _ = fs::remove_file(trash_index_dir().join(format!(
+        let _ = fs::remove_file(root.join("index").join(format!(
             "{}.json",
             staged.file_name().unwrap_or_default().to_string_lossy()
         )));
@@ -338,6 +347,12 @@ pub fn trash_clear_all() -> (usize, Vec<String>) {
 
 /// M37-7：按时间清理暂存区（staged 文件 mtime 早于 `days` 天 → 清除）。
 pub fn trash_purge_before(days: u64) -> (usize, Vec<String>) {
+    trash_purge_before_at(&trash_dir(), days)
+}
+
+/// M40-4：注入根形态（测试用；公共包装走 trash_dir()）。
+pub fn trash_purge_before_at(root: &Path, days: u64) -> (usize, Vec<String>) {
+    let index_dir = root.join("index");
     let cutoff = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -345,7 +360,7 @@ pub fn trash_purge_before(days: u64) -> (usize, Vec<String>) {
         .saturating_sub(days * 86400);
     let mut removed = 0usize;
     let mut errs = Vec::new();
-    for entry in read_trash_index() {
+    for entry in read_trash_index_at(&index_dir) {
         let staged = Path::new(&entry.staged);
         let old_enough = fs::metadata(staged)
             .ok()
@@ -360,7 +375,7 @@ pub fn trash_purge_before(days: u64) -> (usize, Vec<String>) {
             Ok(()) => removed += 1,
             Err(e) => errs.push(format!("{}: {e}", staged.display())),
         }
-        let _ = fs::remove_file(trash_index_dir().join(format!(
+        let _ = fs::remove_file(root.join("index").join(format!(
             "{}.json",
             staged.file_name().unwrap_or_default().to_string_lossy()
         )));
@@ -1128,7 +1143,11 @@ pub fn undo_op(op: &UndoableOp) -> std::io::Result<()> {
                 return Ok(()); // 已不存在：等同已撤销
             };
             if meta.file_type().is_symlink() {
-                fs::remove_file(path)
+                // M40-4：junction（目录型链接）在 std 中 is_symlink()=true，
+                // 但 remove_file 对目录型 reparse point 报 EPERM——先
+                // remove_dir（删除链接本身，不动目标），失败回退
+                // remove_file（文件型符号链接）。
+                fs::remove_dir(path).or_else(|_| fs::remove_file(path))
             } else if path.is_dir() {
                 if *recursive {
                     // 目录树整体为新建产物（copy 目录）：整树移除。
@@ -1748,5 +1767,113 @@ mod proptests_undo {
                 "tmp 根恢复初始空态"
             );
         }
+    }
+}
+
+/// M40-4：覆盖率补测——trash clear/purge 注入形态、create_link（Windows
+/// junction 自动化）、auto_rename、Checksum 解析。
+#[cfg(test)]
+mod proptests_coverage {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// 手工构造暂存区条目（staged 文件 + index JSON；TrashEntry 同形态）。
+    fn stage_entry(root: &Path, name: &str, old: bool) {
+        let staged = root.join(name);
+        fs::write(&staged, "x").unwrap();
+        if old {
+            // mtime 往前拨：purge --before=1 天判定所需（std 无设置 mtime
+            // 原语——用 filetime 不引依赖，改为把 cutoff 拉满：purge(0)
+            // 只清 mtime < now 的全部——staged 刚写入也是 < now（秒级截断
+            // 边界），稳定覆盖。
+        }
+        let index = root.join("index");
+        fs::create_dir_all(&index).unwrap();
+        let entry = TrashEntry {
+            staged: staged.to_string_lossy().into_owned(),
+            orig: root.join("orig").join(name).to_string_lossy().into_owned(),
+        };
+        fs::write(
+            index.join(format!("{name}.json")),
+            serde_json::to_string(&entry).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn trash_clear_all_at_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        stage_entry(tmp.path(), "a.txt", false);
+        stage_entry(tmp.path(), "b.txt", false);
+        let (removed, errs) = trash_clear_all_at(tmp.path());
+        assert_eq!((removed, errs.len()), (2, 0));
+        assert!(!tmp.path().join("a.txt").exists());
+        assert!(
+            !tmp.path().join("index").join("a.txt.json").exists(),
+            "索引一并删除"
+        );
+        assert_eq!(trash_clear_all_at(tmp.path()).0, 0, "空暂存区 no-op");
+    }
+
+    #[test]
+    fn trash_purge_before_at_deletes_stale() {
+        // days=0：cutoff = now → 既有 staged（mtime < now，秒级）全部命中。
+        let tmp = TempDir::new().unwrap();
+        stage_entry(tmp.path(), "old.txt", false);
+        // 秒级边界：等过写入秒，使 cutoff（=now）> mtime 秒值。
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let (removed, errs) = trash_purge_before_at(tmp.path(), 0);
+        assert_eq!((removed, errs.len()), (1, 0), "days=0 清全部");
+        assert!(!tmp.path().join("old.txt").exists());
+        // days=极大：cutoff 早于 epoch → 全部保留。
+        stage_entry(tmp.path(), "keep.txt", false);
+        let (removed, errs) = trash_purge_before_at(tmp.path(), 10_000_000);
+        assert_eq!((removed, errs.len()), (0, 0), "未到期保留");
+        assert!(tmp.path().join("keep.txt").exists());
+    }
+
+    #[test]
+    fn create_link_automated_and_undo() {
+        // M28-1 Windows junction 回退自动化（原本"人工验证 deferred"）——
+        // 目录链接：symlink_dir 无特权失败 → junction（mklink /J）回退成功。
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("real");
+        fs::create_dir_all(target.join("inner")).unwrap();
+        fs::write(target.join("inner").join("f.txt"), "y").unwrap();
+        let link = tmp.path().join("lnk");
+        let op = create_link(0, &target, &link).unwrap();
+        assert!(link.is_dir(), "链接产物存在（symlink 或 junction）");
+        undo_op(&op).unwrap();
+        assert!(!link.exists(), "undo 移除链接本身");
+        assert!(target.join("inner").join("f.txt").exists(), "目标不受影响");
+        // 已存在拒绝。
+        let _ = create_link(0, &target, &link).ok();
+        let again = create_link(0, &target, &link);
+        assert!(again.is_err(), "链接目标已存在拒绝");
+        let _ = fs::remove_file(&link).or_else(|_| fs::remove_dir(&link));
+    }
+
+    #[test]
+    fn auto_rename_collision_suffixes() {
+        let tmp = TempDir::new().unwrap();
+        let free = |n: &str| !tmp.path().join(n).exists();
+        fs::write(tmp.path().join("f.txt"), "x").unwrap();
+        let got = auto_rename("f.txt", &free).unwrap();
+        assert_ne!(got, "f.txt", "碰撞时换名");
+        assert!(free(&got), "改名后可用");
+        // 无碰撞也走 (N) 序列（vifm 语义：粘贴重名生成副本名）。
+        assert_eq!(auto_rename("new.txt", &free).unwrap(), "new (1).txt");
+    }
+
+    #[test]
+    fn checksum_parse_and_ext() {
+        assert_eq!(Checksum::parse("md5"), Some(Checksum::Md5));
+        assert_eq!(Checksum::parse("sha256"), Some(Checksum::Sha256));
+        assert_eq!(Checksum::parse("none"), Some(Checksum::None));
+        assert_eq!(Checksum::parse("bogus"), None);
+        assert_eq!(Checksum::Md5.ext(), Some("md5"));
+        assert_eq!(Checksum::Sha256.ext(), Some("sha256"));
+        assert_eq!(Checksum::None.ext(), None);
     }
 }

@@ -1023,3 +1023,10 @@ rvifm record  → 静默记录访问
 - **修复**：分块比较重写——字符串切分为数字段/文本段交替序列逐段比较：数字段按 u64（前导零等值/超长回退 MAX 继续下一段）、文本段字典序、数字段 < 文本段（保持既有"数字在前"排序行为）。语义变化：`"1a" == "a"` → `"1a" < "a"`；`"a0" == "a"` → `"a0" > "a"`（原相等语义本身即缺陷产物）。既有 5 项 M24-2 语义测试全部通过（纯排序用例不受影响）。
 - **回归固化**：m40_3_natural_cmp_total_order_regression 用 std sort 抽样触发序列（34 项含 "0"/"a"/"0a"/"000" 等的列表排序两次幂等）+ 语义断言。
 - **启示**：全序比较器必须属性测试（单点语义测试无法覆盖传递性）；proptest 剩余 6 属性（glob 4 项/对称性/数字感知）首次运行即绿，无假阳性。
+
+### 2026-11-21 — M40-4 覆盖率实测 + junction undo 缺陷修复
+
+- **度量**：cargo-llvm-cov（Windows rustc 1.99.1，--lib，454 单测）。核心五模块 4/5 达标：ops 79.70%（补测前 73.08%）、frecency 83.04%、archive 94.52%、keymap 91.27%；remote/sftp.rs **15.57%**——actor 线程的 connect_async/命令循环需真实 SSH 服务器（russh 网络握手不可 mock 穿透；M19-3b 架构决策即"真实集成 cfg(unix)+sshd 探测"，而 CI 无 sshd 配置）→ **deferred**：补 CI sshd 服务（或 sftp mock server）后以 cargo-llvm-cov 复测；非"补几条单测"可解的架构性覆盖缺口。
+- **junction undo EPERM（真缺陷二连，M40-4 create_link 自动化测试抓到）**：M28-1 junction 回退产物在 undo 时报拒绝访问——现代 std（1.99）对 junction 的 symlink_metadata.file_type().is_symlink() 返回 **true**，undo_op Create 臂取 remove_file 分支，但 Windows 删除目录型 reparse point 需要 RemoveDirectoryW（remove_file → EPERM）。修复：remove_dir 优先 + remove_file 回退（unix 文件符号链接/目录符号链接两形态均验证兼容）。二次探针确认 remove_dir(junction) 只删链接本身、目标内容完好。
+- **M28-1 人工项闭环**：junction 回退 + undo 全链路由 create_link_automated_and_undo 测试自动化覆盖（原"Windows junction 回退人工验证 deferred"可勾）。
+- **trash ops 可注入化**：trash_clear_all/purge/read_index 拆 _at(root) 形态（公共包装走全局 trash_dir），测试用临时根——refactor 中一度把 root 当 index 目录传入（测试立即拦下）。
