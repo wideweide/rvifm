@@ -2257,15 +2257,15 @@ fn m34_4_view_renders_in_opposite_pane() {
 fn m34_5_frecency_pane_title_icons_and_query_echo() {
     // M34-5：标题固定文案；行 = devicons 图标 + 全路径（无 [目录]/[文件]
     // 文本标记；✦keyword 保留）；搜索态底部实时回显 query。
+    // 路径用**短合成串**（frecency 记录允许不存在的历史路径，图标按尾斜杠
+    // /扩展名推断）——Windows runner 临时目录名过长会截断列表行，导致
+    // ✦keyword/文件名断言不稳定（v0.11.0 windows CI 首次失败根因，见 NOTES）。
     let tmp = TempDir::new().unwrap();
-    let dir = tmp.path().join("proj");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("main.rs"), "fn main() {}").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
         entries: vec![
             crate::frecency::ScoredEntry {
-                path: dir.to_string_lossy().into_owned(),
+                path: "p".to_owned(),
                 topic: "dir".to_owned(),
                 keyword: String::new(),
                 score: 0.0,
@@ -2273,7 +2273,7 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
                 last_visit: 0,
             },
             crate::frecency::ScoredEntry {
-                path: dir.join("main.rs").to_string_lossy().into_owned(),
+                path: "p/main.rs".to_owned(),
                 topic: "file".to_owned(),
                 keyword: "rs".to_owned(),
                 score: 0.0,

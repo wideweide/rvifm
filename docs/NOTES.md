@@ -926,3 +926,8 @@ rvifm record  → 静默记录访问
 - **文档同步**：ACCEPTANCE §34（逐任务勾选）、README 状态句（v0.11.0/补 M34/GUIDE 指针）、图片预览行（尺寸语义）、help `w` 行、PLAN（M34 ✅ 10/10、§4 0.11.0 发布中）、STATE（批次关闭 + 下一步重写）。
 - **版本 bump**：Cargo.toml 0.10.0 → **0.11.0**（Cargo.lock 随构建更新）；发布外循环 = tag `v0.11.0` 推送 → CI 三 target 归档 + GitHub Release；crates.io 凭据仅在 Windows（0.9.0/0.10.0/0.11.0 由用户逐 tag 发布）。
 - **M34 全程注记**：批次在本机（Linux，rustup 1.100）执行；每任务独立提交 + 推送 + 全门禁；用户裁决两处（方案 A 对侧预览、--version 探测裁剪）+ 追加任务一处（M34-9 用户实测反馈）。
+
+### 2026-11-21 — 0.11.0 发布期修复：windows runner 长路径截断（M34-5 测试）
+
+- tag `v0.11.0` 首推 windows test 失败：`m34_5_frecency_pane_title_icons_and_query_echo` 的 ✦rs/main.rs 断言——**runner 临时目录名过长**（`C:\Users\RUNNER~1\AppData\Local\Temp\...`），frecency 结果行超出 pane 宽度被截断。修复：测试改短合成路径（`"p"` / `"p/main.rs"`——frecency 记录允许不存在的历史路径，图标按尾斜杠/扩展名推断），平台无关。ubuntu job 同 run 全绿、release job 因此 skipped。
+- **教训**：渲染类测试断言含"路径尾部内容"（如 keyword 后缀）时，必须用合成短路径，禁用宿主 TempDir 全路径（M24-9 教训的变体——宿主路径长度依赖）。
