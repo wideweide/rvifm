@@ -243,8 +243,6 @@ pub fn load_quickjump_from(path: &std::path::Path) -> std::collections::BTreeMap
         Ok(v) => v,
         Err(_) => return map,
     };
-    #[cfg(test)]
-    eprintln!("DBG parsed: {value:?}");
     if let Some(table) = value.get("quickjump").and_then(|v| v.as_table()) {
         for (k, v) in table {
             if let Some(kw) = v.as_str()

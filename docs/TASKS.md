@@ -430,10 +430,10 @@
 > 来源：v0.11.0 复核报告蒸馏（H-1~H-6 + R-12），用户指令"蒸馏并执行"。顺序：1（漂移清零）→ 2（脚本）→ 3（REVIEW 归档）→ 4（CHANGELOG）→ 5（卫生）。
 
 - [x] M35-1 状态漂移清零（AGENTS §10 / SPEC 7z-rar 三处 / STATE-TASKS-PLAN-README 状态句；见 SPEC M35-1；2026-11-21 完成——蒸馏时一并落笔）
-- [ ] M35-2 `scripts/harness_check.py` + CI job + pre-commit 示例（七条规则；见 SPEC M35-2）
-- [ ] M35-3 REVIEW 归档（旧报告移 docs/reviews/，主文只留当前结论 + 索引；见 SPEC M35-3）
-- [ ] M35-4 CHANGELOG.md（0.8.0 → 0.11.0 用户可见变化 + 版本跳过说明；见 SPEC M35-4）
-- [ ] M35-5 依赖与计数卫生（移除 tokio-stream / 清 DBG parsed / 数字脚本校验；见 SPEC M35-5）
+- [x] M35-2 `scripts/harness_check.py` + CI job + pre-commit 示例（七条规则；见 SPEC M35-2；2026-11-21 完成：正反向验证 + R6 顺带抓出 433→437 漂移）
+- [x] M35-3 REVIEW 归档（旧报告移 docs/reviews/，主文只留当前结论 + 索引；见 SPEC M35-3；2026-11-21 完成）
+- [x] M35-4 CHANGELOG.md（0.8.0 → 0.11.0 用户可见变化 + 版本跳过说明；见 SPEC M35-4；2026-11-21 完成）
+- [x] M35-5 依赖与计数卫生（移除 tokio-stream / 清 DBG parsed / 数字脚本校验；见 SPEC M35-5；2026-11-21 完成）
 
 ## M36 — 传输引擎（2026-11-21 增补；见 SPEC M36 节，已确认登记·按序执行）
 

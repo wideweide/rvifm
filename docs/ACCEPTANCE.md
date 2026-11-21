@@ -1077,16 +1077,16 @@
 - [x] STATE"执行中/全部完成"矛盾消除；TASKS M34 段标题改"已完成"；PLAN 0.10 口径统一为"用户决策跳过"；README"发布中"改"已发布"。（2026-11-21）
 
 ### M35-2 harness 一致性脚本
-- [ ] `scripts/harness_check.py` 覆盖七条规则；CI job 挂 required；故意制造漂移时脚本失败。
+- [x] `scripts/harness_check.py` 覆盖七条规则；CI job 已挂（ubuntu test 前置）；反向验证：注入"M34 批次执行中"漂移后脚本失败并给出 R1-STATE 定位（R1 正则同分句限定——列举行"M0–M34 完成"不误报）。
 
 ### M35-3 REVIEW 归档
-- [ ] 旧报告移入 `docs/reviews/REVIEW-2026-11-21.md`；`REVIEW.md` 只保留当前结论 + 历史索引。
+- [x] 旧报告移入 `docs/reviews/REVIEW-2026-11-21.md`；`REVIEW.md` 重写为索引 + 最新结论摘要（2026-11-19 报告已在归档目录）。
 
 ### M35-4 CHANGELOG
-- [ ] `CHANGELOG.md` 覆盖 0.8.0 → 0.11.0 用户可见变化；0.9.0/0.10.0 跳过说明。
+- [x] `CHANGELOG.md` 覆盖 0.8.0 → 0.11.0 用户可见变化（Keep a Changelog 格式）；0.9.0 跳过说明 + 0.10.0 独立条目。（2026-11-21）
 
 ### M35-5 依赖与计数卫生
-- [ ] `tokio-stream` 移除且 `cargo build` 绿；`DBG parsed` 清除；文档测试数字校验进 harness_check。
+- [x] `tokio-stream` 移除且 `cargo build`/test 绿；`DBG parsed` 清除；文档测试数字校验进 harness_check（R6——修正后顺带抓出 STATE 433→437 漂移）。（2026-11-21）
 
 ## 36. M36 — 传输引擎（见 SPEC M36 节）
 
