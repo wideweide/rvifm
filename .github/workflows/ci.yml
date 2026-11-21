@@ -40,7 +40,14 @@ jobs:
           fi
           exit 0
       - name: build
-        run: cargo build --locked
+        shell: bash
+        run: |
+          set +e
+          cargo build --locked 2>&1 | tee build-output.txt
+          grep -E "^error" -A4 build-output.txt | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit 1
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
       - name: check pdf-visual feature
         run: cargo check --locked --features pdf-visual
