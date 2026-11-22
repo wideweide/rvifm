@@ -508,7 +508,7 @@
 > 单一模式、无报告文件、错题本本地持久化。顺序：1（框架/UI）→ 2（数据/错题本）
 > → 3（内容）→ 4（文档收尾）。
 
-- [ ] M42-1 `:tutor` 命令 + 底部 Tutor Panel + Tutor 模式按键拦截（y/n/q/Esc；见 SPEC M42-1）
+- [x] M42-1 `:tutor` 命令 + 底部 Tutor Panel + Tutor 模式按键拦截（y/n/q/Esc；见 SPEC M42-1；2026-11-22 完成：src/tutor.rs（TutorModule/Item + include_str 内嵌 core_nav）+ InputMode::TutorList/TutorSession + tutor_list_key/tutor_session_key 纯函数 + exec 分派（无参列模块/带参进入/未知可读报错）+ 四视图白名单放行 + render 列表覆盖层与底部 Panel（1/4，左 prompt/expected 右进度+键提示，done 结算 Summary）+ m42_1 双测试，495 单测）
 - [ ] M42-2 TutorModule/Item 数据 + `tutor_progress.toml` 持久化 + 错题本优先调度 + `:tutor reset`（见 SPEC M42-2）
 - [ ] M42-3 首批内容 3 模块（core_nav/file_ops/search_frecency；见 SPEC M42-3）
 - [ ] M42-4 文档收尾（GUIDE/README 指引 + ACCEPTANCE §42 + 批次同步；见 SPEC M42-4）

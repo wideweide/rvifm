@@ -1923,7 +1923,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
                 | "compare" | "sync" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks"
-                | "queue",
+                | "queue" | "tutor",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
             None => return Ok(ExecOutcome::Done { msg: None }),
@@ -1935,7 +1935,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
                 | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
-                | "touch" | "copy" | "move" | "mk" | "theme" | "queue",
+                | "touch" | "copy" | "move" | "mk" | "theme" | "queue" | "tutor",
             ) => {}
             Some(other) => {
                 // M22-4：去掉过时的"在 M20 接入"表述。
@@ -1950,7 +1950,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M29-2：compare 重执行豁免——dp/do 后可重跑对比（结果替换）。
             // M39-1：goto 豁免——仅滚动 hex 查看器（不改结果）。
             Some(
-                "find" | "grep" | "sort" | "compare" | "goto" | "q" | "quit" | "help" | "theme",
+                "find" | "grep" | "sort" | "compare" | "goto" | "q" | "quit" | "help" | "theme"
+                | "tutor",
             ) => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
@@ -1961,7 +1962,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
     if state.active_tab().in_tree() {
         match cmd_head {
-            Some("tree") | Some("q" | "quit") | Some("help") | Some("theme") => {}
+            Some("tree") | Some("q" | "quit") | Some("help") | Some("theme") | Some("tutor") => {}
             Some(other) => {
                 return Err(format!("树视图为只读浏览（:tree 退出）: {other}"));
             }
@@ -1970,6 +1971,27 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        Some("tutor") => {
+            // M42-1：导师模式——无参列出模块；<module_id> 直接进入；
+            // reset 子命令随 M42-2 进度持久化落地。
+            let args: Vec<&str> = parts.collect();
+            match args.as_slice() {
+                [] => Ok(ExecOutcome::EnterTutorList),
+                [id] => {
+                    if crate::tutor::module_by_id(id).is_some() {
+                        Ok(ExecOutcome::EnterTutorSession {
+                            module_id: (*id).to_owned(),
+                        })
+                    } else {
+                        Err(format!(
+                            "tutor: 未知模块 {id}（可用: {}）",
+                            crate::tutor::builtin_module_ids().join(" ")
+                        ))
+                    }
+                }
+                _ => Err("tutor: 用法 :tutor 或 :tutor <module_id>".to_owned()),
+            }
+        }
         Some("theme") => {
             // AUDIT-13：运行时主题切换（内置优先、用户主题次之）；
             // 无参列出可用主题（内置 + 用户目录）。

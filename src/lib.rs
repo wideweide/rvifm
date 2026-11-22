@@ -29,3 +29,4 @@ pub mod state;
 pub mod store;
 pub mod tab;
 pub mod theme;
+pub mod tutor;

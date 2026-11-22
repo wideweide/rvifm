@@ -10133,3 +10133,169 @@ fn m282_rename_structured_preview_and_apply() {
 
 // M27-3：pdf_overflow_note 已随 M39-2 查看器单页翻页改造移除（旧 1–2 页
 // 网格的底部说明函数，唯一调用点退役；单页文案并入标题"[ ] 翻页"）。
+
+#[test]
+fn m42_1_tutor_command_list_session_and_keys() {
+    // M42-1：:tutor 分派（无参列模块 / 带参进入 / 未知可读报错）+ 列表按键
+    // + 会话 y/n 推进与结算 + 中途退出保留作答。
+    let (_tmp, mut state) = make_state(3);
+    match exec_command_impl(&mut state, "tutor") {
+        Ok(ExecOutcome::EnterTutorList) => {}
+        other => panic!("expected EnterTutorList, got {other:?}"),
+    }
+    match exec_command_impl(&mut state, "tutor core_nav") {
+        Ok(ExecOutcome::EnterTutorSession { module_id }) => {
+            assert_eq!(module_id, "core_nav");
+        }
+        other => panic!("expected EnterTutorSession, got {other:?}"),
+    }
+    let err = exec_command_impl(&mut state, "tutor bogus").expect_err("未知模块应报错");
+    assert!(
+        err.contains("未知模块") && err.contains("core_nav"),
+        "{err}"
+    );
+    let err = exec_command_impl(&mut state, "tutor a b").expect_err("多余参数应报错");
+    assert!(err.contains("用法"), "{err}");
+
+    // 列表按键：j 下移、k 上移、l/Enter 进入、Esc/q 关闭。
+    let modules = crate::tutor::builtin_modules();
+    assert!(!modules.is_empty());
+    let mut cursor = 0usize;
+    assert_eq!(
+        tutor_list_key(&mut cursor, modules.len(), KeyCode::Char('j')),
+        TutorListOutcome::None
+    );
+    assert_eq!(cursor, 1.min(modules.len() - 1));
+    assert_eq!(
+        tutor_list_key(&mut cursor, modules.len(), KeyCode::Char('k')),
+        TutorListOutcome::None
+    );
+    assert_eq!(cursor, 0);
+    assert_eq!(
+        tutor_list_key(&mut cursor, modules.len(), KeyCode::Char('l')),
+        TutorListOutcome::Enter(0)
+    );
+    assert_eq!(
+        tutor_list_key(&mut cursor, modules.len(), KeyCode::Esc),
+        TutorListOutcome::Close
+    );
+
+    // 会话：y 记掌握、n 记未掌握；末项作答后 done；结算态任意键关闭。
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    let total = module.items.len();
+    let mut idx = 0usize;
+    let mut marks: Vec<(String, bool)> = Vec::new();
+    let mut done = false;
+    for i in 0..total {
+        let code = if i % 2 == 0 {
+            KeyCode::Char('y')
+        } else {
+            KeyCode::Char('n')
+        };
+        assert_eq!(
+            tutor_session_key(&module, &mut idx, &mut marks, &mut done, code),
+            TutorSessionOutcome::None
+        );
+    }
+    assert!(done, "末项作答后进入结算态");
+    assert_eq!(marks.len(), total);
+    assert_eq!(marks.iter().filter(|(_, ok)| *ok).count(), total.div_ceil(2));
+    assert_eq!(
+        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Char('x')),
+        TutorSessionOutcome::Close,
+        "结算态任意键关闭"
+    );
+
+    // 中途 Esc 退出（已作答保留——M42-2 落盘的数据形态）。
+    let mut idx = 0usize;
+    let mut marks: Vec<(String, bool)> = Vec::new();
+    let mut done = false;
+    assert_eq!(
+        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Char('y')),
+        TutorSessionOutcome::None
+    );
+    assert_eq!(
+        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Esc),
+        TutorSessionOutcome::Close
+    );
+    assert_eq!(marks.len(), 1, "退出前已作答项保留");
+    assert!(!done);
+}
+
+#[test]
+fn m42_1_tutor_render_list_and_panel() {
+    // M42-1：渲染——列表覆盖层（模块行/键提示）与底部 Panel
+    // （prompt/expected/进度/键提示/结算 Summary）；Panel 态主 TUI 背景可见。
+    let (_tmp, state) = make_state(3);
+    let compact = |buf: &ratatui::backend::TestBackend, w: u16, h: u16| {
+        (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf.buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<String>()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+    };
+
+    // 列表覆盖层。
+    let mode = InputMode::TutorList { cursor: 0 };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all = compact(terminal.backend(), 70, 14);
+    assert!(all.contains("导师模式"), "标题: {all}");
+    assert!(all.contains("core_nav"), "模块行: {all}");
+    assert!(all.contains("Enter/l=进入"), "键提示: {all}");
+
+    // 会话 Panel：prompt/expected/右列键提示；背景标签栏仍可见。
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    let mode = InputMode::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let buf = terminal.backend();
+    let all = compact(buf, 70, 14);
+    assert!(all.contains("核心导航"), "Panel 标题含模块名: {all}");
+    let first_prompt = module.items[0].prompt.replace(['`', ' '], "");
+    assert!(
+        all.replace('`', "").contains(&first_prompt),
+        "prompt 行: {all}"
+    );
+    assert!(all.contains("预期:"), "expected 行: {all}");
+    assert!(all.contains("[y]掌握"), "右列键提示: {all}");
+    let top_row: String = (0..70).map(|x| buf.buffer()[(x, 0)].symbol()).collect();
+    assert!(
+        top_row.trim().contains("1:") && top_row.contains(".tmp"),
+        "背景标签栏可见（N:dirname）: {top_row}"
+    );
+
+    // 结算态 Summary（掌握/未掌握计数，无外部文件）。
+    let total = module.items.len();
+    let marks: Vec<(String, bool)> = module
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| (item.id.clone(), i % 2 == 0))
+        .collect();
+    let skipped = marks.iter().filter(|(_, ok)| !*ok).count();
+    let mode = InputMode::TutorSession {
+        module,
+        idx: total,
+        marks,
+        done: true,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all = compact(terminal.backend(), 70, 14);
+    assert!(all.contains("模块完成"), "Summary: {all}");
+    assert!(
+        all.contains(&format!("未掌握{skipped}")),
+        "未掌握计数: {all}"
+    );
+}

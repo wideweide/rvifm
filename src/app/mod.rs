@@ -260,6 +260,20 @@ pub(crate) enum InputMode {
     JobDetail { index: usize },
     /// 传输队列覆盖层（M36-7）：j/k 选择、x 取消条目、Esc 关闭。
     Queue { cursor: usize },
+    /// 导师模式模块列表覆盖层（M42-1：`:tutor` 无参）：j/k 选择、Enter/l
+    /// 进入、Esc/q 关闭。
+    TutorList { cursor: usize },
+    /// 导师模式会话（M42-1：`:tutor <module_id>`）：底部 Panel 单步自验，
+    /// y=掌握 n=未掌握（错题本随 M42-2 持久化）、q/Esc 退出；`done` 为
+    /// 结算态（Panel 显示 Summary，任意键返回 Normal）。模块数据在进入
+    /// 时克隆持有（渲染每帧免重解析）。
+    TutorSession {
+        module: crate::tutor::TutorModule,
+        idx: usize,
+        /// 已作答条目（item_id, mastered）——M42-2 落盘的数据形态。
+        marks: Vec<(String, bool)>,
+        done: bool,
+    },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
         input: String,
@@ -349,6 +363,12 @@ pub(crate) enum ExecOutcome {
     EnterQueue {
         cursor: usize,
     },
+    /// 打开导师模式模块列表覆盖层（M42-1：`:tutor` 无参）。
+    EnterTutorList,
+    /// 进入导师模式会话（M42-1：`:tutor <module_id>`；exec 已校验存在）。
+    EnterTutorSession {
+        module_id: String,
+    },
     /// 打开归档创建对话框（M25-4：`:archive` 无参；input 预填光标条目名）。
     ShowArchiveDialog {
         input: String,
@@ -384,6 +404,80 @@ pub(crate) enum ExecOutcome {
     RunExternal {
         cmd: String,
     },
+}
+
+/// M42-1：导师模式模块列表按键结果。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum TutorListOutcome {
+    /// 未消费（仅 j/k 移动等）。
+    None,
+    /// 关闭列表（q/Esc）。
+    Close,
+    /// 进入选中模块（携带模块下标）。
+    Enter(usize),
+}
+
+/// M42-1：导师列表按键（纯函数，run 循环与测试共用）。
+pub(crate) fn tutor_list_key(
+    cursor: &mut usize,
+    modules_len: usize,
+    code: ratatui::crossterm::event::KeyCode,
+) -> TutorListOutcome {
+    use ratatui::crossterm::event::KeyCode;
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') => TutorListOutcome::Close,
+        KeyCode::Char('j') | KeyCode::Down if modules_len > 0 => {
+            *cursor = (*cursor + 1).min(modules_len - 1);
+            TutorListOutcome::None
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            *cursor = cursor.saturating_sub(1);
+            TutorListOutcome::None
+        }
+        KeyCode::Enter | KeyCode::Char('l') if *cursor < modules_len => {
+            TutorListOutcome::Enter(*cursor)
+        }
+        _ => TutorListOutcome::None,
+    }
+}
+
+/// M42-1：导师会话按键结果。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum TutorSessionOutcome {
+    /// 未消费。
+    None,
+    /// 退出会话（q/Esc 或结算态任意键）。
+    Close,
+}
+
+/// M42-1：导师会话按键（纯函数）：y=掌握 n=未掌握记错题本（M42-2 落盘），
+/// 末项作答后进入结算态；q/Esc 中途退出；结算态任意键关闭。
+pub(crate) fn tutor_session_key(
+    module: &crate::tutor::TutorModule,
+    idx: &mut usize,
+    marks: &mut Vec<(String, bool)>,
+    done: &mut bool,
+    code: ratatui::crossterm::event::KeyCode,
+) -> TutorSessionOutcome {
+    use ratatui::crossterm::event::KeyCode;
+    if *done {
+        return TutorSessionOutcome::Close; // 结算态：任意键返回。
+    }
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') => TutorSessionOutcome::Close,
+        KeyCode::Char('y') | KeyCode::Char('n') => {
+            if let Some(item) = module.items.get(*idx) {
+                let mastered = code == KeyCode::Char('y');
+                marks.push((item.id.clone(), mastered));
+            }
+            *idx += 1;
+            if *idx >= module.items.len() {
+                *done = true;
+            }
+            TutorSessionOutcome::None
+        }
+        _ => TutorSessionOutcome::None,
+    }
 }
 
 /// FEAT-3：右键上下文菜单（单级、内建动作，作用于右键聚焦的条目）。
@@ -832,6 +926,28 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 }
                                 Ok(ExecOutcome::EnterQueue { cursor }) => {
                                     mode = InputMode::Queue { cursor };
+                                }
+                                Ok(ExecOutcome::EnterTutorList) => {
+                                    // M42-1：:tutor 无参 → 模块列表覆盖层。
+                                    mode = InputMode::TutorList { cursor: 0 };
+                                }
+                                Ok(ExecOutcome::EnterTutorSession { module_id }) => {
+                                    // M42-1：进入导师会话（模块克隆持有，渲染
+                                    // 每帧免重解析；exec 已校验存在，此兜底
+                                    // 仅防御内嵌内容变动）。
+                                    match crate::tutor::module_by_id(&module_id) {
+                                        Some(module) => {
+                                            mode = InputMode::TutorSession {
+                                                module,
+                                                idx: 0,
+                                                marks: Vec::new(),
+                                                done: false,
+                                            };
+                                        }
+                                        None => {
+                                            msg = Some(format!("tutor: 未知模块 {module_id}"));
+                                        }
+                                    }
                                 }
                                 Ok(ExecOutcome::ShowArchiveDialog { input }) => {
                                     // M25-4：格式缺省 zip；校验下标取 [archive] checksum。
@@ -1413,6 +1529,45 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             }
                             _ => {}
                         }
+                    }
+                }
+                InputMode::TutorList { cursor } => {
+                    // M42-1：导师模式模块列表——j/k 选择、Enter/l 进入、
+                    // Esc/q 关闭（覆盖层独立于当前目录/位置）。
+                    if key.kind == KeyEventKind::Press {
+                        match tutor_list_key(
+                            cursor,
+                            crate::tutor::builtin_modules().len(),
+                            key.code,
+                        ) {
+                            TutorListOutcome::None => {}
+                            TutorListOutcome::Close => mode = InputMode::Normal,
+                            TutorListOutcome::Enter(i) => {
+                                let modules = crate::tutor::builtin_modules();
+                                let module = modules[i].clone();
+                                mode = InputMode::TutorSession {
+                                    module,
+                                    idx: 0,
+                                    marks: Vec::new(),
+                                    done: false,
+                                };
+                            }
+                        }
+                    }
+                }
+                InputMode::TutorSession {
+                    module,
+                    idx,
+                    marks,
+                    done,
+                } => {
+                    // M42-1：导师会话——y=掌握 n=未掌握（错题本随 M42-2 落盘），
+                    // q/Esc 退出保存；结算态（done）任意键返回 Normal。
+                    if key.kind == KeyEventKind::Press
+                        && tutor_session_key(module, idx, marks, done, key.code)
+                            == TutorSessionOutcome::Close
+                    {
+                        mode = InputMode::Normal;
                     }
                 }
                 InputMode::ArchiveDialog {

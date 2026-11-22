@@ -1,0 +1,43 @@
+# M42-3：导师模式首批内容——核心导航模块。
+# 条目语义与代码行为对齐：j/k 环绕（M13-4）、l/h 进入与返回定位（M21-F4）、
+# gg/G（M1-3）、Tab 焦点切换（M14-1）。
+
+[module]
+id = "core_nav"
+name = "核心导航 (Core Navigation)"
+description = "掌握 rvifm 的基础移动与目录切换"
+
+[[items]]
+id = "move_down"
+prompt = "请按 `j` 向下移动光标。"
+expected = "光标下移一行（到末行再按会环绕回首行）。"
+
+[[items]]
+id = "move_up"
+prompt = "请按 `k` 向上移动光标。"
+expected = "光标上移一行。"
+
+[[items]]
+id = "enter_dir"
+prompt = "光标停在目录上，按 `l` 或 Enter 进入。"
+expected = "进入该目录，pane 顶部路径更新。"
+
+[[items]]
+id = "parent_dir"
+prompt = "按 `h` 返回上级目录。"
+expected = "回到上级目录，光标定位在刚才进入的子目录上。"
+
+[[items]]
+id = "jump_top"
+prompt = "按 `gg`（两连按 g）跳到列表顶部。"
+expected = "光标移到首行。"
+
+[[items]]
+id = "jump_bottom"
+prompt = "按 `G` 跳到列表底部。"
+expected = "光标移到末行。"
+
+[[items]]
+id = "focus_switch"
+prompt = "按 `Tab` 切换左右 pane 焦点，再按一次切回。"
+expected = "焦点换到另一侧（当前行高亮样式随焦点变化），预览跟随焦点 pane。"
