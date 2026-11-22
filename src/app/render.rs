@@ -1284,6 +1284,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         idx,
         marks,
         done,
+        review,
     } = mode
     {
         // M42-1：底部 Tutor Panel——主 TUI 背景保持可见（操作上下文），
@@ -1301,10 +1302,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         let mastered = marks.iter().filter(|(_, ok)| *ok).count();
         let skipped = marks.len() - mastered;
         let title = format!(
-            "🎓 导师模式: {} ({}/{})",
+            "🎓 导师模式: {}{review} ({}/{})",
             module.name,
             (*idx + 1).min(total),
-            total
+            total,
+            review = if *review { "（复习）" } else { "" }
         );
         let block = ratatui::widgets::Block::bordered().title(title);
         if *done {
@@ -1323,7 +1325,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 ratatui::layout::Constraint::Percentage(30),
             ])
             .areas(inner);
-            let left_lines = vec![
+            let mut left_lines = vec![
                 Line::from(Span::styled(
                     format!("💡 {}", item.prompt),
                     Style::new().add_modifier(Modifier::BOLD),
@@ -1331,6 +1333,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 Line::from(String::new()),
                 Line::from(format!("预期: {}", item.expected)),
             ];
+            if *review {
+                left_lines.push(Line::from("🔁 复习模式：未掌握项已排前"));
+            }
             let filled = mastered * 8 / total.max(1);
             let right_lines = vec![
                 Line::from(format!(

@@ -4,6 +4,10 @@
 //! （`include_str!`，先例 help.txt/BUNDLED_THEMES）；进度持久化随 M42-2
 //! （`data_dir()/tutor_progress.toml`）。无外部报告文件（用户裁剪，见
 //! NOTES 2026-11-22）。Tutor 键位硬编码（y/n/q/Esc），不进 ModeLayers。
+//!
+//! M42-2：进度持久化（`data_dir()/tutor_progress.toml`，缺失/损坏静默降级）
+//! 与错题本——未掌握（skipped）项下次进入优先复习；掌握/未掌握互斥迁移；
+//! `:tutor reset <module_id>` 清空。
 
 use serde::Deserialize;
 
@@ -99,6 +103,121 @@ pub fn module_by_id(id: &str) -> Option<TutorModule> {
 /// 可用模块 id 列表（错误提示与列表覆盖层共用）。
 pub fn builtin_module_ids() -> Vec<String> {
     builtin_modules().into_iter().map(|m| m.id).collect()
+}
+
+// ── M42-2：进度持久化与错题本 ─────────────────────────────────────────────
+
+/// 单模块进度（错题本）。mastered/skipped 互斥：同一 item 只在其一。
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ModuleProgress {
+    #[serde(default)]
+    pub mastered: Vec<String>,
+    #[serde(default)]
+    pub skipped: Vec<String>,
+    /// 最近一次作答时间（epoch 秒；仅记录用途，无格式化依赖）。
+    #[serde(default)]
+    pub last_accessed: Option<u64>,
+}
+
+/// 全部模块进度（文件形状：`[<module_id>]` 小节）。
+pub type TutorProgress = std::collections::BTreeMap<String, ModuleProgress>;
+
+/// 进度文件路径（M8-3 既有数据目录 `data_dir()/tutor_progress.toml`）。
+pub fn tutor_progress_path() -> std::path::PathBuf {
+    crate::config::data_dir().join("tutor_progress.toml")
+}
+
+/// 读取进度：缺失或损坏 → 全新进度（静默降级，SPEC M42 SIMPLIFIED）。
+pub fn load_progress_from(path: &std::path::Path) -> TutorProgress {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// 读取真实进度文件（run 循环用）。
+pub fn load_progress() -> TutorProgress {
+    load_progress_from(&tutor_progress_path())
+}
+
+/// 写进度文件（自动建父目录；失败由调用方提示）。
+pub fn save_progress_to(path: &std::path::Path, progress: &TutorProgress) -> std::io::Result<()> {
+    let text =
+        toml::to_string_pretty(progress).map_err(|e| std::io::Error::other(e.to_string()))?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, text)
+}
+
+/// 会话结束合并进度（纯函数）：掌握项迁入 mastered 并移出 skipped，
+/// 未掌握反之；时间戳刷新。
+pub fn merge_session(
+    mut progress: TutorProgress,
+    module_id: &str,
+    marks: &[(String, bool)],
+) -> TutorProgress {
+    let entry = progress.entry(module_id.to_owned()).or_default();
+    for (id, ok) in marks {
+        if *ok {
+            entry.skipped.retain(|s| s != id);
+            if !entry.mastered.iter().any(|m| m == id) {
+                entry.mastered.push(id.clone());
+            }
+        } else {
+            entry.mastered.retain(|m| m != id);
+            if !entry.skipped.iter().any(|s| s == id) {
+                entry.skipped.push(id.clone());
+            }
+        }
+    }
+    entry.last_accessed = Some(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    );
+    progress
+}
+
+/// `:tutor reset <module_id>`：移除该模块进度（纯函数）。
+pub fn reset_module(progress: TutorProgress, module_id: &str) -> TutorProgress {
+    progress
+        .into_iter()
+        .filter(|(k, _)| k != module_id)
+        .collect()
+}
+
+/// 复习排序（纯函数）：skipped（原序）→ 未见过（原序）→ mastered（原序）。
+/// 无 skipped 记录时返回 None（非复习模式，保持原顺序）。
+pub fn review_order(
+    progress: &TutorProgress,
+    module_id: &str,
+    items: &[TutorItem],
+) -> Option<Vec<TutorItem>> {
+    let entry = progress.get(module_id)?;
+    if entry.skipped.is_empty() {
+        return None;
+    }
+    let mut ordered: Vec<TutorItem> = Vec::new();
+    // 桶序：skipped → 未见过 → mastered（各桶内保持原顺序）。
+    let in_list = |id: &str, list: &[String]| list.iter().any(|x| x == id);
+    for it in items {
+        if in_list(&it.id, &entry.skipped) {
+            ordered.push(it.clone());
+        }
+    }
+    for it in items {
+        if !in_list(&it.id, &entry.skipped) && !in_list(&it.id, &entry.mastered) {
+            ordered.push(it.clone());
+        }
+    }
+    for it in items {
+        if in_list(&it.id, &entry.mastered) {
+            ordered.push(it.clone());
+        }
+    }
+    Some(ordered)
 }
 
 #[cfg(test)]

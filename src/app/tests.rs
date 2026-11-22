@@ -10199,7 +10199,10 @@ fn m42_1_tutor_command_list_session_and_keys() {
     }
     assert!(done, "末项作答后进入结算态");
     assert_eq!(marks.len(), total);
-    assert_eq!(marks.iter().filter(|(_, ok)| *ok).count(), total.div_ceil(2));
+    assert_eq!(
+        marks.iter().filter(|(_, ok)| *ok).count(),
+        total.div_ceil(2)
+    );
     assert_eq!(
         tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Char('x')),
         TutorSessionOutcome::Close,
@@ -10256,6 +10259,7 @@ fn m42_1_tutor_render_list_and_panel() {
         idx: 0,
         marks: Vec::new(),
         done: false,
+        review: false,
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
@@ -10289,6 +10293,7 @@ fn m42_1_tutor_render_list_and_panel() {
         idx: total,
         marks,
         done: true,
+        review: false,
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
@@ -10298,4 +10303,95 @@ fn m42_1_tutor_render_list_and_panel() {
         all.contains(&format!("未掌握{skipped}")),
         "未掌握计数: {all}"
     );
+}
+
+#[test]
+fn m42_2_tutor_progress_persist_review_and_reset() {
+    // M42-2：进度持久化（roundtrip/损坏静默降级）、错题本互斥迁移、
+    // 复习排序（skipped 优先）、reset 清空、exec 分派。
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("tutor_progress.toml");
+
+    // 空进度 + 复习排序：无 skipped → None。
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    let progress = crate::tutor::load_progress_from(&path);
+    assert!(progress.is_empty(), "缺失文件 → 全新进度");
+    assert!(crate::tutor::review_order(&progress, "core_nav", &module.items).is_none());
+
+    // 会话合并：半数掌握 → skipped 进错题本；roundtrip 一致。
+    let marks: Vec<(String, bool)> = module
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| (item.id.clone(), i % 2 == 0))
+        .collect();
+    let progress = crate::tutor::merge_session(progress, "core_nav", &marks);
+    crate::tutor::save_progress_to(&path, &progress).unwrap();
+    let loaded = crate::tutor::load_progress_from(&path);
+    assert_eq!(loaded, progress, "roundtrip 一致");
+    let entry = &loaded["core_nav"];
+    let skipped_n = module.items.len() - module.items.len().div_ceil(2);
+    assert_eq!(entry.mastered.len(), module.items.len().div_ceil(2));
+    assert_eq!(entry.skipped.len(), skipped_n);
+    assert!(entry.last_accessed.is_some());
+
+    // 复习排序：skipped 排前、unseen 居中、mastered 垫底。
+    let ordered = crate::tutor::review_order(&loaded, "core_nav", &module.items).unwrap();
+    assert_eq!(ordered.len(), module.items.len());
+    let mastered = &entry.mastered;
+    let first_skipped_pos = ordered
+        .iter()
+        .position(|it| entry.skipped.iter().any(|s| s == &it.id))
+        .unwrap();
+    let last_skipped_pos = ordered
+        .iter()
+        .rposition(|it| entry.skipped.iter().any(|s| s == &it.id))
+        .unwrap();
+    let first_mastered_pos = ordered
+        .iter()
+        .position(|it| mastered.iter().any(|m| m == &it.id))
+        .unwrap();
+    assert!(first_skipped_pos <= last_skipped_pos, "skipped 段有序");
+    assert!(
+        last_skipped_pos < first_mastered_pos,
+        "skipped 段在 mastered 段之前"
+    );
+
+    // 互斥迁移：重答 skipped 项为 y → 挪入 mastered；重答 mastered 为 n → 挪回。
+    let flip = vec![
+        (entry.skipped[0].clone(), true),
+        (entry.mastered[0].clone(), false),
+    ];
+    let progress = crate::tutor::merge_session(loaded, "core_nav", &flip);
+    let entry = &progress["core_nav"];
+    assert!(
+        !entry.skipped.contains(&flip[0].0) && entry.mastered.contains(&flip[0].0),
+        "skipped→mastered 迁移"
+    );
+    assert!(
+        !entry.mastered.contains(&flip[1].0) && entry.skipped.contains(&flip[1].0),
+        "mastered→skipped 迁移"
+    );
+
+    // 损坏文件 → 静默降级为全新进度。
+    std::fs::write(&path, "not [ valid toml {{{{").unwrap();
+    assert!(
+        crate::tutor::load_progress_from(&path).is_empty(),
+        "损坏静默降级"
+    );
+
+    // reset：移除模块进度。
+    let progress = crate::tutor::merge_session(
+        crate::tutor::TutorProgress::new(),
+        "core_nav",
+        &[(module.items[0].id.clone(), false)],
+    );
+    let after = crate::tutor::reset_module(progress, "core_nav");
+    assert!(!after.contains_key("core_nav"), "reset 清空");
+
+    // exec 分派：reset 未知模块报错（已知模块的成功路径不 exec 测——
+    // 会写真实 HOME 数据目录，m38_4 先例：核心链路走路径注入单测）。
+    let (_tmp, mut state) = make_state(2);
+    let err = exec_command_impl(&mut state, "tutor reset bogus").expect_err("未知模块应报错");
+    assert!(err.contains("未知模块"), "{err}");
 }

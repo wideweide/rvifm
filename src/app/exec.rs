@@ -1972,8 +1972,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
         Some("tutor") => {
-            // M42-1：导师模式——无参列出模块；<module_id> 直接进入；
-            // reset 子命令随 M42-2 进度持久化落地。
+            // M42-1/M42-2：导师模式——无参列出模块；<module_id> 直接进入；
+            // `tutor reset <module_id>` 清空该模块错题本进度。
             let args: Vec<&str> = parts.collect();
             match args.as_slice() {
                 [] => Ok(ExecOutcome::EnterTutorList),
@@ -1989,7 +1989,26 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                         ))
                     }
                 }
-                _ => Err("tutor: 用法 :tutor 或 :tutor <module_id>".to_owned()),
+                ["reset", id] => {
+                    if crate::tutor::module_by_id(id).is_none() {
+                        return Err(format!(
+                            "tutor: 未知模块 {id}（可用: {}）",
+                            crate::tutor::builtin_module_ids().join(" ")
+                        ));
+                    }
+                    let path = crate::tutor::tutor_progress_path();
+                    let progress =
+                        crate::tutor::reset_module(crate::tutor::load_progress_from(&path), id);
+                    match crate::tutor::save_progress_to(&path, &progress) {
+                        Ok(()) => Ok(ExecOutcome::Done {
+                            msg: Some(format!("tutor: 已清空 {id} 进度")),
+                        }),
+                        Err(e) => Err(format!("tutor: 进度保存失败: {e}")),
+                    }
+                }
+                _ => Err(
+                    "tutor: 用法 :tutor | :tutor <module_id> | :tutor reset <module_id>".to_owned(),
+                ),
             }
         }
         Some("theme") => {

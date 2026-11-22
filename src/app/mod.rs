@@ -270,9 +270,11 @@ pub(crate) enum InputMode {
     TutorSession {
         module: crate::tutor::TutorModule,
         idx: usize,
-        /// 已作答条目（item_id, mastered）——M42-2 落盘的数据形态。
+        /// 已作答条目（item_id, mastered）——会话关闭时合并落盘。
         marks: Vec<(String, bool)>,
         done: bool,
+        /// M42-2：复习模式（存在 skipped 记录，条目已重排错题优先）。
+        review: bool,
     },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
@@ -934,14 +936,31 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Ok(ExecOutcome::EnterTutorSession { module_id }) => {
                                     // M42-1：进入导师会话（模块克隆持有，渲染
                                     // 每帧免重解析；exec 已校验存在，此兜底
-                                    // 仅防御内嵌内容变动）。
+                                    // 仅防御内嵌内容变动）。M42-2：有错题本
+                                    // 记录时进入复习模式（skipped 项排前）。
                                     match crate::tutor::module_by_id(&module_id) {
-                                        Some(module) => {
+                                        Some(base) => {
+                                            let progress = crate::tutor::load_progress();
+                                            let (module, review) = match crate::tutor::review_order(
+                                                &progress,
+                                                &base.id,
+                                                &base.items,
+                                            ) {
+                                                Some(items) => (
+                                                    crate::tutor::TutorModule {
+                                                        items,
+                                                        ..base.clone()
+                                                    },
+                                                    true,
+                                                ),
+                                                None => (base, false),
+                                            };
                                             mode = InputMode::TutorSession {
                                                 module,
                                                 idx: 0,
                                                 marks: Vec::new(),
                                                 done: false,
+                                                review,
                                             };
                                         }
                                         None => {
@@ -1543,13 +1562,29 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             TutorListOutcome::None => {}
                             TutorListOutcome::Close => mode = InputMode::Normal,
                             TutorListOutcome::Enter(i) => {
-                                let modules = crate::tutor::builtin_modules();
-                                let module = modules[i].clone();
+                                // M42-2：有错题本记录时进入复习模式。
+                                let base = crate::tutor::builtin_modules()[i].clone();
+                                let progress = crate::tutor::load_progress();
+                                let (module, review) = match crate::tutor::review_order(
+                                    &progress,
+                                    &base.id,
+                                    &base.items,
+                                ) {
+                                    Some(items) => (
+                                        crate::tutor::TutorModule {
+                                            items,
+                                            ..base.clone()
+                                        },
+                                        true,
+                                    ),
+                                    None => (base, false),
+                                };
                                 mode = InputMode::TutorSession {
                                     module,
                                     idx: 0,
                                     marks: Vec::new(),
                                     done: false,
+                                    review,
                                 };
                             }
                         }
@@ -1560,13 +1595,28 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     idx,
                     marks,
                     done,
+                    review: _,
                 } => {
-                    // M42-1：导师会话——y=掌握 n=未掌握（错题本随 M42-2 落盘），
-                    // q/Esc 退出保存；结算态（done）任意键返回 Normal。
+                    // M42-1：导师会话——y=掌握 n=未掌握，q/Esc 退出保存；
+                    // 结算态（done）任意键返回。M42-2：关闭时合并错题本
+                    // 落盘（有作答才写；失败进状态栏提示）。
                     if key.kind == KeyEventKind::Press
                         && tutor_session_key(module, idx, marks, done, key.code)
                             == TutorSessionOutcome::Close
                     {
+                        if !marks.is_empty() {
+                            let progress = crate::tutor::merge_session(
+                                crate::tutor::load_progress(),
+                                &module.id,
+                                marks,
+                            );
+                            if let Err(e) = crate::tutor::save_progress_to(
+                                &crate::tutor::tutor_progress_path(),
+                                &progress,
+                            ) {
+                                msg = Some(format!("tutor 进度保存失败: {e}"));
+                            }
+                        }
                         mode = InputMode::Normal;
                     }
                 }
