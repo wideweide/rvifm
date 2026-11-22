@@ -1,0 +1,43 @@
+# M43-3：导师模式内容批 1——选择与批量模块。
+# 语义对照：v 可视（M3-1）/V 行可视（M24-3）/可视区 d·y·x（M24-4）、
+# t 标记（M3-2）、:select/:unselect（M13-2）、:tag copy|move|delete（M3-3）。
+
+[module]
+id = "visual_tag"
+name = "选择与批量 (Visual & Tag)"
+description = "掌握可视选择、标记与批量操作"
+
+[[items]]
+id = "visual_enter"
+prompt = "按 `v` 进入可视选择，按 `j`/`k` 扩选，观察状态栏。"
+expected = "状态栏出现 VISUAL 计数（选中区间加亮）；Esc 退出选择。"
+
+[[items]]
+id = "visual_row"
+prompt = "按 `V` 进入行可视模式。"
+expected = "整行进入选区（与 v 字符义选择互斥，再按切换）。"
+
+[[items]]
+id = "visual_delete"
+prompt = "`v` 选中两个文件后按 `d`。"
+expected = "触发批量删除确认（同 tag 批量管线）；`y` 确认后进暂存、`u` 可整批撤销。"
+
+[[items]]
+id = "visual_yank_paths"
+prompt = "`v` 选中一个文件后按 `y`。"
+expected = "选中项的全路径复制到剪贴板（状态栏提示 copied 项数）。"
+
+[[items]]
+id = "tag_mark"
+prompt = "光标停在文件上按 `t` 标记，再对另一文件按 `t`。"
+expected = "两个文件加标记（状态栏 2 tagged）；再按 `t` 取消同一文件标记。"
+
+[[items]]
+id = "select_pattern"
+prompt = "输入 `:select *.txt` 回车。"
+expected = "所有匹配通配符的条目被打上标记；`:unselect *.txt` 反向移除。"
+
+[[items]]
+id = "tag_batch_copy"
+prompt = "标记 2 个文件后输入 `:tag copy sub`（子目录名）回车。"
+expected = "批量复制到 sub/（后台作业化，:jobs 可见）；完成后标记自动清空。"

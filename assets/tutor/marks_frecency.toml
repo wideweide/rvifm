@@ -1,0 +1,49 @@
+# M43-3：导师模式内容批 1——marks 与 frecency 模块。
+# 语义对照：o 合一选择器（M8-12/M34-5）、:j/:J 分型（M8-12）、:recent
+# （NAV-4）、m<char>/'<char> marks（M25-2 frecency 实现）、:bmark 族
+# （M25-2）、:keyword（NAV-1）、:cmdmark+' 展开（M30-4）、选择器 d+u（M23-8）。
+
+[module]
+id = "marks_frecency"
+name = "marks 与 frecency (Marks & Frecency)"
+description = "掌握高频目录跳转、marks 标记与书签"
+
+[[items]]
+id = "jump_selector"
+prompt = "访问 2-3 个目录后（l 进入），按 `o` 打开跳转选择器。"
+expected = "列出高频目录/文件混合条目（图标全路径行、✦keyword 标注、底部 /query 回显）；输入即筛选、回车跳转。"
+
+[[items]]
+id = "jump_kind"
+prompt = "分别输入 `:j` 与 `:J`。"
+expected = ":j 仅目录条目（独立目录时钟排名）、:J 仅文件条目；选择器 Esc 关闭无副作用。"
+
+[[items]]
+id = "recent_view"
+prompt = "输入 `:recent` 回车。"
+expected = "全部条目按最后访问时间倒序（含会话内合并）；选定后跳转。"
+
+[[items]]
+id = "selector_delete"
+prompt = "在 `o` 选择器里把光标移到不需要的条目按 `d`，再按 `u`。"
+expected = "条目被删除（记录移除）；`u` 撤销恢复。"
+
+[[items]]
+id = "mark_set_jump"
+prompt = "光标停在常用目录上按 `m` 再按一个字母（如 `ma`）；切到别的目录后按 `'a`。"
+expected = "'a 跳回该目录（frecency keyword 最高排名条目直达 cd）。"
+
+[[items]]
+id = "bmark_family"
+prompt = "依次输入 `:bmark proj`、`:bmarks`、`:bmgo proj`。"
+expected = ":bmark 写入书签（frecency keyword 事件）、:bmarks 列出、:bmgo 跳转；`:delbmarks` 清除（保留累积历史）。"
+
+[[items]]
+id = "cmd_bookmark"
+prompt = "输入 `:cmdmark mk` 把 mkdir 命令标记为 `mk` 字符；再在 `:` 后输入 `'mk` 展开。"
+expected = "命令行内 `'mk` 展开为标记的完整命令文本（回车执行）。"
+
+[[items]]
+id = "keyword_entry"
+prompt = "输入 `:keyword work` 为当前目录设置多字符 keyword。"
+expected = "该目录在 `o`/`:j` 搜索 `work` 时享高优先级匹配（单字符 marks 导航共用同一数据）。"

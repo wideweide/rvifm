@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-22
 - **当前阶段**：**M0–M41 全部完成关闭，v1.0.0 双渠道发布闭环**（M40 7/7，含 M40-7 1.0.0 发布三层修红——aarch64 c_char E0308 / smoke 交叉产物 ELF 断言 / annotate_errors.sh 注解精确化，见 NOTES；M40-2 24h fuzz 长跑与 M40-4 sftp 覆盖 deferred 不阻塞）。**GitHub Release**：tag run 44984795450 全绿，四归档 + SHA256SUMS.txt 齐全；**crates.io**：本机凭据 publish 成功，API 验证 newest/max=1.0.0（2026-11-22T05:44Z）
-- **当前任务**：**M43-3 内容批 1**（search_filter/visual_tag/marks_frecency/tabs_history ~29 项；M43-1/2 已完成，499 单测 + 12 集成绿）
+- **当前任务**：**M43-4 内容批 2**（panes_sort/archive_ops/maintenance ~21 项；M43-1/2/3 已完成，499 单测 + 12 集成绿）
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -17,7 +17,7 @@
 
 ## 下一步
 
-1. **M43 续作（自动续轮中）**：M43-1/2 完成（2026-11-22）→ 下一个 M43-3 内容批 1 → M43-4/5 → M43-6 文档同步。
+1. **M43 续作（自动续轮中）**：M43-1/2/3 完成（2026-11-22）→ 下一个 M43-4 内容批 2 → M43-5 → M43-6 文档同步。
 2. **下一版发布（1.1.0，人工发起）**：M42+M43 已入 CHANGELOG 未发布段；发布时版本 bump + tag → GitHub Release 自动；crates.io publish 人工执行（可先跑 `:tutor` 自验）。
 2. **人工验证方式（REL-2）**：`:tutor` 自行验证（M42 落地后可用）；crates.io publish 仅人工发起。fuzz 24h 本地长跑（M40-2 deferred）需 rustup + nightly——执行后回填 NOTES。
 

@@ -1,0 +1,49 @@
+# M43-3：导师模式内容批 1——标签与历史模块。
+# 语义对照：:tabnew/:tabclose/:tabmove（M1-5）、gt/gT/Ngt（M1-5+M41-1 右 pane
+# 同语义）、:tabname（M39-6）、:histprev/:histnext（NAV-3 新导航截断 forward）、
+# :history 菜单（NAV-2）、跨 tab 撤销（M2-7）。
+
+[module]
+id = "tabs_history"
+name = "标签与历史 (Tabs & History)"
+description = "掌握多标签管理、目录历史与跨标签撤销"
+
+[[items]]
+id = "tab_new_close"
+prompt = "输入 `:tabnew` 新建标签，再输入 `:tabclose` 关闭它。"
+expected = "顶部标签栏即时增减（`N:dirname` 列表，当前 tab 反显加粗）。"
+
+[[items]]
+id = "tab_switch"
+prompt = "两个标签间按 `gt`（下一个）与 `gT`（上一个）；试试 `2gt`。"
+expected = "标签切换，高亮跟随；`2gt` 直接跳第二个标签。右 pane 焦点下同样生效。"
+
+[[items]]
+id = "tab_move"
+prompt = "三个标签时输入 `:tabmove 0`。"
+expected = "当前标签移动到第 1 位（标签栏顺序即时更新）。"
+
+[[items]]
+id = "tab_name"
+prompt = "输入 `:tabname 工作区` 给当前标签命名。"
+expected = "标签栏显示自定义名称（仅本会话内存）；`:tabname` 无参清除。"
+
+[[items]]
+id = "tab_independent"
+prompt = "两个标签分别浏览不同目录，来回切换。"
+expected = "目录/光标/滚动/搜索状态各自独立保持。"
+
+[[items]]
+id = "hist_navigate"
+prompt = "进入几个目录后按 `:histprev`，再按 `:histnext`。"
+expected = "沿目录历史后退/前进；后退后新导航会截断前进分支（Vim 语义）。"
+
+[[items]]
+id = "hist_menu"
+prompt = "输入 `:history` 打开历史菜单。"
+expected = "列出当前标签的历史条目（j/k 移动、Enter/l 跳转、dd 移除记录、Esc/q 关闭）。"
+
+[[items]]
+id = "cross_tab_undo"
+prompt = "标签 A 中 `yy`，切到标签 B 按 `p`，回标签 A 按 `u`。"
+expected = "撤销正确定位到标签 B 的粘贴操作（撤销栈全局，操作发生在哪个 tab 就去哪撤销）。"

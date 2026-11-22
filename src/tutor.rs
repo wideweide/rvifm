@@ -86,6 +86,22 @@ const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
         "search_frecency",
         include_str!("../assets/tutor/search_frecency.toml"),
     ),
+    (
+        "search_filter",
+        include_str!("../assets/tutor/search_filter.toml"),
+    ),
+    (
+        "visual_tag",
+        include_str!("../assets/tutor/visual_tag.toml"),
+    ),
+    (
+        "marks_frecency",
+        include_str!("../assets/tutor/marks_frecency.toml"),
+    ),
+    (
+        "tabs_history",
+        include_str!("../assets/tutor/tabs_history.toml"),
+    ),
 ];
 
 /// 解析模块 TOML 为 [`TutorModule`]。

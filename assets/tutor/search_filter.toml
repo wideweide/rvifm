@@ -1,0 +1,43 @@
+# M43-3：导师模式内容批 1——搜索与过滤模块。
+# 语义对照：/ incsearch+高亮+计数（FIX-1/M34-3）、n/N 环绕、Esc 全清
+# （M21-F3）、= glob 过滤（M21-E7）、f/F/;/, 首字母搜索（M13-1）。
+
+[module]
+id = "search_filter"
+name = "搜索与过滤 (Search & Filter)"
+description = "掌握实时搜索、匹配跳转与通配符过滤"
+
+[[items]]
+id = "search_incsearch"
+prompt = "按 `/` 输入文件名片段（如 `f0`），逐字符输入观察列表。"
+expected = "输入即跳到第一个匹配并高亮，状态栏显示 `i/N` 计数；Esc 清空并还原光标。"
+
+[[items]]
+id = "search_next_prev"
+prompt = "搜索态下按 `n` 与 `N` 在匹配间跳转。"
+expected = "n 下一个匹配、N 上一个（环绕列表首尾）；Esc 退出搜索态且高亮全清。"
+
+[[items]]
+id = "search_right_pane"
+prompt = "Tab 把焦点切到右 pane，再按 `/` 搜索。"
+expected = "搜索作用于右 pane 列表（焦点感知）；切回左 pane 后 `/` 作用左 pane。"
+
+[[items]]
+id = "filter_glob"
+prompt = "按 `=` 输入通配符（如 `*.txt`）。"
+expected = "列表只剩匹配项，状态栏出现 [filter: …]；Esc 清除过滤恢复全列表。"
+
+[[items]]
+id = "filter_substring"
+prompt = "按 `=` 输入不带通配符的片段（如 `read`）。"
+expected = "按隐式 `*read*` 子串匹配（等价输入 `*read*`）。"
+
+[[items]]
+id = "find_char_forward"
+prompt = "按 `f` 再按一个字母（如 `f` 后按 `e`）。"
+expected = "光标跳到当前行之后第一个以该字母开头的条目（区分大小写）。"
+
+[[items]]
+id = "find_char_repeat"
+prompt = "按 `;` 重复同向首字母搜索，按 `,` 反向重复。"
+expected = "光标按上次 f/F 的方向继续跳转；; 同向、, 反向（环绕列表首尾）。"
