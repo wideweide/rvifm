@@ -102,6 +102,18 @@ const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
         "tabs_history",
         include_str!("../assets/tutor/tabs_history.toml"),
     ),
+    (
+        "panes_sort",
+        include_str!("../assets/tutor/panes_sort.toml"),
+    ),
+    (
+        "archive_ops",
+        include_str!("../assets/tutor/archive_ops.toml"),
+    ),
+    (
+        "maintenance",
+        include_str!("../assets/tutor/maintenance.toml"),
+    ),
 ];
 
 /// 解析模块 TOML 为 [`TutorModule`]。

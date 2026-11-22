@@ -1,0 +1,49 @@
+# M43-4：导师模式内容批 2——双栏视图与排序对比模块。
+# 语义对照：w 预览/查看器（M13-9/M21-E2/M34-4 对侧模型）、:sort 多字段
+# （M18-2）、S 对话框（M18-1）、:compare byname/bycontents（M24-8/M29-1）、
+# dp/do（M29-2）、:tree（M13-7）、:tabname/[ui] layout 参见配置。
+
+[module]
+id = "panes_sort"
+name = "视图与排序 (Panes, Sort & Compare)"
+description = "掌握预览查看器、排序对话框与目录对比"
+
+[[items]]
+id = "view_mode"
+prompt = "光标停在文本文件上按 `w` 进入查看器，`j/k` 滚动，再按 `w` 返回。"
+expected = "查看器占对侧 pane（行号 + 完整内容滚动）；焦点右时查看器在左 pane。"
+
+[[items]]
+id = "viewer_search"
+prompt = "查看器内按 `/` 输入片段回车。"
+expected = "定位到首个命中行并高亮；`n`/`N` 在命中间跳转。"
+
+[[items]]
+id = "sort_dialog"
+prompt = "按 `S` 打开排序对话框，按 `s`（按大小升序）直接应用。"
+expected = "对话框列出字段与当前状态；小写=升序大写=降序立即应用并关闭；空格切换待定方向、回车应用。"
+
+[[items]]
+id = "sort_multi"
+prompt = "输入 `:sort name,size desc` 回车。"
+expected = "按名称升序、大小降序多字段排序（逗号分隔）；数字文件名走自然排序（a2 在 a10 前）。"
+
+[[items]]
+id = "compare_byname"
+prompt = "左右 pane 各放一个相似目录，输入 `:compare` 回车。"
+expected = "进入对比结果虚拟目录（= 相同 / ! 不同 / < 仅左 / > 仅右 前缀）。"
+
+[[items]]
+id = "compare_contents"
+prompt = "输入 `:compare bycontents` 回车。"
+expected = "同名文件按 SHA-256 内容判定（>64MB 跳过内容比对按大小）。"
+
+[[items]]
+id = "diff_put_obtain"
+prompt = "对比结果视图中把光标移到差异项，按 `dp`（或 `do`）。"
+expected = "dp=另一侧覆盖当前侧、do=删除当前侧多出项（可恢复删除，`u` 可逆）；操作后对比自动重建。"
+
+[[items]]
+id = "tree_view"
+prompt = "输入 `:tree` 进入树视图。"
+expected = "静态快照只读浏览（目录优先缩进、depth 上限 1 万条）；写/导航命令被拒绝，再执行 `:tree` 恢复平铺。"

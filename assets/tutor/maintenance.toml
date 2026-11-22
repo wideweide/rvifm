@@ -1,0 +1,56 @@
+# M43-4：导师模式内容批 2——运维操作模块。
+# 语义对照：:chmod（M37-1 POSIX）、:du（M37-4 top-5）、:dup（M37-5 SHA-256）、
+# :checksum（M37-6 md5 sidecar）、:sync（M37-3 dry-run 缺省/--apply/--delete）、
+# :trash clear|purge（M37-7）、:jobs（M13-8/M24-9/M28-3）、:queue（M36-7）。
+# SPEC M43 SIMPLIFIED：首条目 sandbox 引导；破坏性命令「了解即可」。
+
+[module]
+id = "maintenance"
+name = "运维操作 (Maintenance)"
+description = "掌握权限、磁盘占用、查重、同步与任务管理"
+
+[[items]]
+id = "sandbox_setup"
+prompt = "输入 `:mkdir tutor-sandbox` 回车，进入该目录再练本模块（避免改动真实文件）。"
+expected = "建出练习目录并进入（`u` 可撤销误建）。"
+
+[[items]]
+id = "chmod"
+prompt = "在 sandbox 内对文件输入 `:chmod 600 文件名`（或 `:chmod u+x 文件名`）回车。"
+expected = "权限变更生效（`ls -l` 核验）；`:chmod -R` 递归子目录。POSIX only（Windows 无此命令）。"
+
+[[items]]
+id = "du"
+prompt = "回到有子目录的位置输入 `:du` 回车。"
+expected = "状态栏显示当前目录递归占用 top-5 + 总计（1 万条上限）。"
+
+[[items]]
+id = "dup"
+prompt = "把同一文件复制两份后输入 `:dup` 回车。"
+expected = "SHA-256 内容查重，相同内容分组报告（同名不同内容不算重复）。"
+
+[[items]]
+id = "checksum"
+prompt = "标记（t）两个文件后输入 `:checksum` 回车。"
+expected = "生成 `<文件>.md5` sidecar（md5sum -c 兼容）。"
+
+[[items]]
+id = "sync_dryrun"
+prompt = "输入 `:sync l2r` 回车（左右 pane 各放一个目录）。"
+expected = "缺省 dry-run：仅列出同步计划不落盘；加 `--apply` 才执行、`--delete` 需显式（镜像删除）。"
+
+[[items]]
+id = "trash_manage"
+prompt = "输入 `:trash` 打开暂存区菜单（Enter 恢复条目）。"
+expected = "暂存区列表可恢复；`:trash clear` 清空、`:trash purge --before=<天数>` 按时间清理——两者不可逆，了解即可勿在真实数据上执行。"
+
+[[items]]
+id = "jobs_view"
+prompt = "发起一个 `:tag copy` 批量任务后输入 `:jobs`。"
+expected = "作业列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情——进度/速率/时长）。"
+
+[[items]]
+id = "queue_view"
+prompt = "远端粘贴大文件产生队列后输入 `:queue`（无远端环境可 Ctrl+N 跳过）。"
+requires = "sftp"
+expected = "传输队列覆盖层（j/k 选择、x 取消条目、Esc 关闭）；头条目上传由 run 循环消费。"
