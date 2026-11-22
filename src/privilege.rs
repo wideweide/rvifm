@@ -43,7 +43,7 @@ pub fn create_fifo(path: &std::path::Path) -> std::io::Result<()> {
 #[cfg(unix)]
 unsafe fn libc_mkfifo(path: &std::path::Path) -> i32 {
     unsafe extern "C" {
-        fn mkfifo(path: *const i8, mode: u32) -> i32;
+        fn mkfifo(path: *const core::ffi::c_char, mode: u32) -> i32;
     }
     let c = match std::ffi::CString::new(path.as_os_str().to_string_lossy().as_bytes()) {
         Ok(c) => c,

@@ -1066,6 +1066,30 @@ mod tests {
         TcpStream::connect_timeout(&"127.0.0.1:22".parse().unwrap(), Duration::from_secs(1)).is_ok()
     }
 
+    /// M40-7：指纹门全链路测试前置——首连门只对 unknown host 触发。
+    /// 宿主 known_hosts 已含 127.0.0.1（明文条目，或 russh 可匹配的哈希
+    /// `|1|` 条目——本机日常 known_hosts 实测）时门控不返回
+    /// FingerprintConfirm；CI runner 该文件缺失/为空 → 前置成立，
+    /// 全链路覆盖不缩水。哈希条目无法在测试内复算匹配 → 一律跳过。
+    fn first_use_gate_precondition() -> bool {
+        let Ok(text) = std::fs::read_to_string(crate::config::known_hosts_path()) else {
+            return true;
+        };
+        if text.trim().is_empty() {
+            return true;
+        }
+        for line in text.lines() {
+            if line.starts_with("|1|") {
+                return false;
+            }
+            let host = line.split_whitespace().next().unwrap_or("");
+            if matches!(host, "127.0.0.1" | "localhost" | "[127.0.0.1]:22") {
+                return false;
+            }
+        }
+        true
+    }
+
     /// 连接本机 sshd；CI 无 authorized_keys → None（测试跳过）。
     fn try_backend() -> Option<SftpBackend> {
         let mut p = SftpParams::new("127.0.0.1");
@@ -1168,6 +1192,10 @@ mod tests {
         // 全链路（本机 sshd 可用时；CI ubuntu 覆盖）：ask 首连 →
         // FingerprintConfirm（带 host:port + 指纹）→ 确认重连成功。
         if !sshd_available() {
+            return;
+        }
+        if !first_use_gate_precondition() {
+            eprintln!("skip: known_hosts 已含 127.0.0.1（哈希/明文），首连门不触发");
             return;
         }
         let first = SftpParams {

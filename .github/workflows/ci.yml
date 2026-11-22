@@ -45,9 +45,7 @@ jobs:
           set +e
           cargo build --locked 2>&1 | tee build-output.txt
           rc=${PIPESTATUS[0]}
-          grep -E "error" -A4 build-output.txt | head -60 | while IFS= read -r line; do
-            echo "::error::$line"
-          done
+          bash .github/workflows/annotate_errors.sh build-output.txt
           exit $rc
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
       - name: check pdf-visual feature
@@ -117,9 +115,7 @@ jobs:
           set +e
           cargo +nightly fuzz build -O --debug-assertions 2>&1 | tee fuzz-build.txt
           rc=${PIPESTATUS[0]}
-          grep -E "error" -A4 fuzz-build.txt | head -60 | while IFS= read -r line; do
-            echo "::error::$line"
-          done
+          bash .github/workflows/annotate_errors.sh fuzz-build.txt
           exit $rc
       - name: fuzz archive parsers (3 x 120s)
         run: |
@@ -219,9 +215,9 @@ jobs:
           set +e
           cargo build --release --locked --target ${{ matrix.target }} 2>&1 | tee release-build.txt
           rc=${PIPESTATUS[0]}
-          grep -E "error" -A4 release-build.txt | head -60 | while IFS= read -r line; do
-            echo "::error::$line"
-          done
+          # M40-7 教训：`grep -E "error" -A4` 被 crate 名误报挤爆注解上限，
+          # 真实 error 行丢失——精确化 helper（行首 error 锚定，见脚本头注释）。
+          bash .github/workflows/annotate_errors.sh release-build.txt
           exit $rc
       - name: smoke --version
         run: cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
