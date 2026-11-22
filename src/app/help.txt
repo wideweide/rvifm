@@ -113,7 +113,8 @@ rvifm 帮助（vim 风格文件管理器）
   :trash          暂存区菜单（恢复误删文件）
   :theme [名]     切换主题（内置名 / 捆绑 snowwhite / 用户 TOML；默认 gruvbox-dark）
   :tutor [模块|reset <模块>]
-                  导师模式（交互教程+自验：y=掌握 n=未掌握错题本优先 q=退出；
+                  导师模式（交互教程+自验，13 模块 100 项覆盖全部键位/命令；
+                  透明放行边学边练：Ctrl+Y 掌握 Ctrl+N 记错题本 Ctrl+Q 退出；
                   进度存数据目录 tutor_progress.toml；无参列出模块）
 
 == 远端（SFTP） ==

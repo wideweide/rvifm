@@ -1150,3 +1150,20 @@ rvifm record  → 静默记录访问
 - **WHY Ctrl+Q 而非 Esc 退出**：放行后 Esc 在 Normal 有既有语义（M21-F3 清
   搜索），检索类条目本身要练 Esc；Ctrl 组合经 crossterm raw mode 全部可捕获
   （IXON 关闭），Ctrl+Q 无冲突（Ctrl+M==Enter、Ctrl+I==Tab 除外——均不选）。
+
+### 2026-11-23 — M43 收官（13 模块 100 项；透明放行落地）
+
+- **实现要点**：放行重构采用 state.tutor 覆盖层方案（NOTES 2026-11-22 WHY 条
+  落地）——InputMode::TutorSession 退役，tutor_hotkey（Ctrl+Y/N/Q）在事件分发
+  最前置拦截、其余键照常走模式分支；**作答即时落盘**（幂等合并）替代"关闭时
+  保存"——中途退出/应用退出均不丢进度。Esc 放行保留清搜索语义（检索条目要练
+  Esc），退出键定 Ctrl+Q（raw mode 下 Ctrl 组合全可捕获）。
+- **内容规模**：13 模块 100 项（含 core_nav 补 Space、tutor_meta 自述模块）；
+  每条 prompt/expected 逐条对照 exec.rs/tab.rs 现行行为核验（发现并修正
+  `:rename` 无参=$EDITOR 批量 vs 带参=结构化预览两形态混写）。requires 字段
+  7 token（editor/sudo/sftp/git/osc52/graphic/tmux），Panel 🔧 提示行不过滤。
+- **维护规则（SPEC M43-6 MUST 固化）**：此后批次新增键位/命令时同步补 tutor
+  条目——批次验收条约束（tutor 条目数允许漂移，语义漂移靠内容测试与人工实测
+  发现；不进 harness_check 自动检查）。
+- **验收**：499 单测（m43_1 放行/热键/滚动渲染 + m43_2 requires 解析）+ 12
+  集成 + 门禁全绿/轮；harness_check 过。CI 结论以 tag 推送为准。

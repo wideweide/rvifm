@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-22
 - **当前阶段**：**M0–M41 全部完成关闭，v1.0.0 双渠道发布闭环**（M40 7/7，含 M40-7 1.0.0 发布三层修红——aarch64 c_char E0308 / smoke 交叉产物 ELF 断言 / annotate_errors.sh 注解精确化，见 NOTES；M40-2 24h fuzz 长跑与 M40-4 sftp 覆盖 deferred 不阻塞）。**GitHub Release**：tag run 44984795450 全绿，四归档 + SHA256SUMS.txt 齐全；**crates.io**：本机凭据 publish 成功，API 验证 newest/max=1.0.0（2026-11-22T05:44Z）
-- **当前任务**：**M43-6 文档同步 + 维护规则固化**（GUIDE/help/README/CHANGELOG + SPEC 维护规则；M43-1～5 已完成，499 单测 + 12 集成绿）
+- **当前任务**：无（**M43 tutor 全功能覆盖 6/6 完成**——13 模块 100 项 + 透明放行；随 1.1.0 发版（REL-1 人工发起）；TASKS 无待办）
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -17,7 +17,8 @@
 
 ## 下一步
 
-1. **M43 续作（自动续轮中）**：M43-1～5 完成（2026-11-22/23）→ 最后一个 M43-6 文档同步 + 维护规则。
+1. **M43 人工实测（顺带）**：真实终端跑 `:tutor` 13 模块——透明放行手感（Ctrl+Y/N 标记）与 requires 提示行显示；发现偏差按 NOTES 记录 + FIX 登记。
+2. **下一版发布（1.1.0，人工发起）**：M42+M43 已入 CHANGELOG 未发布段；版本 bump + tag → GitHub Release 自动；crates.io publish 人工执行（可先 `:tutor` 自验）。
 2. **下一版发布（1.1.0，人工发起）**：M42+M43 已入 CHANGELOG 未发布段；发布时版本 bump + tag → GitHub Release 自动；crates.io publish 人工执行（可先跑 `:tutor` 自验）。
 2. **人工验证方式（REL-2）**：`:tutor` 自行验证（M42 落地后可用）；crates.io publish 仅人工发起。fuzz 24h 本地长跑（M40-2 deferred）需 rustup + nightly——执行后回填 NOTES。
 
@@ -25,6 +26,7 @@
 
 - M40 + 1.0.0 发布（2026-11-22）：M40-7 收官——发布修红三层：① aarch64 `c_char` E0308（privilege.rs mkfifo FFI `*const i8` 硬编码，aarch64 上 c_char=u8；匿名 API 日志通道全失效后本地 apt+dpkg 装交叉工具链完整复现，f955c67 修复）；② smoke 步骤对交叉产物不可执行（exit 2）→ qemu 冒烟在 runner 不稳（apt exit 100）→ 确定性 ELF 断言（ab102ec）；③ annotate_errors.sh 注解精确化（行首 error 锚定 + 仅失败发射）——tag 第 5 次重指向后 run 44984795450 全绿，GitHub Release 四归档 + SHA256SUMS；**crates.io publish 本机凭据执行成功**（用户 2026-11-22 在 Linux 机配置 `~/.cargo/credentials.toml`；`cargo package --locked` 干跑核验 73 文件 2.3MiB 后 `cargo publish --locked`，API 验证 newest/max=1.0.0）——**1.0.0 双渠道闭环，批次清单全清零**。宿主门禁 490 单测 + 12 集成 + aarch64 交叉构建 EXIT=0 全绿。
 - M42 :tutor 导师模式（2026-11-22）：4/4 完成——src/tutor.rs（TutorModule/Item + assets/tutor 三模块 23 项 include_str + 进度持久化/错题本/review_order）+ InputMode::TutorList/TutorSession + 底部 Panel（左 prompt/expected 右进度键提示，复习态提示行，done 结算 Summary）+ `:tutor`/`:tutor <id>`/`:tutor reset <id>` 分派 + 四视图白名单；496 单测（m42_1×2 + m42_2 + tutor 单测×4）+ 12 集成；GUIDE/help/README/CHANGELOG 同步。
+- M43 tutor 全功能覆盖（2026-11-22/23）：6/6 完成——M43-1 透明放行（TutorSession 迁 state.tutor 覆盖层、Ctrl+Y/N/Q 前置拦截、Esc 放行保清搜索语义、作答即时落盘、列表 List 滚动）+ M43-2 requires 字段（7 种 token，Panel 🔧 提示行）+ M43-3/4/5 内容三批（13 模块 100 项：core_nav 8/file_ops 9/search_frecency 7/search_filter 7/visual_tag 7/marks_frecency 8/tabs_history 8/panes_sort 8/archive_ops 5/maintenance 9/command_line 9/clipboard_git 5/remote_sftp 5/tutor_meta 5——含 core_nav 补 Space）+ M43-6 文档同步（README/help/GUIDE/CHANGELOG）与维护规则（SPEC M43-6 MUST）；499 单测（m43_1×2/m43_2）+ 12 集成。
 - M43 登记（2026-11-22）：用户裁决——问题 5 全量 85 项/8 自评无异议/其余采纳建议（放行重构 Ctrl+Y/N·requires 字段·sandbox 引导·危险命令了解即可·M43 编号·维护规则入 SPEC）。批次 6 任务，见 SPEC M43 节。
 - REL-2 门禁简化 + M42 登记（2026-11-22）：用户裁决撤销清单门——RELEASE_CHECKLIST.md 删除，SPEC REL/AGENTS §3·§10/PLAN §4/ACCEPTANCE §16 stub 改写为"crates.io publish 仅人工发起 + `:tutor` 自验"；M42 :tutor 导师模式登记（4 任务，SPEC M42 节/PLAN 批次表/ACCEPTANCE §42，目标 1.1.0 人工发起）。WHY 见 NOTES 同日条目。
 - REL-1 发布流水线解耦 + 人工验证清单（2026-11-22）：GitHub Release 自动 / crates.io publish 人工验证门（AGENTS §3 修订 + SPEC REL 节 + PLAN §4 新规则）；`docs/RELEASE_CHECKLIST.md` 1.0.0 全量清单（11 组 ~68 项，按代码事实核验命令语法）；ACCEPTANCE §16（v0.6.0）/§35-A（0.11.0）收编为历史入口。WHY 见 NOTES 同日条目。

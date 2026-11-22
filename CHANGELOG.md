@@ -11,6 +11,12 @@
 - 进度持久化 `tutor_progress.toml`（数据目录，缺失/损坏静默降级）；错题本未掌握项下次进入优先复习；`:tutor reset <模块>` 清空。
 - 发布流程解耦（REL）：GitHub Release 自动发布；crates.io publish 仅由人工发起（人工验证可借 `:tutor`）。
 
+**导师模式全量覆盖与放行重构（M43）**
+- 透明放行重构：Tutor 会话迁为覆盖层状态（不占输入模式，命令/帮助/确认切换不丢进度）；练习键照常可用，标记键 **Ctrl+Y 掌握 / Ctrl+N 未掌握 / Ctrl+Q 退出**；作答即时落盘。
+- 模块扩至 **13 个 100 项**，覆盖全部默认键位与 `:` 命令（新增 search_filter/visual_tag/marks_frecency/tabs_history/panes_sort/archive_ops/maintenance/command_line/clipboard_git/remote_sftp/tutor_meta）。
+- 条目 `requires` 环境依赖标注（editor/sudo/sftp/git/osc52/graphic/tmux），无环境可跳过；危险命令「了解即可」标注；运维模块含 sandbox 引导。
+- 模块列表滚动视口；`:tutor reset <模块>` 重置进度。
+
 ## [1.0.0] — 2026-11-21
 
 1.0 稳定化统一发布：M35–M41 各批次并入（发布节奏按用户决策，中间版本不单独发版）。自 0.8.0 以来的全部用户可见变化如下（分批次小节）。
