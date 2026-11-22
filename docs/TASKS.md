@@ -521,7 +521,7 @@
 > （内容三批）→ 6（文档同步+维护规则）。
 
 - [x] M43-1 TutorSession 迁 state.tutor 覆盖层 + 透明放行（Ctrl+Y/N 标记、Ctrl+Q 退出）+ 模块列表滚动（见 SPEC M43-1；2026-11-22 完成：InputMode::TutorSession 退役→AppState.tutor 覆盖层状态（任意模式切换不丢会话）+ tutor_hotkey 前置拦截（Ctrl+Y/N/Q；Esc 放行保清搜索语义）+ 作答即时落盘（幂等合并，中途退出 app 不丢）+ advance/skipped_count 会话方法 + 列表 List 组件视口滚动 + m43_1 双测试（放行/热键/滚动渲染），498 单测 + 12 集成）
-- [ ] M43-2 TutorItem requires 字段（editor|sudo|sftp|git|osc52|graphic|tmux）+ Panel 环境提示（见 SPEC M43-2）
+- [x] M43-2 TutorItem requires 字段（editor|sudo|sftp|git|osc52|graphic|tmux）+ Panel 环境提示（见 SPEC M43-2；2026-11-22 完成：requires Option<String>（缺省 None、多 token 逗号分隔保留原文）+ Panel 左列 🔧 提示行 + m43_2 解析测试（缺省/多 token/非法 token 固化），499 单测 + 12 集成）
 - [ ] M43-3 内容批 1：search_filter/visual_tag/marks_frecency/tabs_history（见 SPEC M43-3）
 - [ ] M43-4 内容批 2：panes_sort/archive_ops/maintenance（见 SPEC M43-4）
 - [ ] M43-5 内容批 3：command_line/clipboard_git/remote_sftp/tutor_meta + core_nav 补 Space（见 SPEC M43-5）

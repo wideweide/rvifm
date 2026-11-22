@@ -20,6 +20,10 @@ pub struct TutorItem {
     pub prompt: String,
     /// 预期结果（左侧面板说明行）。
     pub expected: String,
+    /// M43-2：环境依赖标注（逗号分隔 token：editor|sudo|sftp|git|osc52|
+    /// graphic|tmux）——Panel 显示提示行，无此环境可 Ctrl+N 跳过；
+    /// 不做环境探测、不过滤条目（SPEC M43 SIMPLIFIED）。
+    pub requires: Option<String>,
 }
 
 /// 一个导师模块（如 core_nav）。
@@ -61,12 +65,14 @@ impl<'de> Deserialize<'de> for TutorItem {
             id: String,
             prompt: String,
             expected: String,
+            requires: Option<String>,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(TutorItem {
             id: raw.id,
             prompt: raw.prompt,
             expected: raw.expected,
+            requires: raw.requires,
         })
     }
 }
@@ -290,8 +296,36 @@ mod tests {
             for item in &m.items {
                 assert!(!item.prompt.is_empty());
                 assert!(!item.expected.is_empty());
+                if let Some(r) = &item.requires {
+                    for token in r.split(',') {
+                        assert!(
+                            matches!(
+                                token,
+                                "editor" | "sudo" | "sftp" | "git" | "osc52" | "graphic" | "tmux"
+                            ),
+                            "模块 {} 条目 {} 非法 requires token: {token}",
+                            m.id,
+                            item.id
+                        );
+                    }
+                }
             }
         }
+    }
+
+    #[test]
+    fn m43_2_requires_field_parsing() {
+        // M43-2：requires 可选（缺省 None）、多 token 逗号分隔。
+        let text = "[module]\nid = \"x\"\nname = \"X\"\n\n[[items]]\nid = \"a\"\n\
+prompt = \"p\"\nexpected = \"e\"\n[[items]]\nid = \"b\"\nprompt = \"p\"\n\
+expected = \"e\"\nrequires = \"editor,sudo\"\n";
+        let m = parse_module(text).unwrap();
+        assert_eq!(m.items[0].requires, None, "缺省无依赖");
+        assert_eq!(
+            m.items[1].requires.as_deref(),
+            Some("editor,sudo"),
+            "多 token 保留原文（展示层拆分）"
+        );
     }
 
     #[test]

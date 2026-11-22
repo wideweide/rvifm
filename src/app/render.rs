@@ -1335,6 +1335,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             if *review {
                 left_lines.push(Line::from("🔁 复习模式：未掌握项已排前"));
             }
+            if let Some(req) = &item.requires {
+                left_lines.push(Line::from(format!(
+                    "🔧 环境依赖（{req}）——无此环境可 Ctrl+N 跳过"
+                )));
+            }
             let filled = mastered * 8 / total.max(1);
             let right_lines = vec![
                 Line::from(format!(
