@@ -41,3 +41,8 @@ expected = "光标移到末行。"
 id = "focus_switch"
 prompt = "按 `Tab` 切换左右 pane 焦点，再按一次切回。"
 expected = "焦点换到另一侧（当前行高亮样式随焦点变化），预览跟随焦点 pane。"
+
+[[items]]
+id = "focus_switch_space"
+prompt = "按 `Space`（空格）切换活动窗格。"
+expected = "与 Tab 等效的窗格切换（vifm 语义，两键并存）。"

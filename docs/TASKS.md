@@ -524,7 +524,7 @@
 - [x] M43-2 TutorItem requires 字段（editor|sudo|sftp|git|osc52|graphic|tmux）+ Panel 环境提示（见 SPEC M43-2；2026-11-22 完成：requires Option<String>（缺省 None、多 token 逗号分隔保留原文）+ Panel 左列 🔧 提示行 + m43_2 解析测试（缺省/多 token/非法 token 固化），499 单测 + 12 集成）
 - [x] M43-3 内容批 1：search_filter/visual_tag/marks_frecency/tabs_history（见 SPEC M43-3；2026-11-22 完成：7+7+8+8=30 项——/·n·N·焦点感知·=·f/F·;/,、v/V/可视 d·y·t·:select·:tag copy、o/:j/:J/:recent/选择器 d·u/m·'/ :bmark 族/:cmdmark/:keyword、:tabnew/close/move/name/gt·gT·2gt/独立状态/:hist·:history/跨 tab u——逐条对照既有验收语义；499 单测 + 12 集成）
 - [x] M43-4 内容批 2：panes_sort/archive_ops/maintenance（见 SPEC M43-4；2026-11-22 完成：8+5+9=22 项——w 查看器·查看器搜索·S/:sort 多字段·:compare byname/bycontents·dp/do·:tree、归档进入·:archive 校验形态·7z/外部 CLI·:extract、sandbox 引导首条目·:chmod·:du·:dup·:checksum·:sync dry-run·:trash 了解即可·:jobs·:queue（requires=sftp）——参数形态对照 exec.rs（:extract [目录]/:sync l2r·r2l·--apply·--delete/:checksum 选中项）；499 单测 + 12 集成）
-- [ ] M43-5 内容批 3：command_line/clipboard_git/remote_sftp/tutor_meta + core_nav 补 Space（见 SPEC M43-5）
+- [x] M43-5 内容批 3：command_line/clipboard_git/remote_sftp/tutor_meta + core_nav 补 Space（见 SPEC M43-5；2026-11-23 完成：9+5+5+5=24 项 + core_nav Space 1 项——命令行历史/补全/:cd/:mk/:copy·move/Ctrl-G·:file/:theme/:help、yn/yf/yc（yc requires=osc52）/git 列/:gi（requires=git）、:remote 列表/进入/远端写/跨 VFS/.part（requires=sftp）、Ctrl 标记/放行/退出/复习/reset meta 模块——参数形态对照 exec.rs；499 单测 + 12 集成）
 - [ ] M43-6 文档同步 + tutor 条目维护规则固化（见 SPEC M43-6）
 
 ## REL — 发布流水线解耦与人工验证（2026-11-22 增补；用户蒸馏指令，见 SPEC REL 节）

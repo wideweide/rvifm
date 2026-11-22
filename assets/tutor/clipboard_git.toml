@@ -1,0 +1,36 @@
+# M43-5：导师模式内容批 3——剪贴板与 git 模块。
+# 语义对照：y 序列（M23-10 OSC52 优先）、gi 键/:gitui（M25-6 探测
+# gitui→ziggity→lazygit）、git 状态列/状态栏（M25-5 异步缓存）。
+
+[module]
+id = "clipboard_git"
+name = "剪贴板与 git (Clipboard & Git)"
+description = "复制序列与 git 集成（环境依赖项可跳过）"
+
+[[items]]
+id = "yank_name"
+prompt = "光标停在文件上按 `yn`。"
+expected = "文件名复制到系统剪贴板/OSC52（状态栏提示；终端需支持剪贴板同步）。"
+
+[[items]]
+id = "yank_path"
+prompt = "按 `yf`。"
+expected = "全路径（正斜杠规范化）复制到剪贴板。"
+
+[[items]]
+id = "yank_content"
+prompt = "光标停在文本文件上按 `yc`。"
+requires = "osc52"
+expected = "文件内容复制到剪贴板（OSC52 转义序列；终端不支持时提示降级）。"
+
+[[items]]
+id = "git_column"
+prompt = "cd 到任一 git 仓库内启动 rvifm。"
+requires = "git"
+expected = "文件列表出现异步 git 状态列（M/A/?? 着色），状态栏显示分支与 diff 摘要。"
+
+[[items]]
+id = "git_ui"
+prompt = "在仓库内按 `gi`（或输入 `:gitui`）。"
+requires = "git"
+expected = "探测 gitui→ziggity→lazygit 顺序挂起 TUI 启动外部 git TUI；均未安装时给出可读提示。"

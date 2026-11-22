@@ -1,0 +1,39 @@
+# M43-5：导师模式内容批 3——远端 SFTP 模块（环境依赖）。
+# 语义对照：:remote（M19-4 remotes.toml + ssh config）、远端写（M20-1）、
+# 跨 VFS（M20-3）、自动重连（M32-1）、.part 续传（M32-2/M36-6）、指纹
+# ask 缺省（M39-4）。
+
+[module]
+id = "remote_sftp"
+name = "远端 SFTP (Remote)"
+description = "SFTP 浏览、写操作与传输（需可达 SSH 主机）"
+
+[[items]]
+id = "remote_list"
+prompt = "输入 `:remote` 回车。"
+requires = "sftp"
+expected = "列出全部已配置远端（~/.ssh/config Host 别名 + remotes.toml 覆盖：protocol/host/port/user/key/root）。"
+
+[[items]]
+id = "remote_enter"
+prompt = "输入 `:remote <名>` 进入远端视图。"
+requires = "sftp"
+expected = "面包屑显示 `名:/路径`；浏览/排序/搜索/预览复用本地语义；首连指纹 ask 确认（y 接受写入 known_hosts）。"
+
+[[items]]
+id = "remote_write"
+prompt = "在远端视图对文件 `dd`/`yy`+`p`，或 `:mkdir d`、`:mk d`。"
+requires = "sftp"
+expected = "远端写操作与本地同键；删除走远端可恢复路径或显式提示；`u` 经撤销栈可逆。"
+
+[[items]]
+id = "cross_vfs_copy"
+prompt = "本地 `yy` 复制文件，进入远端视图按 `p`（反向亦可）。"
+requires = "sftp"
+expected = "跨 VFS 复制带进度提示（大文件经 :jobs/:queue 可见）；失败清理半成品。"
+
+[[items]]
+id = "remote_resume"
+prompt = "传输中途断网/中断后再粘贴同文件。"
+requires = "sftp"
+expected = "连接类错误自动重连一次；.part 现场保留并按偏移续传；取消则清理。"

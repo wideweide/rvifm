@@ -1,0 +1,55 @@
+# M43-5：导师模式内容批 3——命令行模块。
+# 语义对照：: 模式 ↑↓ 历史（M24-6/M30-2 跨会话 frecency）、Tab 补全
+# （M24-7/M30-3 加权）、:cd 相对锚定（M22-1）、:mk 创建并进入（M21-E5）、
+# :mkdir/:touch（M2-5）、:copy/:move（M2-3/4）、:file（FEAT-3）、Ctrl-G
+# （M13-5）、:theme（AUDIT-13）、:help（FEAT-4）、:q（退出）。
+
+[module]
+id = "command_line"
+name = "命令行 (Command-line)"
+description = "掌握 : 命令模式、历史、补全与常用命令"
+
+[[items]]
+id = "cmd_enter_quit"
+prompt = "按 `:` 进入命令模式，输入 `q` 回车前的想法先按 Esc。"
+expected = "Esc 取消命令行回到 Normal；`:` 后空命令回车无副作用。"
+
+[[items]]
+id = "cmd_history"
+prompt = "执行过几条命令后，按 `:` 再按 `↑`/`↓`。"
+expected = "浏览历史命令（跨会话 frecency 排序，常用优先）；回车重新执行。"
+
+[[items]]
+id = "cmd_complete"
+prompt = "按 `:` 输入 `:mk` 开头按 Tab。"
+expected = "按当前目录条目补全命令参数（前缀循环；frecency 分数优先排序）。"
+
+[[items]]
+id = "cmd_cd"
+prompt = "输入 `:cd sub`（子目录名）回车。"
+expected = "相对路径锚定当前 tab 目录；远端视图同样支持；失败不改位置。"
+
+[[items]]
+id = "cmd_mkdir_touch"
+prompt = "输入 `:mkdir d1` 回车，再输入 `:touch f1` 回车。"
+expected = "目录/文件创建成功且各可 `u` 撤销；`:mk d2` 创建并直接进入。"
+
+[[items]]
+id = "cmd_copy_move"
+prompt = "输入 `:copy f1 sub`（目标目录）回车，再用 `:move f1 sub` 移动回去。"
+expected = "单文件复制/移动到目标（tags 集合优先于光标条目）；均可撤销。"
+
+[[items]]
+id = "file_info"
+prompt = "光标停在文件上按 Ctrl-G（或输入 `:file`）。"
+expected = "详情覆盖层：名称/类型/大小/修改时间/权限/路径；任意键关闭。"
+
+[[items]]
+id = "cmd_theme"
+prompt = "输入 `:theme` 回车查看列表，再 `:theme snowwhite` 切换。"
+expected = "列出可用主题（内置+捆绑+用户）；切换即时生效且图标明暗联动；:theme gruvbox-dark 回默认。"
+
+[[items]]
+id = "cmd_help"
+prompt = "输入 `:help` 打开全屏帮助。"
+expected = "j/k 滚动、`/` 搜索帮助文本（n/N 跳转）、q/Esc 关闭恢复原状态。"

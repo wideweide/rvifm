@@ -1,0 +1,33 @@
+# M43-5：导师模式内容批 3——tutor 自身（meta 模块）。
+# 语义对照：:tutor（M42-1）、进度持久化/错题本（M42-2）、透明放行与
+# Ctrl 标记（M43-1）、requires 提示（M43-2）、reset（M42-2）。
+
+[module]
+id = "tutor_meta"
+name = "导师模式用法 (Tutor Itself)"
+description = "本模式的按键、错题本与重置"
+
+[[items]]
+id = "tutor_keys"
+prompt = "练习本条目：按 `Ctrl+Y` 标记掌握，再按 `Ctrl+N` 撤改当前条目。"
+expected = "Ctrl+Y 掌握、Ctrl+N 未掌握记错题本——面板自动推进；其余按键照常操作文件（练习键不被拦截）。"
+
+[[items]]
+id = "tutor_passthrough"
+prompt = "在面板显示时按 `j` 移动光标，或按 `:` 执行一条命令。"
+expected = "练习照常执行、面板保持显示；进入命令/帮助等模式不会丢失进度。"
+
+[[items]]
+id = "tutor_exit"
+prompt = "按 `Ctrl+Q` 退出导师面板。"
+expected = "面板关闭，作答已即时保存（每步落盘，中途退出/退出应用均不丢）。"
+
+[[items]]
+id = "tutor_review"
+prompt = "下次进入同一模块（含答错过的话）。"
+expected = "错题本 skipped 项自动排前（面板标题显示「复习」）；全对过的条目垫底。"
+
+[[items]]
+id = "tutor_reset"
+prompt = "输入 `:tutor reset core_nav` 清空该模块进度。"
+expected = "该模块错题本与掌握记录清空，下次进入从头开始；进度文件在数据目录 tutor_progress.toml（删文件等效重置）。"

@@ -114,6 +114,22 @@ const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
         "maintenance",
         include_str!("../assets/tutor/maintenance.toml"),
     ),
+    (
+        "command_line",
+        include_str!("../assets/tutor/command_line.toml"),
+    ),
+    (
+        "clipboard_git",
+        include_str!("../assets/tutor/clipboard_git.toml"),
+    ),
+    (
+        "remote_sftp",
+        include_str!("../assets/tutor/remote_sftp.toml"),
+    ),
+    (
+        "tutor_meta",
+        include_str!("../assets/tutor/tutor_meta.toml"),
+    ),
 ];
 
 /// 解析模块 TOML 为 [`TutorModule`]。
