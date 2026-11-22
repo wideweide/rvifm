@@ -1076,3 +1076,10 @@ rvifm record  → 静默记录访问
 - **根因（E0308，非 aws-lc-sys）**：`src/privilege.rs:46` mkfifo FFI 声明硬编码 `*const i8`——**aarch64 linux 上 `c_char = u8`**（x86_64 = i8），`CString::as_ptr()` 返回 `*const c_char` 不匹配。M12-2 起即潜伏，三主机腿（x86_64 win/mac/musl/gnu）全绿、唯独 aarch64 编译失败；CI 死时 ~221-297s ≈ 全量冷构建 2/3 处（rvifm 本体最后编译，时间线吻合）。修复一行：`*const core::ffi::c_char`；全库 grep 确认无同类硬编码。
 - **环境敏感测试（顺带）**：`m394_ask_gates_first_use_then_accepts_on_confirm` 在本机失败——宿主 `~/.ssh/known_hosts` 含 127.0.0.1 哈希条目（`|1|`，grep 明文匹配不到），指纹门对已知主机放行 → unwrap_err panic；CI runner 干净环境绿。修复：测试前置 `first_use_gate_precondition()`（known_hosts 缺失/空 → 跑；明文 127.0.0.1/localhost 或任何 `|1|` 哈希条目 → skip），CI 覆盖不缩水。
 - **本地验证全绿**：aarch64 `cargo build --release --locked`（EXIT=0）+ 宿主 fmt/clippy/build + 490 单测 + 12 集成 + 冒烟；修复提交 f955c67，tag v1.0.0 第三次重指向（run 44982915466）。
+
+### 2026-11-22 — M40-7 收官（发布修红第二/三层；1.0.0 GitHub Release 全绿）
+
+- **第二层（smoke 不可执行）**：c_char 修复后 tag run 44982915466 中 build 首次绿，但 smoke `cargo run --target aarch64` 在 x86_64 runner 必然不可执行（exit 2）——此前两轮被 build 红遮住。首修走 qemu-user-static -L sysroot（本地验证 rvifm/rv 双二进制在 qemu 下正确输出 1.0.0），但 runner 上 `apt install qemu-user-static` 失败（exit 100 无诊断输出——-qq 静音 + binfmt 注册/apt 镜像两类嫌疑，不可自动化诊断）→ **改为确定性 ELF 断言**（test -x + file 架构匹配 "ARM aarch64" + readelf NEEDED libc.so.6，零新增依赖），执行冒烟由 musl/gnu 两腿覆盖，aarch64 真机 `--version` 人工验证单列（STATE 下一步）。
+- **注解仅失败发射**：annotate_errors.sh 首次实战在绿腿也会发射"no ^error lines"日志尾部误报注解（run 44982915466 aarch64 腿实测）——三处调用点改为 `if [ $rc -ne 0 ]` 门控。
+- **取证方法论沉淀**：匿名 GitHub API 排查链已到顶（annotations→job logs 403→网页分步日志 404 需登录）；本地复现 = 唯一可靠取证路径，环境要素 = rustup target + apt download/dpkg -x 交叉工具链（libgcc-s1/libc6-arm64-cross 运行时包 + alternatives 符号链接手动补建 + --sysroot 重映射解包路径）+ `CARGO_TARGET_*_LINKER` 环境变量等价注入。
+- **收官**：tag 第 5 次重指向 ab102ec → run 44984795450 **全绿**（test×3 + fuzz + supply-chain + release 四腿），GitHub Release v1.0.0 四归档 + SHA256SUMS.txt 齐全；crates.io publish 单列（凭据在 Windows 机，执行后 API 验证）。
