@@ -228,14 +228,18 @@ jobs:
           exit $rc
       - name: smoke --version
         shell: bash
-        # aarch64 交叉产物在 x86_64 runner 不可执行（M40-7 run 44982915466
-        # 实测 exit 2）——qemu-user + glibc sysroot 冒烟，保住 AGENTS §6
-        # "Linux 产物 --version 通过"门禁语义；其余 target 宿主可执行照旧。
+        # aarch64 交叉产物在 x86_64 runner 不可执行；qemu 冒烟 CI 实测不稳
+        # （apt 安装 exit 100，runs 44982915466/44983912760）——改为确定性
+        # ELF 断言（架构 + 动态链接完整性，零新增依赖）；--version 执行冒烟
+        # 由 musl/gnu 两腿覆盖，aarch64 真机执行随 M11-6 人工清单模式
+        # （NOTES 2026-11-22）。
         run: |
           if [[ "${{ matrix.target }}" == aarch64-unknown-linux-gnu ]]; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static
-            qemu-aarch64-static -L /usr/aarch64-linux-gnu \
-              ./target/${{ matrix.target }}/release/rvifm --version
+            bin=./target/aarch64-unknown-linux-gnu/release/rvifm
+            test -x "$bin"
+            file "$bin" | grep -q "ARM aarch64"
+            readelf -d "$bin" | grep -q "NEEDED.*libc.so.6"
+            echo "aarch64 ELF 架构与动态链接完整性断言通过"
           else
             cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
           fi
