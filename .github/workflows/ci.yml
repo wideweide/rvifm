@@ -45,7 +45,9 @@ jobs:
           set +e
           cargo build --locked 2>&1 | tee build-output.txt
           rc=${PIPESTATUS[0]}
-          bash .github/workflows/annotate_errors.sh build-output.txt
+          if [ $rc -ne 0 ]; then
+            bash .github/workflows/annotate_errors.sh build-output.txt
+          fi
           exit $rc
       # M11-15：pdf-visual feature 门控的 exprim 编译验证（双平台）。
       - name: check pdf-visual feature
@@ -115,7 +117,9 @@ jobs:
           set +e
           cargo +nightly fuzz build -O --debug-assertions 2>&1 | tee fuzz-build.txt
           rc=${PIPESTATUS[0]}
-          bash .github/workflows/annotate_errors.sh fuzz-build.txt
+          if [ $rc -ne 0 ]; then
+            bash .github/workflows/annotate_errors.sh fuzz-build.txt
+          fi
           exit $rc
       - name: fuzz archive parsers (3 x 120s)
         run: |
@@ -216,11 +220,25 @@ jobs:
           cargo build --release --locked --target ${{ matrix.target }} 2>&1 | tee release-build.txt
           rc=${PIPESTATUS[0]}
           # M40-7 教训：`grep -E "error" -A4` 被 crate 名误报挤爆注解上限，
-          # 真实 error 行丢失——精确化 helper（行首 error 锚定，见脚本头注释）。
-          bash .github/workflows/annotate_errors.sh release-build.txt
+          # 真实 error 行丢失——精确化 helper（行首 error 锚定，见脚本头注释）；
+          # 仅失败时注解（成功腿不发射日志尾部误报）。
+          if [ $rc -ne 0 ]; then
+            bash .github/workflows/annotate_errors.sh release-build.txt
+          fi
           exit $rc
       - name: smoke --version
-        run: cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
+        shell: bash
+        # aarch64 交叉产物在 x86_64 runner 不可执行（M40-7 run 44982915466
+        # 实测 exit 2）——qemu-user + glibc sysroot 冒烟，保住 AGENTS §6
+        # "Linux 产物 --version 通过"门禁语义；其余 target 宿主可执行照旧。
+        run: |
+          if [[ "${{ matrix.target }}" == aarch64-unknown-linux-gnu ]]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static
+            qemu-aarch64-static -L /usr/aarch64-linux-gnu \
+              ./target/${{ matrix.target }}/release/rvifm --version
+          else
+            cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
+          fi
       - name: archive
         shell: bash
         run: |
