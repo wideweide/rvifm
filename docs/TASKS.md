@@ -513,6 +513,20 @@
 - [x] M42-3 首批内容 3 模块（core_nav/file_ops/search_frecency；见 SPEC M42-3；2026-11-22 完成：core_nav 7 项（M42-1 随框架落成）+ file_ops 8 项（yy/p·P 独立动作语义/dd 确认+暂存/u 逆序/:rename 单项直改与无参批量预览）+ search_frecency 7 项（/ incsearch·n·N、= 过滤、o 选择器、:recent 近期、选择器只读）——条目语义逐项对照 exec.rs/tab.rs 现行为；builtin_modules_parse_and_unique 测试固化）
 - [x] M42-4 文档收尾（GUIDE/README 指引 + ACCEPTANCE §42 + 批次同步；见 SPEC M42-4；2026-11-22 完成：GUIDE §2 导师模式推荐、help.txt :tutor 行、README 核心特性+快速开始、CHANGELOG 未发布段；**M42 批次 4/4 关闭**）
 
+## M43 — tutor 全功能覆盖与放行重构（2026-11-22 增补；用户裁决·已确认，见 SPEC M43 节）
+
+> 来源：M42 首批（23 项）扩为全功能键位/命令手册（13 模块 ~85 项，逐键粒度
+> ——用户裁决问题 5 全量）；键位交互重构为透明放行（边学边练，Ctrl+Y/N 标记
+> ——用户裁决问题 1 采纳建议）。顺序：1（放行重构）→ 2（数据模型）→ 3/4/5
+> （内容三批）→ 6（文档同步+维护规则）。
+
+- [ ] M43-1 TutorSession 迁 state.tutor 覆盖层 + 透明放行（Ctrl+Y/N 标记、Ctrl+Q 退出）+ 模块列表滚动（见 SPEC M43-1）
+- [ ] M43-2 TutorItem requires 字段（editor|sudo|sftp|git|osc52|graphic|tmux）+ Panel 环境提示（见 SPEC M43-2）
+- [ ] M43-3 内容批 1：search_filter/visual_tag/marks_frecency/tabs_history（见 SPEC M43-3）
+- [ ] M43-4 内容批 2：panes_sort/archive_ops/maintenance（见 SPEC M43-4）
+- [ ] M43-5 内容批 3：command_line/clipboard_git/remote_sftp/tutor_meta + core_nav 补 Space（见 SPEC M43-5）
+- [ ] M43-6 文档同步 + tutor 条目维护规则固化（见 SPEC M43-6）
+
 ## REL — 发布流水线解耦与人工验证（2026-11-22 增补；用户蒸馏指令，见 SPEC REL 节）
 
 > 来源：用户讨论稿蒸馏（GitHub 自动 / crates.io 人工发起解耦）。**同日两度

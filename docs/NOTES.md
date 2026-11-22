@@ -1134,3 +1134,19 @@ rvifm record  → 静默记录访问
   进 SPEC。
 - **编号**：M42 空闲（M41 为最后已用里程碑号）；REL-2 编号未占用。版本目标
   1.1.0（功能特性，semver minor；发布走 REL-1 人工发起）。
+
+### 2026-11-22 — M43 裁决记录（tutor 全功能覆盖与放行重构）
+
+- **用户裁决（对评估报告 8 问）**：问题 5 = 全量（13 模块 ~85 项，逐键粒度）；
+  问题 8 = 自评语义无异议；其余采纳建议——问题 1 透明放行（Ctrl+Y/N 标记，
+  回归原始草案设计）、问题 2 requires 字段、问题 3 sandbox 引导（轻量）、
+  问题 4 危险命令「了解即可」、问题 6 M43 新批次、问题 7 维护规则入 SPEC。
+- **WHY 放行重构改架构（state.tutor 而非 InputMode）**：M42-1 将会话放在
+  InputMode::TutorSession——放行后用户执行 `:help`/确认/AskPass 等会切换
+  InputMode，会话状态即丢。改为 AppState.tutor 覆盖层状态：tutor 不再是输入
+  模式，仅是"Panel 是否显示"的标志——按键照常走 Normal 及各模式分支，任意
+  模式迁移不丢会话；标记键（Ctrl+Y/N/Q）在事件分发最前置拦截。Ctrl+Q 退出
+  （Esc 放行保留清搜索/过滤语义——检索模块条目需要练 Esc）。
+- **WHY Ctrl+Q 而非 Esc 退出**：放行后 Esc 在 Normal 有既有语义（M21-F3 清
+  搜索），检索类条目本身要练 Esc；Ctrl 组合经 crossterm raw mode 全部可捕获
+  （IXON 关闭），Ctrl+Q 无冲突（Ctrl+M==Enter、Ctrl+I==Tab 除外——均不选）。

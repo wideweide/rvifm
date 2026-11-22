@@ -1275,6 +1275,53 @@ append_rules = [
 - 外部报告/导出文件；学习/测试双模式切换；Anki 式间隔重复；多语言内容；
   Tutor 键位用户映射；Agent 自动读取验证结果（结果供人看，不进自动化）。
 
+## M43 — tutor 全功能覆盖与放行重构（2026-11-22 增补；用户裁决·已确认，见 NOTES 同日条目）
+
+> 目标：tutor 扩为全功能键位/命令手册（13 模块 ~85 项，逐键粒度——用户裁决
+> 问题 5 全量），并重构键位交互为透明放行（边学边练）。M42 首批 23 项保留
+> 并入。顺序：1（放行重构）→ 2（数据模型）→ 3/4/5（内容三批）→ 6（文档同步
+> + 维护规则）。
+
+**MUST**
+- **M43-1 透明放行重构**：TutorSession 从 InputMode 迁移为 **AppState.tutor
+  覆盖层状态**（不再占用 InputMode——命令/帮助/确认等任意模式切换不丢会话）；
+  会话激活时按键照常进入 Normal 处理器（j/dd/:命令等可实际执行，Panel 保持
+  显示）；标记键前置拦截：**Ctrl+Y 掌握 / Ctrl+N 未掌握（错误题本）/
+  Ctrl+Q 退出并保存**（Ctrl 组合当前全部空闲，已核实；Esc 放行保留清搜索/
+  过滤语义）；结算态 Summary 持续显示至 Ctrl+Q。模块列表覆盖层改 List 组件
+  渲染（13 模块超屏时视口跟随）。
+- **M43-2 数据模型扩展**：TutorItem 增可选 `requires` 字段（逗号分隔 token：
+  editor|sudo|sftp|git|osc52|graphic|tmux）；条目含 requires 时 Panel 左列
+  显示「环境依赖（…），无此环境可 Ctrl+N 跳过」提示行；不做环境探测、不过滤
+  条目。
+- **M43-3 内容批 1**：search_filter（`/`·n·N·`=`·f/F·;/,）+ visual_tag
+  （v/V/t/:select/:unselect/:tag copy·move·delete）+ marks_frecency
+  （o/:j/:J/:recent/m·'/ :bmark 族/:keyword/:cmdmark·'展开）+ tabs_history
+  （:tabnew/:tabclose/:tabmove/gt·gT·Ngt/:tabname/:histprev·next/:history/
+  跨 tab u）。
+- **M43-4 内容批 2**：panes_sort（w/:view/:sort/S/:compare/dp/do/:tree/
+  [ui] layout）+ archive_ops（归档进入/:archive/:extract/校验文件）+
+  maintenance（:chmod/:du/:dup/:checksum/:sync/:trash/:jobs/:queue）。
+- **M43-5 内容批 3**：command_line（: 模式 ↑↓ 历史/Tab 补全/'展开/:cd/:mk/
+  :mkdir/:touch/:copy/:move/:file/Ctrl-G/:theme/:help/:q）+ clipboard_git
+  （yn/yf/yc/:gi/:gitui/git 列）+ remote_sftp（:remote/:mk/远端写/.part）+
+  tutor_meta（:tutor reset/错题本用法）+ core_nav 补 Space。
+- **M43-6 文档同步与维护规则**：GUIDE/help/README/CHANGELOG 更新；**tutor
+  条目维护规则固化**（此后批次新增键位/命令时同步补 tutor 条目——批次验收
+  条约束，不进 harness_check 自动检查）；批次文档同步。
+
+**SIMPLIFIED**
+- 危险/不可逆命令条目（:frecency purge confirm/:trash purge/:sync --apply/
+  DD 等）prompt 标注「了解即可」，不要求真实执行；file_ops/maintenance 模块
+  首条目引导先建 sandbox 目录（`:mkdir tutor-sandbox` + `:cd`）；GUIDE 注明
+  建议在临时目录跑 tutor（写路径 sandbox 重定向不做）。
+- 标记键硬编码 Ctrl 组合（同 M42，不进 ModeLayers）；requires 不做环境探测；
+  条目不过滤；自评为用户自证（非自动化验收，ACCEPTANCE 不受影响）。
+
+**OUT_OF_SCOPE**
+- 写路径 sandbox 重定向；环境自动探测；逐条自动判定对错；学习/测试双模式；
+  间隔重复调度；报告文件。
+
 ## REL — 发布流水线解耦（2026-11-22 增补；同日用户裁决修订：门禁简化为人工发起，见 NOTES）
 
 > 背景：GitHub Release（二进制归档）可逆可覆盖；crates.io 版本号发布后不可
