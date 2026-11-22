@@ -112,6 +112,50 @@ pub fn builtin_module_ids() -> Vec<String> {
     builtin_modules().into_iter().map(|m| m.id).collect()
 }
 
+// ── M43-1：导师会话（覆盖层状态）──────────────────────────────────────────
+
+/// 导师会话（M43-1：由 `AppState.tutor` 持有——覆盖层状态而非 InputMode，
+/// 命令/帮助/确认等任意模式切换不丢会话；练习键照常放行，标记键
+/// Ctrl+Y/N/Q 在事件分发前置拦截）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TutorSession {
+    pub module: TutorModule,
+    /// 当前条目下标（done 后 == items.len()）。
+    pub idx: usize,
+    /// 已作答条目（item_id, mastered）——advance 时即时落盘。
+    pub marks: Vec<(String, bool)>,
+    /// 结算态（末项作答后置位；Summary 持续显示至 Ctrl+Q）。
+    pub done: bool,
+    /// 复习模式（错题本 skipped 项排前）。
+    pub review: bool,
+}
+
+impl TutorSession {
+    /// Ctrl+Y/N：作答并推进；末项作答后进入结算态；done 后为 no-op。
+    pub fn advance(&mut self, mastered: bool) {
+        if self.done {
+            return;
+        }
+        if let Some(item) = self.module.items.get(self.idx) {
+            self.marks.push((item.id.clone(), mastered));
+        }
+        self.idx += 1;
+        if self.idx >= self.module.items.len() {
+            self.done = true;
+        }
+    }
+
+    /// 掌握计数（Panel 进度条与 Summary）。
+    pub fn mastered_count(&self) -> usize {
+        self.marks.iter().filter(|(_, ok)| *ok).count()
+    }
+
+    /// 未掌握计数。
+    pub fn skipped_count(&self) -> usize {
+        self.marks.len() - self.mastered_count()
+    }
+}
+
 // ── M42-2：进度持久化与错题本 ─────────────────────────────────────────────
 
 /// 单模块进度（错题本）。mastered/skipped 互斥：同一 item 只在其一。

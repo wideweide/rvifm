@@ -520,7 +520,7 @@
 > ——用户裁决问题 1 采纳建议）。顺序：1（放行重构）→ 2（数据模型）→ 3/4/5
 > （内容三批）→ 6（文档同步+维护规则）。
 
-- [ ] M43-1 TutorSession 迁 state.tutor 覆盖层 + 透明放行（Ctrl+Y/N 标记、Ctrl+Q 退出）+ 模块列表滚动（见 SPEC M43-1）
+- [x] M43-1 TutorSession 迁 state.tutor 覆盖层 + 透明放行（Ctrl+Y/N 标记、Ctrl+Q 退出）+ 模块列表滚动（见 SPEC M43-1；2026-11-22 完成：InputMode::TutorSession 退役→AppState.tutor 覆盖层状态（任意模式切换不丢会话）+ tutor_hotkey 前置拦截（Ctrl+Y/N/Q；Esc 放行保清搜索语义）+ 作答即时落盘（幂等合并，中途退出 app 不丢）+ advance/skipped_count 会话方法 + 列表 List 组件视口滚动 + m43_1 双测试（放行/热键/滚动渲染），498 单测 + 12 集成）
 - [ ] M43-2 TutorItem requires 字段（editor|sudo|sftp|git|osc52|graphic|tmux）+ Panel 环境提示（见 SPEC M43-2）
 - [ ] M43-3 内容批 1：search_filter/visual_tag/marks_frecency/tabs_history（见 SPEC M43-3）
 - [ ] M43-4 内容批 2：panes_sort/archive_ops/maintenance（见 SPEC M43-4）

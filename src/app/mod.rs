@@ -263,19 +263,6 @@ pub(crate) enum InputMode {
     /// 导师模式模块列表覆盖层（M42-1：`:tutor` 无参）：j/k 选择、Enter/l
     /// 进入、Esc/q 关闭。
     TutorList { cursor: usize },
-    /// 导师模式会话（M42-1：`:tutor <module_id>`）：底部 Panel 单步自验，
-    /// y=掌握 n=未掌握（错题本随 M42-2 持久化）、q/Esc 退出；`done` 为
-    /// 结算态（Panel 显示 Summary，任意键返回 Normal）。模块数据在进入
-    /// 时克隆持有（渲染每帧免重解析）。
-    TutorSession {
-        module: crate::tutor::TutorModule,
-        idx: usize,
-        /// 已作答条目（item_id, mastered）——会话关闭时合并落盘。
-        marks: Vec<(String, bool)>,
-        done: bool,
-        /// M42-2：复习模式（存在 skipped 记录，条目已重排错题优先）。
-        review: bool,
-    },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
         input: String,
@@ -443,42 +430,41 @@ pub(crate) fn tutor_list_key(
     }
 }
 
-/// M42-1：导师会话按键结果。
+/// M43-1：tutor 标记键前置拦截结果。
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum TutorSessionOutcome {
-    /// 未消费。
+pub(crate) enum TutorHotkey {
+    /// 非标记键（放行到模式分支——透明放行语义）。
     None,
-    /// 退出会话（q/Esc 或结算态任意键）。
-    Close,
+    /// Ctrl+Y/Ctrl+N——已作答推进（调用方负责即时落盘）。
+    Marked,
+    /// Ctrl+Q——退出会话（作答已即时落盘，调用方清理 state.tutor）。
+    Exit,
 }
 
-/// M42-1：导师会话按键（纯函数）：y=掌握 n=未掌握记错题本（M42-2 落盘），
-/// 末项作答后进入结算态；q/Esc 中途退出；结算态任意键关闭。
-pub(crate) fn tutor_session_key(
-    module: &crate::tutor::TutorModule,
-    idx: &mut usize,
-    marks: &mut Vec<(String, bool)>,
-    done: &mut bool,
-    code: ratatui::crossterm::event::KeyCode,
-) -> TutorSessionOutcome {
-    use ratatui::crossterm::event::KeyCode;
-    if *done {
-        return TutorSessionOutcome::Close; // 结算态：任意键返回。
+/// M43-1：tutor 标记键（会话激活时拦截 Ctrl+Y/N/Q；其余键一律放行——
+/// 练习键照常进入各模式分支，Panel 保持显示；Esc 保留清搜索/过滤语义）。
+pub(crate) fn tutor_hotkey(state: &mut AppState, key: &KeyEvent) -> TutorHotkey {
+    if state.tutor.is_none() || key.kind != KeyEventKind::Press {
+        return TutorHotkey::None;
     }
-    match code {
-        KeyCode::Esc | KeyCode::Char('q') => TutorSessionOutcome::Close,
-        KeyCode::Char('y') | KeyCode::Char('n') => {
-            if let Some(item) = module.items.get(*idx) {
-                let mastered = code == KeyCode::Char('y');
-                marks.push((item.id.clone(), mastered));
+    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+        return TutorHotkey::None;
+    }
+    match key.code {
+        KeyCode::Char('y') => {
+            if let Some(session) = &mut state.tutor {
+                session.advance(true);
             }
-            *idx += 1;
-            if *idx >= module.items.len() {
-                *done = true;
-            }
-            TutorSessionOutcome::None
+            TutorHotkey::Marked
         }
-        _ => TutorSessionOutcome::None,
+        KeyCode::Char('n') => {
+            if let Some(session) = &mut state.tutor {
+                session.advance(false);
+            }
+            TutorHotkey::Marked
+        }
+        KeyCode::Char('q') => TutorHotkey::Exit,
+        _ => TutorHotkey::None,
     }
 }
 
@@ -771,6 +757,34 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         let polled = event::poll(std::time::Duration::from_millis(poll_ms))?;
         let key_ev = if polled { event::read().ok() } else { None };
         if let Some(Event::Key(key)) = key_ev {
+            // M43-1：tutor 标记键前置拦截（透明放行——练习键不拦，标记在
+            // 任意模式生效：命令输入/覆盖层激活时也可 Ctrl+Y/N 标记）。
+            match tutor_hotkey(&mut state, &key) {
+                TutorHotkey::None => {}
+                TutorHotkey::Marked => {
+                    // 作答即时落盘（幂等合并——中途退出/应用退出均不丢进度）。
+                    if let Some(session) = &state.tutor
+                        && !session.marks.is_empty()
+                    {
+                        let progress = crate::tutor::merge_session(
+                            crate::tutor::load_progress(),
+                            &session.module.id,
+                            &session.marks,
+                        );
+                        if let Err(e) = crate::tutor::save_progress_to(
+                            &crate::tutor::tutor_progress_path(),
+                            &progress,
+                        ) {
+                            msg = Some(format!("tutor 进度保存失败: {e}"));
+                        }
+                    }
+                    continue;
+                }
+                TutorHotkey::Exit => {
+                    state.tutor = None; // 作答已即时落盘，退出仅关闭面板。
+                    continue;
+                }
+            }
             match &mut mode {
                 InputMode::Command {
                     input,
@@ -955,13 +969,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                                 ),
                                                 None => (base, false),
                                             };
-                                            mode = InputMode::TutorSession {
+                                            state.tutor = Some(crate::tutor::TutorSession {
                                                 module,
                                                 idx: 0,
                                                 marks: Vec::new(),
                                                 done: false,
                                                 review,
-                                            };
+                                            });
                                         }
                                         None => {
                                             msg = Some(format!("tutor: 未知模块 {module_id}"));
@@ -1579,45 +1593,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     ),
                                     None => (base, false),
                                 };
-                                mode = InputMode::TutorSession {
+                                state.tutor = Some(crate::tutor::TutorSession {
                                     module,
                                     idx: 0,
                                     marks: Vec::new(),
                                     done: false,
                                     review,
-                                };
+                                });
                             }
                         }
-                    }
-                }
-                InputMode::TutorSession {
-                    module,
-                    idx,
-                    marks,
-                    done,
-                    review: _,
-                } => {
-                    // M42-1：导师会话——y=掌握 n=未掌握，q/Esc 退出保存；
-                    // 结算态（done）任意键返回。M42-2：关闭时合并错题本
-                    // 落盘（有作答才写；失败进状态栏提示）。
-                    if key.kind == KeyEventKind::Press
-                        && tutor_session_key(module, idx, marks, done, key.code)
-                            == TutorSessionOutcome::Close
-                    {
-                        if !marks.is_empty() {
-                            let progress = crate::tutor::merge_session(
-                                crate::tutor::load_progress(),
-                                &module.id,
-                                marks,
-                            );
-                            if let Err(e) = crate::tutor::save_progress_to(
-                                &crate::tutor::tutor_progress_path(),
-                                &progress,
-                            ) {
-                                msg = Some(format!("tutor 进度保存失败: {e}"));
-                            }
-                        }
-                        mode = InputMode::Normal;
                     }
                 }
                 InputMode::ArchiveDialog {

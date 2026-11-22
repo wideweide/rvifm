@@ -398,6 +398,9 @@ pub struct AppState {
     /// M38-5：命名搜索（`:find save <名>` / `:find load <名>`；仅内存
     /// 不跨会话，SPEC SIMPLIFIED；同名覆盖）。
     pub named_searches: std::collections::HashMap<String, crate::search::SearchResults>,
+    /// M43-1：导师会话（覆盖层状态——不占 InputMode，任意模式切换不丢；
+    /// None = 未激活。Panel 渲染与 Ctrl+Y/N/Q 前置拦截据此判断）。
+    pub tutor: Option<crate::tutor::TutorSession>,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -437,6 +440,7 @@ impl AppState {
             git_tx: None,
             pending_external: None,
             named_searches: std::collections::HashMap::new(),
+            tutor: None,
         }
     }
 

@@ -885,29 +885,28 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         return;
     }
     if let InputMode::TutorList { cursor } = mode {
-        // M42-1：导师模式模块列表覆盖层（选择要学习/自验的模块）。
+        // M42-1/M43-1：导师模式模块列表——List 组件渲染（M43 起模块数超屏，
+        // 视口随选中项滚动）。键提示并入边框底部行。
         let modules = crate::tutor::builtin_modules();
-        let mut lines: Vec<Line> = Vec::new();
-        if modules.is_empty() {
-            lines.push(Line::from("（无可用模块）"));
-        } else {
-            lines.push(Line::from("选择要学习或自验的模块："));
-            lines.push(Line::from(String::new()));
-            for (i, m) in modules.iter().enumerate() {
-                let mark = if i == *cursor { "▶ " } else { "  " };
-                lines.push(Line::from(format!(
-                    "{mark}{:<14} {} — {}",
-                    m.id, m.name, m.description
-                )));
-            }
-            lines.push(Line::from(String::new()));
-            lines.push(Line::from("j/k=选择 Enter/l=进入 q/Esc=关闭"));
-        }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .block(ratatui::widgets::Block::bordered().title("🎓 导师模式 (:tutor)")),
-            frame.area(),
-        );
+        let items: Vec<Line> = modules
+            .iter()
+            .map(|m| Line::from(format!("{:<14} {} — {}", m.id, m.name, m.description)))
+            .collect();
+        let list = ratatui::widgets::List::new(items)
+            .block(
+                ratatui::widgets::Block::bordered()
+                    .title("🎓 导师模式 (:tutor)")
+                    .title_bottom(
+                        ratatui::text::Line::from(
+                            " 选择要学习或自验的模块  j/k=选择 Enter/l=进入 q/Esc=关闭 ",
+                        )
+                        .centered(),
+                    ),
+            )
+            .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+            .highlight_symbol("▶ ");
+        let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
+        frame.render_stateful_widget(list, frame.area(), &mut list_state);
         return;
     }
     if let InputMode::JobDetail { index } = mode {
@@ -1279,14 +1278,14 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
-    if let InputMode::TutorSession {
-        module,
-        idx,
-        marks,
-        done,
-        review,
-    } = mode
-    {
+    if let Some(session) = &state.tutor {
+        let crate::tutor::TutorSession {
+            module,
+            idx,
+            marks,
+            done,
+            review,
+        } = session;
         // M42-1：底部 Tutor Panel——主 TUI 背景保持可见（操作上下文），
         // 面板占底部约 1/4（状态栏其下不受影响）。左列 prompt/expected，
         // 右列进度与按键提示；done 为结算 Summary。
@@ -1315,7 +1314,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     "模块完成！掌握 {mastered}/{total}，未掌握 {skipped}。"
                 )),
                 Line::from("未掌握项已记录（M42-2 起本地持久化，下次进入优先复习）。"),
-                Line::from("按任意键返回。"),
+                Line::from("Ctrl+Q 退出（作答已即时保存）。"),
             ];
             frame.render_widget(Paragraph::new(lines).block(block), panel_area);
         } else if let Some(item) = module.items.get(*idx) {
@@ -1370,7 +1369,6 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::TutorList { .. } => {
             Line::from(String::new()) // 列表覆盖层提前 return，不可达
         }
-        InputMode::TutorSession { .. } => Line::from("🎓 导师模式（y=掌握 n=未掌握 q=退出）"),
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),
         InputMode::ArchiveDialog { input, field, .. } => {
             // M25-4：对话框激活字段指示（覆盖层提前 return，实际不可达）。

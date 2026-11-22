@@ -10183,46 +10183,35 @@ fn m42_1_tutor_command_list_session_and_keys() {
     // 会话：y 记掌握、n 记未掌握；末项作答后 done；结算态任意键关闭。
     let module = crate::tutor::module_by_id("core_nav").unwrap();
     let total = module.items.len();
-    let mut idx = 0usize;
-    let mut marks: Vec<(String, bool)> = Vec::new();
-    let mut done = false;
+    // M43-1：会话推进改为 TutorSession::advance（Ctrl+Y/N 前置拦截的
+    // 底层逻辑）；done 后 no-op——结算 Summary 持续显示至 Ctrl+Q。
+    let mut session = crate::tutor::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    };
     for i in 0..total {
-        let code = if i % 2 == 0 {
-            KeyCode::Char('y')
-        } else {
-            KeyCode::Char('n')
-        };
-        assert_eq!(
-            tutor_session_key(&module, &mut idx, &mut marks, &mut done, code),
-            TutorSessionOutcome::None
-        );
+        session.advance(i % 2 == 0);
     }
-    assert!(done, "末项作答后进入结算态");
-    assert_eq!(marks.len(), total);
-    assert_eq!(
-        marks.iter().filter(|(_, ok)| *ok).count(),
-        total.div_ceil(2)
-    );
-    assert_eq!(
-        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Char('x')),
-        TutorSessionOutcome::Close,
-        "结算态任意键关闭"
-    );
+    assert!(session.done, "末项作答后进入结算态");
+    assert_eq!(session.marks.len(), total);
+    assert_eq!(session.mastered_count(), total.div_ceil(2));
+    session.advance(true);
+    assert_eq!(session.idx, total, "结算态 advance no-op");
 
-    // 中途 Esc 退出（已作答保留——M42-2 落盘的数据形态）。
-    let mut idx = 0usize;
-    let mut marks: Vec<(String, bool)> = Vec::new();
-    let mut done = false;
-    assert_eq!(
-        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Char('y')),
-        TutorSessionOutcome::None
-    );
-    assert_eq!(
-        tutor_session_key(&module, &mut idx, &mut marks, &mut done, KeyCode::Esc),
-        TutorSessionOutcome::Close
-    );
-    assert_eq!(marks.len(), 1, "退出前已作答项保留");
-    assert!(!done);
+    // 中途退出：已作答保留（落盘数据形态）。
+    let mut session = crate::tutor::TutorSession {
+        module,
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    };
+    session.advance(true);
+    assert_eq!(session.marks.len(), 1, "退出前已作答项保留");
+    assert!(!session.done);
 }
 
 #[test]
@@ -10254,13 +10243,15 @@ fn m42_1_tutor_render_list_and_panel() {
 
     // 会话 Panel：prompt/expected/右列键提示；背景标签栏仍可见。
     let module = crate::tutor::module_by_id("core_nav").unwrap();
-    let mode = InputMode::TutorSession {
+    let mode = InputMode::Normal;
+    let mut state = state;
+    state.tutor = Some(crate::tutor::TutorSession {
         module: module.clone(),
         idx: 0,
         marks: Vec::new(),
         done: false,
         review: false,
-    };
+    });
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let buf = terminal.backend();
@@ -10288,13 +10279,14 @@ fn m42_1_tutor_render_list_and_panel() {
         .map(|(i, item)| (item.id.clone(), i % 2 == 0))
         .collect();
     let skipped = marks.iter().filter(|(_, ok)| !*ok).count();
-    let mode = InputMode::TutorSession {
+    let mode = InputMode::Normal;
+    state.tutor = Some(crate::tutor::TutorSession {
         module,
         idx: total,
         marks,
         done: true,
         review: false,
-    };
+    });
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let all = compact(terminal.backend(), 70, 14);
@@ -10394,4 +10386,141 @@ fn m42_2_tutor_progress_persist_review_and_reset() {
     let (_tmp, mut state) = make_state(2);
     let err = exec_command_impl(&mut state, "tutor reset bogus").expect_err("未知模块应报错");
     assert!(err.contains("未知模块"), "{err}");
+}
+
+#[test]
+fn m43_1_tutor_passthrough_and_hotkeys() {
+    // M43-1：透明放行——会话激活时练习键照常进 Normal 处理器（j 移动）；
+    // Ctrl+Y/N 前置拦截标记推进；无会话/无 Ctrl → None（正常键处理）；
+    // done 后 advance no-op；Ctrl+Q → Exit。
+    let (_tmp, mut state) = make_state(3);
+    let mut input = InputState::default();
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+
+    // 放行：j 在会话激活下照常移动光标（练习不被拦截）。
+    let before = state.active_tab().cursor;
+    let _ = press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, before + 1, "练习键放行");
+    assert_eq!(state.tutor.as_ref().unwrap().marks.len(), 0, "练习不标记");
+
+    // Ctrl+Y：前置拦截标记掌握并推进。
+    assert_eq!(
+        tutor_hotkey(
+            &mut state,
+            &KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)
+        ),
+        TutorHotkey::Marked
+    );
+    let session = state.tutor.as_ref().unwrap();
+    assert_eq!(session.marks.len(), 1);
+    assert!(session.marks[0].1);
+    assert_eq!(session.idx, 1);
+
+    // Ctrl+N：标记未掌握。
+    assert_eq!(
+        tutor_hotkey(
+            &mut state,
+            &KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)
+        ),
+        TutorHotkey::Marked
+    );
+    let session = state.tutor.as_ref().unwrap();
+    assert_eq!(session.marks.len(), 2);
+    assert!(!session.marks[1].1);
+
+    // 裸 y（无 Ctrl）→ None（放行——Normal 处理器收到）。
+    assert_eq!(
+        tutor_hotkey(
+            &mut state,
+            &KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)
+        ),
+        TutorHotkey::None
+    );
+
+    // 无会话 → Ctrl 组合也 None（正常键处理）。
+    state.tutor = None;
+    assert_eq!(
+        tutor_hotkey(
+            &mut state,
+            &KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)
+        ),
+        TutorHotkey::None
+    );
+
+    // 恢复会话：作答至末项 → done；done 后 advance no-op；Ctrl+Q → Exit。
+    state.tutor = Some(crate::tutor::TutorSession {
+        module,
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+    let total = {
+        let s = state.tutor.as_ref().unwrap();
+        s.module.items.len()
+    };
+    for _ in 0..total {
+        assert_eq!(
+            tutor_hotkey(
+                &mut state,
+                &KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL)
+            ),
+            TutorHotkey::Marked
+        );
+    }
+    let done_idx = state.tutor.as_ref().unwrap().idx;
+    assert_eq!(done_idx, total, "末项作答后进入结算态");
+    state.tutor.as_mut().unwrap().advance(true); // done 后 no-op。
+    assert_eq!(
+        state.tutor.as_ref().unwrap().idx,
+        total,
+        "done 后 advance no-op"
+    );
+    assert_eq!(
+        tutor_hotkey(
+            &mut state,
+            &KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)
+        ),
+        TutorHotkey::Exit,
+        "Ctrl+Q 退出"
+    );
+}
+
+#[test]
+fn m43_1_tutor_list_scroll_render() {
+    // M43-1：模块列表 List 组件渲染——选中项高亮符号（超屏滚动由
+    // ratatui ListState 视口跟随固化；当前 3 模块单屏内验证渲染形态）。
+    let (_tmp, state) = make_state(2);
+    let mode = InputMode::TutorList { cursor: 2 };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all: String = (0..12)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    let compact: String = all.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        compact.contains("▶search_frecency"),
+        "末模块选中高亮: {all}"
+    );
+    assert!(compact.contains("core_nav"), "首模块行: {all}");
+    assert!(
+        compact.contains("Enter/l=进入"),
+        "键提示（边框底行）: {all}"
+    );
 }
