@@ -38,9 +38,14 @@ prompt = "光标停在文件上，输入 `:rename 新名字` 后回车。"
 expected = "文件被重命名；按 `u` 可撤销恢复原名。"
 
 [[items]]
-id = "rename_batch"
-prompt = "输入 `:rename`（无参）后回车，进入批量重命名预览。"
-expected = "进入重命名预览视图（按 `y` 应用、Esc 取消）；整批可撤销。"
+id = "rename_structured"
+prompt = "输入 `:rename s/旧名/新名/`（正则批量）回车。"
+expected = "进入重命名预览虚拟目录（`y` 应用 / Esc 取消）；整批可撤销。"
+
+[[items]]
+id = "rename_editor"
+prompt = "输入 `:rename`（无参）回车。"
+expected = "挂起 TUI 用 $EDITOR 编辑文件名单（与 cw/R 同管线）；整批可撤销。"
 
 [[items]]
 id = "undo_order"

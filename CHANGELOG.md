@@ -3,6 +3,14 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+**导师模式（M42）**
+- `:tutor` 导师模式：TUI 内交互式教程+自验清单（单一模式，两用）。底部 Tutor Panel（左 prompt/expected、右进度与按键提示），y=掌握 / n=未掌握记错题本 / q 退出保存；模块完成后 Panel 内结算。
+- 三内嵌模块：core_nav（7 项）/ file_ops（9 项）/ search_frecency（7 项），条目与实际键位语义对齐。
+- 进度持久化 `tutor_progress.toml`（数据目录，缺失/损坏静默降级）；错题本未掌握项下次进入优先复习；`:tutor reset <模块>` 清空。
+- 发布流程解耦（REL）：GitHub Release 自动发布；crates.io publish 仅由人工发起（人工验证可借 `:tutor`）。
+
 ## [1.0.0] — 2026-11-21
 
 1.0 稳定化统一发布：M35–M41 各批次并入（发布节奏按用户决策，中间版本不单独发版）。自 0.8.0 以来的全部用户可见变化如下（分批次小节）。

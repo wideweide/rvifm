@@ -989,7 +989,7 @@
 - [x] M41-4 光标在视口底行按 `k`：列表滚动不动、高亮上移一行；光标越出视口（持续 j/G/gg/Ctrl-d）时仍正确跟随滚动；鼠标命中测试与渲染共用同一偏移推导（测试固化）。（2026-11-21：m41_4 sticky 单测 + feat1 用例重写为窗口语义；越界跟随经 sticky 贴顶/贴底语义固化）
 ## 42. M42 — :tutor 导师模式（见 SPEC M42 节）
 
-- [ ] M42-1 `:tutor` 无参列出模块覆盖层；`:tutor core_nav` 等带参直接进入；Tutor Panel 底部渲染（prompt/expected 左、进度 + 按键提示右）；y/n 推进并记录、q/Esc 退出保存进度；主 TUI 背景可见但按键被拦截（TestBackend 渲染断言 + 键位拦截测试）。
-- [ ] M42-2 进度写 `data_dir()/tutor_progress.toml`；skipped 项下次进入优先复习提示；`:tutor reset <module>` 清空；损坏进度文件静默降级为全新进度。
-- [ ] M42-3 三模块内容与实际键位/命令语义一致（core_nav：j/k·h/l·gg/G·Tab；file_ops：yy·p·dd·u·:rename；search_frecency：/·=·o·:recent），prompt/expected 与代码行为相符。
-- [ ] M42-4 GUIDE/README 新手指引；批次文档同步（SPEC/PLAN/TASKS/STATE）；Panel 内 Summary 呈现、无外部文件产生。
+- [x] M42-1 `:tutor` 无参列出模块覆盖层；`:tutor core_nav` 等带参直接进入；Tutor Panel 底部渲染（prompt/expected 左、进度 + 按键提示右）；y/n 推进并记录、q/Esc 退出保存进度；主 TUI 背景可见但按键被拦截。（2026-11-22：m42_1 双测试——TestBackend 渲染断言 + tutor_list_key/tutor_session_key 纯函数键位测试；四视图白名单放行）
+- [x] M42-2 进度写 `data_dir()/tutor_progress.toml`；skipped 项下次进入优先复习提示；`:tutor reset <module>` 清空；损坏进度文件静默降级为全新进度。（2026-11-22：m42_2 测试——roundtrip/互斥迁移/三桶复习排序/损坏降级/reset 纯函数；exec 层仅测错误分支防写真实 HOME（m38_4 家规））
+- [x] M42-3 三模块内容与实际键位/命令语义一致（core_nav：j/k·h/l·gg/G·Tab；file_ops：yy·p·dd·u·:rename；search_frecency：/·=·o·:recent），prompt/expected 与代码行为相符。（2026-11-22：7+9+7 项；:rename 无参=$EDITOR 批量（M21-E4）、带参=结构化预览（M28-2）两形态分列；builtin_modules_parse_and_unique 固化）
+- [x] M42-4 GUIDE/README 新手指引；批次文档同步（SPEC/PLAN/TASKS/STATE）；Panel 内 Summary 呈现、无外部文件产生。（2026-11-22：GUIDE §2 导师模式推荐 + help.txt :tutor 行 + README 核心特性/快速开始 + CHANGELOG 未发布段；Summary 在 Panel 内、无报告文件）

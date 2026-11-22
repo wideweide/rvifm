@@ -112,6 +112,9 @@ rvifm 帮助（vim 风格文件管理器）
   （跨 VFS 粘贴）  传输连接类失败自动重连一次；失败现场 .part 保留（重试粘贴可续传/诊断）
   :trash          暂存区菜单（恢复误删文件）
   :theme [名]     切换主题（内置名 / 捆绑 snowwhite / 用户 TOML；默认 gruvbox-dark）
+  :tutor [模块|reset <模块>]
+                  导师模式（交互教程+自验：y=掌握 n=未掌握错题本优先 q=退出；
+                  进度存数据目录 tutor_progress.toml；无参列出模块）
 
 == 远端（SFTP） ==
   :remote <名>    进入远端（~/.ssh/config 别名 + remotes.toml 覆盖）

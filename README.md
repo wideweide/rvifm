@@ -80,6 +80,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ## 核心特性
 
+- **导师模式**：`:tutor` 交互式教程+自验清单（core_nav/file_ops/search_frecency 三模块；y/n 记录掌握、错题本下次优先复习、进度本地持久化），新手快速上手与发布前自验两用
 - **多标签**：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`，每个 tab 独立状态
 - **vim 风格浏览**：`j/k/h/l`、`gg/G`、`Ctrl-u/Ctrl-d`、`/` 搜索（smart-case）、`n/N`、`=` glob 过滤
 - **文件操作与撤销**：复制、移动、删除（应用内暂存可恢复）、重命名、新建、符号链接创建（`:link`，Windows 目录联接回退）、结构化批量重命名（`:rename s/<pat>/<repl>/[i]` / `prefix=` / `suffix=` / `seq=`，预览确认），`u` 逆序撤销（含跨 tab）
@@ -158,6 +159,9 @@ cargo build --release
 
 # 帮助（应用内）
 :help
+
+# 新手推荐：导师模式（交互教程 + 自验清单，错题本下次优先复习）
+:tutor
 ```
 
 > `pick` / `record` 子命令已随 M8 落地，契约见 [docs/SPEC.md](docs/SPEC.md) §4.6。
