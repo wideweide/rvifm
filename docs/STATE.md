@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-22
 - **当前阶段**：M0–M40-6 全部完成关闭（M41 4/4、M38 5/5、M39 6/6、M40 1–6 完成/M40-4 sftp 覆盖 deferred、M31-5 补验完成；v0.11.1 已发布）；M36–M41 不单独发版，统一发 1.0.0（用户决策）；**CI 红灯已闭环**（2026-11-22 Linux 开发机）——四失败面中 ubuntu/macos build、windows test、audit 三面在 0e232c7 已绿（M40-6 修复生效），仅剩 fuzz build 一面，根因为 fuzz 靶两处编译错误（E0603 `mod exec` 私有 + E0596 `fsx` 缺 mut），从未在任何环境编译过（Windows 无 nightly；CI 注解被 crate 名 grep 误报淹没），已修复并锁定 fuzz/Cargo.lock（见 NOTES）
-- **当前任务**：**M40-7 1.0.0 统一发布执行中**（CHANGELOG 批次并入已备 + Cargo.toml 1.0.0 + tag v1.0.0 → CI 归档+SHA256SUMS+GitHub Release；crates.io 凭据在 Windows 机 deferred——Linux 机无凭据）
+- **当前任务**：**M40-7 1.0.0 统一发布——aarch64 release 腿修红断点**（2026-11-22 用户换机暂停）。已交付：CHANGELOG 1.0.0 批次并入 ✅ + Cargo.toml/README/lock 1.0.0 ✅ + tag v1.0.0 已推（重指向 b21beef）；首次 tag run 44928568409 三 release 腿绿（windows/musl/gnu，GitHub Release 已由 windows 腿创建），**aarch64-unknown-linux-gnu 腿 build --release 失败 exit 101 无注解**；已注解化 release build 步骤（b21beef）并重指向 tag，tag run 44977467118 进行中；crates.io 凭据在 Windows 机 deferred
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -17,7 +17,7 @@
 
 ## 下一步
 
-1. **M40-7 按序执行**：Cargo.toml 1.0.0 → tag v1.0.0 → CI release job（三平台+aarch64 归档 + SHA256SUMS + GitHub Release）→ crates.io（凭据在 Windows 机；Linux 机无凭据则该项延至 Windows 执行）。
+1. **M40-7 断点续作（下一会话起点，详见 NOTES 2026-11-22 断点条目）**：① 匿名 API 查 tag run（44977467118 或最新）aarch64 check-run annotations（jobs API → check-runs annotations，无需登录）拿真实错误行 → 修复 → 重指向 tag v1.0.0 重跑；② 四 release 腿全绿 + GitHub Release 归档齐全（windows/musl/gnu 首跑已绿，仅差 aarch64）→ 勾选 M40-7（crates.io 项单列）；③ crates.io publish 在 Windows 机执行（本机无凭据）。
 2. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（1.0.0 归档）。
 
 ## 批次关闭记录

@@ -1059,3 +1059,12 @@ rvifm record  → 静默记录访问
 - **fuzz/Cargo.lock 转为提交**：原被 cargo-fuzz 模板 .gitignore 忽略，CI fuzz job 每次全新 resolve——锁定解析消除漂移红风险（1.0 前收口）。
 - **环境事实（Linux 开发机已变化）**：rustup 不在（系统 rust 1.99.1）；crates.io index 与 static.rust-lang.org 直连超时（312s 0 字节），依赖下载与 rustup 走用户代理 `socks5://192.168.1.88:15235` 后恢复；gh 未安装，匿名 GitHub API（runs/jobs/check-runs annotations）可用。
 - **验证**：Linux 全量 490 单测 + 12 集成全绿、clippy all-targets 绿、fuzz 工作区 `cargo check` 绿（修复后 EXIT=0）、`--version`/`--help` 冒烟过；M40-2 的 24h fuzz 长跑仍 deferred（需 rustup+nightly，环境事实见上）。
+
+### 2026-11-22 — M40-7 发布断点（aarch64 release 腿修红；用户换机暂停）
+
+- **进度**：CI 修红全绿后（565f4c9）按自动续轮进入 M40-7——CHANGELOG 1.0.0 批次并入（已备）+ Cargo.toml/lock/README 1.0.0（1109c92，`--version` 冒烟过）+ tag v1.0.0 首推。
+- **首推结果（run 44928568409）**：test×3 + supply-chain 绿；release 四腿中 windows/musl/gnu 三腿绿且 windows 腿已创建 GitHub Release v1.0.0（windows 归档已上传）；**aarch64-unknown-linux-gnu 腿 build --release 失败（exit 101）**——release 步骤无 tee/grep，check-run 注解为空，job 日志需 admin（匿名 403），本机浏览器直连 github 超时，真实错误文本不可得。
+- **排查结论（远程信息受限下的排除法）**：非 aws-lc-rs#1022（`__ARM_ARCH` 未定义系 GCC 4.8 古老镜像；CI ubuntu gcc-aarch64-linux-gnu 为 GCC 13）；lock 面 aws-lc-sys 0.47.0 / aws-lc-rs 1.19.0 / russh 0.65.1；嫌疑收敛于 aws-lc-sys aarch64 交叉 C 构建（cmake/cc/bindgen 阶段）或链接阶段；本地复现受阻——本机无 rustup、无 aarch64 交叉工具链、sudo 需密码、代理仅 SOCKS5（容器 apt/镜像拉取不可用）。
+- **已做（b21beef）**：ci.yml release build 步骤 tee + `grep -E "error" -A4` 注解化（同 clippy/test 模式，注解经匿名 API 可读；crate 名含 error 的行仍会误报，真实 error[ 行会混在其中）；tag v1.0.0 重指向 b21beef，tag run 44977467118 进行中（截断点时 aarch64 腿未出结果）。
+- **下一会话起点**：① 匿名 API 两步——`GET /actions/runs/{最新}/jobs` 取 aarch64 job id → `GET /check-runs/{job id}/annotations` 读真实错误行（grep 注解含 -A4 上下文，head -60 截断）；② 按错误修复（若为 aws-lc-sys 交叉构建类，候选方向：`AWS_LC_SYS_PREBUILT_NASM=1` 对非 x86 目标的影响核查、CC_aarch64_unknown_linux_gnu/AR 显式注入、CMAKE_ARGS/toolchain file、或升级 aws-lc-sys；若为链接类查 libgcc_s/链接器配置）；③ 修复后 tag 重指向重跑（gh release create `|| true` 幂等、upload `--clobber` 覆盖，模式同 0.10.0/0.11.0）；④ 四腿全绿后勾 M40-7 主体、crates.io 单列（凭据在 Windows 机，Linux 无）。
+- **环境事实（补充）**：本机下载必需代理 `socks5://192.168.1.88:15235`（crates.io index 与 static.rust-lang.org 直连 312s 超时）；rustup 安装未完成——rustup-init 二进制经代理可下载（21MB 快），但须 `chmod +x` 后直接执行（`sh <elf>` 报 RC=126），target add aarch64-unknown-linux-gnu 未执行。
