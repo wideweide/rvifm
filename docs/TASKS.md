@@ -502,6 +502,13 @@
 - [x] M40-6 macOS CI + aarch64 Linux 归档（见 SPEC M40-6；2026-11-21 完成：test 矩阵加 macos-latest（fmt/clippy/build/test，sshd 探测测试自动 skip）+ release 矩阵加 aarch64-unknown-linux-gnu 腿（gcc-aarch64-linux-gnu 链接器注入 .cargo/config.toml，SHA256SUMS 统一覆盖）；aws-lc-sys aarch64 交叉构建首跑 CI 验证）
 - [x] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io；见 SPEC M40-7；2026-11-22 完成：CHANGELOG/版本号/tag v1.0.0 → run 44984795450 全绿 + GitHub Release 四归档+SHA256SUMS；发布修红三层——aarch64 c_char E0308 本地交叉复现修复、smoke 交叉产物 ELF 断言替代 qemu（apt 装 qemu runner 不稳）、annotate_errors.sh 注解精确化；**crates.io 已上线（本机凭据 publish + API 验证 newest/max=1.0.0）**）
 
+## REL — 发布流水线解耦与人工验证门（2026-11-22 增补；用户蒸馏指令，见 SPEC REL 节）
+
+> 来源：用户讨论稿蒸馏（GitHub 自动 / crates.io 人工门解耦 + 全量人工验证清单）。
+> 语义投递：REQ→SPEC REL、HOW→RELEASE_CHECKLIST.md/ACCEPTANCE、WHY→NOTES。
+
+- [x] REL-1 发布两通道解耦（GitHub Release 自动 / crates.io publish 人工验证门；AGENTS §3 自动发布段修订）+ `docs/RELEASE_CHECKLIST.md` 1.0.0 全量清单（单终端串行、门禁必做 A/B/C/D/E/G/H + 选做组；按代码事实核验——pick stdin 双模/:archive 语法/:goto/--find 过滤器真实形态）；ACCEPTANCE §16 v0.6.0 清单与 §35-A 0.11.0 清单收编为历史入口（2026-11-22 完成；1.0.0 已发布故本版清单为发布后全量实测验收形态，自下一版本起为发布前门禁）
+
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
 - [x] GAP-1 M10-5 收尾：keymap TOML 分层接线（config.rs 解析 prepend/append/replace 并合并进 InputState.keymap——当前仅默认表，用户绑定不可用；NAV-3 的推荐映射示例依赖此项）

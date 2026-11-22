@@ -133,6 +133,23 @@
 - 各批次不再单独发版；M36–M41 全部完成后按最高版本 **1.0.0** 一次性发布（中间版本号在 CHANGELOG 记录为并入条目，先例：0.9.0/0.10.0 跳过）。
 - 各批次验收口径仍按 ACCEPTANCE 对应批次段独立执行（批次关闭 = 验收通过，只是不发版）；关键口径：M36 需 1GB 传输/断网续传/元数据验收；M40 收尾需 fuzz 24h 无 crash、核心覆盖率 ≥75%、cargo-deny 干净、三平台 CI。
 
+### 1.0.0（已发布 2026-11-22，双渠道闭环）
+
+- M36–M41 统一随 **1.0.0** 发布：CHANGELOG 批次并入 + tag v1.0.0 → CI 全绿
+  （发布修红三层：aarch64 c_char E0308 / smoke ELF 断言 / 注解精确化，见 NOTES）
+  → GitHub Release 四归档（windows-x64 / linux-x64-gnu / linux-x64-musl /
+  linux-aarch64-gnu）+ SHA256SUMS；crates.io 本机凭据 publish + API 验证。
+
+### 发布流水线规则（REL，2026-11-22 起生效；修订本节 0.10.0 段的"自动发布规则"）
+
+- **两通道解耦**：GitHub Release（归档可逆）自动发布不变；crates.io（版本号
+  不可回收）改为**人工验证门后动作**——放行条件见 SPEC REL 节与
+  [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)。
+- **人工门执行流**：QA 下载 GitHub Release 归档 → 单终端串行执行门禁必做组
+  （A/B/C/D/E/G/H）→ 结论段填写 → 通过则人工 `cargo publish --locked` 并
+  API 验证版本号；不通过则 NOTES 记录 + FIX 登记修复重跑。
+- 清单文档随版本增量修订（REL-2）；1.0.0 为发布后全量实测验收形态。
+
 ## 5. 执行约束与风险
 
 ### 上下文控制

@@ -17,12 +17,13 @@
 
 ## 下一步
 
-1. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（1.0.0 归档）；aarch64 产物真机 `--version`（CI 为 ELF 断言非执行冒烟，见 NOTES）。
+1. **v1.0.0 全量人工实测（当前入口，见 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)）**：门禁必做组 A/B/C/D/E/G/H 单终端串行执行；选做组 F/I/J/K 有条件则验；结论段填写。历史清单入口已收编（ACCEPTANCE §16 / §35-A）。
 2. **fuzz 24h 本地长跑（M40-2 deferred，Linux 机）**：需 rustup + nightly（rustup 1.100 已在本机；nightly 未装）——执行后回填 NOTES。
 
 ## 批次关闭记录
 
 - M40 + 1.0.0 发布（2026-11-22）：M40-7 收官——发布修红三层：① aarch64 `c_char` E0308（privilege.rs mkfifo FFI `*const i8` 硬编码，aarch64 上 c_char=u8；匿名 API 日志通道全失效后本地 apt+dpkg 装交叉工具链完整复现，f955c67 修复）；② smoke 步骤对交叉产物不可执行（exit 2）→ qemu 冒烟在 runner 不稳（apt exit 100）→ 确定性 ELF 断言（ab102ec）；③ annotate_errors.sh 注解精确化（行首 error 锚定 + 仅失败发射）——tag 第 5 次重指向后 run 44984795450 全绿，GitHub Release 四归档 + SHA256SUMS；**crates.io publish 本机凭据执行成功**（用户 2026-11-22 在 Linux 机配置 `~/.cargo/credentials.toml`；`cargo package --locked` 干跑核验 73 文件 2.3MiB 后 `cargo publish --locked`，API 验证 newest/max=1.0.0）——**1.0.0 双渠道闭环，批次清单全清零**。宿主门禁 490 单测 + 12 集成 + aarch64 交叉构建 EXIT=0 全绿。
+- REL-1 发布流水线解耦 + 人工验证清单（2026-11-22）：GitHub Release 自动 / crates.io publish 人工验证门（AGENTS §3 修订 + SPEC REL 节 + PLAN §4 新规则）；`docs/RELEASE_CHECKLIST.md` 1.0.0 全量清单（11 组 ~68 项，按代码事实核验命令语法）；ACCEPTANCE §16（v0.6.0）/§35-A（0.11.0）收编为历史入口。WHY 见 NOTES 同日条目。
 - M41：右栏一致性与交互缺陷修复 4 项全部完成（2026-11-21，用户实测当日闭环）——M41-1 右 pane `:` 命令模式 + gt/gT/Ngt/gg（seq 机制复用，ToTop 焦点化；单键 `g` 直跳退役，见 NOTES）、M41-2 方向键 ↑↓←→ = k/j/h/l（别名臂 + 默认 keymap + 树视图守卫扩展）、M41-3 鼠标点击切焦点 + 高亮双侧一致（hit_right_index + 滚轮焦点化，右键菜单保持左栏）、M41-4 视口滚动钉底修复（list_offset_sticky 有状态化 + 每帧 sync_viewport_scroll）；顺带修复 M37-1 chmod POSIX 死代码的 Windows clippy 违规；426 单测 + 6 集成全绿。
 
 - 0.11.0 发布（2026-11-21）：M34 完成后自动发布——tag 首推 windows test 失败（M34-5 测试 runner 长路径截断，短合成路径修复）→ **tag 重指向后 CI 全绿 + GitHub Release + crates.io 上线**（本机凭据，用户部署；`cargo publish` + API 验证）；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0）。

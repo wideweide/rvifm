@@ -1088,3 +1088,29 @@ rvifm record  → 静默记录访问
 
 - **发布**：`cargo package --locked` 干跑核验（73 文件 / 2.3MiB，验证构建干净，唯一 warning 为 MISC-1 双 bin 既有项）→ `cargo publish --locked` 上传成功；API 验证 crates.io `newest/max_version = 1.0.0`（2026-11-22T05:44Z）。版本序列 1.0.0 → 0.11.1 → 0.11.0 → 0.8.0 → 0.7.0（0.9.0/0.10.0 跳过不变）。
 - **环境事实修正**：NOTES 前条"crates.io 凭据只在 Windows 机"已过时——用户 2026-11-22 在 Linux 机配置 `~/.cargo/credentials.toml`，publish 直接成功；且 crates.io index 直连本次未超时（前条"必需代理"不再绝对，代理配置保留为兜底）。M40 批次自此全清零（M40-2 24h fuzz 长跑、M40-4 sftp 覆盖仍 deferred，均不阻塞发版）。
+
+### 2026-11-22 — REL：发布两通道解耦与人工验证清单收编（WHY）
+
+- **WHY 解耦**：GitHub Release（二进制归档）随时可删除/覆盖=可逆；crates.io
+  版本号一经发布永久占用=不可逆。原"自动发布规则"（PLAN §4 0.10.0 段、AGENTS
+  §3）把 publish 与 GitHub Release 绑在同一自动段——不可逆通道缺人工门。修订
+  为：自动止步于 GitHub；publish 由 `docs/RELEASE_CHECKLIST.md` 门禁必做组
+  （A/B/C/D/E/G/H）勾选完成放行（SPEC REL-1 MUST）。
+- **WHY 清单独立成 RELEASE_CHECKLIST.md**（不并入 ACCEPTANCE）：清单是版本
+  作用域、QA 面向、随版本增量修订的活文档（REL-2）；ACCEPTANCE 是批次验收
+  历史。原 §16（v0.6.0 手册清单 A–K）与 §35-A（0.11.0 全量 36 项）的键位/
+  命令事实已与 1.0.0 代码脱节（pick 双模语义、右 pane 能力、M36–M41 全部新增
+  面均缺失），收编为历史入口，正文按 1.0.0 代码重写。
+- **清单按代码事实核验**（防止 QA 按图索骥失败）：pick stdin 候选 + stdout
+  TTY 分流（TTY=交互/非 TTY=fzf filter）、`:archive [格式] <名>
+  [checksum=…]`、`:goto 0x100`/十进制、`--find` 过滤器真实形态
+  `--size +1k/--mtime -7/--type f/--depth 1`（--k=v 与 --k v 双形态）、
+  `[transfer] conflict_policy` 缺省 ask/取值 overwrite·skip、数据目录 Unix
+  `$XDG_DATA_HOME/rvifm`（缺省 ~/.local/share/rvifm）。
+- **WHY 不落流水线 YAML**：讨论稿的 4 阶段 pipeline 是外部审批系统形态；
+  本项目发布自动化由 GitHub Actions（ci.yml）+ 文档协议（AGENTS/SPEC/PLAN）
+  承载，不引入新工具——人工门以清单勾选 + 结论记录实现，语义等价（NOISE
+  丢弃，REQ/HOW/WHY 按 §8.2 投递）。
+- **1.0.0 形态特例**：crates.io 1.0.0 已于本日发布（用户指令"验证并执行"），
+  故 1.0.0 清单为发布后全量实测验收（0.9–1.0 功能首次人工实测入口）；自
+  下一版本起清单转为发布前门禁。
