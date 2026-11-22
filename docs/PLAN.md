@@ -52,7 +52,7 @@
 | M37 | 文件运维（2026-11-21；竞品差距 P1） | :chmod/:extract（zip-slip 防护）/:sync/:du/:dup/:checksum/暂存区增强 | M36, M26, M24-8 | ✅ 完成（2026-11-21，7/7；:sync 三策略 deferred） | 随 1.0.0 |
 | M38 | 检索与 shell 集成（2026-11-21） | 检索结果可操作/pick fzf 兼容面/rvifm init/frecency 管理/find 过滤器 | M37, M8, M24-7 | ✅ 完成（2026-11-21，5/5；含 M38-3 验收补课） | 随 1.0.0 |
 | M39 | 预览与平台（2026-11-21） | hex/CSV/PDF 翻页/EXIF/zip 容器/SFTP 硬化（指纹 ask 缺省）/Windows UAC/标签布局 | M34, M19-22 | ✅ 完成（2026-11-21，6/6；443 单测 + 8 cli） | 随 1.0.0 |
-| M40 | 1.0 稳定化（2026-11-21） | criterion/fuzz/proptest/覆盖率 75%/cargo-deny/macOS CI/1.0 发布 | M35–M39 | ✅ 完成（2026-11-22，7/7；M40-4 sftp 覆盖 deferred、M40-2 24h fuzz 长跑 deferred；1.0.0 tag run 全绿 + GitHub Release 四归档；crates.io publish 待 Windows 机） | 1.0.0 |
+| M40 | 1.0 稳定化（2026-11-21） | criterion/fuzz/proptest/覆盖率 75%/cargo-deny/macOS CI/1.0 发布 | M35–M39 | ✅ 完成（2026-11-22，7/7；M40-4 sftp 覆盖 deferred、M40-2 24h fuzz 长跑 deferred；1.0.0 双渠道闭环——GitHub Release 四归档 + crates.io API 验证 1.0.0） | 1.0.0 |
 | M41 | 右栏一致性与交互缺陷修复（2026-11-21 增补；用户实测，优先级排高） | 右 pane : 与 gt·gT·Ngt/方向键导航/鼠标点击焦点高亮一致/视口滚动钉底修复 | M14, M15-FEAT-1 | ✅ 完成（2026-11-21，4/4；426 单测） | 随 1.0.0 |
 > 里程碑顺序以本表为准。早期讨论中曾提出把 M7 插到 M4/M5 之间、把 M8/M11 放到 M6 之前；最终收敛为“先交付 v0.1.0 核心，再叠加增强”，早期插入位置不再使用。M12 为 2026-11-12 增补的增强里程碑（操作级内联提权，见 NOTES.md）。
 

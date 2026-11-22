@@ -1134,7 +1134,7 @@
 - [x] M40-4 覆盖率 ≥75%（ops/remote/frecency/archive/keymap）。（2026-11-21：ops 79.70% ✓ / frecency 83.04% ✓ / archive 94.52% ✓ / keymap 91.27% ✓（cargo-llvm-cov 实测，Windows rustc 1.99.1）；**deferred**：remote/sftp.rs 15.57%——actor 需真实 SSH 服务器（CI 无 sshd 配置），后续补 CI sshd + coverage 或 sftp mock；顺带修复 junction undo EPERM（M28-1 撤销链真缺陷，junction 测试自动化即 M28-1 人工项覆盖））
 - [x] M40-5 cargo-deny/audit CI + SBOM + SHA256 校验文件。（2026-11-21：deny 四项全绿（本机实测）——含 sevenz-rust→sevenz-rust2 弃维护迁移；CI supply-chain job + SHA256SUMS.txt 入 release；audit 本机网络抖动由 CI 承担（同 RUSTSEC 库 deny 已过））
 - [x] M40-6 macOS CI 绿 + aarch64 归档。（2026-11-21：矩阵配置入库；首推 CI 验证 macOS test/clippy + aarch64 交叉构建 + 归档/SHA256——结果随 1.0.0 tag 推送确认）
-- [x] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io）。（2026-11-22：CHANGELOG 1.0.0 批次并入 + 版本 1.0.0 三处同步；tag v1.0.0 → run 44984795450 全绿——test×3 + fuzz + supply-chain + release 四腿；GitHub Release 四归档 + SHA256SUMS.txt 齐全；**发布修红三层**：aarch64 c_char E0308（privilege.rs mkfifo FFI，本地交叉复现）→ smoke 交叉产物宿主不可执行（ELF 断言替代 qemu——qemu apt 安装 runner 不稳 exit 100，两层细节见 NOTES）+ annotate_errors.sh 注解精确化；**deferred**：crates.io publish（凭据在 Windows 机，API 验证 1.0.0 随后））
+- [x] M40-7 1.0.0 发布（CHANGELOG 完整 + crates.io）。（2026-11-22：CHANGELOG 1.0.0 批次并入 + 版本 1.0.0 三处同步；tag v1.0.0 → run 44984795450 全绿——test×3 + fuzz + supply-chain + release 四腿；GitHub Release 四归档 + SHA256SUMS.txt 齐全；**发布修红三层**：aarch64 c_char E0308（privilege.rs mkfifo FFI，本地交叉复现）→ smoke 交叉产物宿主不可执行（ELF 断言替代 qemu——qemu apt 安装 runner 不稳 exit 100，两层细节见 NOTES）+ annotate_errors.sh 注解精确化；**crates.io 上线**：本机凭据 `cargo publish --locked`（package 干跑核验后），API 验证 newest/max=1.0.0）
 
 ## 41. M41 — 右栏一致性与交互缺陷修复（见 SPEC M41 节）
 

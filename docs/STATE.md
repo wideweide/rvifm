@@ -3,8 +3,8 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-22
-- **当前阶段**：**M0–M41 全部完成关闭**（M40 7/7，含 M40-7 1.0.0 发布三层修红——aarch64 c_char E0308 / smoke 交叉产物 ELF 断言 / annotate_errors.sh 注解精确化，见 NOTES；M40-2 24h fuzz 长跑与 M40-4 sftp 覆盖 deferred 不阻塞）。**v1.0.0 GitHub Release 已发布**：tag run 44984795450 全绿（test×3 + fuzz + supply-chain + release 四腿），四归档 + SHA256SUMS.txt 齐全（windows-x64 / linux-x64-gnu / linux-x64-musl / linux-aarch64-gnu）。M36–M41 统一随 1.0.0 发版（用户决策）
-- **当前任务**：**crates.io publish 1.0.0（凭据在 Windows 机，deferred）**——发布后 API 验证 1.0.0 上线。Linux 开发机侧 TASKS 已无可自动执行任务（全部勾选或明确 deferred）
+- **当前阶段**：**M0–M41 全部完成关闭，v1.0.0 双渠道发布闭环**（M40 7/7，含 M40-7 1.0.0 发布三层修红——aarch64 c_char E0308 / smoke 交叉产物 ELF 断言 / annotate_errors.sh 注解精确化，见 NOTES；M40-2 24h fuzz 长跑与 M40-4 sftp 覆盖 deferred 不阻塞）。**GitHub Release**：tag run 44984795450 全绿，四归档 + SHA256SUMS.txt 齐全；**crates.io**：本机凭据 publish 成功，API 验证 newest/max=1.0.0（2026-11-22T05:44Z）
+- **当前任务**：无（TASKS 全清零，M36–M41 统一随 1.0.0 发版完成；剩余仅人工验证项与 deferred 项）
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -17,13 +17,12 @@
 
 ## 下一步
 
-1. **crates.io publish 1.0.0（Windows 机，下一会话起点）**：`cargo publish`（凭据在 Windows 机）→ API 验证 1.0.0 上线 → 勾掉 TASKS M40-7 行内 deferred 子项与 STATE 相应行。
-2. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（1.0.0 归档）；aarch64 产物真机 `--version`（CI 为 ELF 断言非执行冒烟，见 NOTES）。
-3. **fuzz 24h 本地长跑（M40-2 deferred，Linux 机）**：需 rustup + nightly（rustup 1.100 已在本机；nightly 未装）——执行后回填 NOTES。
+1. **人工验证项（任意环境顺带）**：M11-6 清单 2–6（tmux passthrough / 无协议兜底 / NO_COLOR / 损坏图 / 大图）；M28-1 Windows junction；M31-2 装 7z 环境 cab/lzh 提示；Win2016 冒烟（1.0.0 归档）；aarch64 产物真机 `--version`（CI 为 ELF 断言非执行冒烟，见 NOTES）。
+2. **fuzz 24h 本地长跑（M40-2 deferred，Linux 机）**：需 rustup + nightly（rustup 1.100 已在本机；nightly 未装）——执行后回填 NOTES。
 
 ## 批次关闭记录
 
-- M40 + 1.0.0 发布（2026-11-22）：M40-7 收官——发布修红三层：① aarch64 `c_char` E0308（privilege.rs mkfifo FFI `*const i8` 硬编码，aarch64 上 c_char=u8；匿名 API 日志通道全失效后本地 apt+dpkg 装交叉工具链完整复现，f955c67 修复）；② smoke 步骤对交叉产物不可执行（exit 2）→ qemu 冒烟在 runner 不稳（apt exit 100）→ 确定性 ELF 断言（ab102ec）；③ annotate_errors.sh 注解精确化（行首 error 锚定 + 仅失败发射）——tag 第 5 次重指向后 run 44984795450 全绿，GitHub Release 四归档 + SHA256SUMS；crates.io publish 单列（凭据在 Windows 机）。宿主门禁 490 单测 + 12 集成 + aarch64 交叉构建 EXIT=0 全绿。
+- M40 + 1.0.0 发布（2026-11-22）：M40-7 收官——发布修红三层：① aarch64 `c_char` E0308（privilege.rs mkfifo FFI `*const i8` 硬编码，aarch64 上 c_char=u8；匿名 API 日志通道全失效后本地 apt+dpkg 装交叉工具链完整复现，f955c67 修复）；② smoke 步骤对交叉产物不可执行（exit 2）→ qemu 冒烟在 runner 不稳（apt exit 100）→ 确定性 ELF 断言（ab102ec）；③ annotate_errors.sh 注解精确化（行首 error 锚定 + 仅失败发射）——tag 第 5 次重指向后 run 44984795450 全绿，GitHub Release 四归档 + SHA256SUMS；**crates.io publish 本机凭据执行成功**（用户 2026-11-22 在 Linux 机配置 `~/.cargo/credentials.toml`；`cargo package --locked` 干跑核验 73 文件 2.3MiB 后 `cargo publish --locked`，API 验证 newest/max=1.0.0）——**1.0.0 双渠道闭环，批次清单全清零**。宿主门禁 490 单测 + 12 集成 + aarch64 交叉构建 EXIT=0 全绿。
 - M41：右栏一致性与交互缺陷修复 4 项全部完成（2026-11-21，用户实测当日闭环）——M41-1 右 pane `:` 命令模式 + gt/gT/Ngt/gg（seq 机制复用，ToTop 焦点化；单键 `g` 直跳退役，见 NOTES）、M41-2 方向键 ↑↓←→ = k/j/h/l（别名臂 + 默认 keymap + 树视图守卫扩展）、M41-3 鼠标点击切焦点 + 高亮双侧一致（hit_right_index + 滚轮焦点化，右键菜单保持左栏）、M41-4 视口滚动钉底修复（list_offset_sticky 有状态化 + 每帧 sync_viewport_scroll）；顺带修复 M37-1 chmod POSIX 死代码的 Windows clippy 违规；426 单测 + 6 集成全绿。
 
 - 0.11.0 发布（2026-11-21）：M34 完成后自动发布——tag 首推 windows test 失败（M34-5 测试 runner 长路径截断，短合成路径修复）→ **tag 重指向后 CI 全绿 + GitHub Release + crates.io 上线**（本机凭据，用户部署；`cargo publish` + API 验证）；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0）。
@@ -73,7 +72,7 @@
 ## 恢复方式
 
 1. 读本文件确认当前阶段与任务。
-2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前无可自动执行任务（全部勾选或明确 deferred；crates.io publish 待 Windows 机）**。
+2. 打开 [TASKS.md](TASKS.md)，取第一个未勾选任务——**当前无可自动执行任务（全部勾选或明确 deferred）**。
 3. 读 [AGENTS.md](../AGENTS.md) §3 执行循环。
 4. 只读该任务相关的 [SPEC.md](SPEC.md) 片段与 [ACCEPTANCE.md](ACCEPTANCE.md) 条目。
 5. 完成后更新本文件与 TASKS，再提交。

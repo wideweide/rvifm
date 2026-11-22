@@ -1083,3 +1083,8 @@ rvifm record  → 静默记录访问
 - **注解仅失败发射**：annotate_errors.sh 首次实战在绿腿也会发射"no ^error lines"日志尾部误报注解（run 44982915466 aarch64 腿实测）——三处调用点改为 `if [ $rc -ne 0 ]` 门控。
 - **取证方法论沉淀**：匿名 GitHub API 排查链已到顶（annotations→job logs 403→网页分步日志 404 需登录）；本地复现 = 唯一可靠取证路径，环境要素 = rustup target + apt download/dpkg -x 交叉工具链（libgcc-s1/libc6-arm64-cross 运行时包 + alternatives 符号链接手动补建 + --sysroot 重映射解包路径）+ `CARGO_TARGET_*_LINKER` 环境变量等价注入。
 - **收官**：tag 第 5 次重指向 ab102ec → run 44984795450 **全绿**（test×3 + fuzz + supply-chain + release 四腿），GitHub Release v1.0.0 四归档 + SHA256SUMS.txt 齐全；crates.io publish 单列（凭据在 Windows 机，执行后 API 验证）。
+
+### 2026-11-22 — 1.0.0 crates.io 上线（双渠道闭环；凭据环境事实更新）
+
+- **发布**：`cargo package --locked` 干跑核验（73 文件 / 2.3MiB，验证构建干净，唯一 warning 为 MISC-1 双 bin 既有项）→ `cargo publish --locked` 上传成功；API 验证 crates.io `newest/max_version = 1.0.0`（2026-11-22T05:44Z）。版本序列 1.0.0 → 0.11.1 → 0.11.0 → 0.8.0 → 0.7.0（0.9.0/0.10.0 跳过不变）。
+- **环境事实修正**：NOTES 前条"crates.io 凭据只在 Windows 机"已过时——用户 2026-11-22 在 Linux 机配置 `~/.cargo/credentials.toml`，publish 直接成功；且 crates.io index 直连本次未超时（前条"必需代理"不再绝对，代理配置保留为兜底）。M40 批次自此全清零（M40-2 24h fuzz 长跑、M40-4 sftp 覆盖仍 deferred，均不阻塞发版）。
