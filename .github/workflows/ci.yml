@@ -212,7 +212,17 @@ jobs:
           mkdir -p .cargo
           printf '[target.aarch64-unknown-linux-gnu]\nlinker = "aarch64-linux-gnu-gcc"\n' >> .cargo/config.toml
       - name: build --release
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        shell: bash
+        # 2026-11-22：tee + grep 注解（同 clippy/test 模式）——release 腿失败时
+        # 注解可见真实错误行（匿名 API 只能读 check-run annotations）。
+        run: |
+          set +e
+          cargo build --release --locked --target ${{ matrix.target }} 2>&1 | tee release-build.txt
+          rc=${PIPESTATUS[0]}
+          grep -E "error" -A4 release-build.txt | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit $rc
       - name: smoke --version
         run: cargo run --release --locked --target ${{ matrix.target }} --bin rvifm -- --version
       - name: archive
