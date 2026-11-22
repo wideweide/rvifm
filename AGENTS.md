@@ -77,7 +77,7 @@
 
 只有 SPEC/NOTES 明确标注“待用户拍板且不可自行决定”的才暂停。
 
-自动发布（REL-1 解耦，2026-11-22 起）：当 `TASKS.md` 中全部任务完成（勾选或明确 `deferred`）且 CI 全绿时，**自动执行版本 bump + tag/GitHub Release**（归档可逆，不等待人工决策，见 PLAN §4）；**crates.io publish 不再自动执行**——其为人工验证门后动作，放行条件见 SPEC REL 节（`docs/RELEASE_CHECKLIST.md` 对应版本清单门禁必做组勾选完成）。发布失败按停止条件 2 处理。crates.io 沿用执行机已存凭据。
+自动发布（REL-1 解耦，2026-11-22 同日两度修订）：当 `TASKS.md` 中全部任务完成（勾选或明确 `deferred`）且 CI 全绿时，**自动执行版本 bump + tag/GitHub Release**（归档可逆，不等待人工决策，见 PLAN §4）；**crates.io publish 仅由人工发起**——何时发布由人决定，人工验证可使用 `:tutor` 自行验证（随 M42），无强制门禁文档（RELEASE_CHECKLIST.md 已废除，见 SPEC REL 节）。发布失败按停止条件 2 处理。crates.io 沿用执行机已存凭据。
 
 ### 剩余预算门控与断点落地（2026-11-19 增补）
 
@@ -283,6 +283,6 @@
 
 - 历史起点：`M0-1`（初始化 Cargo 项目与目录结构）；M0 的 CI 双平台门禁已完成。
 - 当前阶段：**M0–M41 全部完成关闭；v1.0.0 双渠道发布闭环**（2026-11-22，GitHub Release 四归档 + crates.io 上线；M36–M41 统一随 1.0.0，见 PLAN §4）。项目进入维护期——后续变更走 FIX/FEAT 蒸馏批次。
-- 当前任务：以 `docs/TASKS.md` 第一个 `[ ]` 为准（当前无待办；人工验证清单入口 = `docs/RELEASE_CHECKLIST.md`，见 SPEC REL 节）。
+- 当前任务：以 `docs/TASKS.md` 第一个 `[ ]` 为准（M42 :tutor 已登记，当前第一个未勾选任务 = M42-1；人工验证方式 = `:tutor` 自行验证，见 SPEC REL 节）。
 - 当前基线：不固化 commit hash，以执行时的 `HEAD` 为准；v1.0.0 已发布（双渠道），0.9.0/0.10.0 经用户决策跳过。
 - 预算优先保证核心闭环（M0–M2 的浏览、多标签、`u` 撤销）与 §5 硬约束（如 `pick` 只读、删除走可恢复路径保证 `u` 可逆）；增强批次可简化，但不得跳过 `docs/STATE.md` 更新。

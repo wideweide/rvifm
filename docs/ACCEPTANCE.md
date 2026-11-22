@@ -262,11 +262,10 @@
 
 ## 16. 人工验证清单（历史入口，已收编）
 
-> **当前入口 = [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)**（REL-1，2026-11-22）。
-> 本节原为 v0.6.0 手册清单（A–K 十组），随版本演进其键位/命令事实已过时
-> （如 pick 双模语义、右 pane 能力、M36–M41 全部新增面），整体收编至
-> RELEASE_CHECKLIST.md 并按 1.0.0 代码事实重写；v0.6.0 原文见 git 历史
-> （tag v0.6.0）。
+> **当前人工验证方式 = `:tutor` 自行验证**（REL-2 + M42，2026-11-22；无强制
+> 门禁文档）。本节原为 v0.6.0 手册清单（A–K 十组），其键位/命令事实已过时；
+> 中间形态 RELEASE_CHECKLIST.md（1.0.0 全量清单）同日建立又废除——历史原文
+> 均见 git 历史。
 
 ## 17. M15 — 用户实测反馈批次（FIX×4 + FEAT×4，见 SPEC M15 节）
 
@@ -988,3 +987,9 @@
 - [x] M41-2 Normal 模式 `↑↓←→` 与 k/j/h/l 等价（左/右 pane 均生效，默认 keymap 注册可被 TOML 覆盖）；命令行/搜索输入内方向键编辑语义不变。（2026-11-21：m41_2 双测试；输入模式分支未触及）
 - [x] M41-3 单击右 pane 条目 → 焦点切至右 pane 且该条目按焦点样式高亮；单击左 pane 条目 → 焦点切回左 pane 且高亮；已聚焦行再击打开；滚轮作用于焦点 pane；两侧行为对称。（2026-11-21：m41_3 测试 + 渲染层焦点样式既有）
 - [x] M41-4 光标在视口底行按 `k`：列表滚动不动、高亮上移一行；光标越出视口（持续 j/G/gg/Ctrl-d）时仍正确跟随滚动；鼠标命中测试与渲染共用同一偏移推导（测试固化）。（2026-11-21：m41_4 sticky 单测 + feat1 用例重写为窗口语义；越界跟随经 sticky 贴顶/贴底语义固化）
+## 42. M42 — :tutor 导师模式（见 SPEC M42 节）
+
+- [ ] M42-1 `:tutor` 无参列出模块覆盖层；`:tutor core_nav` 等带参直接进入；Tutor Panel 底部渲染（prompt/expected 左、进度 + 按键提示右）；y/n 推进并记录、q/Esc 退出保存进度；主 TUI 背景可见但按键被拦截（TestBackend 渲染断言 + 键位拦截测试）。
+- [ ] M42-2 进度写 `data_dir()/tutor_progress.toml`；skipped 项下次进入优先复习提示；`:tutor reset <module>` 清空；损坏进度文件静默降级为全新进度。
+- [ ] M42-3 三模块内容与实际键位/命令语义一致（core_nav：j/k·h/l·gg/G·Tab；file_ops：yy·p·dd·u·:rename；search_frecency：/·=·o·:recent），prompt/expected 与代码行为相符。
+- [ ] M42-4 GUIDE/README 新手指引；批次文档同步（SPEC/PLAN/TASKS/STATE）；Panel 内 Summary 呈现、无外部文件产生。

@@ -1253,33 +1253,54 @@ append_rules = [
 - 右 pane 文件操作（M14-1 边界不变）。
 - 鼠标拖拽选择、拖拽滚动。
 
-## REL — 发布流水线解耦与人工验证门（2026-11-22 增补；用户蒸馏指令，见 NOTES）
+## M42 — :tutor 导师模式（2026-11-22 增补；用户蒸馏 Qwen 讨论稿·已确认，见 NOTES 同日条目）
+
+> 目标：把人工验证与新手上手合并为 TUI 内交互模式——既是教程也是自验清单
+> 执行器。单一模式（学习/测试双模式已裁剪）；无外部报告文件；进度本地持久化
+> + 错题本。顺序：1（框架/UI）→ 2（数据/错题本）→ 3（内容）→ 4（文档收尾）。
+
+**MUST**
+- **M42-1 框架与 UI**：`:tutor` 命令（无参 → 模块列表覆盖层；`:tutor <module_id>` → 直接进入该模块）；底部约 1/4 Tutor Panel（左侧 prompt + expected 多行渲染，右侧进度 n/m 与按键提示）；Tutor 模式（InputMode::Tutor）拦截全局按键，仅响应 y（掌握/下一项）、n（未掌握记错题本/下一项）、q 与 Esc（退出并保存进度）；主 TUI 背景保持可见作为操作上下文。
+- **M42-2 数据与错题本**：`TutorModule`/`TutorItem` 数据结构（`assets/tutor/*.toml`，`include_str!` 编译期内嵌——先例 help.txt/BUNDLED_THEMES）；进度持久化 `data_dir()/tutor_progress.toml`（复用 M8-3 既有数据目录路径）；再次进入模块时未掌握项优先复习（Panel 提示"优先复习未掌握项"）；`:tutor reset <module_id>` 清空该模块进度。
+- **M42-3 首批内容**：core_nav（j/k、h/l、gg/G、Tab 焦点切换）、file_ops（yy、p、dd、u、:rename）、search_frecency（/、=、o、:recent）三模块，每模块 5–10 项，条目含 prompt（操作指引）与 expected（预期结果），语义与实际键位/命令一致。
+- **M42-4 文档收尾**：GUIDE.md/README 增"新手推荐：`:tutor` 快速上手"指引；ACCEPTANCE §42 逐条勾选；批次文档同步（SPEC/PLAN/TASKS/STATE）；模块结算 Summary 在 Panel 内呈现（掌握/未掌握计数），不生成外部文件。
+
+**SIMPLIFIED**
+- Tutor 模式键位硬编码（y/n/q/Esc），不进 ModeLayers 用户映射（M33 三层覆盖不适用此模式）。
+- 无报告文件生成（tutor_report 废弃）；无学习/测试双模式；无间隔重复调度（错题本 = skipped 项优先的简单队列）。
+- 进度文件损坏静默降级为全新进度（沿用 session.toml 容错模式）。
+- 模块内条目线性顺序执行，不跨模块混合调度。
+
+**OUT_OF_SCOPE**
+- 外部报告/导出文件；学习/测试双模式切换；Anki 式间隔重复；多语言内容；
+  Tutor 键位用户映射；Agent 自动读取验证结果（结果供人看，不进自动化）。
+
+## REL — 发布流水线解耦（2026-11-22 增补；同日用户裁决修订：门禁简化为人工发起，见 NOTES）
 
 > 背景：GitHub Release（二进制归档）可逆可覆盖；crates.io 版本号发布后不可
-> 回收。据此将两通道解耦——自动化止步于 GitHub，不可逆通道由人工门保护。
+> 回收。据此两通道解耦——自动化止步于 GitHub，crates.io 仅由人工发起。
 
 **MUST**
 - **REL-1 发布两通道解耦**：tag `v*` 推送 → CI（test×3 + fuzz + supply-chain）
   全绿 → **GitHub Release 自动发布**（四平台归档 + SHA256SUMS，既有 ci.yml
-  release job 承担），此段无需人工干预；**crates.io publish 为人工验证门后
-  动作**：放行条件 = `docs/RELEASE_CHECKLIST.md` 对应版本清单的"门禁必做组"
-  （A/B/C/D/E/G/H）全部勾选通过，且结论段（操作系统/终端/产物来源/验证人/
-  日期/未通过项）填写完整。清单文档随版本更新（版本号、日期、按最新代码事实
-  核对命令语法）；历史入口（ACCEPTANCE §16 v0.6.0、§35-A 0.11.0）收编至该文件。
-- **REL-2 清单维护**：每个发布版本 tag 前，RELEASE_CHECKLIST.md 的版本头
-  （版本号/日期）与条目必须按当次代码变更增量修订（新功能入对应分组，失效
-  条目移除）；清单条目与代码事实不符视为文档缺陷。
+  release job 承担），此段无需人工干预；**crates.io publish 仅由人工发起**
+  ——何时发布由人决定（2026-11-22 裁决撤销清单门：原 RELEASE_CHECKLIST.md
+  删除，人工验证方式改为 `:tutor` 自行验证（随 M42 落地），测试人员知悉
+  即可，无强制门禁文档）。
+- **REL-2 人工验证形态**：`:tutor`（M42）既是新手教程也是自验清单执行器；
+  发布前是否跑、跑哪些模块由人工自行判断；结果不生成外部文件（进度仅本地
+  持久化，见 M42）。
 
 **SIMPLIFIED**
-- 人工门以文档协议承载（清单勾选 + 结论记录），不引入外部审批系统/流水线
-  YAML；crates.io 在持凭据机器执行（凭据可随环境配置，见 NOTES 2026-11-22
+- crates.io 在持凭据机器人工执行（凭据可随环境配置，见 NOTES 2026-11-22
   环境事实修正）。
-- 1.0.0 的清单执行形态为"发布后全量实测验收"（crates.io 已发）；自下一版本
-  起为"发布前门禁"。
+- 历史清单（ACCEPTANCE §16 v0.6.0、§35-A 0.11.0、RELEASE_CHECKLIST v1.0.0）
+  全部退役：当前入口为 :tutor，历史原文见 git 历史。
 
 **OUT_OF_SCOPE**
 - 自动化 UI 回归（截图比对/UI 测试框架）。
-- crates.io 自动 publish（任何形式——即便清单勾选完成，publish 仍由人执行）。
+- crates.io 自动 publish（任何形式）。
+- 强制门禁文档/勾选清单（RELEASE_CHECKLIST.md 模式废弃）。
 
 ## 6. 待定事项
 

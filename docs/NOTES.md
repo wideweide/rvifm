@@ -1114,3 +1114,23 @@ rvifm record  → 静默记录访问
 - **1.0.0 形态特例**：crates.io 1.0.0 已于本日发布（用户指令"验证并执行"），
   故 1.0.0 清单为发布后全量实测验收（0.9–1.0 功能首次人工实测入口）；自
   下一版本起清单转为发布前门禁。
+
+### 2026-11-22 — REL-2 门禁简化 + M42 :tutor 登记（WHY）
+
+- **WHY 撤销清单门（同日两度修订）**：REL-1 上午版以 RELEASE_CHECKLIST.md
+  勾选为 crates.io 放行证据；用户随后裁决——清单只有人工校验部分，与
+  `:tutor`（M42）职能重叠，维护两套人工面是冗余。定稿：publish 仅由人工发起
+  （何时发布由人决定），人工验证方式 = `:tutor` 自行验证（知悉即可，非强制
+  门禁）；RELEASE_CHECKLIST.md 删除（1.0.0 清单历史见 git）。
+- **M42 蒸馏来源**：Qwen 讨论稿「人工验证清单优化策略」（chat.qwen.ai share，
+  2026-11-22）——人工校验按辅助学习层级设计：:tutor 命令 + 底部 Tutor Panel
+  + y/n/q 按键 + 进度持久化 + 错题本。用户裁剪项（CUT，投 SPEC OUT_OF_SCOPE）：
+  学习/测试双模式、tutor_report 外部报告文件、Agent 自动读取验证结果；保留项
+  （REQ）：单模式自验 + 错题本 + reset。
+- **设计决策**：模块内容 `assets/tutor/*.toml` + include_str!（先例
+  help.txt/BUNDLED_THEMES）；进度 TOML 落 data_dir()（复用 M8-3 路径）；Tutor
+  键位硬编码不进 ModeLayers（SIMPLIFIED，避免 M33 面膨胀）；结算 Summary 在
+  Panel 内呈现。类似工具对照（vim-tutor/Helix :tutor/Anki）仅 WHY 记录，不
+  进 SPEC。
+- **编号**：M42 空闲（M41 为最后已用里程碑号）；REL-2 编号未占用。版本目标
+  1.1.0（功能特性，semver minor；发布走 REL-1 人工发起）。
