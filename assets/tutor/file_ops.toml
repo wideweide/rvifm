@@ -1,0 +1,48 @@
+# M42-3：导师模式首批内容——文件操作模块。
+# 条目语义与代码行为对齐：yy/p/P（M10-6 独立动作）、dd 确认+暂存（M2-2/
+# M13-3）、u 撤销（M2-6 逆序）、:rename 带参单项直改（M2-3）/无参批量（M21-E4）。
+
+[module]
+id = "file_ops"
+name = "文件操作 (File Operations)"
+description = "掌握复制、粘贴、删除与撤销的核心操作"
+
+[[items]]
+id = "yank"
+prompt = "光标停在一个文件上，按 `yy` 复制（yank）到缓冲区。"
+expected = "状态栏提示复制成功；文件本身不变。"
+
+[[items]]
+id = "put_copy"
+prompt = "按 `p` 把刚才复制的文件粘贴（复制）到当前目录。"
+expected = "当前目录出现该文件的副本（重名会报错不覆盖）。"
+
+[[items]]
+id = "put_move"
+prompt = "再按一次 `yy`，然后按 `P` 把文件移动（剪切粘贴）到当前目录。"
+expected = "原位置的文件消失，当前目录出现它——P 是移动，p 是复制。"
+
+[[items]]
+id = "delete"
+prompt = "光标停在一个文件上按 `dd`，确认提示出现后按 `y`。"
+expected = "文件从列表消失（进应用内暂存区，不是永久删除）。"
+
+[[items]]
+id = "undo"
+prompt = "按 `u` 撤销刚才的操作。"
+expected = "刚删除的文件回到原位；连续按 `u` 可逆序撤销多步。"
+
+[[items]]
+id = "rename_single"
+prompt = "光标停在文件上，输入 `:rename 新名字` 后回车。"
+expected = "文件被重命名；按 `u` 可撤销恢复原名。"
+
+[[items]]
+id = "rename_batch"
+prompt = "输入 `:rename`（无参）后回车，进入批量重命名预览。"
+expected = "进入重命名预览视图（按 `y` 应用、Esc 取消）；整批可撤销。"
+
+[[items]]
+id = "undo_order"
+prompt = "连续做两步操作（如复制+删除），然后连按 `u` 两次。"
+expected = "操作按逆序被逐步撤销（后做的先撤销）。"

@@ -1,0 +1,43 @@
+# M42-3：导师模式首批内容——检索与记忆模块。
+# 条目语义与代码行为对齐：/ 搜索（FIX-1 incsearch + M34-3 焦点感知）、
+# = 过滤（M21-E7）、o 跳转选择器（M8-12）、:recent 近期视角（M16 NAV-4）。
+
+[module]
+id = "search_frecency"
+name = "检索与记忆 (Search & Frecency)"
+description = "掌握搜索、过滤与高频目录快速跳转"
+
+[[items]]
+id = "search"
+prompt = "按 `/` 输入文件名片段（如 `f0`），观察实时跳转。"
+expected = "输入即跳到第一个匹配并高亮，状态栏显示计数；Esc 清空还原。"
+
+[[items]]
+id = "search_next"
+prompt = "按 `n` 与 `N` 在匹配项之间跳转。"
+expected = "n 跳下一个匹配，N 跳上一个（环绕列表首尾）。"
+
+[[items]]
+id = "filter"
+prompt = "按 `=` 输入通配符（如 `*.txt`）。"
+expected = "列表只剩匹配项，状态栏出现 [filter: …]；Esc 清除过滤。"
+
+[[items]]
+id = "jump_selector"
+prompt = "按 `o` 打开跳转选择器，输入目录名片段筛选后回车。"
+expected = "列出高频目录/文件（模糊筛选、按访问频率排序）；选定目录即 cd。"
+
+[[items]]
+id = "mark_directory"
+prompt = "访问几个常用目录后（l 进入），再按 `o` 观察。"
+expected = "刚访问过的目录排名上升（frecency 按频率+近期排序）。"
+
+[[items]]
+id = "recent_view"
+prompt = "输入 `:recent` 回车。"
+expected = "打开\"近期\"视角：条目按最后访问时间倒序；选定后跳转。"
+
+[[items]]
+id = "selector_readonly"
+prompt = "在选择器里按 `q` 退出。"
+expected = "回到原列表；选择器全程只读，不写入访问记录。"

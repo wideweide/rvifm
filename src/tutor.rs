@@ -71,9 +71,16 @@ impl<'de> Deserialize<'de> for TutorItem {
     }
 }
 
-/// 内嵌模块表（编译期 include_str!；M42-3 扩充 file_ops/search_frecency）。
-const BUILTIN_TUTOR_MODULES: &[(&str, &str)] =
-    &[("core_nav", include_str!("../assets/tutor/core_nav.toml"))];
+/// 内嵌模块表（编译期 include_str!；M42-3 三模块——core_nav/file_ops/
+/// search_frecency；新增模块在此登记）。
+const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
+    ("core_nav", include_str!("../assets/tutor/core_nav.toml")),
+    ("file_ops", include_str!("../assets/tutor/file_ops.toml")),
+    (
+        "search_frecency",
+        include_str!("../assets/tutor/search_frecency.toml"),
+    ),
+];
 
 /// 解析模块 TOML 为 [`TutorModule`]。
 pub fn parse_module(text: &str) -> Result<TutorModule, String> {

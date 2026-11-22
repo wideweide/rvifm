@@ -510,7 +510,7 @@
 
 - [x] M42-1 `:tutor` 命令 + 底部 Tutor Panel + Tutor 模式按键拦截（y/n/q/Esc；见 SPEC M42-1；2026-11-22 完成：src/tutor.rs（TutorModule/Item + include_str 内嵌 core_nav）+ InputMode::TutorList/TutorSession + tutor_list_key/tutor_session_key 纯函数 + exec 分派（无参列模块/带参进入/未知可读报错）+ 四视图白名单放行 + render 列表覆盖层与底部 Panel（1/4，左 prompt/expected 右进度+键提示，done 结算 Summary）+ m42_1 双测试，495 单测）
 - [x] M42-2 TutorModule/Item 数据 + `tutor_progress.toml` 持久化 + 错题本优先调度 + `:tutor reset`（见 SPEC M42-2；2026-11-22 完成：ModuleProgress/TutorProgress（BTreeMap→[module_id] 表）+ load/save（缺失/损坏静默降级）+ merge_session（mastered/skipped 互斥迁移）+ review_order（skipped→unseen→mastered 三桶保序）+ 进入会话复习模式（Panel 标题（复习）+ 🔁 提示行）+ 关闭自动落盘（失败进状态栏）+ `:tutor reset <id>`（exec 错误分支测试，成功路径路径注入单测——m38_4 家规）；496 单测 + 12 集成）
-- [ ] M42-3 首批内容 3 模块（core_nav/file_ops/search_frecency；见 SPEC M42-3）
+- [x] M42-3 首批内容 3 模块（core_nav/file_ops/search_frecency；见 SPEC M42-3；2026-11-22 完成：core_nav 7 项（M42-1 随框架落成）+ file_ops 8 项（yy/p·P 独立动作语义/dd 确认+暂存/u 逆序/:rename 单项直改与无参批量预览）+ search_frecency 7 项（/ incsearch·n·N、= 过滤、o 选择器、:recent 近期、选择器只读）——条目语义逐项对照 exec.rs/tab.rs 现行为；builtin_modules_parse_and_unique 测试固化）
 - [ ] M42-4 文档收尾（GUIDE/README 指引 + ACCEPTANCE §42 + 批次同步；见 SPEC M42-4）
 
 ## REL — 发布流水线解耦与人工验证（2026-11-22 增补；用户蒸馏指令，见 SPEC REL 节）
