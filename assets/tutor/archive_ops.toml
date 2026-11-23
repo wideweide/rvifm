@@ -30,5 +30,10 @@ expected = "内建 7z 创建（sevenz-rust2）；rar/cab/lzh/tar.xz 等走外部
 
 [[items]]
 id = "extract"
-prompt = "光标停在 `打包.zip` 上输入 `:extract 解压目录` 回车。"
-expected = "解压到指定目录（缺省当前目录；zip-slip 成员路径防护；job 化；逐成员 `u` 可逆）。"
+prompt = "光标停在 `打包.zip` 上输入 `:extract` 回车。"
+expected = "缺省解压到**对侧 pane** 物理目录（也可 `left`/`right`/`当前`/`对侧`/路径指定）；zip-slip 防护；逐成员 `u` 可逆。"
+
+[[items]]
+id = "archive_member_paste"
+prompt = "进入归档虚拟目录，`yy` 标记一个成员，切到对侧物理目录按 `p`。"
+expected = "按成员解压到焦点 pane 物理目录（不写归档内）；逐成员 `u` 可逆。"

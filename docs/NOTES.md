@@ -1265,6 +1265,12 @@ rvifm record  → 静默记录访问
   `metadata.is_file()` 守卫（符号链接经 metadata 跟随判定，指向 FIFO 同样拒绝），
   并加 `m452b_sniff_skips_socket_without_blocking` 回归测试。WHY 不用
   O_NONBLOCK：跨平台且需 unsafe，metadata 守卫已足够且无 unsafe。
+- **M45-10 文档收尾（2026-11-23）**：CHANGELOG 新增 `[Unreleased]` 汇总 M45
+  全部用户可见变更；README/GUIDE/help 同步（路径缩写/标签栏/分隔线/确认弹窗/
+  可执行文件特例/对侧解压/归档 yy 粘贴/命令名补全）；tutor `archive_ops`
+  更新 `:extract` 缺省对侧语义并新增归档成员 `yy`→`p` 条目（M43-6 维护规则）；
+  28 子任务 + 文档收尾全部勾选，TASKS 无未勾选项。人工验证项仅 C6（原生协议
+  大图不越界）deferred，可任意真实终端补做。
 - **M45-5c 范围自决（2026-11-23）**：SPEC M45-5③ 标注「需用户确认范围
   （命令名补全 vs 参数提示）」，但不在用户 5 项冲突裁决之列，且未标注「不可
   自行决定」。按 AGENTS §3 自行决策：实现**命令名 Tab 补全**（首词位置

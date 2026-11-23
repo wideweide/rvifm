@@ -3,6 +3,17 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+M45 用户实测批次（28 子任务，冲突裁决全部落地）：
+
+- 浏览：HOME 下路径显示 `~/…`；标签栏鼠标点击切换 tab、灰白底反色字；双 pane 分隔线改为 `[ui] pane_separator` 可配置（默认关）；未搜索态整行背景一致；无后缀/可执行/文本/jar/deb 按类型推断图标。
+- 打开与确认：opener 解析错误给出路径+字段+示例指引（`:help`）；可执行文件 `Enter` 仅提示「请在终端执行」（`[open]` 显式 `run` 规则可绕过）；删除确认为居中 ⚠ 弹窗；`h`→`l` 往返还原光标。
+- 预览：大图字体尺寸兜底与切片高度钳制（不越出窗格）；归档预览显示成员列表（Office/PDF 优先）；文本查看器对含 NUL 文件回退信息面板（tar 不再乱码）。
+- 命令与焦点：`o`/`:j`/`:J` 选择器支持鼠标点击；`:` 首词 Tab 补全命令名；`:cd` 与 `o` 跳转写入焦点 pane；右栏归档 `l`/Enter 进入虚拟目录。
+- 解压：`:extract` 缺省解压到对侧 pane（支持 `left`/`right`/`当前`/`对侧`/路径）；归档虚拟目录 `yy`→`p`/`P` 按成员解压到焦点 pane（可撤销）。
+- Tutor：列表显示学习进度百分比、布局避让底部面板、进度缓存即时刷新；`:archive <名> checksum=…` 从扩展名推断格式；归档对话框加宽/去后缀/多选默认父目录名。
+
 ## [1.2.0] — 2026-11-23
 
 发布产物简化：GitHub Release 仅分发 musl 归档，aarch64 改为静态 musl。crates.io 不发布，仅 GitHub Release。

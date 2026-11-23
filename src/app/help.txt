@@ -161,6 +161,12 @@ rvifm 帮助（vim 风格文件管理器）
 opener 必须写成表（写成字符串会解析失败并整体回退默认配置）：
   [opener] edit_text = { run = "nvim %s", block = true }
   [open] prepend_rules = [{ mime = "text/*", use = ["edit_text", "open"] }]
+
+M45 实测批次的便利改动：状态栏 HOME 路径缩写 ~/…；标签栏可点击切换；
+双 pane 分隔线由 [ui] pane_separator 控制（默认关）；`h`→`l` 往返还原光标；
+可执行文件 Enter 仅提示「请在终端执行」（可用 [open] 显式 run 规则覆盖）；
+删除为居中 ⚠ 确认弹窗；`:extract` 缺省解压到对侧 pane；
+归档虚拟目录内 yy 后到物理目录 p/P 按成员解压；`:` 首词 Tab 补全命令名。
 本帮助页按 q 或 Esc 返回列表，光标与滚动位置保持不变。
 键位分层扩展（M33）：config.toml 除 [normal] 外支持 [visual]/[view] 三层
 （prepend/append/replace）——进入对应模式（v/w）时用户绑定生效，退出还原。

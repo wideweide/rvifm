@@ -38,6 +38,10 @@ Ctrl-d / Ctrl-u   半页下翻 / 上翻
 Tab        切换左右 pane 焦点（双栏均可独立导航）
 ```
 
+状态栏/面包屑中 HOME 下的路径缩写为 `~/…`（导航仍用绝对路径）；标签栏可鼠标
+点击切换，分隔线由 `[ui] pane_separator` 控制（默认不显示）。`h` 返回父目录后
+再 `l` 重返会还原该目录此前的光标位置。
+
 ### 2.2 第一次文件操作与撤销
 
 ```
@@ -62,7 +66,12 @@ h          在归档根返回归档所在物理目录
 
 创建支持 zip / tar / tar.gz / **7z**（内建）与 rar / cab / lzh / tar.xz / tar.bz2 /
 tar.zst（外部 CLI 降级，需 PATH 有对应工具）；完成后生成校验文件
-（默认 md5，可 sha256/none）。`.rar` 不支持虚拟浏览（提示解压）。
+（默认 md5，可 sha256/none）。`:archive 名.zip checksum=sha256` 可省格式名参，
+从扩展名推断。`.rar` 不支持虚拟浏览（提示解压）。
+
+`:extract`（无参）解压到**对侧 pane**，也可 `left`/`right`/`当前`/`对侧`/路径指定；
+归档虚拟目录内 `yy` 标记成员后到物理目录 `p`/`P` 按成员解压，均可用 `u` 撤销。
+归档文件的预览显示成员名列表。
 
 ### 2.4 frecency 跳转（高频目录/文件）
 
@@ -247,7 +256,7 @@ prepend_keymap = [
 |---|---|
 | `:cd` `:mkdir` `:touch` `:mk` | 目录/文件创建与切换 |
 | `:rename` `:copy` `:move` `:link` | 重命名 / 复制 / 移动 / 建链 |
-| `:archive` `:compare` | 归档创建 / 目录对比 |
+| `:archive` `:extract` `:compare` | 归档创建（支持 `名 checksum=…` 推断格式）/ 解压到对侧或指定侧 / 目录对比 |
 | `:find` `:grep` | 递归搜索 / 内容搜索 |
 | `:select` `:unselect` `:tag` | 批量选择与操作 |
 | `:bmark` `:bmarks` `:bmgo` `:delbmarks` `:keyword` | 书签族 |
