@@ -3,7 +3,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.3.0] — 2026-11-24
 
 M45 用户实测批次（28 子任务，冲突裁决全部落地）：
 

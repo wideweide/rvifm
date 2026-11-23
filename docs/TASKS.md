@@ -568,6 +568,10 @@
 - [x] REL-4-1 CI release matrix 改 musl-only（3 腿：x64-musl / aarch64-musl / windows-x64；aarch64 用 cargo-zigbuild 交叉编译 + 静态链接 smoke；SHA256SUMS 数量守卫 3；见 SPEC REL-4-1；2026-11-23 完成：YAML 解析 + 本地 cross-build 实测通过）
 - [x] REL-4-2 版本 bump 1.2.0 + 文档同步 + tag → GitHub Release（三归档 + SHA256SUMS；crates.io 不发布；见 SPEC REL-4-2；2026-11-23 完成：tag run 45132119778 全绿，三 musl 归档 + SHA256SUMS 3 行 `sha256sum -c` 实测通过，aarch64 产物静态 ELF + `--version` 通过）
 
+## REL-5 — M45 批次发布（1.3.0；自动续轮触发）
+
+- [ ] REL-5 版本 bump 1.3.0 + 文档同步 + tag v1.3.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-24：CI run 45240675080/45243627876 全绿，触发自动发布）
+
 ## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，待用户确认，见 SPEC M45 节）
 
 > 来源：用户 2026-11-23 测试反馈（29 项，按 §8 蒸馏）。登记前逐项核对代码与
