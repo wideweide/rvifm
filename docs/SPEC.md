@@ -316,7 +316,7 @@ redb 三表，无后台守护进程：
 
 **MUST**
 - **M27-1 符号链接目录进入**：物理视图分类条目时必须跟随符号链接目标判定 `is_dir`（保留 `is_link` 用于着色）；`ln -s <dir> link` 后 `l`/`Enter` 进入目标目录（rvifm 内部 `navigate_to`），不得调用 `system_open()`；目录优先排序、`..` 返回、目录树/预览的目录判定与之一致；断链不得使目录列表加载失败，`Enter` 给出可读提示且不 panic。
-- **M27-2 vifm 风格布局与配色**：默认去掉左右 pane 的整框边框，改为 vifm 式布局——标签栏 1 行、每个 pane 顶部路径行 1 行、双 pane 之间 1 列分隔线、底部状态行；用背景色而非边框区分：`TabLine`/`TabLineSel`、`TopLine`/`TopLineSel`（非焦点/焦点 pane 路径行）、`Border`（分隔线）、`StatusLine`/`CmdLine`、`CurrLine`/`OtherLine`、`Selected`；文件类型映射 vifm 组名（`Directory`/`Link`/`BrokenLink`/`Executable` 等），缺失时回退现有 `ft_*`/16 色；新增 `[ui] pane_borders`（默认 false；true 恢复旧整框外观）；主题样式存在时优先，未激活主题时使用 vifm Default 风格的 16 色回退。
+- **M27-2 vifm 风格布局与配色**：默认去掉左右 pane 的整框边框，改为 vifm 式布局——标签栏 1 行、每个 pane 顶部路径行 1 行、双 pane 之间 1 列分隔线（**M45-1 裁决后改为可配置 `[ui] pane_separator`，默认 false = 不显示；true 恢复分隔线**）、底部状态行；用背景色而非边框区分：`TabLine`/`TabLineSel`、`TopLine`/`TopLineSel`（非焦点/焦点 pane 路径行）、`Border`（分隔线）、`StatusLine`/`CmdLine`、`CurrLine`/`OtherLine`、`Selected`；文件类型映射 vifm 组名（`Directory`/`Link`/`BrokenLink`/`Executable` 等），缺失时回退现有 `ft_*`/16 色；新增 `[ui] pane_borders`（默认 false；true 恢复旧整框外观）；主题样式存在时优先，未激活主题时使用 vifm Default 风格的 16 色回退。
 - **M27-3 PDF 首页/前两页图像预览（可配置）**：TUI 查看器（`w`/view）在 PDF 文本提取后，可按配置生成前 1–2 页图像交给 `ImageEngine` 渲染；`[preview] pdf_image_pages = 0|1|2`（默认 1；0 关闭）与 `pdf_prefer_image = false|true`（默认 false）；`prefer_image=false` 时仅在文本层不足（`NeedsVisual`）才走图像，`true` 时文本提取成功后仍优先展示图像；探测顺序仍为 `pdf-inspector` 文本 → `exprim`（仅 `pdf-visual`）→ `pdftoppm`/`mutool`；任一环节失败（工具缺失/非零退出/解码失败/超页数）回退到已提取文本或可读提示，不 panic；外部命令逐参数传递、不经 shell，临时图像文件在预览切换/退出时清理；输入文件大小与导出像素沿用 M11/AUDIT-2 护栏；`pick` 的 PDF 预览不在本任务（AUDIT-3 决定）。
 
 **SIMPLIFIED**
@@ -448,7 +448,7 @@ redb 三表，无后台守护进程：
 - **M34-6 `.jar` 归档识别**：`is_archive_file` 增加 `.jar`（复用 M7-2 ZipFs zip 后端）；浏览/预览/搜索链路自动生效；roundtrip 与损坏归档测试同 M26-3 模式。
 - **M34-7 二进制/不可读预览信息面板**：NUL 二进制、非 UTF-8、读取失败统一渲染结构化信息面板——文件大小、修改时间、类型推断（扩展名 + 魔数嗅探），替代现有 lossy 乱码渲染与单一错误行；不执行文件（硬约束）；TUI 预览与 pick 预览同源。
 - **M34-8 docs/GUIDE.md 用户手册**：快速上手（安装 → 首次浏览/文件操作/撤销 → 归档 → frecency 跳转）+ 键位/命令速查表；分节参考 ranger(1) 结构（浏览/文件操作/选择/搜索/归档/跳转/配置），每节最小示例；README 不扩写；GUIDE（仓库侧手册）与 help.txt（TUI 内速查）分工；内容以实现现状为准，不描写未实现功能。
-- **M34-9 图片/PDF 预览尺寸适配（2026-11-21 用户实测后追加）**：ImageEngine 图像与 PDF 视觉页（AUDIT-2 / M27-3 链路）渲染尺寸语义——原始尺寸不大于预览窗格时按实际尺寸**不放大、窗格内居中**；超过窗格时**按宽度缩放至预览窗格宽度**，高度超出部分在交互查看器（`w`，M13-9）内可滚动查看完整内容，普通预览窗格显示顶部（与文本预览"前 N 行"语义一致）；实现基线 ratatui-image `Resize::Fit`（天然不放大，`Fill` 会放大不使用）；pick 预览同源适用。
+- **M34-9 图片/PDF 预览尺寸适配（2026-11-21 用户实测后追加）**：ImageEngine 图像与 PDF 视觉页（AUDIT-2 / M27-3 链路）渲染尺寸语义——原始尺寸不大于预览窗格时按实际尺寸**不放大、窗格内居中**；超过窗格时**按宽度缩放至预览窗格宽度**，高度超出部分**显示顶部不滚动**（与文本预览"前 N 行"语义一致；M45 裁决去除旧"查看器内可滚动"措辞，与 SIMPLIFIED 统一）；实现基线 ratatui-image `Resize::Fit`（天然不放大，`Fill` 会放大不使用）；pick 预览同源适用。
 - **M34-10 M34 文档收尾**：help.txt（右 pane 搜索语义、主题列表）、README（默认主题、jar 支持）与 ACCEPTANCE §34 逐条同步；批次勾选完成后关闭。
 
 **SIMPLIFIED**
@@ -1168,7 +1168,7 @@ append_rules = [
 
 **MUST**
 - **M37-1 `:chmod <mode>`**：八进制/符号模式；作用于光标/tags/v 选集；`-R` 递归；批量失败逐项报告；POSIX only（Windows 给可读"不支持"）。
-- **M37-2 `:extract [目标]`**：归档内选中项/全部解压到目标目录（缺省 = 当前物理 pane）；zip-slip 防护；单成员 64MB 上限沿用护栏；冲突走 M36-5 策略；后台 job 化；逐条入撤销栈（`u` 可逆）。
+- **M37-2 `:extract [目标]`**：归档内选中项/全部解压到目标目录（**M45-7 裁决推翻旧默认**：缺省 = 对侧物理 pane；`:extract left|right|当前|对侧|绝对路径` 指定侧/路径，`left`/`right` 取对应 pane 的物理目录，左右栏都可调用）；zip-slip 防护；单成员 64MB 上限沿用护栏；冲突走 M36-5 策略；后台 job 化；逐条入撤销栈（`u` 可逆）。**M45-7 追加**：归档虚拟目录内 `yy` 标记成员后 `p`/`P` 粘贴到焦点 pane 物理目录 = 按成员解压（推翻 NOTES 2026-11-21「归档 yy 不支持」决策，仍不写归档内）。
 - **M37-3 `:sync left→right|right→left`**：基于 `:compare` 结果的镜像同步；三策略（仅复制缺失/覆盖较新/镜像含删除）；删除需显式 `--delete` 开关 + 确认；先 dry-run 预览再应用。
 - **M37-4 `:du`**：并行遍历当前目录；按大小排序虚拟视图（目录聚合 + 总计）；可取消；万条上限。
 - **M37-5 `:dup`**：三段查重（size → 头部哈希 → 全文 SHA-256）；硬链接识别（inode）；结果虚拟视图可 `dd`/`:tag`。
@@ -1243,7 +1243,7 @@ append_rules = [
 **MUST**
 - **M41-1 右 pane 命令模式与标签切换**：右 pane 焦点下 `:` 进入命令模式，输入的内部命令作用于焦点 pane（沿用 focus_base 既有语义）；`gt`/`gT`/`Ngt` 切换标签，语义与计数行为与左 pane 完全一致。右 pane"仅导航"边界不变（d/D/c 等文件操作键仍拒绝）。实现语义升格：M14-1 的右 pane 单键 `g` 直跳顶部退役，统一为 `gg` 序列（经待决序列机制，与左 pane 一致；未知第二键整体丢弃）。
 - **M41-2 方向键导航**：Normal 模式 `↑/↓/←/→` 等价 `k/j/h/l` 对应动作（左 pane 经默认 keymap 声明式注册，用户 TOML 三层覆盖规则对其生效；右 pane 处理器同步支持四键）。输入模式（命令行/搜索/对话框）内方向键既有编辑语义不变。
-- **M41-3 鼠标点击焦点与高亮一致**：单击任一 pane 的条目行 → 焦点切换到该 pane 且该 pane 光标移至命中条目（CurrLine/OtherLine 样式随焦点呈现）；已聚焦行再次单击 = 打开（右 pane 打开 = 进入目录语义，仅物理目录，文件/归档 no-op）；滚轮滚动作用于焦点 pane。左右双侧表现一致。
+- **M41-3 鼠标点击焦点与高亮一致**：单击任一 pane 的条目行 → 焦点切换到该 pane 且该 pane 光标移至命中条目（CurrLine/OtherLine 样式随焦点呈现）；已聚焦行再次单击 = 打开（**M45-6 裁决改规格**：右 pane 打开 = 进入目录语义，物理目录与归档虚拟目录均可进入，文件仍 no-op）；滚轮滚动作用于焦点 pane。左右双侧表现一致。
 - **M41-4 视口滚动钉底修复**：列表视口偏移改为有状态——仅当光标越出可见窗口（offset ≤ cursor < offset+height）时才滚动；光标自视口底行按 `k` 上移时列表保持不动、高亮上移一行。渲染（ListState offset）与鼠标命中测试共用同一偏移推导，不得分叉。
 
 **SIMPLIFIED**
@@ -1448,33 +1448,34 @@ append_rules = [
 ## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，见 NOTES 同日条目）
 
 > 来源：用户 2026-11-23 测试反馈 29 项，按 AGENTS §8 蒸馏。登记前已逐项核对
-> 代码（三个并行只读调查）与既有文档。**冲突项以本节 MUST 的「裁决」标注，
-> 实施前须用户拍板并写入 NOTES**；未拍板不得开写。已实现项（分隔线、标签
-> 样式、整行反显、tutor 进度持久化、opener 引擎、`:extract`）不重复登记。
+> 代码（三个并行只读调查）与既有文档。**5 项冲突 + 34-9 矛盾已于 2026-11-23
+> 用户拍板并落 NOTES/相关节**（分隔线=可配置默认关 / 搜索高亮保留仅修未搜索态 /
+> 可执行文件特例 / 右栏归档进入改 M41-3 / extract 对侧+归档 yy 推翻 /
+> 34-9 去可滚动）。已实现项（分隔线引擎、标签样式、整行反显、tutor 进度持久化、
+> opener 引擎、`:extract` 存在）不重复登记。
 
 **MUST**
 - **M45-1 路径与标签栏**：① `Location::display_path()` 对 HOME 下路径显示
   `~/…` 缩写（仅显示层，导航/比较仍用绝对路径）；② 标签栏支持鼠标点击切换
   tab（`handle_mouse` 增 tab_bar 命中，复用 Tab 切换逻辑）；③ 标签样式与
   `TopLine`/`TopLineSel` 解耦、灰白底反色字（现状已用独立 `TabLine`/`TabLineSel`
-  组，仅需细化）。**裁决项**：④ 移除双 pane 中间 `│` 分隔线——与 M27-2
-  「双 pane 之间 1 列分隔线」直接冲突；需用户确认是删除还是改为可配置
-  `[ui] pane_separator`（默认关）。
+  组，仅需细化）；④ **分隔线（裁决）**：`[ui] pane_separator` 可配置，默认
+  false 不显示、true 恢复，M27-2 同步已修（不需要按原样删除代码，仅默认关）。
 - **M45-2 列表视觉**：① 确认整行反显已覆盖全宽（代码现状即如此，无需改）；
   ② 图标按实际类型推断（可执行文件/文本/jar/deb），无后缀不得显示 `*`
   （现状无 `*` 也好，仅补类型推断）；devicons 优先，特殊类型在 `icon_for`
-  增兜底。**裁决项**：③「文字部分单独高亮底色」若指搜索匹配子串
-  `bg(LightYellow)`，删除将与 FIX-1「匹配子串实时高亮」冲突；需澄清所指。
+  增兜底；③ **未搜索态文字背景（裁决）**：用户反馈的"文字部分单独颜色"指
+  未搜索时的 `ft_*` 文字色，修为未搜索态整行背景一致；**搜索匹配子串
+  `bg(LightYellow)` 高亮保留**（FIX-1 不推翻）。
 - **M45-3 打开与确认**：① opener 覆盖层排查——无 config.toml 自动生成，且
   `edit_text = "nvim %s"` 字符串形态 TOML 反序列化失败（正确形态
   `edit_text = { run = "nvim %s", block = true }`，解析失败整体回退默认）；
   修复方向：配置解析错误提示保留具体字段 + 提供示例配置生成命令或文档指引，
-  不改分层引擎。**裁决项**：② 可执行文件 Enter 仅提示「可执行文件，在终端
-  执行」不改系统 opener——与 AGENTS §5.5「文件打开默认走系统 opener」冲突，
-  需确认作为可执行文件特例；③ 删除等确认由状态栏 `[y/N]` 改为居中阻塞弹窗
-  （带图标/高亮强调）；④ `v` 多选 + `d` 必须进 `ConfirmTagDelete`（现状直接删，
-  缺陷）；⑤ `h` 回父后 `l` 重返还原光标（Tab 增 per-location 光标记忆，
-  `navigate_to` 当前重置 0）。
+  不改分层引擎；② **可执行文件（裁决）**：Enter 仅状态栏提示「可执行文件，
+  请在终端执行」，不走系统 opener 也不直接执行作为特例（AGENTS §5.5 已增条）；
+  ③ 删除等确认由状态栏 `[y/N]` 改为居中阻塞弹窗（带图标/高亮强调）；④ `v`
+  多选 + `d` 必须进 `ConfirmTagDelete`（现状直接删，缺陷）；⑤ `h` 回父后 `l`
+  重返还原光标（Tab 增 per-location 光标记忆，`navigate_to` 当前重置 0）。
 - **M45-4 预览**：① 图片越界——`ImageEngine::render_file` 三分支均用 inner rect，
   原生协议/字体尺寸探测（fallback 10×20）是疑似根因；修字体尺寸兜底与
   `SlicedProtocol` 高度钳制；真实终端验证补入 M11-6 清单。② 新增
@@ -1491,12 +1492,11 @@ append_rules = [
   原需求未要求，需用户确认范围（命令名补全 vs 参数提示）。
 - **M45-6 右栏一致性**：① `:cd` 用 `physical_base()` 遵循焦点 pane（现用
   `active_tab().location.base_dir()` 恒左，违反 M41-1，缺陷）；② `o` 结果跳转
-  写入焦点 pane（现恒写 `tab.location` 左）；③ **裁决项**：右键栏归档 `l`/Enter
-  进入虚拟目录——M41-3 明确「右 pane 归档/文件 no-op」，需用户确认修改 M41-3。
-- **M45-7 解压与虚拟目录**：**裁决项** ① `:extract` 支持解压到对侧/指定侧或
-  路径（M37-2 现状默认当前物理 pane，需改规格）；② 虚拟目录 `yy` 复制后粘贴
-  到目标路径——NOTES 明确 OUT_OF_SCOPE（归档 VFS 只读，`:extract` 为替代），
-  需用户确认是否推翻该决策。
+  写入焦点 pane（现恒写 `tab.location` 左）；③ **右栏归档（裁决）**：右键栏
+  归档 `l`/Enter 进入虚拟目录——M41-3 已改规格（文件仍 no-op）。
+- **M45-7 解压与虚拟目录（裁决已推翻旧决策）**：① `:extract` 支持解压到对侧/
+  指定侧或路径（M37-2 默认已改为对侧）；② 虚拟目录 `yy` + `p`/`P` 粘贴到焦点
+  pane 物理目录 = 按成员解压（旧 OUT_OF_SCOPE 决策作废，仍不写归档内）。
 - **M45-8 tutor**：① 列表 `l`/Enter 后退出 `InputMode::TutorList`（现状只设
   `state.tutor` 不改 mode，列表残留，缺陷）；② Panel 右栏提示改
   `Ctrl+Y/Ctrl+N/Ctrl+Q`（现状 `y/n/q`，与 M43-1 必需 Ctrl 修饰矛盾）；③

@@ -168,6 +168,7 @@
 - **禁止为特定终端写硬编码分支**；协议差异交给 `ratatui-image`。
 - 文本预览复用 `PreviewRenderer`；`pick` 的预览与 TUI 预览必须同源，禁止单独实现一套。
 - 文件打开默认走系统 opener（Linux `gio open` → `xdg-open`；macOS `open`；Windows `start`）；不得要求用户先配置才能打开文件。
+- **可执行文件特例（M45-3 裁决，2026-11-23）**：`Enter` 打开可执行文件时不走系统 opener、也不直接执行，仅在状态栏给出可读提示「可执行文件，请在终端执行」（不引入自动执行风险）；用户仍可通过 `[open]` 规则显式绑定到 `run` 动作执行。此为默认 opener 规则的可执行文件例外，不改变其它文件类型。
 - opener 配置分层必须与键位系统同构：`prepend_rules` / `append_rules` / `rules`。
 - Office 预览只能用纯 Rust 解析库，禁止引入外部命令行工具。
 - PDF 预览按“文本提取（`pdf-inspector`）→ `exprim` 栅格化（仅 `pdf-visual` feature）→ `pdftoppm`/`mutool` → 回退提示/系统 opener”顺序探测，不得跳过文本提取直接进入视觉渲染。

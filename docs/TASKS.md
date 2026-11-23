@@ -576,16 +576,38 @@
 > NOTES）。编号沿用 M15/M21 用户实测批次先例取 M45；本批次属维护期 FIX/FEAT
 > 蒸馏。顺序：1→10（冲突项在 SPEC/NOTES 标注，实施前需用户裁决）。
 
-- [ ] M45-1 路径 `~` 缩写显示 + 标签栏鼠标点击切换 + 标签样式细化（见 SPEC M45-1）
-- [ ] M45-2 列表整行反显一致性 + 类型图标推断（可执行文件/文本/jar/deb；无后缀不用 `*`；见 SPEC M45-2）
-- [ ] M45-3 opener 覆盖层排查（nvim 未生效：无配置自动生成 + 需 `{ run = … }` 表形态）+ 可执行文件 Enter 仅提示 + 删除确认居中阻塞弹窗 + `v`+`d` 补确认 + `h`→`l` 光标还原（见 SPEC M45-3）
-- [ ] M45-4 图片预览越界（M34-9 回归：native 协议/字体尺寸探测）+ 归档预览显示成员列表（新增 `PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4）
-- [ ] M45-5 `o` 命令 topic 条目过滤（cd/tabnew 不可跳转）+ `o` 选择器鼠标点击 + `:` 命令名辅助提示（见 SPEC M45-5）
-- [ ] M45-6 右栏一致性：`:cd` 遵循焦点 pane（修 M41-1 违规）+ `o` 右栏作用域 + 右键栏归档 `l`/Enter 进入（需改 M41-3；见 SPEC M45-6）
-- [ ] M45-7 `:extract` 解压到对侧/指定侧或路径（需改 M37-2 默认）+ 虚拟目录 `yy` 复制粘贴（原 NOTES 明确 OUT_OF_SCOPE，需裁决；见 SPEC M45-7）
-- [ ] M45-8 tutor 修复：列表 `l`/Enter 后消失 + 右栏提示改 Ctrl+Y/N/Q + 布局避让 + 模块列表左侧进度（进度持久化已实现，误因错误提示键）；见 SPEC M45-8
-- [ ] M45-9 `:archive` 修复：`v` 多选（archive_plan 忽略 visual）+ 格式单参推断补全 `[名, checksum=]` + 对话框宽度/文件名去后缀/默认名单文件→原名多→父目录/格式校验高亮/任意字段回车（见 SPEC M45-9）
-- [ ] M45-10 文档收尾（README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步 + 冲突裁决落 NOTES；见 SPEC M45-10）
+> 分批执行，每完成一子任务即勾选 + 更新 STATE + 单独提交（方便切换模型续跑）。
+> 第一批（P0 缺陷）：M45-3b/3d · M45-5a · M45-6a · M45-8a/8b · M45-9a；
+
+- [ ] M45-3d `v` 多选 + `d` 进 `ConfirmTagDelete`（见 SPEC M45-3④）← 第一批 P0
+- [ ] M45-5a `o` 过滤 cmd topic（cd/tabnew 不可跳转；见 SPEC M45-5①）← 第一批 P0
+- [ ] M45-6a `:cd` 遵循焦点 pane（修 M41-1 违规；见 SPEC M45-6①）← 第一批 P0
+- [ ] M45-8a tutor 列表 `l`/Enter 后退出 `TutorList`（见 SPEC M45-8①）← 第一批 P0
+- [ ] M45-8b Panel 提示改 Ctrl+Y/N/Q（见 SPEC M45-8②）← 第一批 P0
+- [ ] M45-9a `:archive` 覆盖 `v` 多选（见 SPEC M45-9①）← 第一批 P0
+- [ ] M45-1a `Location::display_path()` HOME 下显示 `~/…` 缩写（仅显示层；见 SPEC M45-1①）
+- [ ] M45-1b 标签栏鼠标点击切换 tab（见 SPEC M45-1②）
+- [ ] M45-1c 标签样式细化（灰白底反色字，与路径行解耦；见 SPEC M45-1③）
+- [ ] M45-1d `[ui] pane_separator` 可配置（默认 false 不显示分隔线，true 恢复；见 SPEC M45-1④）
+- [ ] M45-2a 未搜索态整行背景一致（非搜索匹配子串高亮，保留 FIX-1；见 SPEC M45-2③）
+- [ ] M45-2b 类型图标推断（可执行/文本/jar/deb，无后缀不显示 `*`；见 SPEC M45-2②）
+- [ ] M45-3a opener 配置错误提示具体化 + 示例指引（不新增自动生成；见 SPEC M45-3①）
+- [ ] M45-3b 可执行文件 Enter 特例：仅提示不执行（见 SPEC M45-3②）
+- [ ] M45-3c 删除确认居中阻塞弹窗带图标/高亮（见 SPEC M45-3③）
+- [ ] M45-3e `h`→`l` 光标还原（per-location 光标记忆；见 SPEC M45-3⑤）
+- [ ] M45-4a 图片预览越界修复（native 协议字体尺寸兜底；见 SPEC M45-4①）
+- [ ] M45-4b 归档预览显示成员列表（`PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4②）
+- [ ] M45-5b `o`/`:j`/`:J` 鼠标点击选中（见 SPEC M45-5②）
+- [ ] M45-5c `:` 命令名辅助提示（见 SPEC M45-5③）
+- [ ] M45-6b `o` 结果跳转写焦点 pane（见 SPEC M45-6②）
+- [ ] M45-6c 右键栏归档 `l`/Enter 进入虚拟目录（见 SPEC M45-6③）
+- [ ] M45-7a `:extract` 对侧/指定侧或路径（见 SPEC M45-7①）
+- [ ] M45-7b 归档虚拟目录 `yy`+`p`/`P` 解压粘贴（见 SPEC M45-7②）
+- [ ] M45-8c tutor 布局避让（见 SPEC M45-8③）
+- [ ] M45-8d 模块列表左侧显示进度（见 SPEC M45-8④）
+- [ ] M45-9b `[名, checksum=]` 格式推断（见 SPEC M45-9②）
+- [ ] M45-9c 对话框宽度/去后缀/默认名/选中高亮（见 SPEC M45-9③）
+- [ ] M45-10 文档收尾（README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步；见 SPEC M45-10）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
