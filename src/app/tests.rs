@@ -6557,9 +6557,11 @@ fn feat2_parent_row_navigates_like_h() {
         matches!(state.active_tab().location, Location::Physical(_)),
         "应返回物理父目录"
     );
+    // M45-1a：display_path 统一 `/` 分隔（Windows 原为 `\`）——比较前
+    // 同样规范化，避免宿主路径分隔符差异（AGENTS §7 跨平台一致）。
     assert_eq!(
         state.active_tab().location.display_path(),
-        tmp.path().to_string_lossy().into_owned()
+        tmp.path().to_string_lossy().replace('\\', "/")
     );
     assert!(!state.active_tab().on_parent_row);
 }
@@ -6631,9 +6633,11 @@ fn feat2_mouse_click_parent_row_focus_then_open() {
         matches!(state.active_tab().location, Location::Physical(_)),
         "再击 .. 行返回上级"
     );
+    // M45-1a：display_path 统一 `/` 分隔（Windows 原为 `\`）——比较前
+    // 同样规范化，避免宿主路径分隔符差异（AGENTS §7 跨平台一致）。
     assert_eq!(
         state.active_tab().location.display_path(),
-        tmp.path().to_string_lossy().into_owned()
+        tmp.path().to_string_lossy().replace('\\', "/")
     );
 }
 

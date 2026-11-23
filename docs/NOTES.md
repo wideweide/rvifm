@@ -1265,6 +1265,12 @@ rvifm record  → 静默记录访问
   `metadata.is_file()` 守卫（符号链接经 metadata 跟随判定，指向 FIFO 同样拒绝），
   并加 `m452b_sniff_skips_socket_without_blocking` 回归测试。WHY 不用
   O_NONBLOCK：跨平台且需 unsafe，metadata 守卫已足够且无 unsafe。
+- **M45-1a Windows CI 修复（2026-11-23）**：M45 batch 全勾后 CI `test (windows-latest)`
+  失败 2 项（`feat2_parent_row_navigates_like_h` / `feat2_mouse_click_parent_row_focus_then_open`）——
+  M45-1a 把 `display_path()` 统一为 `/` 分隔，旧测试断言直接比 `tmp.path().to_string_lossy()`
+  （Windows 为 `\`）。修法：测试侧同样 `.replace('\\', "/")` 再比（沿用 AGENTS §7
+  路径统一 `/` 口径）；本地 Linux 无法复现，CI 失败日志经 `gh api .../jobs/<id>/logs`
+  一次定位。WHY 不改生产代码：`/` 统一是 M45-1a 明确需求，回退会复发显示分叉。
 - **M45-10 文档收尾（2026-11-23）**：CHANGELOG 新增 `[Unreleased]` 汇总 M45
   全部用户可见变更；README/GUIDE/help 同步（路径缩写/标签栏/分隔线/确认弹窗/
   可执行文件特例/对侧解压/归档 yy 粘贴/命令名补全）；tutor `archive_ops`
