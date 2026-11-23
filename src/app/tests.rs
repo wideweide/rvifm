@@ -1499,7 +1499,6 @@ fn m303_completion_candidates_weighted() {
             mtime: 0,
         },
         crate::tab::FileItem {
-
             icon: crate::icons::icon_for_active(&tmp.path().join("mid")),
             name: "mid".to_owned(),
             is_dir: true,
@@ -5651,7 +5650,6 @@ fn m39_6_layout_modes_tabname_and_overflow() {
     ));
     assert!(pane_covered_by_viewer(
         LayoutMode::Dual,
-
         true,
         crate::tab::Focus::Left,
         crate::tab::Focus::Right
@@ -10107,7 +10105,6 @@ fn m252_bmark_tag_validation() {
         Ok(_) => panic!("非法 tag 应拒绝"),
     }
     match exec_command_impl(&mut state, "bmark") {
-
         Err(e) => assert!(e.contains("缺少 tag"), "{e}"),
         Ok(_) => panic!("缺 tag 应拒绝"),
     }
