@@ -4684,6 +4684,60 @@ fn jump_to_dir_navigates_and_pushes_history() {
 }
 
 #[test]
+fn m456b_jump_to_writes_focused_pane() {
+    // M45-6b：`o` 结果跳转写入焦点 pane——右焦点时左 pane 保持不变。
+    let tmp = TempDir::new().unwrap();
+    let left_dir = tmp.path().join("left");
+    let right_dir = tmp.path().join("right");
+    let target_dir = tmp.path().join("target");
+    let file_dir = tmp.path().join("files");
+    fs::create_dir(&left_dir).unwrap();
+    fs::create_dir(&right_dir).unwrap();
+    fs::create_dir(&target_dir).unwrap();
+    fs::create_dir(&file_dir).unwrap();
+    fs::write(file_dir.join("note.txt"), "x").unwrap();
+
+    let mut state = AppState::new(Tab::from_physical(&left_dir, Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(&right_dir, Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let left_before = state.active_tab().location.clone();
+    let hist_before = state.active_tab().history.len();
+
+    // 目录跳转。
+    let entry = scored(
+        &target_dir.display().to_string().replace('\\', "/"),
+        "dir",
+        5.0,
+    );
+    let msg = jump_to(&mut state, &entry).unwrap();
+    assert!(msg.contains("跳转目录"), "{msg}");
+    assert_eq!(
+        state.active_tab().right.location.base_dir(),
+        target_dir,
+        "右 pane 跳到目标目录"
+    );
+    assert_eq!(state.active_tab().location, left_before, "左 pane 不变");
+    assert_eq!(state.active_tab().history.len(), hist_before, "左历史不变");
+
+    // 文件定位。
+    let file = file_dir.join("note.txt");
+    let entry = scored(&file.display().to_string().replace('\\', "/"), "file", 5.0);
+    let msg = jump_to(&mut state, &entry).unwrap();
+    assert!(msg.contains("定位"), "{msg}");
+    assert_eq!(state.active_tab().right.location.base_dir(), file_dir);
+    let idx = state
+        .active_tab()
+        .right
+        .entries
+        .iter()
+        .position(|e| e.name == "note.txt")
+        .unwrap();
+    assert_eq!(state.active_tab().right.cursor, idx, "右 pane 光标定位");
+    assert_eq!(state.active_tab().location, left_before, "左 pane 仍不变");
+}
+
+#[test]
 fn jump_to_file_positions_cursor_in_parent() {
     // M8-12：选定文件条目 → 切到父目录并光标定位（纯导航，不开 opener）。
     let tmp = TempDir::new().unwrap();

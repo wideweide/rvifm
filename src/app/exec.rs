@@ -1833,11 +1833,22 @@ pub(crate) fn jump_to(
             return Err(format!("目录已不存在: {}", entry.path));
         }
         let tab = state.active_tab_mut();
-        tab.history.push(tab.location.clone());
-        tab.location = Location::Physical(target);
-        tab.cursor = 0;
-        tab.scroll = 0;
-        let _ = tab.refresh(cfg);
+        // M45-6b：跳转写入焦点 pane（M41-1）。右 pane 无 history 栈——直接
+        // 设 location + refresh；左 pane 沿用原历史轨迹语义。
+        if tab.focus == crate::tab::Focus::Right {
+            tab.right.location = Location::Physical(target);
+            tab.right.cursor = 0;
+            tab.right.scroll = 0;
+            tab.right
+                .refresh(cfg)
+                .map_err(|e| format!("跳转失败: {e}"))?;
+        } else {
+            tab.history.push(tab.location.clone());
+            tab.location = Location::Physical(target);
+            tab.cursor = 0;
+            tab.scroll = 0;
+            let _ = tab.refresh(cfg);
+        }
         Ok(format!("跳转目录 {}", entry.path))
     } else {
         let parent = target
@@ -1853,6 +1864,24 @@ pub(crate) fn jump_to(
             .map(|n| n.to_string_lossy().into_owned())
             .ok_or_else(|| format!("无文件名: {}", entry.path))?;
         let tab = state.active_tab_mut();
+        // M45-6b：文件定位写入焦点 pane（右 pane 独立 Location/entries/cursor）。
+        if tab.focus == crate::tab::Focus::Right {
+            if tab.right.location.base_dir() != parent {
+                tab.right.location = Location::Physical(parent);
+                tab.right.cursor = 0;
+                tab.right.scroll = 0;
+                tab.right
+                    .refresh(cfg)
+                    .map_err(|e| format!("跳转失败: {e}"))?;
+            }
+            return match tab.right.entries.iter().position(|e| e.name == leaf) {
+                Some(idx) => {
+                    tab.right.cursor = idx;
+                    Ok(format!("定位 {}", entry.path))
+                }
+                None => Err(format!("文件不可见（已删除或被过滤）: {}", entry.path)),
+            };
+        }
         if tab.location.base_dir() != parent {
             tab.history.push(tab.location.clone());
             tab.location = Location::Physical(parent);
