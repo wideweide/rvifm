@@ -1236,6 +1236,18 @@ rvifm record  → 静默记录访问
   `cargo install cargo-zigbuild --locked`，避免版本漂移。
 - **REL-4 版本 1.2.0**：产物矩阵变更（移除 gnu、aarch64 转 musl）用户可见，
   semver minor；crates.io 仍停在 1.0.0（用户 2026-11-23 仅 GitHub Release 决策）。
+- **REL-4 首跑失败（tag run 45129475971）**：`release-checksums` 上传步骤
+  `gh release upload ...` 报 `failed to run git: fatal: not a git repository`——
+  该作业无 `actions/checkout`，gh 无法从 `.git` 推断仓库（下载归档/算哈希步骤
+  均成功，仅上传失败；归档 3 个已上传，SHA256SUMS 缺失）。WHY 不用 checkout
+  而加 `--repo "$GITHUB_REPOSITORY"`：汇总作业只需 artifacts + gh API，加
+  checkout 是多余 I/O；显式 repo 更轻且杜绝隐式 git 依赖。修复后 tag 重指向
+  （`git push -f origin v1.2.0`，本项目先例）→ run 45132119778 九 job 全绿，
+  三归档 + SHA256SUMS 3 行，下载实测 `sha256sum -c` 通过；aarch64 产物
+  `file` = ARM aarch64 statically linked ELF 且 `--version` 输出 `rvifm 1.2.0`。
+- **教训（CI 诊断）**：`gh` 在无 checkout 的作业里须显式 `--repo`；匿名 API
+  看不到作业日志（`403 Must have admin rights`），本机 `gh auth login` 后
+  `gh run view <id> --job <id> --log` 一次定位根因。
 - **FIX-6 根因（代码定位 + 测试盲区）**：`save_session`（session.rs L91）无
   `create_dir_all`，`session_path()` = config.toml 同目录 `session.toml`；全新
   安装无 `~/.config/rvifm/` 时 `fs::write` 静默失败（仅 eprintln）。路由本身正确
