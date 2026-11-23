@@ -1032,5 +1032,5 @@
 - [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane；右栏归档 `l`/Enter 进入（M41-3 裁决后）。
 - [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后）；虚拟目录 `yy`→粘贴（OUT_OF_SCOPE 裁决后）。
 - [ ] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让；列表左侧显示进度；进度持久化保持。
-- [ ] M45-9 `:archive` 覆盖 `v` 多选；`[名, checksum=]` 推断；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
+- [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
 - [ ] M45-10 文档收尾与冲突裁决记录；harness_check 通过。

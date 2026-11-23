@@ -2011,6 +2011,27 @@ fn m254_checksum_parse_ext_and_write() {
 }
 
 #[test]
+fn m459a_archive_plan_covers_visual_selection() {
+    // M45-9a：v 可视连续选区须全部入归档计划（原仅 tags + 光标 → 只打 1 个）。
+    let tmp = TempDir::new().unwrap();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        fs::write(tmp.path().join(name), name).unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // v 选 0..=2（j j 扩大），不设 tags——验证 visual 分支。
+    state.active_tab_mut().visual = Some(0);
+    state.active_tab_mut().cursor = 2;
+    let (_op, names, _target, _base) = crate::app::exec::archive_plan(
+        &state,
+        crate::ops::ArchiveFormat::Zip,
+        "out.zip",
+        crate::ops::Checksum::Md5,
+    )
+    .unwrap();
+    assert_eq!(names, vec!["a.txt", "b.txt", "c.txt"], "v 选区全部入包");
+}
+
+#[test]
 fn m254_exec_archive_checksum_arg_and_config() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();

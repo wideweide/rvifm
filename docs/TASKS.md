@@ -584,7 +584,7 @@
 - [x] M45-6a `:cd` 遵循焦点 pane（修 M41-1 违规；见 SPEC M45-6①；2026-11-23 完成：focus_base + 焦点 pane 导航 + m456a 测试，509 单测）← 第一批 P0
 - [x] M45-8a tutor 列表 `l`/Enter 后退出 `TutorList`（见 SPEC M45-8①；2026-11-23 完成：Enter 臂设 mode=Normal + m458a 渲染不变量测试）
 - [x] M45-8b Panel 提示改 Ctrl+Y/N/Q（见 SPEC M45-8②；2026-11-23 完成：render.rs 三行提示 + m42_1 测试更新，510 单测）
-- [ ] M45-9a `:archive` 覆盖 `v` 多选（见 SPEC M45-9①）← 第一批 P0
+- [x] M45-9a `:archive` 覆盖 `v` 多选（见 SPEC M45-9①；2026-11-23 完成：archive_plan 增补 v 选区分支 + m459a 测试，511 单测）← 第一批 P0
 - [ ] M45-1a `Location::display_path()` HOME 下显示 `~/…` 缩写（仅显示层；见 SPEC M45-1①）
 - [ ] M45-1b 标签栏鼠标点击切换 tab（见 SPEC M45-1②）
 - [ ] M45-1c 标签样式细化（灰白底反色字，与路径行解耦；见 SPEC M45-1③）

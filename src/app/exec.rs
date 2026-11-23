@@ -4704,8 +4704,20 @@ pub(crate) fn archive_plan(
             base.join(name).display().to_string().replace('\\', "/")
         ));
     }
+    // M45-9a：tags 优先（保留原语义——tag 可指向已消失条目，作业体须报
+    // 源缺失，不能被 entries 过滤掉）；tags 为空时增补 v 可视选区（原实现
+    // 只取光标条目，v 多选连续文件只打一个——用户实测缺陷）；再退光标。
     let tab = state.active_tab();
-    let names: Vec<String> = if tab.tags.is_empty() {
+    let names: Vec<String> = if !tab.tags.is_empty() {
+        let mut names: Vec<String> = tab.tags.iter().cloned().collect();
+        names.sort();
+        names
+    } else if let Some((lo, hi)) = tab.visual_range() {
+        tab.entries
+            .get(lo..=hi.min(tab.entries.len().saturating_sub(1)))
+            .map(|slice| slice.iter().map(|i| i.name.clone()).collect())
+            .unwrap_or_default()
+    } else {
         vec![
             tab.entries
                 .get(tab.cursor)
@@ -4713,12 +4725,10 @@ pub(crate) fn archive_plan(
                 .name
                 .clone(),
         ]
-    } else {
-        // HashSet 顺序不定 → 排序使打包条目顺序确定。
-        let mut names: Vec<String> = tab.tags.iter().cloned().collect();
-        names.sort();
-        names
     };
+    if names.is_empty() {
+        return Err("archive: 无选中条目".to_owned());
+    }
     let fmt_name = match format {
         ops::ArchiveFormat::Zip => "zip",
         ops::ArchiveFormat::Tar => "tar",
