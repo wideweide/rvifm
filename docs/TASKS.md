@@ -596,7 +596,7 @@
 - [x] M45-3c 删除确认居中阻塞弹窗带图标/高亮（见 SPEC M45-3③；2026-11-23 完成：confirm_dialog/confirm_rect + m453c 测试；同批串行化共享 trash 索引测试，522 单测）
 - [x] M45-3e `h`→`l` 光标还原（per-location 光标记忆；见 SPEC M45-3⑤；2026-11-23 完成：Location Hash + Tab/Pane cursor_memory，navigate_to/enter_selected/return_parent 记忆还原 + m453e 测试，524 单测）
 - [x] M45-4a 图片预览越界修复（native 协议字体尺寸兜底；见 SPEC M45-4①；2026-11-23 完成：safe_font_size 合理性钳制 + clamp_slice_height 三屏上限 + frame intersection + m454a 测试，525 单测；真实终端验证 C6 deferred）
-- [ ] M45-4b 归档预览显示成员列表（`PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4②）
+- [x] M45-4b 归档预览显示成员列表（`PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4②；2026-11-23 完成：preview_kind Archive 分流 + archive_preview（损坏/.rar 回退）+ render_view_content NUL 探测 + m454b 测试，527 单测）
 - [ ] M45-5b `o`/`:j`/`:J` 鼠标点击选中（见 SPEC M45-5②）
 - [ ] M45-5c `:` 命令名辅助提示（见 SPEC M45-5③）
 - [ ] M45-6b `o` 结果跳转写焦点 pane（见 SPEC M45-6②）

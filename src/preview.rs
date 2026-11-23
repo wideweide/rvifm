@@ -54,6 +54,9 @@ pub enum PreviewKind {
     Office,
     /// PDF 文档（pdf-inspector 文本提取 → 视觉路径回退提示）。
     Pdf,
+    /// 归档文件（M45-4b）：显示成员名列表（复用 ArchiveFs::list）。
+    /// 注意 Office/PDF 判定必须先于本项——docx/xlsx 是 zip 容器。
+    Archive,
     /// 其余按文本预览。
     Text,
 }
@@ -68,6 +71,18 @@ pub fn preview_kind(path: &Path) -> PreviewKind {
         PreviewKind::Office
     } else if crate::pdf::is_pdf_file(path) {
         PreviewKind::Pdf
+    } else if path
+        .file_name()
+        .map(|n| {
+            let name = n.to_string_lossy();
+            crate::archive::is_archive_file(&name) || crate::archive::is_unsupported_archive(&name)
+        })
+        .unwrap_or(false)
+    {
+        // M45-4b：Office/PDF 已在上面命中并提前返回——zip 容器
+        // docx/xlsx/pptx 不会被归到归档；jar/apk/war 走归档成员列表；
+        // .rar（unsupported）也归归档，由 render_preview 回退信息面板。
+        PreviewKind::Archive
     } else {
         PreviewKind::Text
     }
@@ -126,7 +141,58 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
             path.display()
         ));
     }
+    if preview_kind(path) == PreviewKind::Archive {
+        return archive_preview(path, max_lines);
+    }
     text_preview(&read_text_preview(path, max_lines))
+}
+
+/// M45-4b：归档成员预览——打开 ArchiveFs 列根目录，复用 entries_preview
+/// 渲染成员名列表。损坏/加密/.rar → 结构化信息面板（不 panic）。
+fn archive_preview(path: &Path, max_lines: usize) -> Preview {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if crate::archive::is_unsupported_archive(&name) {
+        return text_preview(&file_info_text(path));
+    }
+    match crate::archive::open_dispatch(path) {
+        Ok(fs) => match fs.list("") {
+            Ok(entries) => {
+                let mut items: Vec<(String, bool)> =
+                    entries.into_iter().map(|e| (e.path, e.is_dir)).collect();
+                items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                let mut lines = vec![Line::from(format!(
+                    "归档 {}（{} 项，只读）",
+                    path.display(),
+                    items.len()
+                ))];
+                for (p, is_dir) in items.iter().take(max_lines.saturating_sub(1)) {
+                    let label = if *is_dir { format!("{p}/") } else { p.clone() };
+                    let icon = crate::icons::icon_for_active(std::path::Path::new(p));
+                    lines.push(Line::from(format!("  {} {label}", icon.glyph)));
+                }
+                if items.len() > max_lines.saturating_sub(1) {
+                    lines.push(Line::from(format!(
+                        "  …（共 {} 项，仅显示前 {}）",
+                        items.len(),
+                        max_lines.saturating_sub(1)
+                    )));
+                }
+                Preview { lines }
+            }
+            Err(e) => text_preview(&format!(
+                "[归档成员读取失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+                path.display()
+            )),
+        },
+        Err(e) => text_preview(&format!(
+            "[归档打开失败] {}\n{e}\n{}",
+            path.display(),
+            file_info_text(path)
+        )),
+    }
 }
 
 /// 目录预览：成员名列表（目录后缀 `/`，按名排序，截断到 max_lines）。
@@ -502,6 +568,48 @@ mod tests {
         let preview = render_preview(&img, 10);
         let texts = preview.line_texts();
         assert!(texts.iter().any(|t| t.contains("图像预览")));
+    }
+
+    #[test]
+    fn m454b_archive_preview_members_and_fallbacks() {
+        // M45-4b：归档预览显示成员列表；损坏/.rar 回退信息面板；
+        // Office 文件名（docx = zip 容器）不得被误判为 Archive。
+        let tmp = TempDir::new().unwrap();
+
+        // zip：成员列表（src/、readme.md、deep/）。
+        let zip = tmp.path().join("bundle.zip");
+        crate::archive::make_test_zip(&zip);
+        assert_eq!(preview_kind(&zip), PreviewKind::Archive);
+        let texts = render_preview(&zip, 20).line_texts();
+        let joined = texts.join("\n");
+        assert!(joined.contains("归档"), "标题: {joined}");
+        assert!(joined.contains("readme.md"), "成员: {joined}");
+        assert!(joined.contains("src/"), "目录成员: {joined}");
+        assert!(joined.contains("只读"), "只读提示: {joined}");
+
+        // Office 优先：docx 是 zip 容器但 preview_kind 必须为 Office。
+        let docx = tmp.path().join("report.docx");
+        crate::archive::make_test_zip(&docx);
+        assert_eq!(preview_kind(&docx), PreviewKind::Office, "Office 先于归档");
+
+        // 损坏归档 → 信息面板，不 panic。
+        let broken = tmp.path().join("broken.zip");
+        fs::write(&broken, b"not a zip").unwrap();
+        let texts = render_preview(&broken, 20).line_texts();
+        assert!(
+            texts.iter().any(|t| t.contains("归档打开失败")),
+            "损坏归档回退: {texts:?}"
+        );
+
+        // .rar → 信息面板。
+        let rar = tmp.path().join("disk.rar");
+        fs::write(&rar, b"Rar!\x1a\x07").unwrap();
+        assert_eq!(preview_kind(&rar), PreviewKind::Archive);
+        let texts = render_preview(&rar, 20).line_texts();
+        assert!(
+            texts.iter().any(|t| t.contains("二进制/不可读预览")),
+            ".rar 回退信息面板: {texts:?}"
+        );
     }
 
     #[test]

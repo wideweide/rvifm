@@ -123,6 +123,19 @@ pub(crate) fn render_view_content(
             frame.render_widget(preview.into_paragraph(), inner);
             return;
         }
+        crate::preview::PreviewKind::Archive => {
+            // M45-4b：归档成员列表（Office/PDF 已在 preview_kind 中优先命中，
+            // 不会走到本分支）——复用 render_preview 同源渲染，损坏/.rar 回退
+            // 信息面板（不落文本读取路径，杜绝 tar 乱码）。
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!("{shown} · 归档成员（只读）"))
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+            frame.render_widget(preview.into_paragraph(), inner);
+            return;
+        }
         crate::preview::PreviewKind::Pdf => {
             // AUDIT-2 + M27-3：`[preview] pdf_image_pages`（0 关）与
             // `pdf_prefer_image` 门控；M39-2：查看器改为**单页展示 + `[`/`]`
@@ -177,6 +190,13 @@ pub(crate) fn render_view_content(
         frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
         return;
     };
+    // M45-4b：tar 等归档的头部含大量 NUL 填充——`read_to_string` 仍能成功
+    // （NUL 是合法 UTF-8），旧实现直接当文本渲染出乱码。NUL 即判二进制，
+    // 回退结构化信息面板（与 M34-7 的 preview 层二进制探测同源）。
+    if text.contains('\0') {
+        frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+        return;
+    }
     let height = inner.height as usize;
     let width = inner.width as usize;
     let lines: Vec<&str> = text.lines().take(VIEWER_MAX_LINES).collect();

@@ -8104,6 +8104,43 @@ fn renders_active_tab_list_and_status_bar() {
 }
 
 #[test]
+fn m454b_viewer_nul_file_shows_info_panel_not_garbage() {
+    // M45-4b：含 NUL 的二进制文件（tar 头部填充同类）在文本查看器不得
+    // 渲染乱码——read_to_string 成功但 NUL 是合法 UTF-8，需显式探测。
+    let tmp = TempDir::new().unwrap();
+    let bin = tmp.path().join("blob.dat");
+    fs::write(&bin, b"PK\x03\x04\x00\x00\x00\x00garbage").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "blob.dat")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    state.active_tab_mut().view_mode = true;
+
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal
+        .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut pane = String::new();
+    for y in 1..10u16 {
+        for x in 41..80u16 {
+            pane.push_str(buf[(x, y)].symbol());
+        }
+    }
+    // TestBackend CJK 全宽留占位空格（M21-E3）。
+    let compact = pane.replace(' ', "");
+    assert!(
+        compact.contains("不可读预览") || compact.contains("二进制"),
+        "NUL 文件应回退信息面板: {pane}"
+    );
+    assert!(!pane.contains('\0'), "不得渲染 NUL 乱码");
+}
+
+#[test]
 fn preview_pane_renders_image_and_text_by_kind() {
     // M11-2/M14-1：右 pane 默认显示目录列表；view 态（w）显示活动 pane
     // 光标文件的预览——文本文件显示内容，图片文件 halfblocks 渲染。
