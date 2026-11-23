@@ -479,6 +479,35 @@ pub(crate) fn hit_right_index(
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
 }
 
+/// M45-9c：归档创建对话框矩形——比通用右键菜单更宽（64 列上限），纯函数
+/// 便于测试（小终端退化为终端宽度）。
+pub(crate) fn archive_dialog_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    let w = area.width.saturating_sub(4).clamp(area.width.min(40), 64);
+    let h = 6u16.min(area.height);
+    ratatui::layout::Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w.min(area.width),
+        height: h,
+    }
+}
+
+/// M45-9c：名称字段显示去后缀（后缀由格式字段右侧自动展示）。仅剥除已知
+/// 归档扩展名，避免误删普通文件名中的点。纯函数便于测试。
+pub(crate) fn strip_archive_ext(name: &str) -> &str {
+    const EXTS: &[&str] = &[
+        ".tar.gz", ".tar.bz2", ".tar.zst", ".tar.xz", ".zip", ".tar", ".tgz", ".7z", ".rar",
+        ".cab", ".lzh",
+    ];
+    let lower = name.to_ascii_lowercase();
+    for ext in EXTS {
+        if lower.ends_with(ext) {
+            return &name[..name.len() - ext.len()];
+        }
+    }
+    name
+}
+
 /// M45-8d：导师模块列表左侧进度标签——`掌握数/总数` 百分比。纯函数便于
 /// 测试（不读宿主进度文件）。
 pub(crate) fn tutor_progress_label(total: usize, mastered: usize) -> String {
@@ -1305,52 +1334,65 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
             area,
         );
-        let popup = context_menu_rect(area);
-        let fmt = ARCHIVE_FORMATS
+        // M45-9c：对话框加宽（不再复用 34 列右键菜单矩形）。
+        let popup = crate::app::render::archive_dialog_rect(area);
+        // M45-9c：格式/校验仅高亮选中项——用 spans 逐项着色，不再整行 REVERSED。
+        let fmt_spans: Vec<Span> = ARCHIVE_FORMATS
             .iter()
             .enumerate()
-            .map(|(i, f)| {
+            .flat_map(|(i, f)| {
+                let label = format!(" {}  ", f.ext().trim_start_matches('.'));
                 if i == *format_idx {
-                    f.ext().trim_start_matches('.').to_owned()
+                    vec![Span::styled(
+                        label,
+                        Style::new().add_modifier(Modifier::REVERSED),
+                    )]
                 } else {
-                    " ".to_owned() + f.ext().trim_start_matches('.')
+                    vec![Span::from(label)]
                 }
             })
-            .collect::<Vec<_>>()
-            .join("  ");
-        let cks = ARCHIVE_CHECKSUMS
+            .collect();
+        let cks_spans: Vec<Span> = ARCHIVE_CHECKSUMS
             .iter()
             .enumerate()
-            .map(|(i, c)| {
-                let label = match c {
-                    ops::Checksum::Md5 => "md5",
-                    ops::Checksum::Sha256 => "sha256",
-                    ops::Checksum::None => "none",
-                };
+            .flat_map(|(i, c)| {
+                let label = format!(
+                    " {}  ",
+                    match c {
+                        ops::Checksum::Md5 => "md5",
+                        ops::Checksum::Sha256 => "sha256",
+                        ops::Checksum::None => "none",
+                    }
+                );
                 if i == *checksum_idx {
-                    label.to_owned()
+                    vec![Span::styled(
+                        label,
+                        Style::new().add_modifier(Modifier::REVERSED),
+                    )]
                 } else {
-                    format!(" {label}")
+                    vec![Span::from(label)]
                 }
             })
-            .collect::<Vec<_>>()
-            .join("  ");
+            .collect();
+        // M45-9c：名称字段去后缀显示（后缀在格式行右侧已显式给出）。
+        let shown_name = crate::app::render::strip_archive_ext(input);
         let line_name = if *field == 0 {
-            Line::from(format!("名称: {input}▏"))
-                .style(Style::new().add_modifier(Modifier::REVERSED))
+            Line::from(vec![
+                Span::from("名称: "),
+                Span::styled(
+                    format!("{shown_name}▏"),
+                    Style::new().add_modifier(Modifier::REVERSED),
+                ),
+            ])
         } else {
-            Line::from(format!("名称: {input}"))
+            Line::from(format!("名称: {shown_name}"))
         };
-        let line_fmt = if *field == 1 {
-            Line::from(format!("格式: {fmt}")).style(Style::new().add_modifier(Modifier::REVERSED))
-        } else {
-            Line::from(format!("格式: {fmt}"))
-        };
-        let line_cks = if *field == 2 {
-            Line::from(format!("校验: {cks}")).style(Style::new().add_modifier(Modifier::REVERSED))
-        } else {
-            Line::from(format!("校验: {cks}"))
-        };
+        let mut fmt_line = vec![Span::from("格式: ")];
+        fmt_line.extend(fmt_spans);
+        let line_fmt = Line::from(fmt_line);
+        let mut cks_line = vec![Span::from("校验: ")];
+        cks_line.extend(cks_spans);
+        let line_cks = Line::from(cks_line);
         let lines = vec![
             line_name,
             line_fmt,

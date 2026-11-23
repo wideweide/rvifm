@@ -2035,6 +2035,58 @@ fn m459a_archive_plan_covers_visual_selection() {
 }
 
 #[test]
+fn m459c_archive_dialog_layout_and_stripping() {
+    // M45-9c：对话框加宽；名称显示去后缀；格式/校验仅选中项反显。
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let dialog = crate::app::render::archive_dialog_rect(area);
+    assert!(
+        dialog.width >= 40 && dialog.width <= 64,
+        "w={}",
+        dialog.width
+    );
+    assert!(
+        dialog.width > crate::app::render::context_menu_rect(area).width,
+        "应比右键菜单宽"
+    );
+    assert_eq!(
+        crate::app::render::strip_archive_ext("bundle.zip"),
+        "bundle"
+    );
+    assert_eq!(
+        crate::app::render::strip_archive_ext("backup.tar.gz"),
+        "backup"
+    );
+    assert_eq!(
+        crate::app::render::strip_archive_ext("notes.txt"),
+        "notes.txt"
+    );
+
+    // 渲染：名称去后缀，格式选中项高亮（反显 cell 存在），整行非全反显。
+    let tmp = TempDir::new().unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mode = InputMode::ArchiveDialog {
+        input: "bundle.zip".to_owned(),
+        field: 1,
+        format_idx: 0,
+        checksum_idx: 0,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..24u16 {
+        for x in 0..80u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    // CJK 全宽占位空格（M21-E3），比较前压掉空白。
+    let compact = text.replace(' ', "");
+    assert!(compact.contains("bundle"), "名称显示: {text}");
+    assert!(!compact.contains("bundle.zip"), "后缀不显示: {text}");
+    assert!(compact.contains("格式"), "格式字段: {text}");
+}
+
+#[test]
 fn m459b_archive_name_with_checksum_infers_format() {
     // M45-9②：`archive <名> checksum=<值>`（无格式名参）从扩展名推断格式。
     let tmp = TempDir::new().unwrap();

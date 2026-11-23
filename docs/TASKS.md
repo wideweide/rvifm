@@ -606,7 +606,7 @@
 - [x] M45-8c tutor 布局避让（见 SPEC M45-8③；2026-11-23 完成：tutor_panel_height 同源 render/视口同步 + m458c 测试，534 单测）
 - [x] M45-8d 模块列表左侧显示进度（见 SPEC M45-8④；2026-11-23 完成：tutor_progress 缓存 + tutor_progress_label + m458d 测试，535 单测）
 - [x] M45-9b `[名, checksum=]` 格式推断（见 SPEC M45-9②；2026-11-23 完成：archive 命令双参 [名,checksum=] 臂从扩展名推断 + m459b 测试，536 单测）
-- [ ] M45-9c 对话框宽度/去后缀/默认名/选中高亮（见 SPEC M45-9③）
+- [x] M45-9c 对话框宽度/去后缀/默认名/选中高亮（见 SPEC M45-9③；2026-11-23 完成：archive_dialog_rect/strip_archive_ext/默认名多选父目录 + 逐项反显 + m459c 测试，537 单测）
 - [ ] M45-10 文档收尾（README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步；见 SPEC M45-10）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）

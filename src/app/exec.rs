@@ -2963,13 +2963,26 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 ops::Checksum::parse(&state.config.archive.checksum).unwrap_or(ops::Checksum::Md5);
             match args.as_slice() {
                 [] => {
-                    // M25-4：无参 → 对话框（名称预填光标条目名）。
-                    let input = state
-                        .active_tab()
-                        .entries
-                        .get(state.active_tab().cursor)
-                        .map(|i| i.name.clone())
-                        .unwrap_or_default();
+                    // M25-4 + M45-9c：无参 → 对话框。单文件预填原名；多选
+                    // （tags/v 连续选区）预填当前目录名（父目录名）。
+                    let tab = state.active_tab();
+                    let multi = tab.tags.len() > 1
+                        || tab
+                            .visual_range()
+                            .map(|(lo, hi)| hi > lo)
+                            .unwrap_or(false);
+                    let input = if multi {
+                        tab.location
+                            .base_dir()
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
+                    } else {
+                        tab.entries
+                            .get(tab.cursor)
+                            .map(|i| i.name.clone())
+                            .unwrap_or_default()
+                    };
                     Ok(ExecOutcome::ShowArchiveDialog { input })
                 }
                 // M45-9②：`[名, checksum=…]`——格式名参推断（缺格式名时
