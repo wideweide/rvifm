@@ -570,7 +570,7 @@
 
 ## REL-5 — M45 批次发布（1.3.0；自动续轮触发）
 
-- [ ] REL-5 版本 bump 1.3.0 + 文档同步 + tag v1.3.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-24：CI run 45240675080/45243627876 全绿，触发自动发布）
+- [x] REL-5 版本 bump 1.3.0 + 文档同步 + tag v1.3.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-24 完成：tag run 45256802332 全绿，三归档 + SHA256SUMS 3 行 `sha256sum -c` 实测通过，aarch64 静态 ELF + `--version` = rvifm 1.3.0）
 
 ## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，待用户确认，见 SPEC M45 节）
 
