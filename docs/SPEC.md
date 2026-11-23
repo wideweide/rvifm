@@ -1445,6 +1445,80 @@ append_rules = [
 - 不保留任何 gnu 归档（含旧版本不改，历史 Release 保持原样）。
 - 不引入 FUSE/外部 CLI 依赖；不发布 crates.io。
 
+## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，见 NOTES 同日条目）
+
+> 来源：用户 2026-11-23 测试反馈 29 项，按 AGENTS §8 蒸馏。登记前已逐项核对
+> 代码（三个并行只读调查）与既有文档。**冲突项以本节 MUST 的「裁决」标注，
+> 实施前须用户拍板并写入 NOTES**；未拍板不得开写。已实现项（分隔线、标签
+> 样式、整行反显、tutor 进度持久化、opener 引擎、`:extract`）不重复登记。
+
+**MUST**
+- **M45-1 路径与标签栏**：① `Location::display_path()` 对 HOME 下路径显示
+  `~/…` 缩写（仅显示层，导航/比较仍用绝对路径）；② 标签栏支持鼠标点击切换
+  tab（`handle_mouse` 增 tab_bar 命中，复用 Tab 切换逻辑）；③ 标签样式与
+  `TopLine`/`TopLineSel` 解耦、灰白底反色字（现状已用独立 `TabLine`/`TabLineSel`
+  组，仅需细化）。**裁决项**：④ 移除双 pane 中间 `│` 分隔线——与 M27-2
+  「双 pane 之间 1 列分隔线」直接冲突；需用户确认是删除还是改为可配置
+  `[ui] pane_separator`（默认关）。
+- **M45-2 列表视觉**：① 确认整行反显已覆盖全宽（代码现状即如此，无需改）；
+  ② 图标按实际类型推断（可执行文件/文本/jar/deb），无后缀不得显示 `*`
+  （现状无 `*` 也好，仅补类型推断）；devicons 优先，特殊类型在 `icon_for`
+  增兜底。**裁决项**：③「文字部分单独高亮底色」若指搜索匹配子串
+  `bg(LightYellow)`，删除将与 FIX-1「匹配子串实时高亮」冲突；需澄清所指。
+- **M45-3 打开与确认**：① opener 覆盖层排查——无 config.toml 自动生成，且
+  `edit_text = "nvim %s"` 字符串形态 TOML 反序列化失败（正确形态
+  `edit_text = { run = "nvim %s", block = true }`，解析失败整体回退默认）；
+  修复方向：配置解析错误提示保留具体字段 + 提供示例配置生成命令或文档指引，
+  不改分层引擎。**裁决项**：② 可执行文件 Enter 仅提示「可执行文件，在终端
+  执行」不改系统 opener——与 AGENTS §5.5「文件打开默认走系统 opener」冲突，
+  需确认作为可执行文件特例；③ 删除等确认由状态栏 `[y/N]` 改为居中阻塞弹窗
+  （带图标/高亮强调）；④ `v` 多选 + `d` 必须进 `ConfirmTagDelete`（现状直接删，
+  缺陷）；⑤ `h` 回父后 `l` 重返还原光标（Tab 增 per-location 光标记忆，
+  `navigate_to` 当前重置 0）。
+- **M45-4 预览**：① 图片越界——`ImageEngine::render_file` 三分支均用 inner rect，
+  原生协议/字体尺寸探测（fallback 10×20）是疑似根因；修字体尺寸兜底与
+  `SlicedProtocol` 高度钳制；真实终端验证补入 M11-6 清单。② 新增
+  `PreviewKind::Archive`：归档预览显示成员文件名列表（复用 `ArchiveFs::list`
+  + `directory_preview`），**必须保持 Office/PDF 先于归档命中**（ZIP 容器
+  docx/xlsx/pptx/jar/apk/war），损坏/加密/.rar 回退 `file_info_text`；修主 TUI
+  `render_view_content` 用 `read_to_string` 无 NUL 探测导致 tar 乱码。
+  与 SPEC M34-9「超高可滚动」/M34-9 SIMPLIFIED「无滚动显示顶部」既有内部
+  矛盾一并澄清（见 NOTES）。
+- **M45-5 命令与 frecency**：① `o` 的 `JumpKind::Unified` 过滤掉 `topic=cmd`
+  条目（cd/tabnew 不可跳转，缺陷）；② `o`/`:j`/`:J` 选择器支持鼠标点击选中
+  （`handle_mouse` 非 Normal 立即返回的现状需改）；③ `:` 命令名辅助提示
+  （现状仅有 Tab 路径补全/↑↓ 历史/`'` 书签，无命令名补全）——新增需求，
+  原需求未要求，需用户确认范围（命令名补全 vs 参数提示）。
+- **M45-6 右栏一致性**：① `:cd` 用 `physical_base()` 遵循焦点 pane（现用
+  `active_tab().location.base_dir()` 恒左，违反 M41-1，缺陷）；② `o` 结果跳转
+  写入焦点 pane（现恒写 `tab.location` 左）；③ **裁决项**：右键栏归档 `l`/Enter
+  进入虚拟目录——M41-3 明确「右 pane 归档/文件 no-op」，需用户确认修改 M41-3。
+- **M45-7 解压与虚拟目录**：**裁决项** ① `:extract` 支持解压到对侧/指定侧或
+  路径（M37-2 现状默认当前物理 pane，需改规格）；② 虚拟目录 `yy` 复制后粘贴
+  到目标路径——NOTES 明确 OUT_OF_SCOPE（归档 VFS 只读，`:extract` 为替代），
+  需用户确认是否推翻该决策。
+- **M45-8 tutor**：① 列表 `l`/Enter 后退出 `InputMode::TutorList`（现状只设
+  `state.tutor` 不改 mode，列表残留，缺陷）；② Panel 右栏提示改
+  `Ctrl+Y/Ctrl+N/Ctrl+Q`（现状 `y/n/q`，与 M43-1 必需 Ctrl 修饰矛盾）；③
+  布局避让（G 跳转底部不被 Panel 挡住）；④ 模块列表左侧显示学习进度；
+  进度持久化已实现（M42-2），用户「未持久化」疑似因按错提示键未记分。
+- **M45-9 archive**：① `archive_plan` 用 `selected_names()` 覆盖 `v` 连续选择
+  （现仅 tags + 光标，缺陷）；② 格式单参推断已支持，补 `[名, checksum=…]`
+  形态；③ 对话框：宽度增大、文件名不显示后缀（后缀按格式右侧自动显示）、
+  默认名单文件→原名/多选→父目录名、格式/校验仅高亮选中项、任意字段回车执行
+  （最后一项已实现）。
+- **M45-10 文档收尾**：README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步；冲突裁决
+  落 NOTES；核对 tutor 条目维护规则（M43-6）补新增命令对应条目。
+
+**SIMPLIFIED**
+- M45-1 路径缩写只做 `~`/`~/…`，不做多级路径缩写；M45-6 右栏归档进入仅
+  虚拟目录，不写归档内；M45-9 对话框保留现有字段结构，不做可视化拖拽。
+- 所有新行为沿用既有 `Action`/Keymap 与主题/图标渲染路径，不引入新依赖。
+
+**OUT_OF_SCOPE**
+- 不改归档内写入/嵌套递归；不做 vifm 脚本引擎或 `:highlight` 语法；
+  不自动执行可执行文件；命令辅助不做外部 shell 补全脚本。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

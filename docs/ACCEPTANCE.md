@@ -1021,3 +1021,16 @@
 
 - [x] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。（2026-11-23：本地 `cargo zigbuild --target aarch64-unknown-linux-musl` 实测成功，`file` = ARM aarch64 statically linked ELF）
 - [x] REL-4-2 版本 1.2.0（Cargo.toml/Cargo.lock/CHANGELOG/README 同步）；tag `v1.2.0` → CI 全绿 + GitHub Release 含且仅含 3 归档 + SHA256SUMS.txt（3 行、`sha256sum -c` 全通过）；crates.io 未发布。（2026-11-23：tag run 45132119778 九 job 全绿；三归档下载实测校验通过；aarch64 静态 musl ELF + `--version` 通过；crates.io 仍 1.0.0）
+
+## 47. M45 — 用户实测批次（见 SPEC M45 节；待用户确认，冲突项须裁决后实施）
+
+- [ ] M45-1 HOME 下路径显示 `~/…` 且导航仍用绝对路径；标签栏鼠标点击切换 tab；标签样式与路径行解耦（灰白底反色字）；分隔线删除/可配置（冲突裁决后）。
+- [ ] M45-2 整行反显覆盖全宽（保持）；无后缀文件不显示 `*`，可执行/文本/jar/deb 图标按类型推断；搜索子串高亮存留裁决后落实。
+- [ ] M45-3 opener 配置错误提示具体化 + 示例指引；可执行文件 Enter 仅提示不执行（裁决后）；删除确认居中阻塞弹窗带图标/高亮；`v`+`d` 必现确认；`h`→`l` 光标还原。
+- [ ] M45-4 图片在预览区内不越界（native 协议字体尺寸兜底）；归档预览显示成员列表且 Office/PDF/zip 容器仍优先；损坏/加密/.rar 回退信息面板；主 TUI 预览不再对 tar 显示乱码。
+- [ ] M45-5 `o` 不显示 cmd topic 条目；`o`/`:j`/`:J` 鼠标点击可选中；`:` 命令名辅助提示（范围裁决后）。
+- [ ] M45-6 `:cd` 遵循焦点 pane；`o` 跳转写焦点 pane；右栏归档 `l`/Enter 进入（M41-3 裁决后）。
+- [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后）；虚拟目录 `yy`→粘贴（OUT_OF_SCOPE 裁决后）。
+- [ ] M45-8 tutor 列表 `l`/Enter 后消失；Panel 提示 Ctrl+Y/N/Q；布局避让；列表左侧显示进度；进度持久化保持。
+- [ ] M45-9 `:archive` 覆盖 `v` 多选；`[名, checksum=]` 推断；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
+- [ ] M45-10 文档收尾与冲突裁决记录；harness_check 通过。

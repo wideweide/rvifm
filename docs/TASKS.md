@@ -542,7 +542,7 @@
 - [x] M44-1 `w`/`:view` 焦点保持 + 光标跟随 + `Tab` 进入/返回 + 关闭恢复（见 SPEC M44；2026-11-23 完成：`Tab.preview_focus` + `refresh_viewer_follow` + 3 个回归用例；500 单测）
 - [x] M44-2 文档同步与 1.1.0 GitHub Release（crates.io 不发布；见 SPEC M44；2026-11-23 完成）
 
-## FIX — 维护期实测修复批次（2026-11-23 增补；蒸馏自用户实测反馈，待用户确认）
+## FIX — 维护期实测修复批次（2026-11-23 增补；蒸馏自用户实测反馈，已确认执行）
 
 > 来源：用户 2026-11-23 实测反馈三条——① `v1.1.0`/`v1.0.0` GitHub Release 的
 > `SHA256SUMS.txt` 只含单个归档（4 个并行 release job 各自生成并 `--clobber`
@@ -567,6 +567,25 @@
 
 - [x] REL-4-1 CI release matrix 改 musl-only（3 腿：x64-musl / aarch64-musl / windows-x64；aarch64 用 cargo-zigbuild 交叉编译 + 静态链接 smoke；SHA256SUMS 数量守卫 3；见 SPEC REL-4-1；2026-11-23 完成：YAML 解析 + 本地 cross-build 实测通过）
 - [x] REL-4-2 版本 bump 1.2.0 + 文档同步 + tag → GitHub Release（三归档 + SHA256SUMS；crates.io 不发布；见 SPEC REL-4-2；2026-11-23 完成：tag run 45132119778 全绿，三 musl 归档 + SHA256SUMS 3 行 `sha256sum -c` 实测通过，aarch64 产物静态 ELF + `--version` 通过）
+
+## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，待用户确认，见 SPEC M45 节）
+
+> 来源：用户 2026-11-23 测试反馈（29 项，按 §8 蒸馏）。登记前逐项核对代码与
+> 文档：已实现 6 项（分隔线/标签样式/整行反显/tutor 进度持久化/opener 引擎/
+> `:extract`）保持不动或仅细化；缺功能 9 项、缺陷 9 项、冲突需拍板 5 项（见
+> NOTES）。编号沿用 M15/M21 用户实测批次先例取 M45；本批次属维护期 FIX/FEAT
+> 蒸馏。顺序：1→10（冲突项在 SPEC/NOTES 标注，实施前需用户裁决）。
+
+- [ ] M45-1 路径 `~` 缩写显示 + 标签栏鼠标点击切换 + 标签样式细化（见 SPEC M45-1）
+- [ ] M45-2 列表整行反显一致性 + 类型图标推断（可执行文件/文本/jar/deb；无后缀不用 `*`；见 SPEC M45-2）
+- [ ] M45-3 opener 覆盖层排查（nvim 未生效：无配置自动生成 + 需 `{ run = … }` 表形态）+ 可执行文件 Enter 仅提示 + 删除确认居中阻塞弹窗 + `v`+`d` 补确认 + `h`→`l` 光标还原（见 SPEC M45-3）
+- [ ] M45-4 图片预览越界（M34-9 回归：native 协议/字体尺寸探测）+ 归档预览显示成员列表（新增 `PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4）
+- [ ] M45-5 `o` 命令 topic 条目过滤（cd/tabnew 不可跳转）+ `o` 选择器鼠标点击 + `:` 命令名辅助提示（见 SPEC M45-5）
+- [ ] M45-6 右栏一致性：`:cd` 遵循焦点 pane（修 M41-1 违规）+ `o` 右栏作用域 + 右键栏归档 `l`/Enter 进入（需改 M41-3；见 SPEC M45-6）
+- [ ] M45-7 `:extract` 解压到对侧/指定侧或路径（需改 M37-2 默认）+ 虚拟目录 `yy` 复制粘贴（原 NOTES 明确 OUT_OF_SCOPE，需裁决；见 SPEC M45-7）
+- [ ] M45-8 tutor 修复：列表 `l`/Enter 后消失 + 右栏提示改 Ctrl+Y/N/Q + 布局避让 + 模块列表左侧进度（进度持久化已实现，误因错误提示键）；见 SPEC M45-8
+- [ ] M45-9 `:archive` 修复：`v` 多选（archive_plan 忽略 visual）+ 格式单参推断补全 `[名, checksum=]` + 对话框宽度/文件名去后缀/默认名单文件→原名多→父目录/格式校验高亮/任意字段回车（见 SPEC M45-9）
+- [ ] M45-10 文档收尾（README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步 + 冲突裁决落 NOTES；见 SPEC M45-10）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 

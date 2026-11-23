@@ -1185,6 +1185,54 @@ rvifm record  → 静默记录访问
   semver minor；用户 2026-11-23 明确要求只发布 GitHub Release，crates.io 仍停在
   1.0.0。
 
+### 2026-11-23 — M45 用户实测批次蒸馏（29 项；待用户确认）
+
+> 来源：用户测试反馈文本。按 AGENTS §8 投递（REQ→SPEC M45 / SEQ→TASKS M45 +
+> PLAN / HOW→ACCEPTANCE §47 / WHY+冲突→本节）。登记前用三个并行只读调查核对
+> 代码，结论如下（file:line 为核查时点）。
+
+- **已实现（不重复登记）**：中间分隔线（`render.rs:629-633`）、标签样式独立
+  `TabLine`/`TabLineSel`（`render.rs:178-191`，已非路径行色）、整行反显
+  （`render.rs:783-795` 全宽 REVERSED）、opener 分层引擎接线 Enter（`exec.rs:3805`）、
+  tutor 进度持久化（`tutor.rs:245-282` + `mod.rs:767`）、`:extract` 按规格实现
+  （`exec.rs:2571-2671`）。
+- **确认为缺陷**：`v`+`d` 无确认（`keys.rs:649-666` 直接 `execute_tag_delete`）；
+  `:cd` 忽略焦点恒改左（`exec.rs:3017/3027` 用 `location` 非 `physical_base`，
+  违反 M41-1）；`o` 含 cmd topic 不可跳转（`frecency.rs:370-449` +
+  `exec.rs:1817-1862`）；tutor 列表 `l`/Enter 不退出 mode（`mod.rs:1582-1607`
+  只设 state.tutor）；tutor 提示 `y/n/q` 但实需 Ctrl（`render.rs:1358-1360`
+  vs `mod.rs:446-459`）；`:archive` 忽略 `v` 选择（`exec.rs:4664-4696`
+  archive_plan 仅 tags + 光标）；main viewer `read_to_string` 无 NUL 探测导致
+  tar 乱码（`app/preview.rs:175-179`）。
+- **确认为缺失**：`~` 路径缩写（display_path `tab.rs:34-46` 恒绝对）；标签栏鼠标
+  （`keys.rs:1691-1692` 明示不响应）；无后缀类型图标（`icons.rs:31-41` 仅
+  devicons 直通，无 `*` 也无类型推断）；`o` 鼠标选中（`handle_mouse` 非 Normal
+  即返回 `keys.rs:1701-1703`）；命令名辅助（仅 Tab 路径补全/历史/书签）；
+  per-location 光标记忆（`navigate_to` 重置 cursor=0 `tab.rs:594-605`）；
+  tutor 列表进度显示（`render.rs:893-897` 仅 id/name/description）；归档成员
+  列表预览（`PreviewKind` 无 Archive `preview.rs:48-59`）。
+- **5 项冲突须用户裁决（未拍板不得开写）**：
+  1. **分隔线**：用户要删，SPEC M27-2 明确要求「双 pane 之间 1 列分隔线」。
+  2. **搜索子串高亮**：用户「文字部分单独高亮」若指 `bg(LightYellow)`
+     （`render.rs:718-721`），删除将违反 FIX-1「匹配子串实时高亮」。
+  3. **可执行文件仅提示**：与 AGENTS §5.5「文件打开默认走系统 opener」冲突
+     （可作可执行文件特例，需确认）。
+  4. **右栏归档 `l`/Enter**：SPEC M41-3 明确「右 pane 归档/文件 no-op」，
+     用户要求进入需改规格。
+  5. **`:extract` 对侧 / 虚拟目录 `yy`**：M37-2 默认当前物理 pane；
+     虚拟目录 yy 在 NOTES 2026-11-21 明确 OUT_OF_SCOPE（只读 VFS）。
+- **需求澄清**：`opener` nvim 未生效根因 = 未生成 config.toml（无自动生成）
+  + TOML 字符串形态 `edit_text = "nvim %s"` 反序列化失败（正确为表形态，
+  README:194-204 有示例），非分层引擎 bug；tutor「进度未持久化」疑似因按错
+  提示键（y/n/q 而非 Ctrl+Y/N/Q）未记分，代码层面持久化已实现；归档格式单参
+  推断其实已支持（`exec.rs:2807-2819`），缺的是 `[名, checksum=]` 组合。
+- **既有文档内部矛盾（顺带登记）**：SPEC M34-9 正文（`SPEC.md:451`）称大图
+  「交互查看器内可滚动查看完整内容」，同条 SIMPLIFIED（`SPEC.md:460`）称
+  「普通预览窗格不提供滚动，显示顶部」——两者描述对象不同（查看器 vs 预览窗格），
+  实施 M45-4 时统一措辞。
+- **编号**：M45 取下一空闲里程碑（M0–M44 已用），沿用 M15/M21 用户实测批次
+  先例；维护期按 AGENTS §10 走 FIX/FEAT 蒸馏，本批次以 M45  umbrella 登记。
+
 ### 2026-11-23 — FIX 批次蒸馏（REL-3 / FIX-5 / FIX-6；用户实测反馈，待确认）
 
 - **REL-3 根因（已核实）**：`v1.1.0` tag run 45101107044 九 job 全绿、四归档
