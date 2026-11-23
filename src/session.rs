@@ -89,13 +89,26 @@ pub fn serialize_session(state: &AppState) -> String {
 /// 退出保存（GAP-2 同模式：失败 eprintln 不阻塞退出）；
 /// `session_restore = false` 时不写。
 pub fn save_session(state: &AppState) {
-    if !state.config.ui.session_restore {
-        return;
-    }
-    let text = serialize_session(state);
-    if let Err(e) = fs::write(session_path(), text) {
+    if let Err(e) = save_session_with_path(state, &session_path()) {
         eprintln!("rvifm: 会话保存失败: {e}");
     }
+}
+
+/// 保存核心（路径注入，供测试与生产共用）。FIX-6：写前创建父目录——
+/// 与 `tutor::save_progress_to` 同模式；全新安装无 config 目录时不再静默失败。
+/// `session_restore = false` 时直接返回 Ok 不写（既有语义不变）。
+pub(crate) fn save_session_with_path(
+    state: &AppState,
+    path: &std::path::Path,
+) -> std::io::Result<()> {
+    if !state.config.ui.session_restore {
+        return Ok(());
+    }
+    let text = serialize_session(state);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(path, text)
 }
 
 /// 解析会话文本（缺失/损坏/空 → None）。
@@ -248,6 +261,35 @@ mod tests {
         assert_eq!(fresh.tabs[1].cursor, 1);
         assert_eq!(fresh.tabs[1].focus, crate::tab::Focus::Right);
         assert_eq!(fresh.tabs[0].location.base_dir(), tmp.path());
+    }
+
+    #[test]
+    fn fix6_save_creates_missing_config_dir_and_keeps_all_tabs() {
+        // FIX-6：注入不存在的配置目录——save 自动建目录并写入全部 tab。
+        let tmp = TempDir::new().unwrap();
+        let other = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state
+            .tabs
+            .push(Tab::from_physical(other.path(), Config::default()).unwrap());
+        let missing = tmp.path().join("no").join("such").join("rvifm");
+        let path = missing.join("session.toml");
+        assert!(!missing.exists(), "前置：目录应不存在");
+        save_session_with_path(&state, &path).unwrap();
+        assert!(missing.exists(), "父目录应被创建");
+        let file = parse_session(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(file.tabs.len(), 2, "多 tab 全部入会话");
+    }
+
+    #[test]
+    fn fix6_save_disabled_does_not_write() {
+        // FIX-6：session_restore=false 时不写（既有语义不变）。
+        let tmp = TempDir::new().unwrap();
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.config.ui.session_restore = false;
+        let path = tmp.path().join("session.toml");
+        save_session_with_path(&state, &path).unwrap();
+        assert!(!path.exists(), "禁用时不得写会话文件");
     }
 
     #[test]
