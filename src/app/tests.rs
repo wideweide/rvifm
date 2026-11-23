@@ -10879,3 +10879,70 @@ fn m43_1_tutor_list_scroll_render() {
         "键提示（边框底行）: {all}"
     );
 }
+
+#[test]
+fn fix5_tutor_list_overlay_is_opaque() {
+    // FIX-5-1：模块列表全屏覆盖层先 Clear——下层目录列表文字不得透出。
+    let (_tmp, state) = make_state(3);
+    let mode = InputMode::TutorList { cursor: 0 };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 8)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all: String = (0..8)
+        .map(|y| {
+            (0..60)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    assert!(!all.contains("f00"), "下层目录项透出到列表覆盖层: {all}");
+    assert!(all.contains("core_nav"), "模块列表仍渲染: {all}");
+}
+
+#[test]
+fn fix5_tutor_panel_is_opaque_but_background_visible() {
+    // FIX-5-2：面板区域清除下层文字，面板之外主 TUI（标签栏）仍可见。
+    let (_tmp, state) = make_state(3);
+    let dump = |t: &ratatui::Terminal<ratatui::backend::TestBackend>, y0: u16, y1: u16| -> String {
+        (y0..y1)
+            .map(|y| {
+                (0..60)
+                    .map(|x| t.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    };
+    // 基线：无 tutor 时目录项位于面板将覆盖的行区间（小终端面板覆盖主区）。
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 8)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    assert!(dump(&terminal, 1, 7).contains("f00"), "基线目录项应可见");
+
+    // 会话态：面板区域不再透出目录项；tab 栏（第 0 行）仍可见。
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    let mut state = state;
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let panel = dump(&terminal, 1, 7);
+    // CJK 在 TestBackend 按"字+空格"占双宽——断言前去空白（M21-E3 坑）。
+    let compact: String = panel.chars().filter(|c| !c.is_whitespace()).collect();
+    for name in ["f00", "f01", "f02"] {
+        assert!(
+            !compact.contains(name),
+            "面板区域透出目录项 {name}: {panel}"
+        );
+    }
+    assert!(compact.contains("核心导航"), "Panel 标题应渲染: {panel}");
+    assert!(
+        dump(&terminal, 0, 1).contains(".tmp"),
+        "面板外标签栏仍可见（透明放行上下文保留）"
+    );
+}

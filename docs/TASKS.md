@@ -554,7 +554,7 @@
 
 - [x] REL-3a CI 修复：release job 不再各自生成/上传 SHA256SUMS，新增独立 release-checksums 作业汇总全部归档（含数量守卫 4）；见 SPEC REL-3-1（2026-11-23 完成：YAML 解析通过，`scripts/repair-release-checksums.sh` 备查）
 - [~] REL-3b 历史回填 v1.0.0/v1.1.0 的 SHA256SUMS.txt（**deferred：本机无 `gh`/GitHub token，上传需人工鉴权**；四归档真实 sha256 已下载实测并记 NOTES；执行 `bash scripts/repair-release-checksums.sh v1.0.0 v1.1.0` 即完成；见 SPEC REL-3-2）
-- [ ] FIX-5 `:tutor` 模块列表覆盖层与底部 Panel 不透明化（Clear + 背景样式，消除与目录列表的视觉干扰；见 SPEC FIX-5）
+- [x] FIX-5 `:tutor` 模块列表覆盖层与底部 Panel 不透明化（Clear + 背景样式，消除与目录列表的视觉干扰；见 SPEC FIX-5；2026-11-23 完成：render.rs 两处 Clear + fix5_* 双测试，504 单测）
 - [ ] FIX-6 会话保存前自动创建配置目录（`save_session` 补 `create_dir_all`，与 tutor progress 同模式；见 SPEC FIX-6）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）

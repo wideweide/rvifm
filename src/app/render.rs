@@ -887,6 +887,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     if let InputMode::TutorList { cursor } = mode {
         // M42-1/M43-1：导师模式模块列表——List 组件渲染（M43 起模块数超屏，
         // 视口随选中项滚动）。键提示并入边框底部行。
+        // FIX-5-1：全屏覆盖层先清除下层 TUI——否则目录列表/状态栏文字从
+        // 列表空白行透出（与其它覆盖层的 Clear 模式一致）。
+        frame.render_widget(ratatui::widgets::Clear, frame.area());
         let modules = crate::tutor::builtin_modules();
         let items: Vec<Line> = modules
             .iter()
@@ -1297,6 +1300,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             width: frame.area().width,
             height: panel_h,
         };
+        // FIX-5-2：仅清除面板区域的下层内容——目录列表文字不得从面板空白
+        // 行透出干扰 prompt/expected 可读性（面板之外主 TUI 仍可见）。
+        frame.render_widget(ratatui::widgets::Clear, panel_area);
         let total = module.items.len();
         let mastered = marks.iter().filter(|(_, ok)| *ok).count();
         let skipped = marks.len() - mastered;
