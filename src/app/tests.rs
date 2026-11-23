@@ -4684,6 +4684,84 @@ fn jump_to_dir_navigates_and_pushes_history() {
 }
 
 #[test]
+fn m457b_archive_yy_paste_extracts_to_focused_pane() {
+    // M45-7b：归档虚拟目录 yy（成员）→ p 粘贴到焦点 pane 物理目录；
+    // 逐成员解压、u 可逆、不写归档内。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("bundle.zip");
+    crate::archive::make_test_zip(&zip);
+    let dest = tmp.path().join("dest");
+    fs::create_dir(&dest).unwrap();
+
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 左 pane 进入归档虚拟根（模拟 yy 场景）。
+    state.active_tab_mut().location = Location::Archive {
+        host: zip.clone(),
+        inner: std::path::PathBuf::new(),
+    };
+    state.active_tab_mut().entries =
+        Tab::load_for(&state.active_tab().location, Config::default()).unwrap();
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "readme.md")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+
+    // yy（归档分支）：yank = 成员路径 + YankSource::Archive。
+    let layers = config::keymap_layers();
+    let mut input = InputState::with_keymap(crate::keymap::Keymap::with_layers(
+        layers.prepend,
+        layers.append,
+        layers.replace,
+    ));
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    let yank = state.yank.as_ref().expect("归档 yy 应设置缓冲");
+    assert_eq!(
+        yank.source,
+        crate::state::YankSource::Archive { host: zip.clone() }
+    );
+    assert_eq!(yank.paths, vec![std::path::PathBuf::from("readme.md")]);
+
+    // 焦点切到右 pane（物理目标目录）后粘贴。
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(&dest, Config::default()).unwrap();
+    let mut msg2 = None;
+    paste_yanked(&mut state, false, &mut msg2);
+    assert!(
+        msg2.as_deref().unwrap_or("").contains("解压"),
+        "粘贴反馈: {msg2:?}"
+    );
+    assert_eq!(
+        fs::read(dest.join("readme.md")).unwrap(),
+        b"hi",
+        "成员内容一致"
+    );
+    // 归档未被写入（只读）。
+    assert!(zip.is_file());
+    // u 撤销：解压文件移除。
+    let mut msg3 = None;
+    undo_last(&mut state, &mut msg3);
+    assert!(!dest.join("readme.md").exists(), "u 撤销解压");
+}
+
+#[test]
 fn m457a_extract_dest_defaults_to_opposite_pane() {
     // M45-7a：`:extract` 缺省目标为对侧 pane；left/right/当前/对侧/绝对/
     // 相对路径均可解析（纯函数，不触碰文件）。

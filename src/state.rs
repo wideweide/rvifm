@@ -266,6 +266,11 @@ pub struct YankBuffer {
 pub enum YankSource {
     Local,
     Remote(String),
+    /// M45-7b：归档虚拟目录内 yy——`host` 为归档文件，`YankBuffer.paths`
+    /// 为归档内成员路径（非物理路径）；粘贴时按成员解压到焦点 pane。
+    Archive {
+        host: PathBuf,
+    },
 }
 
 /// M36-7：传输队列条目（粘贴入队；顺序消费）。

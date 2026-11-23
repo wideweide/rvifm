@@ -2053,6 +2053,108 @@ pub(crate) fn extract_dest(state: &AppState, arg: Option<&str>) -> Result<PathBu
     }
 }
 
+/// M45-7b：把归档成员（roots 为归档内路径；空串 = 全量）解压到 dest_dir。
+/// `:extract` 与归档 `yy`→`p` 共用：zip-slip 防护、64MB 护栏、逐成员入
+/// 撤销栈（u 可逆）。返回成功数，失败汇总。
+fn extract_members(
+    state: &mut AppState,
+    host: &Path,
+    roots: &[String],
+    dest_dir: &Path,
+) -> Result<usize, Vec<String>> {
+    let mut archive_fs =
+        crate::archive::open_dispatch(host).map_err(|e| vec![format!("归档打开失败: {e}")])?;
+    let mut stack: Vec<String> = Vec::new();
+    let mut direct: Vec<String> = Vec::new();
+    for root in roots {
+        match archive_fs.metadata(root) {
+            Ok(entry) if entry.is_dir => stack.push(root.clone()),
+            Ok(_) => direct.push(root.clone()),
+            Err(_) => stack.push(root.clone()), // 隐式目录 → 试列
+        }
+    }
+    let mut applied = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+    let tab_id = state.active;
+    // 显式文件成员。
+    for member in direct {
+        let dest = dest_dir.join(&member);
+        if !normalize_lexical(&dest).starts_with(dest_dir) {
+            failures.push(format!("zip-slip 拒绝: {member}"));
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match archive_fs.read(&member) {
+            Ok(data) => match std::fs::write(&dest, &data) {
+                Ok(()) => {
+                    state.undo_stack.push(crate::state::UndoableOp::Create {
+                        tab_id,
+                        path: dest,
+                        recursive: false,
+                    });
+                    applied += 1;
+                }
+                Err(e) => failures.push(format!("{dest:?}: {e}")),
+            },
+            Err(e) => failures.push(format!("{member}: {e}")),
+        }
+    }
+    // 目录成员（含根 "" = 全量）。
+    while let Some(inner) = stack.pop() {
+        let entries = match archive_fs.list(&inner) {
+            Ok(v) => v,
+            Err(e) => {
+                failures.push(format!("{inner}: {e}"));
+                continue;
+            }
+        };
+        for entry in entries {
+            let member_path = if inner.is_empty() {
+                PathBuf::from(&entry.path)
+            } else {
+                PathBuf::from(format!("{inner}/{}", entry.path))
+            };
+            if entry.is_dir {
+                stack.push(member_path.to_string_lossy().into_owned());
+                continue;
+            }
+            let dest = dest_dir.join(&member_path);
+            if !normalize_lexical(&dest).starts_with(dest_dir) {
+                failures.push(format!("zip-slip 拒绝: {}", member_path.display()));
+                continue;
+            }
+            if entry.size > 64 * 1024 * 1024 {
+                failures.push(format!("{}: 超出 64MB 单成员上限", member_path.display()));
+                continue;
+            }
+            if let Some(parent) = dest.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match archive_fs.read(&member_path.to_string_lossy()) {
+                Ok(data) => match std::fs::write(&dest, &data) {
+                    Ok(()) => {
+                        state.undo_stack.push(crate::state::UndoableOp::Create {
+                            tab_id,
+                            path: dest,
+                            recursive: false,
+                        });
+                        applied += 1;
+                    }
+                    Err(e) => failures.push(format!("{dest:?}: {e}")),
+                },
+                Err(e) => failures.push(format!("{}: {e}", member_path.display())),
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(applied)
+    } else {
+        Err(failures)
+    }
+}
+
 pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
     if let Some(rest) = line.strip_prefix('!') {
@@ -2733,76 +2835,19 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             if !crate::archive::is_archive_file(&item.name) {
                 return Err(format!("extract: {} 不是受支持的归档格式", item.name));
             }
-            // 打开归档 VFS + 逐成员解压（walk list 树；zip-slip 防护；
-            // 单成员 64MB 上限；逐成员入撤销栈 u 可逆）。
-            let mut archive_fs = crate::archive::open_dispatch(&host)
-                .map_err(|e| format!("extract: 归档打开失败: {e}"))?;
-            let mut stack = vec![String::new()];
-            let mut applied = 0usize;
-            let mut failures: Vec<String> = Vec::new();
-            let tab_id = state.active;
-            while let Some(inner) = stack.pop() {
-                let entries = match archive_fs.list(&inner) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        failures.push(format!("{inner}: {e}"));
-                        continue;
-                    }
-                };
-                for entry in entries {
-                    let member_path = if inner.is_empty() {
-                        PathBuf::from(&entry.path)
-                    } else {
-                        PathBuf::from(format!("{inner}/{}", entry.path))
-                    };
-                    if entry.is_dir {
-                        stack.push(member_path.to_string_lossy().into_owned());
-                        continue;
-                    }
-                    // zip-slip 防护：成员路径规范化后不得逃逸 dest_dir。
-                    let dest = dest_dir.join(&member_path);
-                    let normalized = normalize_lexical(&dest);
-                    if !normalized.starts_with(&dest_dir) {
-                        failures.push(format!("zip-slip 拒绝: {}", member_path.display()));
-                        continue;
-                    }
-                    // 单成员 64MB 护栏。
-                    if entry.size > 64 * 1024 * 1024 {
-                        failures.push(format!("{}: 超出 64MB 单成员上限", member_path.display()));
-                        continue;
-                    }
-                    if let Some(parent) = dest.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    match archive_fs.read(&member_path.to_string_lossy()) {
-                        Ok(data) => match std::fs::write(&dest, &data) {
-                            Ok(()) => {
-                                state.undo_stack.push(crate::state::UndoableOp::Create {
-                                    tab_id,
-                                    path: dest.clone(),
-                                    recursive: false,
-                                });
-                                applied += 1;
-                            }
-                            Err(e) => failures.push(format!("{}: {e}", dest.display())),
-                        },
-                        Err(e) => failures.push(format!("{}: {e}", member_path.display())),
-                    }
-                }
-            }
-            if failures.is_empty() {
-                Ok(ExecOutcome::Done {
+            // 逐成员解压（zip-slip 防护 / 64MB 护栏 / u 可逆）共用 extract_members。
+            match extract_members(state, &host, &[String::new()], &dest_dir) {
+                Ok(applied) => Ok(ExecOutcome::Done {
                     msg: Some(format!(
                         "extract: {applied} 个成员已解压到 {}（u 可撤销）",
                         dest_dir.display()
                     )),
-                })
-            } else {
-                Err(format!(
-                    "extract: {applied} 项成功，失败 {}: {}",
+                }),
+                Err(failures) => Err(format!(
+                    "extract: 失败 {}: {}",
                     failures.len(),
                     failures.join("; ")
-                ))
+                )),
             }
         }
         Some("chmod") => {
@@ -4059,6 +4104,42 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
     }
     if let crate::state::YankSource::Remote(ref src_remote) = buffer.source {
         paste_remote_to_local(state, src_remote, &buffer, force_move, msg);
+        return;
+    }
+    // M45-7b：归档虚拟目录内 yy → p/P 粘贴 = 按成员解压到焦点 pane 物理目录。
+    // 不写归档内；u 可逆（逐成员 Create）。
+    if let crate::state::YankSource::Archive { ref host } = buffer.source {
+        let base = match physical_base(state) {
+            Ok(b) => b,
+            Err(e) => {
+                *msg = Some(e);
+                return;
+            }
+        };
+        if !base.is_dir() {
+            *msg = Some(format!("粘贴目标目录不存在: {}", base.display()));
+            return;
+        }
+        let roots: Vec<String> = buffer
+            .paths
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+        match extract_members(state, host, &roots, &base) {
+            Ok(applied) => {
+                *msg = Some(format!(
+                    "已从归档解压 {applied} 个成员到 {}",
+                    base.display()
+                ))
+            }
+            Err(failures) => {
+                *msg = Some(format!(
+                    "解压失败 {}: {}",
+                    failures.len(),
+                    failures.join("; ")
+                ))
+            }
+        }
         return;
     }
     let base = match physical_base(state) {

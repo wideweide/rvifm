@@ -1115,11 +1115,55 @@ pub(crate) fn handle_key(
                     return None;
                 }
                 let count = count.unwrap_or(1).max(1);
+                // M45-7b：归档虚拟目录内 yy = 成员路径（供 p/P 解压粘贴）。
+                if let Location::Archive { host, inner } = state.active_tab().location.clone() {
+                    let tab = state.active_tab();
+                    let names: Vec<String> = if let Some((lo, hi)) = tab.visual_range() {
+                        tab.entries[lo..=hi.min(tab.entries.len().saturating_sub(1))]
+                            .iter()
+                            .map(|i| i.name.clone())
+                            .collect()
+                    } else if !tab.tags.is_empty() {
+                        tab.entries
+                            .iter()
+                            .filter(|i| tab.tags.contains(&i.name))
+                            .map(|i| i.name.clone())
+                            .collect()
+                    } else {
+                        let start = tab.cursor.min(tab.entries.len());
+                        let end = (start + count).min(tab.entries.len());
+                        tab.entries[start..end]
+                            .iter()
+                            .map(|i| i.name.clone())
+                            .collect()
+                    };
+                    let base_inner = inner.to_string_lossy().replace('\\', "/");
+                    let paths: Vec<PathBuf> = names
+                        .iter()
+                        .map(|n| {
+                            if base_inner.is_empty() {
+                                PathBuf::from(n)
+                            } else {
+                                PathBuf::from(format!("{base_inner}/{n}"))
+                            }
+                        })
+                        .collect();
+                    let n = paths.len();
+                    if n == 0 {
+                        *msg = Some("yy: 无可复制的条目".to_owned());
+                    } else {
+                        state.yank = Some(crate::state::YankBuffer {
+                            paths,
+                            cut: false,
+                            source: crate::state::YankSource::Archive { host },
+                        });
+                        *msg = Some(format!("Yanked {n} item(s)"));
+                    }
+                    return None;
+                }
                 let names: Vec<String> = {
                     let tab = state.active_tab();
-                    if matches!(tab.location, Location::Archive { .. }) {
-                        Vec::new()
-                    } else if let Some((lo, hi)) = tab.visual_range() {
+                    if let Some((lo, hi)) = tab.visual_range() {
                         tab.entries[lo..=hi]
                             .iter()
                             .map(|i| i.name.clone())
