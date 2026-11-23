@@ -586,7 +586,7 @@
 - [x] M45-8b Panel 提示改 Ctrl+Y/N/Q（见 SPEC M45-8②；2026-11-23 完成：render.rs 三行提示 + m42_1 测试更新，510 单测）
 - [x] M45-9a `:archive` 覆盖 `v` 多选（见 SPEC M45-9①；2026-11-23 完成：archive_plan 增补 v 选区分支 + m459a 测试，511 单测）← 第一批 P0
 - [x] M45-1a `Location::display_path()` HOME 下显示 `~/…` 缩写（仅显示层；见 SPEC M45-1①；2026-11-23 完成：abbreviate_home 纯函数 + m451a 测试，512 单测）
-- [ ] M45-1b 标签栏鼠标点击切换 tab（见 SPEC M45-1②）
+- [x] M45-1b 标签栏鼠标点击切换 tab（见 SPEC M45-1②；2026-11-23 完成：tab_bar_hit_test 同源 geometry + m451b 测试，513 单测）
 - [ ] M45-1c 标签样式细化（灰白底反色字，与路径行解耦；见 SPEC M45-1③）
 - [ ] M45-1d `[ui] pane_separator` 可配置（默认 false 不显示分隔线，true 恢复；见 SPEC M45-1④）
 - [ ] M45-2a 未搜索态整行背景一致（非搜索匹配子串高亮，保留 FIX-1；见 SPEC M45-2③）

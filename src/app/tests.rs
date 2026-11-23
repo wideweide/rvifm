@@ -5900,6 +5900,48 @@ fn feat1_mouse_click_focus_then_reclick_opens_dir() {
 }
 
 #[test]
+fn m451b_tab_bar_click_switches_tab() {
+    // M45-1b：点击标签栏可见标签 → 切到该 tab（不触发列表点击/打开）。
+    let (_tmp, mut state) = make_state(1);
+    state.new_tab_here();
+    state.new_tab_here();
+    assert_eq!(state.tabs.len(), 3);
+    assert_eq!(state.active, 2, "新标签切到末尾");
+
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let [tab_bar, _, _, _] = crate::app::render::pane_layout(
+        area,
+        state.config.ui.layout(),
+        state.active_tab().view_mode,
+    );
+    // 找第 1 个标签文本起始列（render 同源 geometry）。
+    let (labels, visible) = crate::app::render::tab_bar_labels_and_visible(&state, tab_bar.width);
+    assert!(visible.contains(&0) && visible.contains(&1));
+    let mut x = 0usize;
+    if visible[0] > 0 {
+        x += 2;
+    }
+    // 目标 tab 0（第一个可见标签）——累加其前序可见标签宽度。
+    for &idx in &visible {
+        if idx == 0 {
+            break;
+        }
+        x += labels[idx].chars().count();
+    }
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: tab_bar.x + x as u16 + 1,
+        row: tab_bar.y,
+        modifiers: KeyModifiers::NONE,
+    };
+    let mut msg = None;
+    handle_mouse(&mut state, &InputMode::Normal, &click, &mut msg, area);
+    assert_eq!(state.active, 0, "点击首个标签切到 tab 0");
+    // 列表点击未被误触发（光标/位置未变）。
+    assert!(matches!(state.active_tab().location, Location::Physical(_)));
+}
+
+#[test]
 fn feat1_mouse_wheel_scrolls_and_outside_click_ignored() {
     let (_tmp, mut state) = make_state(3);
     let mut msg = None;

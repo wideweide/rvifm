@@ -118,10 +118,12 @@ pub(crate) fn pane_covered_by_viewer(
     }
 }
 
-/// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
-/// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
-/// CJK 全宽忽略——SIMPLIFIED）。
-pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<Span<'static>> {
+/// M45-1b：标签栏文本与可见窗口——render 与鼠标命中共用（同源，避免分叉）。
+/// 返回 (labels, visible)；宽按字符数近似，CJK 全宽忽略（SIMPLIFIED，同 M39-6）。
+pub(crate) fn tab_bar_labels_and_visible(
+    state: &AppState,
+    width: u16,
+) -> (Vec<String>, Vec<usize>) {
     let labels: Vec<String> = state
         .tabs
         .iter()
@@ -169,6 +171,38 @@ pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<
         }
         visible = (lo..=hi).collect();
     }
+    (labels, visible)
+}
+
+/// M45-1b：鼠标点击标签栏列 → tab 索引（render 同源 geometry）。
+/// 点击命中某可见标签文本区间（含左侧 "‹ " 指示偏移）→ 该 tab 索引；
+/// 点击空白/指示符/溢出区 → None。
+pub(crate) fn tab_bar_hit_test(state: &AppState, width: u16, col: u16) -> Option<usize> {
+    let (labels, visible) = tab_bar_labels_and_visible(state, width);
+    if visible.is_empty() {
+        return None;
+    }
+    let mut x = 0usize;
+    // 左侧溢出指示 "‹ " 占 2 列（与 render 同源）。
+    if visible[0] > 0 {
+        x += 2;
+    }
+    let c = col as usize;
+    for &idx in &visible {
+        let w = labels[idx].chars().count();
+        if c >= x && c < x + w {
+            return Some(idx);
+        }
+        x += w;
+    }
+    None
+}
+
+/// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
+/// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
+/// CJK 全宽忽略——SIMPLIFIED）。
+pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<Span<'static>> {
+    let (labels, visible) = tab_bar_labels_and_visible(state, width);
     let mut out: Vec<Span> = Vec::new();
     if !visible.is_empty() && visible[0] > 0 {
         out.push(Span::styled("‹ ", Style::new().add_modifier(Modifier::DIM)));

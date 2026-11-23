@@ -1712,8 +1712,23 @@ pub(crate) fn handle_mouse(
     // PreviewBottom 上半双栏；查看器覆盖 pane 的命中在 hit_*_index 守卫）。
     // 左 pane `..` 行占内区首行（FEAT-2，有父行时条目从第 2 行开始），
     // 右 pane 无 `..` 行（M14-1，条目从内区首行开始）。
-    let [_, left, right, _] =
+    let [tab_bar, left, right, _] =
         pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode);
+    // M45-1b：标签栏鼠标点击切换 tab（此前明确不响应）。命中标签栏行且
+    // 落在某可见标签文本区间 → goto_tab(idx+1)，不触发列表点击/打开。
+    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+        && mouse.row >= tab_bar.y
+        && mouse.row < tab_bar.y + tab_bar.height
+    {
+        if let Some(idx) = crate::app::render::tab_bar_hit_test(
+            state,
+            tab_bar.width,
+            mouse.column.saturating_sub(tab_bar.x),
+        ) {
+            state.goto_tab(idx + 1);
+        }
+        return;
+    }
     let borders = state.config.ui.pane_borders;
     let left_inner = left_list_area(borders, left);
     let right_inner = left_list_area(borders, right);
