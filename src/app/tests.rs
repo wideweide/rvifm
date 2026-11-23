@@ -9536,6 +9536,44 @@ fn m22_5_remote_find_grep_and_locate() {
 }
 
 #[test]
+fn m456a_cd_follows_focused_pane() {
+    // M45-6a：:cd 作用于焦点 pane——右焦点改右栏、左栏不变（M41-1）。
+    let tmp = TempDir::new().unwrap();
+    let left = tmp.path().join("left");
+    let right = tmp.path().join("right");
+    let target = tmp.path().join("target");
+    for d in [&left, &right, &target] {
+        fs::create_dir(d).unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(&left, Config::default()).unwrap());
+    state.active_tab_mut().right.location = Location::Physical(right.clone());
+    state
+        .active_tab_mut()
+        .right
+        .refresh(Config::default())
+        .unwrap();
+    // 焦点切右栏。
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let left_before = state.active_tab().location.clone();
+    exec_command_impl(&mut state, &format!("cd {}", target.display())).unwrap();
+    assert_eq!(
+        state.active_tab().right.location,
+        Location::Physical(target.clone()),
+        "右焦点 :cd 改右栏"
+    );
+    assert_eq!(state.active_tab().location, left_before, "左栏不变");
+
+    // 焦点切左栏再 cd 到 left 的兄弟目标。
+    state.active_tab_mut().focus = crate::tab::Focus::Left;
+    exec_command_impl(&mut state, &format!("cd {}", right.display())).unwrap();
+    assert_eq!(
+        state.active_tab().location,
+        Location::Physical(right.clone()),
+        "左焦点 :cd 改左栏"
+    );
+}
+
+#[test]
 fn m22_1_cd_relative_resolves_against_tab_dir() {
     // ACCEPTANCE §21 M22-1：`:cd ..` 落到真实父目录（绝对路径，非 ".."）；
     // 随后 :mkdir 落点在 tab 目录（非进程 CWD）。M21-E5 CI 实测的漂移回归测试。

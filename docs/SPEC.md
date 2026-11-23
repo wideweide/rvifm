@@ -1490,8 +1490,9 @@ append_rules = [
   （`handle_mouse` 非 Normal 立即返回的现状需改）；③ `:` 命令名辅助提示
   （现状仅有 Tab 路径补全/↑↓ 历史/`'` 书签，无命令名补全）——新增需求，
   原需求未要求，需用户确认范围（命令名补全 vs 参数提示）。
-- **M45-6 右栏一致性**：① `:cd` 用 `physical_base()` 遵循焦点 pane（现用
-  `active_tab().location.base_dir()` 恒左，违反 M41-1，缺陷）；② `o` 结果跳转
+- **M45-6 右栏一致性**：① `:cd` 用 `focus_base()` 解析相对路径并导航写入焦点
+  pane（右 pane 无 history 栈直接设 location+refresh；现用 `active_tab().location` 恒左，
+  违反 M41-1，缺陷）；② `o` 结果跳转
   写入焦点 pane（现恒写 `tab.location` 左）；③ **右栏归档（裁决）**：右键栏
   归档 `l`/Enter 进入虚拟目录——M41-3 已改规格（文件仍 no-op）。
 - **M45-7 解压与虚拟目录（裁决已推翻旧决策）**：① `:extract` 支持解压到对侧/

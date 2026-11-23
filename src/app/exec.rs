@@ -3023,7 +3023,11 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let dir_arg = parts.next().ok_or_else(|| "cd: 缺少目录".to_owned())?;
             // M24-7：`~` 展开为 HOME 后再解析（相对路径仍锚定当前 tab 目录）。
             let target = {
-                let cur = state.active_tab().location.base_dir().to_path_buf();
+                // M45-6a：相对路径锚定焦点 pane 基准目录（M41-1 内部命令作用于
+                // 焦点 pane）；原用 active_tab().location.base_dir() 恒左栏。
+                // 用 focus_base 而非 physical_base——cd 是导航，归档/远端视图
+                // 也应可 cd 离开，不受写操作只读守卫限制。
+                let cur = state.active_tab().focus_base().to_path_buf();
                 let p = PathBuf::from(expand_home_arg(dir_arg));
                 if p.is_absolute() { p } else { cur.join(p) }
             };
@@ -3033,8 +3037,20 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let target = normalize_lexical(&target);
             let cfg = state.config.clone();
             let tab = state.active_tab_mut();
-            tab.navigate_to(Location::Physical(target), cfg)
-                .map_err(|e| format!("cd: {e}"))?;
+            // M45-6a：导航写入焦点 pane（M41-1）——右 pane 无 history 栈，直接
+            // 设 location + refresh；左 pane 沿用 navigate_to（带 history）。
+            match tab.focus {
+                crate::tab::Focus::Right => {
+                    tab.right.location = Location::Physical(target);
+                    tab.right.cursor = 0;
+                    tab.right.scroll = 0;
+                    tab.right.refresh(cfg).map_err(|e| format!("cd: {e}"))?;
+                }
+                crate::tab::Focus::Left => {
+                    tab.navigate_to(Location::Physical(target), cfg)
+                        .map_err(|e| format!("cd: {e}"))?;
+                }
+            }
             let tab_id = state.active;
             record_live_visit(state, tab_id, 'L');
             Ok(ExecOutcome::Done { msg: None })
