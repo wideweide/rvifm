@@ -3748,6 +3748,45 @@ fn exec_copy_and_undo_removes_copy() {
 }
 
 #[test]
+fn m453d_visual_delete_requires_confirmation() {
+    // M45-3d：v 多选 + d → 返回 ConfirmTagDelete（不再直接删除），
+    // 文件须保留直到确认。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("f00"), "").unwrap();
+    fs::write(tmp.path().join("f01"), "").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut input = InputState::with_keymap(crate::keymap::Keymap::default());
+    let mut msg = None;
+    // v → j → d（选 2 项）。
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    let outcome = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(outcome, Outcome::ConfirmTagDelete);
+    assert!(tmp.path().join("f00").exists(), "确认前不得删除");
+    assert!(tmp.path().join("f01").exists(), "确认前不得删除");
+    assert_eq!(state.active_tab().tagged_count(), 2, "选区已加 tag");
+    assert!(state.active_tab().visual.is_none(), "可视态已清");
+}
+
+#[test]
 fn visual_selection_flow() {
     // M3-1：v 进入 → j 扩大选区 → Esc 退出，状态正确。
     let (_tmp, mut state) = make_state(4);

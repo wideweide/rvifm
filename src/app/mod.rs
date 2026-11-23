@@ -143,6 +143,8 @@ pub(crate) enum Outcome {
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool, Option<String>),
+    /// M45-3d：可视模式 v+d/x 已把选中项加 tag，请求进入批量删除确认覆盖层。
+    ConfirmTagDelete,
     /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
@@ -1415,6 +1417,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 permanent,
                                 remote,
                             };
+                        }
+                        Outcome::ConfirmTagDelete => {
+                            // M45-3d：v+d/x 选中项已加 tag，进入批量删除确认。
+                            mode = InputMode::ConfirmTagDelete;
                         }
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };

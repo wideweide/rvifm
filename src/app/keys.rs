@@ -651,7 +651,9 @@ pub(crate) fn handle_key(
         match key.code {
             KeyCode::Char('d') | KeyCode::Char('x') => {
                 input.count = None;
-                // M24-4：可视范围条目加 tag → 触发批量删除确认（复用 M3-3 管线）。
+                // M24-4：可视范围条目加 tag → 批量删除确认（M3-3 管线）。
+                // M45-3d：不再直接删除——返回 ConfirmTagDelete 交主循环弹确认，
+                // 与 `:tag delete` 一致（用户实测 v+d 无确认缺陷）。
                 if let Some((lo, hi)) = state.active_tab().visual_range() {
                     let tab = state.active_tab_mut();
                     for i in lo..=hi.min(tab.entries.len().saturating_sub(1)) {
@@ -660,8 +662,9 @@ pub(crate) fn handle_key(
                         }
                     }
                     tab.visual = None;
-                    // M24-4：直接批量删除（tag 复用 M3-3，撤销栈可逆）。
-                    execute_tag_delete(state, msg);
+                    if state.active_tab().tagged_count() > 0 {
+                        return Outcome::ConfirmTagDelete;
+                    }
                 }
                 return Outcome::Continue;
             }
