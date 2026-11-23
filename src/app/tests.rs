@@ -8104,6 +8104,29 @@ fn renders_active_tab_list_and_status_bar() {
 }
 
 #[test]
+fn m455b_jump_click_index_geometry() {
+    // M45-5b：选择器列表段点击 → 可见项下标；框外/标题/提示行返回 None。
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let list = crate::app::render::jump_areas(area)[1];
+    // 列表首行、第二行命中。
+    assert_eq!(
+        crate::app::render::jump_click_index(area, list.x + 1, list.y),
+        Some(0)
+    );
+    assert_eq!(
+        crate::app::render::jump_click_index(area, list.x + 1, list.y + 1),
+        Some(1)
+    );
+    // 输入行（列表上一行）与提示行（列表下方）不命中。
+    assert_eq!(
+        crate::app::render::jump_click_index(area, list.x + 1, list.y.saturating_sub(1)),
+        None
+    );
+    // 框外不命中。
+    assert_eq!(crate::app::render::jump_click_index(area, 0, 0), None);
+}
+
+#[test]
 fn m454b_viewer_nul_file_shows_info_panel_not_garbage() {
     // M45-4b：含 NUL 的二进制文件（tar 头部填充同类）在文本查看器不得
     // 渲染乱码——read_to_string 成功但 NUL 是合法 UTF-8，需显式探测。

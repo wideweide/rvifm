@@ -1888,6 +1888,23 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // 点击菜单外 → 关闭（无副作用）。
                     mode = InputMode::Normal;
                 }
+            } else if matches!(mode, InputMode::JumpSelect { .. })
+                && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            {
+                // M45-5b：`o`/`:j`/`:J` 选择器支持鼠标点击选中（此前非
+                // Normal 模式鼠标直接落到 handle_mouse 被忽略）。列表段
+                // 命中项 → 跳转并关闭，与 Enter 同源；点空白/标题无副作用。
+                if let Some(idx) =
+                    crate::app::render::jump_click_index(area, mouse.column, mouse.row)
+                    && let InputMode::JumpSelect { input, entries, .. } = &mode
+                    && let Some(entry) = filter_jump(entries, input).get(idx).cloned()
+                {
+                    mode = InputMode::Normal;
+                    match jump_to(&mut state, &entry) {
+                        Ok(m) => msg = Some(m),
+                        Err(e) => msg = Some(e),
+                    }
+                }
             } else if mouse.kind == MouseEventKind::Down(MouseButton::Right)
                 && matches!(mode, InputMode::Normal)
             {

@@ -575,6 +575,30 @@ pub(crate) fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rec
     }
 }
 
+/// M45-5b：跳转选择器三段区域（输入行 / 列表 / 提示行）——render 与鼠标
+/// 命中同源，避免分叉。列表段供点击选中测试。
+pub(crate) fn jump_areas(area: ratatui::layout::Rect) -> [ratatui::layout::Rect; 3] {
+    let popup = jump_rect(area);
+    let inner = ratatui::widgets::Block::bordered().inner(popup);
+    Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(3),
+        Constraint::Length(1),
+    ])
+    .areas(inner)
+}
+
+/// M45-5b：选择器鼠标点击 → 可见项下标（仅列表段内命中，标题/输入/提示行
+/// 与框外返回 None）。纯函数便于测试。
+pub(crate) fn jump_click_index(area: ratatui::layout::Rect, col: u16, row: u16) -> Option<usize> {
+    let list = jump_areas(area)[1];
+    if col >= list.x && col < list.x + list.width && row >= list.y && row < list.y + list.height {
+        Some((row - list.y) as usize)
+    } else {
+        None
+    }
+}
+
 /// M21-E8：跳转选择器区域——80%×80% 居中（无全屏遮罩，双 pane 可见）。
 pub(crate) fn jump_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
     use ratatui::layout::Rect;
@@ -1414,16 +1438,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 )
             })
             .collect();
-        let inner: [ratatui::prelude::Rect; 3] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(1),
-        ])
-        .areas(
-            ratatui::widgets::Block::bordered()
-                .title(title.clone())
-                .inner(popup),
-        );
+        // M45-5b：与鼠标命中共用同一 geometry（jump_areas）。
+        let inner = crate::app::render::jump_areas(area);
         frame.render_widget(ratatui::widgets::Block::bordered().title(title), popup);
         frame.render_widget(Paragraph::new(Line::from(format!("/{}", input))), inner[0]);
         let list = ratatui::widgets::List::new(items)
