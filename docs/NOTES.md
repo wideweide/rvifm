@@ -1214,6 +1214,13 @@ rvifm record  → 静默记录访问
   WHY 只清面板/列表区域而非全屏黑底：M42-1 设计意图是"主 TUI 背景保持可见"
   作为练习上下文（透明放行 = 按键路由，非视觉透明）；用户诉求是面板**自身区域**
   不透出干扰，两者不冲突。
+- **FIX-5 测试坑（CI macOS 首跑暴露）**：TestBackend 下 CJK 按"字+空格"占双宽，
+  其续格会残留上一帧的 symbol（ratatui/TestBackend 伪影，真实终端无此问题）。
+  最初断言用"compact 后不含 f00/f01/f02"——这些串被 CJK 续格拆开而假通过；
+  macOS 长 temp 路径的续格落到标题区又使"核心导航"连续性断言失败。改为断言
+  **面板内无 CJK 的空白行**（基线含 f00、Clear 后为空）——平台无关且直击
+  "不透出"语义。教训：覆盖层测试应挑无 CJK 的断言区域，不依赖跨 CJK 的
+  字符连续性。
 - **FIX-6 根因（代码定位 + 测试盲区）**：`save_session`（session.rs L91）无
   `create_dir_all`，`session_path()` = config.toml 同目录 `session.toml`；全新
   安装无 `~/.config/rvifm/` 时 `fs::write` 静默失败（仅 eprintln）。路由本身正确
