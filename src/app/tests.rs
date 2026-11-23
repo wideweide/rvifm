@@ -2035,6 +2035,28 @@ fn m459a_archive_plan_covers_visual_selection() {
 }
 
 #[test]
+fn m459b_archive_name_with_checksum_infers_format() {
+    // M45-9②：`archive <名> checksum=<值>`（无格式名参）从扩展名推断格式。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+
+    let outcome = exec_command_impl(&mut state, "archive bundle.zip checksum=sha256")
+        .expect("应从 .zip 推断格式");
+    match outcome {
+        ExecOutcome::SpawnJob { op, target, .. } => {
+            assert!(op.contains("zip") && op.contains("sha256"), "op={op}");
+            assert_eq!(target, tmp.path().join("bundle.zip"));
+        }
+        other => panic!("应 SpawnJob，得到 {other:?}"),
+    }
+    // 未知扩展名 → 可读错误（不 panic）。
+    assert!(exec_command_impl(&mut state, "archive bundle.unknown checksum=sha256").is_err());
+    // 非法 checksum → 可读错误。
+    assert!(exec_command_impl(&mut state, "archive bundle.zip checksum=md4").is_err());
+}
+
+#[test]
 fn m254_exec_archive_checksum_arg_and_config() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();

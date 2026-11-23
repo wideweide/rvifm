@@ -2972,6 +2972,23 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                         .unwrap_or_default();
                     Ok(ExecOutcome::ShowArchiveDialog { input })
                 }
+                // M45-9②：`[名, checksum=…]`——格式名参推断（缺格式名时
+                // 从文件名扩展名推断），校验显式给值。必须先于 [fmt, name] 臂，
+                // 否则会被当成「未知格式 <名>」。
+                [name, kv] if kv.starts_with("checksum=") => {
+                    let format = ops::ArchiveFormat::infer(name).ok_or_else(|| {
+                        format!("archive: 无法从 {name} 推断格式（内建 zip/tar/tar.gz/7z；CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst）")
+                    })?;
+                    let checksum = ops::Checksum::parse(&kv["checksum=".len()..])
+                        .ok_or_else(|| "archive: 校验类型需 md5 / sha256 / none".to_owned())?;
+                    let (op, names, target, base) = archive_plan(state, format, name, checksum)?;
+                    Ok(ExecOutcome::SpawnJob {
+                        op,
+                        names,
+                        target,
+                        base,
+                    })
+                }
                 [fmt, name] => {
                     let format = ops::ArchiveFormat::parse(fmt)
                         .ok_or_else(|| format!("archive: 未知格式 {fmt}（内建 zip/tar/tar.gz/7z；CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst）"))?;

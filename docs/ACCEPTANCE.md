@@ -1033,5 +1033,5 @@
 - [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后，**M45-6c ✅ 2026-11-23**：m456c，Pane 归档虚拟目录进/退 + 文件 no-op）。
 - [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后，**M45-7a ✅ 2026-11-23**：m457a，缺省对侧 + 指定侧/路径）；虚拟目录 `yy`→粘贴（**M45-7b ✅ 2026-11-23**：m457b，YankSource::Archive + extract_members + u 可逆；OUT_OF_SCOPE 裁决作废）。
 - [ ] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让（**M45-8c ✅ 2026-11-23**：m458c，tutor_panel_height 同源 render/视口）；列表左侧显示进度（**M45-8d ✅ 2026-11-23**：m458d，tutor_progress 缓存 + 百分比标签）；进度持久化保持。
-- [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
+- [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断（**M45-9b ✅ 2026-11-23**：m459b，扩展名推断格式 + checksum 显式）；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
 - [ ] M45-10 文档收尾与冲突裁决记录；harness_check 通过。
