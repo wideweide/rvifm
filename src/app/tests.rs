@@ -5900,6 +5900,46 @@ fn feat1_mouse_click_focus_then_reclick_opens_dir() {
 }
 
 #[test]
+fn m451c_tab_label_style_decoupled_from_path() {
+    // M45-1c：激活标签灰白底黑字加粗；非激活深灰底白字；borders 模式 REVERSED。
+    let active = crate::app::render::tab_label_style(true, false);
+    let inactive = crate::app::render::tab_label_style(false, false);
+    assert_eq!(active.bg, Some(Color::Gray), "灰白底");
+    assert_eq!(active.fg, Some(Color::Black), "字体反色");
+    assert!(active.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(inactive.bg, Some(Color::DarkGray));
+    assert_eq!(inactive.fg, Some(Color::White));
+    let bordered = crate::app::render::tab_label_style(true, true);
+    assert!(bordered.add_modifier.contains(Modifier::REVERSED));
+}
+
+#[test]
+fn m451d_pane_separator_default_off_and_config() {
+    // M45-1d：默认不显示分隔线，配置 true 恢复。
+    assert!(!Config::default().ui.pane_separator, "默认关");
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("config.toml");
+    fs::write(&path, "[ui]\npane_separator = true\n").unwrap();
+    assert!(config::load_from(&path).unwrap().ui.pane_separator);
+    // 渲染：默认配置下 pane 区域无 │ 分隔列（标签栏/路径行除外）。
+    let (_tmp, state) = make_state(1);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend();
+    // 分隔列旧实现在 pane 中部整列 │；新默认无——中部 row 不应出现 │ 列。
+    // （路径行可能含 │，故只检查中部某行某列为空格而非 │：用行 6 中间列近似）
+    let mid_row = 6;
+    let gap_col = 30;
+    assert_ne!(
+        buf.buffer()[(gap_col, mid_row)].symbol(),
+        "│",
+        "默认不渲染分隔列"
+    );
+}
+
+#[test]
 fn m451b_tab_bar_click_switches_tab() {
     // M45-1b：点击标签栏可见标签 → 切到该 tab（不触发列表点击/打开）。
     let (_tmp, mut state) = make_state(1);
@@ -8048,7 +8088,15 @@ fn m21f1_panes_bordered_and_path_in_title_at_two_sizes() {
     );
     assert_eq!(buf[(40, 1)].bg, Color::White, "右 pane TopLine 白底");
     let gap_x = 39u16; // 80 宽居中分开：间隔列 = 39..40
-    assert_eq!(buf[(gap_x, 4)].symbol(), "│", "间隔列分隔线");
+    // M45-1d：pane_separator 默认 false → 无分隔列（vifm 对齐）。
+    assert_ne!(buf[(gap_x, 4)].symbol(), "│", "默认无分隔列");
+    // 显式开启后恢复分隔线。
+    state.config.ui.pane_separator = true;
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf2 = terminal.backend().buffer().clone();
+    assert_eq!(buf2[(gap_x, 4)].symbol(), "│", "开启后恢复分隔列");
     let status = row(23);
     assert!(!status.contains(&dir_name), "状态栏无路径: {status}");
 }

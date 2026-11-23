@@ -115,6 +115,9 @@ pub struct UiConfig {
     pub git_column: bool,
     pub theme: Option<String>,
     pub pane_borders: bool,
+    /// M45-1d（`[ui] pane_separator`，默认 false）：双 pane 间是否绘制 `│`
+    /// 分隔列；false = 不显示（vifm 对齐默认），true = 恢复 M27-2 分隔线。
+    pub pane_separator: bool,
     /// M39-6：主区布局（`layout = single|dual|preview-right|preview-bottom`；
     /// None/未知 = dual 缺省）。
     pub layout: Option<String>,
@@ -167,6 +170,7 @@ impl Default for UiConfig {
             // M34-1：默认主题 gruvbox-dark（视觉等价 vifm gruvbox；显式配置覆盖）。
             theme: Some("gruvbox-dark".to_string()),
             pane_borders: false,
+            pane_separator: false,
             layout: None,
         }
     }

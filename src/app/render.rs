@@ -118,6 +118,27 @@ pub(crate) fn pane_covered_by_viewer(
     }
 }
 
+/// M45-1c：标签样式——激活标签灰白底反色字（与 pane 路径色 `TopLineSel` 解耦，
+/// 不再使用 accent 色），非激活标签深灰底浅色字。borders 模式保留原 REVERSED
+/// 语义（M27-2）。纯函数便于测试（不读全局主题）。
+pub(crate) fn tab_label_style(active: bool, borders: bool) -> Style {
+    if borders {
+        return if active {
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        } else {
+            Style::new()
+        };
+    }
+    if active {
+        Style::new()
+            .bg(Color::Gray)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().bg(Color::DarkGray).fg(Color::White)
+    }
+}
+
 /// M45-1b：标签栏文本与可见窗口——render 与鼠标命中共用（同源，避免分叉）。
 /// 返回 (labels, visible)；宽按字符数近似，CJK 全宽忽略（SIMPLIFIED，同 M39-6）。
 pub(crate) fn tab_bar_labels_and_visible(
@@ -209,21 +230,12 @@ pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<
     }
     for &idx in &visible {
         let label = labels[idx].clone();
-        let styled = if idx == state.active {
-            if borders {
-                Span::styled(
-                    label,
-                    Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                )
-            } else {
-                Span::styled(label, vifm_style("TabLineSel"))
-            }
-        } else if borders {
-            Span::from(label)
-        } else {
-            Span::styled(label, vifm_style("TabLine"))
-        };
-        out.push(styled);
+        // M45-1c：标签样式独立于路径行（灰白底反色字），不再复用 TopLine/
+        // TabLine 的主题 accent 色；borders 模式仍走 REVERSED。
+        out.push(Span::styled(
+            label,
+            tab_label_style(idx == state.active, borders),
+        ));
     }
     if let Some(last) = visible.last()
         && *last + 1 < labels.len()
@@ -660,7 +672,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         };
         // M27-2：pane 间隔列——Border 分隔线（vifm 模式）。
         // M39-6：Single（单栏全宽）无间隔列。
-        if !borders && layout != crate::config::LayoutMode::Single {
+        // M45-1d：`[ui] pane_separator` 默认 false 不显示（vifm 对齐）。
+        if !borders && state.config.ui.pane_separator && layout != crate::config::LayoutMode::Single
+        {
             let gap = pane_gap_area(frame.area());
             let lines: Vec<Line> = (0..gap.height).map(|_| Line::from("│")).collect();
             frame.render_widget(Paragraph::new(lines).style(vifm_style("Border")), gap);
