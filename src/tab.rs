@@ -28,12 +28,43 @@ pub enum Location {
     },
 }
 
+/// M45-1a：HOME 下物理路径缩写为 `~/…`（显示层专用，bash/fish 习惯）。
+/// 纯函数：`home` 注入便于测试隔离（AGENTS §7：测试不得受宿主 HOME 影响）。
+/// 仅整段路径组件匹配（`/home/u2/x` 不会被 `/home/u` 误缩写）。
+pub fn abbreviate_home(path: &Path, home: Option<&Path>) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    if let Some(home) = home {
+        let h = home.to_string_lossy().replace('\\', "/");
+        let h = h.trim_end_matches('/');
+        if !h.is_empty() {
+            if normalized == h {
+                return "~".to_owned();
+            }
+            if let Some(rest) = normalized.strip_prefix(&format!("{h}/")) {
+                return format!("~/{rest}");
+            }
+        }
+    }
+    normalized
+}
+
+/// 当前 HOME（Unix `HOME` / Windows `USERPROFILE` 回退），供显示层缩写用。
+fn home_for_display() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 impl Location {
     /// 状态栏/面包屑显示。归档位置显示为 `host:/inner/path`（SPEC §4.1）；
-    /// 远端位置显示为 `remote:/path`（M19-2）。
+    /// 远端位置显示为 `remote:/path`（M19-2）。物理路径在 HOME 下缩写为
+    /// `~/…`（M45-1a，仅显示层；base_dir/导航仍用真实绝对路径）。
     pub fn display_path(&self) -> String {
         match self {
-            Location::Physical(p) => p.to_string_lossy().into_owned(),
+            Location::Physical(p) => {
+                let home = home_for_display();
+                abbreviate_home(p, home.as_deref())
+            }
             Location::Archive { host, inner } => format!(
                 "{}:/{}",
                 host.display(),
@@ -2181,6 +2212,37 @@ mod tests {
     fn physical_display_is_path() {
         let loc = Location::Physical(PathBuf::from("C:/tmp"));
         assert_eq!(loc.display_path(), "C:/tmp");
+    }
+
+    #[test]
+    fn m451a_abbreviate_home_display_only() {
+        // M45-1a：HOME 下缩写 ~/…，组件边界精确，仅显示（不修改 Location）。
+        let home = Path::new("/home/u");
+        assert_eq!(
+            super::abbreviate_home(Path::new("/home/u/Downloads"), Some(home)),
+            "~/Downloads"
+        );
+        assert_eq!(
+            super::abbreviate_home(Path::new("/home/u"), Some(home)),
+            "~"
+        );
+        assert_eq!(
+            super::abbreviate_home(Path::new("/home/u2/shx"), Some(home)),
+            "/home/u2/shx",
+            "不得把 /home/u2 误缩写"
+        );
+        assert_eq!(
+            super::abbreviate_home(Path::new("/tmp/x"), Some(home)),
+            "/tmp/x"
+        );
+        assert_eq!(
+            super::abbreviate_home(Path::new("/home/u/x"), None),
+            "/home/u/x",
+            "无 HOME 时原样"
+        );
+        // 真实 Location 的 base_dir 不受缩写影响。
+        let loc = Location::Physical(PathBuf::from("/home/u/Downloads"));
+        assert_eq!(loc.base_dir(), Path::new("/home/u/Downloads"));
     }
 
     #[test]
