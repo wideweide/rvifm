@@ -20,7 +20,32 @@ use std::path::Path;
 use ratatui::Frame;
 use ratatui::layout::{Rect, Size};
 use ratatui_image::picker::{Picker, ProtocolType};
-use ratatui_image::{Image, Resize};
+use ratatui_image::{FontSize, Image, Resize};
+
+/// M45-4a：字体尺寸兜底/合理性钳制。原生协议查询失败时 ratatui-image 回退
+/// 到 10×20；若探测到 0 或离谱比例（宽 > 高、超出常见终端范围），按格子数
+/// 推导的图片高度会暴涨并溢出预览窗格。这里把尺寸钳到合理区间（纯函数，
+/// 便于测试隔离——不读宿主终端）。
+fn safe_font_size(picker: &Picker) -> FontSize {
+    let fs = picker.font_size();
+    let plausible = fs.width >= 4
+        && fs.width <= 64
+        && fs.height >= 8
+        && fs.height <= 128
+        && fs.height >= fs.width;
+    if plausible { fs } else { FontSize::new(10, 20) }
+}
+
+/// M45-4a：`SlicedProtocol` 虚拟高度钳制——fit-width 后超高图片的虚拟高度
+/// 最多保留 3 屏（预览窗格不滚动，只需顶部切片）；避免原生协议把巨大图形
+/// 画到窗格外（同时限制内存）。纯函数便于测试。
+const MAX_SLICE_SCREENS: u32 = 3;
+fn clamp_slice_height(dh: u16, pane_height: u16) -> u16 {
+    let max = (pane_height as u32)
+        .saturating_mul(MAX_SLICE_SCREENS)
+        .min(u16::MAX as u32) as u16;
+    dh.min(max).max(1)
+}
 
 /// 支持图片预览的扩展名（小写比较）。
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
@@ -102,10 +127,14 @@ impl ImageEngine {
         area: Rect,
         img: image::DynamicImage,
     ) -> std::io::Result<()> {
+        // M45-4a：先与整帧相交——即便调用方传入越界 area，协议绘制也不得
+        // 超出帧边界（原生协议图形不受 widget 裁剪自动约束）。
+        let area = area.intersection(frame.area());
         if area.width == 0 || area.height == 0 {
             return Ok(());
         }
-        let fs = self.picker.font_size();
+        // M45-4a：字体尺寸合理性钳制（原生协议探测兜底 10×20）。
+        let fs = safe_font_size(&self.picker);
         let fw = fs.width.max(1) as f64;
         let fh = fs.height.max(1) as f64;
         let iw = img.width() as f64;
@@ -151,6 +180,8 @@ impl ImageEngine {
         }
         // 超高：顶部切片（SlicedImage position 0）——普通预览窗格显示顶部；
         // 图像纵向滚动不在本任务范围（SPEC SIMPLIFIED）。
+        // M45-4a：虚拟高度钳制到至多 3 屏，杜绝原生协议超大图形溢出窗格。
+        let dh = clamp_slice_height(dh, area.height);
         let sliced = ratatui_image::sliced::SlicedProtocol::new_with_resize(
             &self.picker,
             img,
@@ -298,6 +329,29 @@ mod tests {
                 .all(|(x, y)| (10..30).contains(x) && (2..10).contains(y)),
             "全部内容落在中央区: {cells:?}"
         );
+    }
+
+    #[test]
+    fn m454a_font_size_and_slice_height_guards() {
+        // M45-4a：字体尺寸异常回退 10×20；合理值保留。
+        // FontSize 未实现 PartialEq，逐字段断言。
+        let fs_eq = |a: FontSize, w: u16, h: u16| (a.width, a.height) == (w, h);
+        let normal = Picker::halfblocks();
+        assert!(fs_eq(safe_font_size(&normal), 10, 20));
+        #[allow(deprecated)]
+        let zero = Picker::from_fontsize(FontSize::new(0, 0));
+        assert!(fs_eq(safe_font_size(&zero), 10, 20), "0 尺寸回退");
+        #[allow(deprecated)]
+        let weird = Picker::from_fontsize(FontSize::new(40, 10)); // 宽 > 高
+        assert!(fs_eq(safe_font_size(&weird), 10, 20), "比例离谱回退");
+        #[allow(deprecated)]
+        let valid = Picker::from_fontsize(FontSize::new(9, 18));
+        assert!(fs_eq(safe_font_size(&valid), 9, 18), "合理值保留");
+
+        // 虚拟高度钳制：至多 3 屏，至少 1 行。
+        assert_eq!(clamp_slice_height(1000, 12), 36);
+        assert_eq!(clamp_slice_height(5, 12), 5);
+        assert_eq!(clamp_slice_height(0, 12), 1);
     }
 
     #[test]
