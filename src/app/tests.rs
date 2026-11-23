@@ -4495,6 +4495,40 @@ fn m23_1_multi_word_graded_match() {
 }
 
 #[test]
+fn m458a_tutor_session_in_normal_mode_renders_panel_not_list() {
+    // M45-8a：进入会话后 mode 必须为 Normal——否则 render 先匹配 TutorList
+    // 全屏列表，底部 Panel 不可见。此测试锁定"Normal + session = Panel"不变量。
+    let (_tmp, mut state) = make_state(2);
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
+    // mode = Normal（修复后 run 循环从 TutorList 进入会话时所设）。
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend();
+    let text: String = (0..14)
+        .flat_map(|y| (0..70).map(move |x| buf.buffer()[(x, y)].symbol().to_owned()))
+        .collect();
+    // CJK 双宽 + TestBackend 续格伪影：断言前去空白（M21-E3 坑）。
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        compact.contains("预期:"),
+        "Normal + session 应渲染底部 Panel: {compact}"
+    );
+    assert!(
+        !compact.contains("选择要学习"),
+        "不得渲染全屏模块列表（mode 必须是 Normal 而非 TutorList）"
+    );
+}
+
+#[test]
 fn m455a_without_cmd_topic_filters_only_commands() {
     // M45-5a：cmd topic（cd/tabnew）从跳转选择器剔除，dir/file 保留。
     let entries = vec![
@@ -10711,7 +10745,10 @@ fn m42_1_tutor_render_list_and_panel() {
         "prompt 行: {all}"
     );
     assert!(all.contains("预期:"), "expected 行: {all}");
-    assert!(all.contains("[y]掌握"), "右列键提示: {all}");
+    assert!(
+        all.contains("[Ctrl+Y]掌握"),
+        "右列键提示须带 Ctrl（M45-8b）: {all}"
+    );
     let top_row: String = (0..70).map(|x| buf.buffer()[(x, 0)].symbol()).collect();
     assert!(
         top_row.trim().contains("1:") && top_row.contains(".tmp"),

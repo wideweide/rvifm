@@ -1610,6 +1610,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                     done: false,
                                     review,
                                 });
+                                // M45-8a：进入会话必须退出列表覆盖层，否则
+                                // render 先匹配 TutorList 全屏渲染，底部 Panel
+                                // 永不可见（用户实测 l/Enter 后列表不消失）。
+                                mode = InputMode::Normal;
                             }
                         }
                     }

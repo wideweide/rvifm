@@ -1355,9 +1355,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     mastered
                 )),
                 Line::from(String::new()),
-                Line::from("[y] 掌握"),
-                Line::from("[n] 未掌握"),
-                Line::from("[q] 退出"),
+                // M45-8b：实际标记键为 Ctrl+Y/N/Q（M43-1），提示须带 Ctrl 避免歧义。
+                Line::from("[Ctrl+Y] 掌握"),
+                Line::from("[Ctrl+N] 未掌握"),
+                Line::from("[Ctrl+Q] 退出"),
             ];
             frame.render_widget(block, panel_area);
             frame.render_widget(Paragraph::new(left_lines), left);
