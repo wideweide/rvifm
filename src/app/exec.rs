@@ -3827,6 +3827,18 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
             return;
         }
         let path = tab.location.base_dir().join(&name);
+        // M45-3b（裁决）：可执行文件 Enter 不走系统 opener、也不直接执行，
+        // 仅在状态栏提示（AGENTS §5.5 例外）。用户显式用 `[open]` 规则绑定
+        // 到 `run` 动作（OpenerDef）时仍按其绑定执行——这是唯一的绕过口。
+        let is_exec = tab.entries[tab.cursor].is_exec;
+        let has_run_binding =
+            crate::opener::resolve_open_actions(&state.config.open, &state.config.opener, &path)
+                .iter()
+                .any(|a| matches!(a, crate::opener::OpenAction::Run { .. }));
+        if is_exec && !has_run_binding {
+            *msg = Some("可执行文件，请在终端执行".to_owned());
+            return;
+        }
         // AUDIT-7：opener 规则整层接线——规则命中按 `use` 名单执行
         // （block=true 交 run 循环挂起），未命中/系统项回退系统 opener。
         match crate::opener::open_with_layers(&state.config.open, &state.config.opener, &path) {

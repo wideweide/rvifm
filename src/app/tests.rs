@@ -6411,6 +6411,57 @@ fn audit7_block_opener_hands_off_to_pending_external() {
 }
 
 #[test]
+fn m453b_executable_enter_shows_hint_only() {
+    // M45-3b：可执行文件 Enter 仅状态栏提示，不走系统 opener、不执行；
+    // 显式 [open] 规则绑定到 run 动作时才按其执行（唯一绕过口）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("run.exe"), "").unwrap();
+    fs::write(tmp.path().join("notes.txt"), "T").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 定位可执行文件行（排序按名，勿假设下标）。
+    let exec_idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "run.exe")
+        .expect("run.exe 应在列表中");
+    state.active_tab_mut().cursor = exec_idx;
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert_eq!(
+        msg.as_deref(),
+        Some("可执行文件，请在终端执行"),
+        "可执行文件仅提示"
+    );
+    assert!(state.pending_external.is_none(), "不得执行");
+    assert_eq!(
+        state.active_tab().location,
+        crate::tab::Location::Physical(tmp.path().to_path_buf()),
+        "位置不变"
+    );
+
+    // 显式规则绑定 run → 允许执行（block=true 转交 run 循环，测试可断言）。
+    state.config.opener.insert(
+        "run_it".to_owned(),
+        crate::opener::OpenerDef {
+            run: "sh %s".to_owned(),
+            block: true,
+            desc: None,
+        },
+    );
+    state.config.open.prepend_rules = vec![crate::opener::OpenRule {
+        mime: None,
+        name: Some("*.exe".to_owned()),
+        use_rules: vec!["run_it".to_owned()],
+    }];
+    let mut msg2 = None;
+    open_selected(&mut state, &mut msg2);
+    let cmd = state.pending_external.take().expect("显式 run 绑定应执行");
+    assert!(cmd.contains("run.exe"), "命令已展开: {cmd}");
+    assert!(msg2.is_none(), "显式绑定不提示: {msg2:?}");
+}
+
+#[test]
 fn feat3_file_command_in_archive_shows_host_inner_path() {
     let tmp = TempDir::new().unwrap();
     let zip_path = tmp.path().join("t.zip");
