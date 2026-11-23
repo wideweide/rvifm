@@ -1294,6 +1294,21 @@ rvifm record  → 静默记录访问
   WHY 不改 `trash clear` 忽略 NotFound：生产并发场景本就不该报错，但属行为
   变更，留待独立 FIX 评估；测试串行化已足以消除本项目内的不确定性。
 
+### 2026-11-24 — M45 批次收尾断点（自动发布待 CI fuzz job）
+
+- **HEAD**：`47673ea`（M45-1a Windows 路径分隔符测试修复）；工作树干净，main 已
+  推送 origin。M45 全部 28 子任务 + M45-10 文档收尾已勾选；TASKS 无 `[ ]`。
+- **已验证**：本地 fmt/clippy -D warnings/build/537 单测/12 集成/harness_check
+  全绿；CI run 45240675080 的 `test (ubuntu|windows|macos)` 与 `supply-chain`
+  均 success（Windows 首轮曾因 M45-1a 路径 `/` 统一失败 2 项，已在 47673ea 修）。
+- **未完成**：同 run 的 `fuzz` job 仍在跑（25 分钟超时窗口，Nightly 安装+编译+
+  5 靶 ≈10 分钟 fuzz）。按 AGENTS §3 自动发布需 **CI 全绿**，故未 bump/tag/Release。
+- **下一会话起点**：`gh run view 45240675080` 确认 fuzz 结论 → 若 success，按
+  PLAN §4 执行版本 bump（1.2.0 → 1.3.0，semver minor）+ tag v1.3.0 + GitHub
+  Release（musl-only 三归档 + SHA256SUMS，沿用既有 release 工作流）；crates.io
+  publish **仅人工发起**（用户 2026-11-23 决策，不变）。若 fuzz 失败，按其日志
+  修复后重跑 CI。C6（原生协议大图不越界）仍是唯一人工 deferred 验收项。
+
 ### 2026-11-23 — FIX 批次蒸馏（REL-3 / FIX-5 / FIX-6；用户实测反馈，待确认）
 
 - **REL-3 根因（已核实）**：`v1.1.0` tag run 45101107044 九 job 全绿、四归档
