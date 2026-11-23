@@ -1010,9 +1010,14 @@
 ## 45. FIX — 维护期实测修复（见 SPEC REL-3 / FIX-5 / FIX-6 节）
 
 - [x] REL-3-1 `ci.yml`：SHA256SUMS 由单个汇总步骤在所有归档上传后生成（全部归档汇集同一 `dist/` 一次性 `sha256sum`），各并行 release job 不再各自生成/上传；workflow 语法合法（2026-11-23：PyYAML 解析通过；`release-checksums` 作业含数量守卫 4；本地模拟聚合 4 归档 `sha256sum -c` 全通过）。
-- [~] REL-3-2 `v1.0.0` 与 `v1.1.0` Release 的 `SHA256SUMS.txt` 各含全部 4 个归档，逐条 `sha256sum -c` 通过——**deferred：本机无 `gh`/token 无法上传；四归档真实哈希已下载实测并记 NOTES，回填用 `scripts/repair-release-checksums.sh`（人工鉴权后一条命令完成）**。可自动部分（哈希实测/脚本备置）已验收。
+- [x] REL-3-2 `v1.0.0` 与 `v1.1.0` Release 的 `SHA256SUMS.txt` 各含全部 4 个归档，逐条 `sha256sum -c` 通过。（2026-11-23 人工鉴权执行回填脚本完成，API 核实两文件各 4 行，哈希与实测一致）
 - [x] FIX-5-1 `:tutor` 模块列表为不透明覆盖层（TestBackend 快照：列表区域下层目录列表文字不残留）；`j/k`/Enter/q/Esc 语义不变。（2026-11-23：fix5_tutor_list_overlay_is_opaque）
 - [x] FIX-5-2 底部 Tutor Panel 区域不透明（状态栏文字不透出）；主 TUI 目录列表在 Panel 之外仍可见（透明放行语义保留）。（2026-11-23：fix5_tutor_panel_is_opaque_but_background_visible）
 - [x] FIX-6-1 `save_session` 在配置目录不存在时创建父目录后写入成功；会话序列化仍含全部 tab。（2026-11-23：save_session_with_path + fix6_save_creates_missing_config_dir_and_keeps_all_tabs）
 - [x] FIX-6-2 回归测试注入不存在配置目录 → 保存 → 文件存在且可解析；`session_restore=false` 仍不写不读。（2026-11-23：fix6_save_disabled_does_not_write）
 - [x] FIX-6-3 文档澄清会话为"退出保存/启动恢复"的既有设计（README/GUIDE/help 描述不变）。（2026-11-23：SPEC FIX-6-3 + NOTES 设计澄清，无用户可见文档变更）
+
+## 46. REL-4 — Release 归档简化为 musl-only（见 SPEC REL-4 节）
+
+- [ ] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。
+- [ ] REL-4-2 版本 1.2.0（Cargo.toml/Cargo.lock/CHANGELOG/README 同步）；tag `v1.2.0` → CI 全绿 + GitHub Release 含且仅含 3 归档 + SHA256SUMS.txt（3 行、`sha256sum -c` 全通过）；crates.io 未发布。

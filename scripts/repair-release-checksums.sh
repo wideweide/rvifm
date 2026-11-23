@@ -8,7 +8,9 @@
 #
 # 用法：
 #   gh auth login                       # 需要 contents:write 权限
-#   bash scripts/repair-release-checksums.sh v1.0.0 v1.1.0
+#   bash scripts/repair-release-checksums.sh v1.2.0          # REL-4 起 3 归档
+#   EXPECTED_ARCHIVES=4 bash scripts/repair-release-checksums.sh v1.0.0 v1.1.0
+#       # 历史 4 归档版本（REL-4 之前）需显式覆盖数量守卫
 #
 # 说明：脚本只重算/上传 SHA256SUMS.txt，不改归档、不改 tag、不发布 crates.io。
 set -euo pipefail
@@ -32,10 +34,11 @@ for tag in "$@"; do
   # 只下载归档，不下载旧 SHA256SUMS.txt（避免被计入哈希）
   gh release download "$tag" --repo wideweide/rvifm \
     --pattern '*.tar.gz' --dir "$dir" --clobber
+  expected=${EXPECTED_ARCHIVES:-3}
   n=$(find "$dir" -maxdepth 1 -name '*.tar.gz' | wc -l)
-  echo "归档数: $n"
-  if [ "$n" -ne 4 ]; then
-    echo "错误：$tag 期望 4 个归档，实得 $n — 中止，不上传（防止不完整清单）" >&2
+  echo "归档数: $n（期望 $expected）"
+  if [ "$n" -ne "$expected" ]; then
+    echo "错误：$tag 期望 $expected 个归档，实得 $n — 中止，不上传（防止不完整清单）" >&2
     exit 1
   fi
   (cd "$dir" && sha256sum *.tar.gz > SHA256SUMS.txt)

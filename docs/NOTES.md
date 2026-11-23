@@ -1221,6 +1221,21 @@ rvifm record  → 静默记录访问
   **面板内无 CJK 的空白行**（基线含 f00、Clear 后为空）——平台无关且直击
   "不透出"语义。教训：覆盖层测试应挑无 CJK 的断言区域，不依赖跨 CJK 的
   字符连续性。
+- **REL-3b 已完成（2026-11-23 人工）**：用户 `gh auth login` 后执行
+  `scripts/repair-release-checksums.sh v1.0.0 v1.1.0`，两版本 SHA256SUMS 各
+  回填 4 行，API 核实哈希与实测一致（首次 `curl` 读到空行系 GitHub CDN 缓存，
+  加 cache-buster / 走 API octet-stream 即见最新）。REL 批次全清零。
+- **REL-4 评估（aarch64 musl 交叉编译）**：① musl.cc `aarch64-linux-musl-cross`
+  （GCC 11.2.1，2021）编译 aws-lc-sys `pkcs7.c` 触发 ICE（`alloc_aux_for_block`）——
+  放弃；② 裸 `zig cc -target aarch64-linux-musl` 被 cc-rs 自动追加的
+  `--target=aarch64-unknown-linux-musl` 覆盖，Zig 0.14 报
+  `UnknownOperatingSystem`——放弃；③ `cargo-zigbuild 0.24.1` 翻译 Rust target，
+  本地实测 `cargo zigbuild --release --locked --target aarch64-unknown-linux-musl`
+  成功（5m24s 冷编译），`file` = `ELF 64-bit LSB ... ARM aarch64, statically
+  linked, stripped`，无 INTERP/NEEDED——采用。CI 用固定 zig `0.14.1` tarball +
+  `cargo install cargo-zigbuild --locked`，避免版本漂移。
+- **REL-4 版本 1.2.0**：产物矩阵变更（移除 gnu、aarch64 转 musl）用户可见，
+  semver minor；crates.io 仍停在 1.0.0（用户 2026-11-23 仅 GitHub Release 决策）。
 - **FIX-6 根因（代码定位 + 测试盲区）**：`save_session`（session.rs L91）无
   `create_dir_all`，`session_path()` = config.toml 同目录 `session.toml`；全新
   安装无 `~/.config/rvifm/` 时 `fs::write` 静默失败（仅 eprintln）。路由本身正确

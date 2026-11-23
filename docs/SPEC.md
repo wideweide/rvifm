@@ -1417,6 +1417,34 @@ append_rules = [
 - **FIX-6-3** 设计澄清：会话**原设计即自动保存**（M25-1 退出保存/启动恢复），
   本次修复是实现缺陷，不改变需求；文档（README/GUIDE/help）维持既有描述。
 
+## REL-4 — Release 归档简化为 musl-only（2026-11-23 增补；用户指令，见 NOTES 同日条目）
+
+> 来源：用户 2026-11-23 指令——GitHub Release 不再生成 gnu 版本，只保留 musl
+> 版本，aarch64 也改为 musl。评估结论（本地实测见 NOTES）：musl.cc GCC 11.2.1
+> 编译 aws-lc-sys 触发 ICE；裸 `zig cc` 被 cc-rs 追加的 Rust 风格 `--target`
+> 破坏（`UnknownOperatingSystem`）；`cargo-zigbuild` 正确翻译，本地
+> `cargo zigbuild --release --locked --target aarch64-unknown-linux-musl` 成功，
+> 产物 `file` = ARM aarch64 statically linked ELF。
+
+**MUST**
+- **REL-4-1** release matrix 仅 3 腿：`x86_64-unknown-linux-musl`、
+  `aarch64-unknown-linux-musl`、`x86_64-pc-windows-msvc`；移除两个 gnu 归档腿
+  （x64-gnu 与 aarch64-gnu）。aarch64 腿用 `cargo zigbuild` + zig 交叉编译
+  （CI 下载固定版本 zig tarball 到 `$RUNNER_TEMP`，`cargo install cargo-zigbuild`），
+  smoke 断言 `ARM aarch64` + `statically linked`（静态 musl 无 `libc.so.6`
+  NEEDED，原 gnu 断言不再适用）。`release-checksums` 数量守卫由 4 改为 3。
+  归档命名：`rvifm-<tag>-linux-x64-musl.tar.gz` /
+  `rvifm-<tag>-linux-aarch64-musl.tar.gz` / `rvifm-<tag>-windows-x64.tar.gz`。
+- **REL-4-2** 版本 bump 至 `1.2.0`（产物矩阵用户可见变更，semver minor），
+  CHANGELOG / README / SPEC / PLAN / STATE / NOTES / `scripts/repair-release-checksums.sh`
+  （数量守卫容错）同步；tag `v1.2.0` → GitHub Release 自动发布三归档 +
+  `SHA256SUMS.txt`（3 行）；**crates.io 不发布**（沿用 REL-1 解耦与用户
+  2026-11-23 "仅 GitHub Release"决策，crates.io 仍停在 1.0.0）。
+
+**OUT_OF_SCOPE**
+- 不保留任何 gnu 归档（含旧版本不改，历史 Release 保持原样）。
+- 不引入 FUSE/外部 CLI 依赖；不发布 crates.io。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
