@@ -580,7 +580,7 @@
 > 第一批（P0 缺陷）：M45-3b/3d · M45-5a · M45-6a · M45-8a/8b · M45-9a；
 
 - [x] M45-3d `v` 多选 + `d` 进 `ConfirmTagDelete`（见 SPEC M45-3④；2026-11-23 完成：Outcome::ConfirmTagDelete + keys.rs 路由 + m453d 测试，507 单测）← 第一批 P0
-- [ ] M45-5a `o` 过滤 cmd topic（cd/tabnew 不可跳转；见 SPEC M45-5①）← 第一批 P0
+- [x] M45-5a `o` 过滤 cmd topic（cd/tabnew 不可跳转；见 SPEC M45-5①；2026-11-23 完成：without_cmd_topic + o/:recent 接线 + m455a 测试，508 单测）← 第一批 P0
 - [ ] M45-6a `:cd` 遵循焦点 pane（修 M41-1 违规；见 SPEC M45-6①）← 第一批 P0
 - [ ] M45-8a tutor 列表 `l`/Enter 后退出 `TutorList`（见 SPEC M45-8①）← 第一批 P0
 - [ ] M45-8b Panel 提示改 Ctrl+Y/N/Q（见 SPEC M45-8②）← 第一批 P0

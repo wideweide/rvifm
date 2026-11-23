@@ -4495,6 +4495,22 @@ fn m23_1_multi_word_graded_match() {
 }
 
 #[test]
+fn m455a_without_cmd_topic_filters_only_commands() {
+    // M45-5a：cmd topic（cd/tabnew）从跳转选择器剔除，dir/file 保留。
+    let entries = vec![
+        scored("/home/u/Downloads", "dir", 9.0),
+        scored("cd ~", "cmd", 8.0),
+        scored("/home/u/notes.md", "file", 7.0),
+        scored("tabnew", "cmd", 6.0),
+    ];
+    let out = crate::app::exec::without_cmd_topic(entries);
+    assert_eq!(out.len(), 2);
+    assert!(out.iter().all(|e| e.topic != "cmd"));
+    assert_eq!(out[0].path, "/home/u/Downloads");
+    assert_eq!(out[1].path, "/home/u/notes.md");
+}
+
+#[test]
 fn filter_jump_empty_query_shows_all_and_ranked_order() {
     // M8-12：空查询全显且保持传入序（load_jump_entries 返回时已按
     // aging ranked 排序，选择器不再二次排序）。

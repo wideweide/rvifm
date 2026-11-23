@@ -1598,6 +1598,10 @@ pub(crate) fn handle_key(
             input.count = None;
             match load_jump_entries(state, JumpKind::Unified) {
                 Ok(entries) => {
+                    // M45-5a：cmd topic（:cd/tabnew 等命令文本）不可跳转——从
+                    // o 选择器剔除，避免显示后 jump_to 报"无父目录"；命令书签
+                    // 仍由 `'` 展开（M30-4 独立路径，不受影响）。
+                    let entries = crate::app::exec::without_cmd_topic(entries);
                     return Outcome::OpenFrecencyPane { entries };
                 }
                 Err(e) => *msg = Some(e),

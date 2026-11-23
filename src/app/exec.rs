@@ -1665,6 +1665,14 @@ pub(crate) fn delbmarks(
 
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────────
 
+/// M45-5a：跳转选择器剔除 cmd topic（命令文本不可 jump_to）；
+/// 命令书签 `'` 展开走独立路径（frecency::cmd_bookmark），不受此影响。
+pub(crate) fn without_cmd_topic(
+    entries: Vec<crate::frecency::ScoredEntry>,
+) -> Vec<crate::frecency::ScoredEntry> {
+    entries.into_iter().filter(|e| e.topic != "cmd").collect()
+}
+
 /// 选择器数据（纯只读）：按视角从 frecency 存储加载并排名。
 /// Unified = 合一表 + 全局统一时钟（全部条目混合排名）；
 /// Dir/File = 仅对应 topic + 独立类型时钟。交互与 `pick` 一致（分级 + aging）。
@@ -2920,7 +2928,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
         }
         Some("recent") => {
             // M16 NAV-4：近期视角——全部条目按最后访问时间倒序（含会话合并）。
-            let entries = load_jump_entries(state, JumpKind::Recent)?;
+            // M45-5a：cmd topic 不可跳转，从选择器剔除（':cmdmark' 书签另走 `'` 展开）。
+            let entries = without_cmd_topic(load_jump_entries(state, JumpKind::Recent)?);
             Ok(ExecOutcome::OpenJump {
                 kind: JumpKind::Recent,
                 entries,
