@@ -3,6 +3,19 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] — 2026-11-23
+
+发布产物简化：GitHub Release 仅分发 musl 归档，aarch64 改为静态 musl。crates.io 不发布，仅 GitHub Release。
+
+**发布产物（REL-4）**
+- Linux 归档由 gnu + musl 双份改为**仅 musl**：`linux-x64-musl.tar.gz` + `linux-aarch64-musl.tar.gz`（aarch64 由 gnu 动态链接改为 **静态 musl**，无需 glibc）；Windows 归档不变。
+- SHA256SUMS 由独立汇总作业在所有归档上传后一次性生成（REL-3 修复并行覆盖缺陷），含且仅含 3 个归档。
+
+**缺陷修复（随 1.1.0 归档修复批次，FIX）**
+- `SHA256SUMS.txt` 完整性与历史回填（v1.0.0/v1.1.0）。
+- `:tutor` 模块列表与底部 Panel 不透明化，消除与目录列表的视觉干扰。
+- 会话保存自动创建配置目录，修复全新安装下退出未保存/重启未恢复标签的问题（会话设计本就为退出保存/启动恢复）。
+
 ## [1.1.0] — 2026-11-23
 
 1.1 版本：tutor 导师模式（M42/M43）+ 预览焦点修复（M44）。crates.io 不发布，仅 GitHub Release 分发。

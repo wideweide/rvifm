@@ -1999,7 +1999,6 @@ dependencies = [
  "quick-error 2.0.1",
 ]
 
-
 [[package]]
 name = "imgref"
 version = "1.12.3"
@@ -3999,7 +3998,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "typenum",
-
  "universal-hash",
  "zeroize",
 ]
@@ -4118,7 +4116,7 @@ dependencies = [
 
 [[package]]
 name = "rvifm"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64ct",
  "bzip2-rs",

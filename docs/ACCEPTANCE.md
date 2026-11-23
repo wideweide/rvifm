@@ -1019,5 +1019,5 @@
 
 ## 46. REL-4 — Release 归档简化为 musl-only（见 SPEC REL-4 节）
 
-- [ ] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。
+- [x] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。（2026-11-23：本地 `cargo zigbuild --target aarch64-unknown-linux-musl` 实测成功，`file` = ARM aarch64 statically linked ELF）
 - [ ] REL-4-2 版本 1.2.0（Cargo.toml/Cargo.lock/CHANGELOG/README 同步）；tag `v1.2.0` → CI 全绿 + GitHub Release 含且仅含 3 归档 + SHA256SUMS.txt（3 行、`sha256sum -c` 全通过）；crates.io 未发布。

@@ -282,7 +282,7 @@
 ## 10. 起点与当前基线
 
 - 历史起点：`M0-1`（初始化 Cargo 项目与目录结构）；M0 的 CI 双平台门禁已完成。
-- 当前阶段：**M0–M44 全部完成关闭；v1.1.0 GitHub Release**（2026-11-23；M42/M43 tutor 与 M44 预览焦点修复统一随 1.1.0；crates.io 不发布，见 PLAN §4）。
+- 当前阶段：**M0–M44 + FIX/REL-4 全部完成关闭；v1.2.0 GitHub Release**（2026-11-23；发布产物 musl-only——x64-musl/aarch64-musl（静态）/windows-x64，aarch64 用 cargo-zigbuild 交叉编译；crates.io 不发布，见 PLAN §4）。
 - 当前任务：无（`docs/TASKS.md` 无未勾选任务；后续变更走 FIX/FEAT 蒸馏批次）。
-- 当前基线：不固化 commit hash，以执行时的 `HEAD` 为准；v1.1.0 仅 GitHub Release，crates.io 停在 1.0.0（用户 2026-11-23 决策）。
+- 当前基线：不固化 commit hash，以执行时的 `HEAD` 为准；v1.2.0 仅 GitHub Release，crates.io 停在 1.0.0（用户 2026-11-23 决策）。
 - 预算优先保证核心闭环（M0–M2 的浏览、多标签、`u` 撤销）与 §5 硬约束（如 `pick` 只读、删除走可恢复路径保证 `u` 可逆）；增强批次可简化，但不得跳过 `docs/STATE.md` 更新。

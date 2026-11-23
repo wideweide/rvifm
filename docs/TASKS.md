@@ -553,9 +553,20 @@
 > `save_progress_to` 已做 `create_dir_all` 不对称）。顺序：REL-3 → FIX-5 → FIX-6。
 
 - [x] REL-3a CI 修复：release job 不再各自生成/上传 SHA256SUMS，新增独立 release-checksums 作业汇总全部归档（含数量守卫 4）；见 SPEC REL-3-1（2026-11-23 完成：YAML 解析通过，`scripts/repair-release-checksums.sh` 备查）
-- [~] REL-3b 历史回填 v1.0.0/v1.1.0 的 SHA256SUMS.txt（**deferred：本机无 `gh`/GitHub token，上传需人工鉴权**；四归档真实 sha256 已下载实测并记 NOTES；执行 `bash scripts/repair-release-checksums.sh v1.0.0 v1.1.0` 即完成；见 SPEC REL-3-2）
+- [x] REL-3b 历史回填 v1.0.0/v1.1.0 的 SHA256SUMS.txt（2026-11-23 人工鉴权执行 `scripts/repair-release-checksums.sh` 完成；两版本各 4 行、逐条哈希实测匹配；见 SPEC REL-3-2）
 - [x] FIX-5 `:tutor` 模块列表覆盖层与底部 Panel 不透明化（Clear + 背景样式，消除与目录列表的视觉干扰；见 SPEC FIX-5；2026-11-23 完成：render.rs 两处 Clear + fix5_* 双测试，504 单测）
 - [x] FIX-6 会话保存前自动创建配置目录（`save_session` 补 `create_dir_all`，与 tutor progress 同模式；见 SPEC FIX-6；2026-11-23 完成：`save_session_with_path` 路径注入 + fix6_* 双测试，506 单测）
+
+## REL-4 — Release 归档简化为 musl-only（2026-11-23 增补；用户指令·已评估，见 SPEC REL-4 节）
+
+> 来源：用户 2026-11-23 指令——GitHub Release 不再生成 gnu 版本，只保留 musl
+> 版本，aarch64 也改为 musl。评估：musl.cc GCC 11.2.1 编译 aws-lc-sys 触发
+> ICE；裸 `zig cc` 被 cc-rs 追加的 Rust 风格 `--target` 破坏；`cargo-zigbuild`
+> 正确翻译，本地实测 cross-build 成功且产物为 ARM aarch64 静态 ELF。顺序：
+> 1（CI 配置）→ 2（版本 bump + 发布）。
+
+- [x] REL-4-1 CI release matrix 改 musl-only（3 腿：x64-musl / aarch64-musl / windows-x64；aarch64 用 cargo-zigbuild 交叉编译 + 静态链接 smoke；SHA256SUMS 数量守卫 3；见 SPEC REL-4-1；2026-11-23 完成：YAML 解析 + 本地 cross-build 实测通过）
+- [ ] REL-4-2 版本 bump 1.2.0 + 文档同步 + tag → GitHub Release（三归档 + SHA256SUMS；crates.io 不发布；见 SPEC REL-4-2）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
