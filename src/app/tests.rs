@@ -5900,6 +5900,41 @@ fn feat1_mouse_click_focus_then_reclick_opens_dir() {
 }
 
 #[test]
+fn m452a_cursor_row_has_uniform_background() {
+    // M45-2a：反显（光标）行不用文件类型 fg——文字部分不得出现单独底色；
+    // 非光标行仍按类型着色（目录 Cyan）。
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("d0")).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 默认 gruvbox 主题未激活（TestBackend）——fallback Cyan。
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+
+    // 光标在 d0（row 3，index 0）→ 名称 cell fg = Reset（无单独着色）。
+    state.active_tab_mut().cursor = 0;
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let cell = terminal.backend().buffer()[(4, 3)].clone();
+    assert_eq!(
+        cell.fg,
+        Color::Reset,
+        "光标行名称不应带文件类型 fg（底色统一）: fg={:?}",
+        cell.fg
+    );
+
+    // 光标移到第二项（文件）→ d0 行（row 3）恢复 Cyan。
+    let entries_len = state.active_tab().entries.len();
+    if entries_len > 1 {
+        state.active_tab_mut().cursor = 1;
+        terminal
+            .draw(|f| render(f, &state, &InputMode::Normal, None))
+            .unwrap();
+        let cell = terminal.backend().buffer()[(4, 3)].clone();
+        assert_eq!(cell.fg, Color::Cyan, "非光标目录行仍按类型着色");
+    }
+}
+
+#[test]
 fn m451c_tab_label_style_decoupled_from_path() {
     // M45-1c：激活标签灰白底黑字加粗；非激活深灰底白字；borders 模式 REVERSED。
     let active = crate::app::render::tab_label_style(true, false);

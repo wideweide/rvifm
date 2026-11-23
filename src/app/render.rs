@@ -738,7 +738,16 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             .enumerate()
             .map(|(idx, item)| {
                 // M21-F1：名称按文件类型着色（目录/可执行/链接/归档/图片/视频/代码）。
-                let ft = filetype_style(item.filetype_class());
+                // M45-2a：当前反显行（光标行 / 可视选区）不用文件类型着色——
+                // REVERSED 叠加 span 级 fg 会让文字部分呈现不同底色，用户实测
+                // "文字部分单独高亮"；反显行统一为整体背景色。非反显行仍着色。
+                let row_reversed = (!tab.on_parent_row && idx == tab.cursor)
+                    || visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi);
+                let ft = if row_reversed {
+                    Style::new()
+                } else {
+                    filetype_style(item.filetype_class())
+                };
                 // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
                 // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
                 let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
