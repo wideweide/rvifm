@@ -158,6 +158,9 @@ rvifm 帮助（vim 风格文件管理器）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 
 提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap]）。
+opener 必须写成表（写成字符串会解析失败并整体回退默认配置）：
+  [opener] edit_text = { run = "nvim %s", block = true }
+  [open] prepend_rules = [{ mime = "text/*", use = ["edit_text", "open"] }]
 本帮助页按 q 或 Esc 返回列表，光标与滚动位置保持不变。
 键位分层扩展（M33）：config.toml 除 [normal] 外支持 [visual]/[view] 三层
 （prepend/append/replace）——进入对应模式（v/w）时用户绑定生效，退出还原。

@@ -284,12 +284,51 @@ pub fn known_hosts_path() -> PathBuf {
     home.join(".ssh").join("known_hosts")
 }
 
+/// M45-3a：把 toml 多行错误压成单行（状态栏只有一行，多行会只剩首行）。
+/// 保留「TOML parse error at line/column」与最后一行具体原因（如
+/// `invalid type: string "nvim %s", expected struct OpenerDef`），丢弃
+/// `|` 缩进与 `^^^` 指示行。
+fn compact_toml_error(raw: &str) -> String {
+    let lines: Vec<&str> = raw
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('^') && !l.starts_with('|'))
+        .collect();
+    match (lines.first(), lines.last()) {
+        (Some(first), Some(last)) if first != last => format!("{first}（{last}）"),
+        (Some(first), _) => (*first).to_owned(),
+        _ => String::new(),
+    }
+}
+
+/// M45-3a：opener 常见误写提示——`edit_text = "nvim %s"` 字符串形态反序列化
+/// 失败（OpenerDef 是表）；给出正确形态与文档指引（不自动生成配置文件）。
+fn opener_hint(raw: &str) -> Option<&'static str> {
+    let lower = raw.to_ascii_lowercase();
+    if !(lower.contains("openerdef") || lower.contains("[opener]") || lower.contains("opener")) {
+        return None;
+    }
+    Some(
+        "提示：编辑用 [opener] edit_text = { run = \"nvim %s\", block = true }；完整示例见 :help 或 README",
+    )
+}
+
 /// 从路径加载配置：缺失 → 默认值；读取/解析失败 → 可理解的错误信息。
+/// M45-3a：错误信息带文件路径、单行压缩后的具体字段原因，以及修复指引；
+/// 解析失败整体回退默认值（不改分层引擎）。
 pub fn load_from(path: &std::path::Path) -> Result<Config, String> {
     match std::fs::read_to_string(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
-        Err(e) => Err(format!("读取配置失败: {e}")),
-        Ok(text) => toml::from_str(&text).map_err(|e| format!("配置解析失败: {e}")),
+        Err(e) => Err(format!("读取配置失败（{}）: {e}", path.display())),
+        Ok(text) => toml::from_str(&text).map_err(|e| {
+            let raw = e.to_string();
+            let detail = compact_toml_error(&raw);
+            let base = format!("配置解析失败（{}）: {detail}", path.display());
+            match opener_hint(&raw) {
+                Some(hint) => format!("{base}；{hint}"),
+                None => format!("{base}；完整示例见 :help 或 README（已回退默认配置）"),
+            }
+        }),
     }
 }
 
@@ -788,6 +827,36 @@ dl = "bad"
         std::fs::write(&path, "show_hidden = [[[").unwrap();
         let err = load_from(&path).unwrap_err();
         assert!(err.starts_with("配置解析失败"), "err: {err}");
+        // M45-3a：带路径、单行（状态栏一行）、含文档指引。
+        assert!(err.contains("config.toml"), "错误应指出配置文件: {err}");
+        assert!(!err.contains('\n'), "错误须压成单行: {err}");
+        assert!(err.contains(":help"), "错误应给出文档指引: {err}");
+    }
+
+    #[test]
+    fn m453a_opener_string_form_error_has_hint() {
+        // M45-3a 回归：`edit_text = "nvim %s"`（字符串而非表）——错误保留
+        // 具体字段（OpenerDef / line 2）并给出正确 TOML 形态指引。
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[opener]\nedit_text = \"nvim %s\"\n").unwrap();
+        let err = load_from(&path).unwrap_err();
+        assert!(
+            err.contains("OpenerDef") && err.contains("line 2"),
+            "保留具体字段与位置: {err}"
+        );
+        assert!(
+            err.contains("run = \"nvim %s\"") && err.contains("block = true"),
+            "给出正确表形态示例: {err}"
+        );
+        assert!(!err.contains('\n'), "错误须压成单行: {err}");
+        // 非 opener 错误不误报 opener 提示。
+        std::fs::write(&path, "show_hidden = \"yes\"\n").unwrap();
+        let err = load_from(&path).unwrap_err();
+        assert!(
+            !err.contains("[opener]"),
+            "非 opener 错误不应提示 opener: {err}"
+        );
     }
 
     #[test]
