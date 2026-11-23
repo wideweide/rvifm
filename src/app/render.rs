@@ -479,6 +479,88 @@ pub(crate) fn hit_right_index(
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
 }
 
+/// M45-3c：删除确认居中弹窗矩形——宽取终端减边距（24–72），高按正文行数
+/// +2 边框，小终端取终端本身。
+pub(crate) fn confirm_rect(
+    area: ratatui::layout::Rect,
+    body_lines: usize,
+) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    let w = area.width.saturating_sub(4).clamp(area.width.min(24), 72);
+    let h = (body_lines as u16 + 2).min(area.height);
+    Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w.min(area.width),
+        height: h,
+    }
+}
+
+/// M45-3c：删除确认弹窗内容——(标题, 正文行)。纯函数便于测试（不读状态）；
+/// 图标 ⚠ + 红色加粗警示，`y` 高亮反显，`n/Esc` 明确可取消。
+pub(crate) fn confirm_dialog(
+    permanent: bool,
+    target: &str,
+    remote: Option<&str>,
+    tag_count: Option<usize>,
+) -> (String, Vec<Line<'static>>) {
+    let warn = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
+    let key_yes = Span::styled(
+        " y ",
+        Style::new()
+            .bg(Color::Red)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
+    let key_no = Span::styled(" n / Esc ", Style::new().add_modifier(Modifier::REVERSED));
+    let (title, head) = if tag_count.is_some() {
+        ("⚠ 批量删除".to_owned(), "删除标记文件？".to_owned())
+    } else if permanent {
+        (
+            "⚠ 永久删除（不可恢复）".to_owned(),
+            "此操作不可恢复".to_owned(),
+        )
+    } else {
+        ("⚠ 删除确认".to_owned(), "移入回收站（可撤销）".to_owned())
+    };
+    let mut lines = vec![
+        Line::from(vec![Span::styled("⚠ ", warn), Span::styled(head, warn)]),
+        Line::from(target.to_owned()),
+    ];
+    if let Some(r) = remote {
+        lines.push(Line::from(format!("远端: {r}")));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        key_yes,
+        Span::from(" 确认    "),
+        key_no,
+        Span::from(" 取消"),
+    ]));
+    (title, lines)
+}
+
+fn render_confirm(
+    frame: &mut Frame,
+    permanent: bool,
+    target: &str,
+    remote: Option<&str>,
+    tag_count: Option<usize>,
+) {
+    let (title, lines) = confirm_dialog(permanent, target, remote, tag_count);
+    let rect = confirm_rect(frame.area(), lines.len());
+    frame.render_widget(ratatui::widgets::Clear, rect);
+    let border = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            ratatui::widgets::Block::bordered()
+                .title(ratatui::text::Line::from(title).style(border))
+                .border_style(border),
+        ),
+        rect,
+    );
+}
+
 /// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
 /// 小终端保底 30×8（不足时取终端本身），在区域内水平垂直居中。
 pub(crate) fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
@@ -856,6 +938,26 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // 焦点边框）；view 模式且焦点左时显示查看器/图片预览（焦点右时查看器
     // 已由上方分派到左 pane，右 pane 保持列表导航）。
     render_right_pane(frame, state, mode, right_area);
+
+    // M45-3c：删除确认——居中阻塞弹窗（⚠ 图标 + 红色高亮 + y 键反显），
+    // 替代原状态栏 `[y/N]` 单行提示；按键仍由 run 循环按模式处理。
+    match mode {
+        InputMode::Confirm {
+            path,
+            permanent,
+            remote,
+        } => {
+            let target = path.display().to_string().replace('\\', "/");
+            render_confirm(frame, *permanent, &target, remote.as_deref(), None);
+            return;
+        }
+        InputMode::ConfirmTagDelete => {
+            let n = tab.tagged_count();
+            render_confirm(frame, false, &format!("{n} 个标记文件"), None, Some(n));
+            return;
+        }
+        _ => {}
+    }
 
     if let InputMode::HelpView { scroll, search } = mode {
         // FEAT-4：全屏帮助视图（内容来自内嵌 help.txt，滚动状态独立）。

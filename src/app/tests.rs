@@ -999,6 +999,8 @@ impl crate::remote::RemoteFs for CountingMockFs {
 #[cfg(unix)]
 #[test]
 fn m377_trash_clear_and_purge() {
+    // 与其它暂存测试共享真实 trash 索引——串行化避免 clear/undo 互踩。
+    let _guard = TRASH_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     // M37-7：:trash clear（全清）+ :trash purge --before（按时间清理）。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
@@ -3504,6 +3506,8 @@ fn dd_requests_confirm_and_discards_other_second_key() {
 
 #[test]
 fn execute_delete_then_undo_restores() {
+    // 与其它暂存测试共享真实 trash 索引——串行化避免 clear/undo 互踩。
+    let _guard = TRASH_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("gone.txt");
     fs::write(&file, "G").unwrap();
@@ -3707,6 +3711,8 @@ fn tabclose_reports_irreversible() {
 
 #[test]
 fn cross_tab_undo_restores_origin_and_keeps_current() {
+    // 与其它暂存测试共享真实 trash 索引——串行化避免 clear/undo 互踩。
+    let _guard = TRASH_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     // M2-7：tab 1 删除 → 切到 tab 2 → `u` → tab 1 文件恢复、当前 tab 不变。
     let dir_a = TempDir::new().unwrap(); // tab 1（index 0）
     let dir_b = TempDir::new().unwrap(); // tab 2（index 1）
@@ -3805,6 +3811,62 @@ fn m453d_visual_delete_requires_confirmation() {
     assert!(tmp.path().join("f01").exists(), "确认前不得删除");
     assert_eq!(state.active_tab().tagged_count(), 2, "选区已加 tag");
     assert!(state.active_tab().visual.is_none(), "可视态已清");
+}
+
+#[test]
+fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
+    // M45-3c：确认弹窗内容——⚠ 图标、永久删除红色警示、y 键反色高亮。
+    let (title, lines) = crate::app::render::confirm_dialog(true, "/tmp/x/secret.txt", None, None);
+    assert!(
+        title.contains('⚠') && title.contains("永久删除"),
+        "title={title}"
+    );
+    let joined: String = lines
+        .iter()
+        .map(|l| l.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(joined.contains("⚠"), "正文带图标: {joined}");
+    assert!(joined.contains("secret.txt"), "显示目标: {joined}");
+    assert!(joined.contains("不可恢复"), "永久删除强提示: {joined}");
+    let key_line = lines.last().expect("按键行");
+    let yes = key_line.spans.first().expect("y span");
+    assert!(
+        yes.content.contains('y')
+            && yes.style.bg == Some(Color::Red)
+            && yes.style.add_modifier.contains(Modifier::BOLD),
+        "y 键高亮"
+    );
+
+    // 渲染：弹窗居中（不在底部状态行），且不再有 [y/N] 文本。
+    let tmp = TempDir::new().unwrap();
+    let target = tmp.path().join("gone.txt");
+    fs::write(&target, "").unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mode = InputMode::Confirm {
+        path: target.clone(),
+        permanent: false,
+        remote: None,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let rows: Vec<String> = (0..24u16)
+        .map(|y| (0..80u16).map(|x| buf[(x, y)].symbol()).collect())
+        .collect();
+    let joined = rows.join("\n");
+    // TestBackend 对 CJK 全宽字符留占位空格（M21-E3），比较前压掉空白。
+    let compact = joined.replace(' ', "");
+    assert!(compact.contains("删除确认"), "弹窗标题可见: {joined}");
+    assert!(compact.contains("gone.txt"), "目标路径可见");
+    assert!(!compact.contains("[y/N]"), "不再用状态栏行内提示");
+    let body = crate::app::render::confirm_dialog(false, "x", None, None)
+        .1
+        .len();
+    let rect = crate::app::render::confirm_rect(ratatui::layout::Rect::new(0, 0, 80, 24), body);
+    // 弹窗左上角为边框（居中块），底部状态行不含弹窗文本。
+    assert_eq!(buf[(rect.x, rect.y)].symbol(), "┌", "居中弹窗边框");
+    assert!(!rows[23].contains("删除确认"), "状态行不再承担确认");
 }
 
 #[test]
@@ -4660,7 +4722,7 @@ static TRASH_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn trash_menu_records_and_restores_to_origin() {
     // M13-10：dd → 暂存索引记录（staged→orig）；restore_from_trash
     // 移回原位 + 索引清理；orig 冲突 → Err。
-    let _guard = TRASH_TEST_LOCK.lock().unwrap();
+    let _guard = TRASH_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("victim.txt");
     fs::write(&file, "V").unwrap();

@@ -1267,6 +1267,14 @@ rvifm record  → 静默记录访问
   O_NONBLOCK：跨平台且需 unsafe，metadata 守卫已足够且无 unsafe。
 - **gate 卡死教训**：`cargo test` 被后台 shell 中断后残留的测试进程会继续跑，
   排查时先 `ps` 确认无残留；用 `timeout` 包裹单测避免再次悬挂。
+- **暂存索引测试互踩（M45-3c 期间复现）**：`m377_trash_clear_and_purge` 的
+  `:trash clear` 与其它 `execute_delete`/restore 测试并行时，会把对方刚 staged
+  的文件/索引删掉 → `clear 失败 1: No such file or directory` 偶发失败（此前
+  M45-6a 前的「未定位偶发失败」疑同源）。修法：现有 `TRASH_TEST_LOCK` 扩到
+  全部真实 trash 索引读写测试（m377 / execute_delete_then_undo_restores /
+  cross_tab_undo…，锁获取用 `unwrap_or_else(|p| p.into_inner())` 防中毒级联）。
+  WHY 不改 `trash clear` 忽略 NotFound：生产并发场景本就不该报错，但属行为
+  变更，留待独立 FIX 评估；测试串行化已足以消除本项目内的不确定性。
 
 ### 2026-11-23 — FIX 批次蒸馏（REL-3 / FIX-5 / FIX-6；用户实测反馈，待确认）
 
