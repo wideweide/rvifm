@@ -1258,6 +1258,15 @@ rvifm record  → 静默记录访问
   修法：archive_plan 保留 tags 原样（含已消失条目，作业体报错），仅在 tags
   为空时增补 v 可视选区；m459a 测试锁定 v 多选。修正后 511 单测全绿。
   M45-6a 前曾见过一次未定位的偶发失败（复跑 3 次全绿），若再现再排查。
+- **M45-2b 踩坑（只能嗅探常规文件）**：类型图标对 devicons 默认 `*` 的无后缀
+  文件做 4KB 文本嗅探；首版未判文件类型，`Tab::from_physical("/tmp")` 时打开
+  `/tmp/vifm-ipc-vifm`（FIFO）与若干 socket，`open/read` 永久阻塞 → 整测试
+  套件挂死（`visual_selection_flow` 等看似无关的测试被拖住）。修法：嗅探前
+  `metadata.is_file()` 守卫（符号链接经 metadata 跟随判定，指向 FIFO 同样拒绝），
+  并加 `m452b_sniff_skips_socket_without_blocking` 回归测试。WHY 不用
+  O_NONBLOCK：跨平台且需 unsafe，metadata 守卫已足够且无 unsafe。
+- **gate 卡死教训**：`cargo test` 被后台 shell 中断后残留的测试进程会继续跑，
+  排查时先 `ps` 确认无残留；用 `timeout` 包裹单测避免再次悬挂。
 
 ### 2026-11-23 — FIX 批次蒸馏（REL-3 / FIX-5 / FIX-6；用户实测反馈，待确认）
 

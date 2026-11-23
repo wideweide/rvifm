@@ -1864,7 +1864,10 @@ pub fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let is_exec = !is_dir && is_executable(&meta, &name);
-        let icon = crate::icons::icon_for_active(&entry.path());
+        // M45-2b：类型感知图标——devicons 默认 `*` 时按可执行/文本/二进制推断，
+        // jar/deb 给专用图标（替代无后缀 `*`）。
+        let icon =
+            crate::icons::icon_for_entry(&entry.path(), is_exec, crate::icons::active_theme());
         items.push(FileItem {
             icon,
             name,
