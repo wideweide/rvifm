@@ -406,6 +406,8 @@ pub struct AppState {
     /// M43-1：导师会话（覆盖层状态——不占 InputMode，任意模式切换不丢；
     /// None = 未激活。Panel 渲染与 Ctrl+Y/N/Q 前置拦截据此判断）。
     pub tutor: Option<crate::tutor::TutorSession>,
+    /// M45-8d：导师学习进度缓存（列表左侧进度展示用；作答后即时刷新）。
+    pub tutor_progress: crate::tutor::TutorProgress,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -446,6 +448,9 @@ impl AppState {
             pending_external: None,
             named_searches: std::collections::HashMap::new(),
             tutor: None,
+            // M45-8d：导师进度缓存（启动时读一次；作答后即时刷新）——列表
+            // 左侧进度展示不必每帧读盘。
+            tutor_progress: crate::tutor::load_progress(),
         }
     }
 

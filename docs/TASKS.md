@@ -604,7 +604,7 @@
 - [x] M45-7a `:extract` 对侧/指定侧或路径（见 SPEC M45-7①；2026-11-23 完成：extract_dest 缺省对侧 + left/right/当前/对侧/路径 + m457a 测试，532 单测）
 - [x] M45-7b 归档虚拟目录 `yy`+`p`/`P` 解压粘贴（见 SPEC M45-7②；2026-11-23 完成：YankSource::Archive + extract_members 共用 + m457b 测试，533 单测）
 - [x] M45-8c tutor 布局避让（见 SPEC M45-8③；2026-11-23 完成：tutor_panel_height 同源 render/视口同步 + m458c 测试，534 单测）
-- [ ] M45-8d 模块列表左侧显示进度（见 SPEC M45-8④）
+- [x] M45-8d 模块列表左侧显示进度（见 SPEC M45-8④；2026-11-23 完成：tutor_progress 缓存 + tutor_progress_label + m458d 测试，535 单测）
 - [ ] M45-9b `[名, checksum=]` 格式推断（见 SPEC M45-9②）
 - [ ] M45-9c 对话框宽度/去后缀/默认名/选中高亮（见 SPEC M45-9③）
 - [ ] M45-10 文档收尾（README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步；见 SPEC M45-10）

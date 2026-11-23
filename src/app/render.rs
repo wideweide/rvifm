@@ -479,6 +479,15 @@ pub(crate) fn hit_right_index(
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
 }
 
+/// M45-8d：导师模块列表左侧进度标签——`掌握数/总数` 百分比。纯函数便于
+/// 测试（不读宿主进度文件）。
+pub(crate) fn tutor_progress_label(total: usize, mastered: usize) -> String {
+    match mastered.min(total).saturating_mul(100).checked_div(total) {
+        Some(pct) => format!("{pct:>3}%"),
+        None => " --%".to_owned(),
+    }
+}
+
 /// M45-8c：Tutor 底部面板高度——render 与输入循环视口同步共用（纯函数），
 /// 列表渲染区与 `sync_viewport_scroll` 都须扣除它，避免 `G` 跳到底部条目
 /// 被面板遮住。
@@ -1098,7 +1107,20 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         let modules = crate::tutor::builtin_modules();
         let items: Vec<Line> = modules
             .iter()
-            .map(|m| Line::from(format!("{:<14} {} — {}", m.id, m.name, m.description)))
+            .map(|m| {
+                // M45-8d：左侧列显示该模块学习进度（掌握数/总数百分比）。
+                let total = m.items.len();
+                let mastered = state
+                    .tutor_progress
+                    .get(&m.id)
+                    .map(|p| p.mastered.len())
+                    .unwrap_or(0);
+                let label = crate::app::render::tutor_progress_label(total, mastered);
+                Line::from(format!(
+                    "{label} {:<14} {} — {}",
+                    m.id, m.name, m.description
+                ))
+            })
             .collect();
         let list = ratatui::widgets::List::new(items)
             .block(

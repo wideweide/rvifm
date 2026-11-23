@@ -4684,6 +4684,41 @@ fn jump_to_dir_navigates_and_pushes_history() {
 }
 
 #[test]
+fn m458d_tutor_list_shows_progress_on_left() {
+    // M45-8d：模块列表左侧显示学习进度百分比（纯函数 + 渲染同源）。
+    assert_eq!(tutor_progress_label(10, 3), " 30%");
+    assert_eq!(tutor_progress_label(0, 0), " --%");
+    assert_eq!(tutor_progress_label(2, 5), "100%", "钳制不超过 100%");
+
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    let mut progress = crate::tutor::TutorProgress::new();
+    progress.insert(
+        "core_nav".to_owned(),
+        crate::tutor::ModuleProgress {
+            mastered: module.items.iter().take(1).map(|i| i.id.clone()).collect(),
+            ..Default::default()
+        },
+    );
+    let mut state =
+        AppState::new(Tab::from_physical(std::path::Path::new("."), Config::default()).unwrap());
+    state.tutor_progress = progress;
+    state.tutor = None;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(90, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::TutorList { cursor: 0 }, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 1..18u16 {
+        for x in 0..88u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(text.contains('%'), "列表应显示进度百分比: {text}");
+    assert!(text.contains("core_nav"), "模块仍在列表: {text}");
+}
+
+#[test]
 fn m458c_tutor_panel_does_not_hide_bottom_entry() {
     // M45-8c：Tutor 面板遮住 pane 底部——列表渲染区与视口高度都须扣除面板，
     // G 跳末尾条目时高亮行落在面板之上。
@@ -11562,10 +11597,10 @@ fn m43_1_tutor_list_scroll_render() {
         })
         .collect();
     let compact: String = all.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(
-        compact.contains("▶search_frecency"),
-        "末模块选中高亮: {all}"
-    );
+    // M45-8d：高亮符号 ▶ 在进度标签（如 " 0%"）之前——定位模块名再回看前缀。
+    let pos = compact.find("search_frecency").expect("末模块应在列表");
+    let prefix = &compact[pos.saturating_sub(8)..pos];
+    assert!(prefix.contains('▶'), "末模块选中高亮: {all}");
     assert!(compact.contains("core_nav"), "首模块行: {all}");
     assert!(
         compact.contains("Enter/l=进入"),

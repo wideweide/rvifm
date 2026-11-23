@@ -782,6 +782,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             &session.module.id,
                             &session.marks,
                         );
+                        // M45-8d：缓存同步刷新（列表左侧进度即时更新）。
+                        state.tutor_progress = progress.clone();
                         if let Err(e) = crate::tutor::save_progress_to(
                             &crate::tutor::tutor_progress_path(),
                             &progress,
