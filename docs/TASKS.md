@@ -542,6 +542,21 @@
 - [x] M44-1 `w`/`:view` 焦点保持 + 光标跟随 + `Tab` 进入/返回 + 关闭恢复（见 SPEC M44；2026-11-23 完成：`Tab.preview_focus` + `refresh_viewer_follow` + 3 个回归用例；500 单测）
 - [x] M44-2 文档同步与 1.1.0 GitHub Release（crates.io 不发布；见 SPEC M44；2026-11-23 完成）
 
+## FIX — 维护期实测修复批次（2026-11-23 增补；蒸馏自用户实测反馈，待用户确认）
+
+> 来源：用户 2026-11-23 实测反馈三条——① `v1.1.0`/`v1.0.0` GitHub Release 的
+> `SHA256SUMS.txt` 只含单个归档（4 个并行 release job 各自生成并 `--clobber`
+> 覆盖，最后一个完成的 job 胜出）；② `:tutor` 模块列表覆盖层与底部 Panel 背景
+> 透明，与目录列表等功能界面互相干扰看不清（覆盖层无 `Clear`，透出下层文字）；
+> ③ 会话退出保存后启动未恢复——`save_session` 写 `~/.config/rvifm/session.toml`
+> 时配置目录可能不存在，`fs::write` 静默失败（与 tutor progress 的
+> `save_progress_to` 已做 `create_dir_all` 不对称）。顺序：REL-3 → FIX-5 → FIX-6。
+
+- [x] REL-3a CI 修复：release job 不再各自生成/上传 SHA256SUMS，新增独立 release-checksums 作业汇总全部归档（含数量守卫 4）；见 SPEC REL-3-1（2026-11-23 完成：YAML 解析通过，`scripts/repair-release-checksums.sh` 备查）
+- [~] REL-3b 历史回填 v1.0.0/v1.1.0 的 SHA256SUMS.txt（**deferred：本机无 `gh`/GitHub token，上传需人工鉴权**；四归档真实 sha256 已下载实测并记 NOTES；执行 `bash scripts/repair-release-checksums.sh v1.0.0 v1.1.0` 即完成；见 SPEC REL-3-2）
+- [ ] FIX-5 `:tutor` 模块列表覆盖层与底部 Panel 不透明化（Clear + 背景样式，消除与目录列表的视觉干扰；见 SPEC FIX-5）
+- [ ] FIX-6 会话保存前自动创建配置目录（`save_session` 补 `create_dir_all`，与 tutor progress 同模式；见 SPEC FIX-6）
+
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 
 - [x] GAP-1 M10-5 收尾：keymap TOML 分层接线（config.rs 解析 prepend/append/replace 并合并进 InputState.keymap——当前仅默认表，用户绑定不可用；NAV-3 的推荐映射示例依赖此项）

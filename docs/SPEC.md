@@ -1368,6 +1368,55 @@ append_rules = [
 - crates.io 自动 publish（任何形式）。
 - 强制门禁文档/勾选清单（RELEASE_CHECKLIST.md 模式废弃）。
 
+## REL-3 — SHA256SUMS.txt 完整性（2026-11-23 增补；维护期发布修复，见 NOTES 同日条目）
+
+> 来源：用户 2026-11-23 验证 v1.1.0 GitHub Release 发现——`SHA256SUMS.txt`
+> 只含 1 个归档（v1.1.0 仅 Windows 行、v1.0.0 仅 aarch64 行）；根因为 4 个
+> 并行 release job 各自 `cd dist && sha256sum *.tar.gz > SHA256SUMS.txt`
+> （其 `dist/` 只含本 target 归档）再 `gh release upload ... --clobber`，最后
+> 完成的 job 覆盖前面全部。
+
+**MUST**
+- **REL-3-1 单一汇总步骤**：SHA256SUMS 必须由**一个**在全部 release 归档上传
+  后执行的步骤/作业生成——下载/汇集全部已上传归档到同一 `dist/`，对全部
+  `*.tar.gz` 一次性 `sha256sum`，再 `--clobber` 上传；不得由各并行 job 各自生成。
+  最终 `SHA256SUMS.txt` 必须包含全部 4 个归档且与各归档实际 sha256 一致。
+- **REL-3-2 历史回填**：用各归档的真实 sha256 回填已发布的 `v1.0.0` 与
+  `v1.1.0` 的 `SHA256SUMS.txt`（两版本四归档齐全），回填后逐条校验通过。
+
+**OUT_OF_SCOPE**
+- 不改归档内容、不改 tag、不发布 crates.io（certs 停在 1.0.0，版本序列不变）。
+
+## FIX-5 — tutor 覆盖层不透明化（2026-11-23 增补；用户实测反馈，见 NOTES 同日条目）
+
+**MUST**
+- **FIX-5-1 模块列表覆盖层**：`InputMode::TutorList` 全屏渲染前必须清除下层
+  TUI 内容（`ratatui::widgets::Clear` 或等价不透明背景），使目录列表/状态栏
+  不透出；保留 `j/k` 选择、Enter/l 进入、q/Esc 关闭与键提示语义。
+- **FIX-5-2 底部 Panel**：该覆盖层渲染期间底部 Tutor Panel 区域必须不透明
+  （清屏/背景色），其下的状态栏文字不得透出干扰 prompt/expected/进度可读性；
+  Panel 主 TUI 背景保持可见（操作上下文）的意图保留——即**仅面板自身区域**
+  不透明，面板之外的目录列表仍可见。
+- **FIX-5-3 不透明化仅限 tutor 面板/列表区域**，不得改动其它视图的渲染或
+  M43-1 的透明放行（按键路由）语义。
+
+## FIX-6 — 会话保存目录自动创建（2026-11-23 增补；用户实测反馈，见 NOTES 同日条目）
+
+> 来源：用户 2026-11-23 反馈——多个 tab、`:q` 退出、再打开未恢复。代码核查：
+> 退出路径（`:q` 与 `q` 键）均调用 `save_session`，序列化含全部 tab；但
+> `save_session` 直接 `fs::write(session_path(), text)`，而 `session_path()` =
+> `~/.config/rvifm/session.toml`，该目录在全新安装（无 config.toml）时不存在，
+> 写入静默失败（仅 `eprintln`），启动恢复读不到文件 → 保持初始 CWD tab。
+> `tutor::save_progress_to` 已做 `create_dir_all`，二者不对称。
+
+**MUST**
+- **FIX-6-1** `save_session` 写文件前必须创建父目录（`create_dir_all`），
+  与 `save_progress_to` 同模式；失败仍 `eprintln` 不阻塞退出。
+- **FIX-6-2** 补回归测试：注入不存在的配置目录 → `save_session` → 文件存在
+  且可解析；`session_restore=false` 时仍不写不读（既有语义不变）。
+- **FIX-6-3** 设计澄清：会话**原设计即自动保存**（M25-1 退出保存/启动恢复），
+  本次修复是实现缺陷，不改变需求；文档（README/GUIDE/help）维持既有描述。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

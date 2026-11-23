@@ -248,12 +248,6 @@ jobs:
         run: |
           mkdir -p dist
           tar czf dist/${{ matrix.archive }} -C target/${{ matrix.target }}/release ${{ matrix.binaries }}
-      - name: sha256 checksums (M40-5)
-        shell: bash
-        run: |
-          cd dist
-          sha256sum *.tar.gz > SHA256SUMS.txt
-          cat SHA256SUMS.txt
       - name: create GitHub Release
         shell: bash
         env:
@@ -262,8 +256,46 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "rvifm $GITHUB_REF_NAME" \
             --generate-notes --verify-tag || true
-          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS.txt --clobber
+          # REL-3：此处只上传归档；SHA256SUMS 由独立汇总作业在所有归档
+          # 上传后一次性生成（原并行 matrix 每腿各自生成并 --clobber，
+          # 最后完成腿覆盖其余——v1.0.0/v1.1.0 的 SHA256SUMS 只含 1 行）。
+          gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: rvifm-${{ matrix.target }}
           path: dist/
+
+  # REL-3：单一汇总作业——依赖全部 release matrix 腿完成后才运行；
+  # 汇集所有归档到同一 dist/ 一次性算 SHA256SUMS，避免并行覆盖。
+  release-checksums:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rvifm-*
+          path: dist
+          merge-multiple: true
+      - name: verify archive count (REL-3)
+        shell: bash
+        run: |
+          cd dist
+          n=$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)
+          echo "归档数: $n"
+          # 数量守卫：缺失任一归档直接失败，杜绝不完整 SHA256SUMS 再次发布
+          test "$n" -eq 4 || { echo "::error::期望 4 个归档，实得 $n"; exit 1; }
+      - name: sha256 checksums (REL-3)
+        shell: bash
+        run: |
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: upload checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist/SHA256SUMS.txt --clobber

@@ -1006,3 +1006,13 @@
 
 - [x] M44-1 `w`/`:view` 开启预览后焦点留在原 pane；`j/k` 切换文件且对侧预览跟随（换文件重建、同文件保留滚动）；`Tab` 进入预览后 `j/k` 滚动、`Tab` 返回；`w`/`Esc` 关闭后焦点与键位表恢复。（2026-11-23：m42_* 三用例 + view/m21e2/m39_2 回归，500 单测）
 - [x] M44-2 GUIDE/CHANGELOG/README/SPEC/PLAN/TASKS/STATE/NOTES 同步；`cargo clippy --all-targets` 绿；GitHub Release 1.1.0（crates.io 不发布）。（2026-11-23）
+
+## 45. FIX — 维护期实测修复（见 SPEC REL-3 / FIX-5 / FIX-6 节）
+
+- [ ] REL-3-1 `ci.yml`：SHA256SUMS 由单个汇总步骤在所有归档上传后生成（全部归档汇集同一 `dist/` 一次性 `sha256sum`），各并行 release job 不再各自生成/上传；workflow 语法合法（`actionlint`/YAML 解析通过）。
+- [~] REL-3-2 `v1.0.0` 与 `v1.1.0` Release 的 `SHA256SUMS.txt` 各含全部 4 个归档，逐条 `sha256sum -c` 通过——**deferred：本机无 `gh`/token 无法上传；四归档真实哈希已下载实测并记 NOTES，回填用 `scripts/repair-release-checksums.sh`（人工鉴权后一条命令完成）**。可自动部分（哈希实测/脚本备置）已验收。
+- [ ] FIX-5-1 `:tutor` 模块列表为不透明覆盖层（TestBackend 快照：列表区域下层目录列表文字不残留）；`j/k`/Enter/q/Esc 语义不变。
+- [ ] FIX-5-2 底部 Tutor Panel 区域不透明（状态栏文字不透出）；主 TUI 目录列表在 Panel 之外仍可见（透明放行语义保留）。
+- [ ] FIX-6-1 `save_session` 在配置目录不存在时创建父目录后写入成功；会话序列化仍含全部 tab。
+- [ ] FIX-6-2 回归测试注入不存在配置目录 → 保存 → 文件存在且可解析；`session_restore=false` 仍不写不读。
+- [ ] FIX-6-3 文档澄清会话为"退出保存/启动恢复"的既有设计（README/GUIDE/help 描述不变）。

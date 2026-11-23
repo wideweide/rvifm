@@ -1184,3 +1184,39 @@ rvifm record  → 静默记录访问
 - **WHY 版本 1.1.0 且不发 crates.io**：M42/M43 为新增功能、M44 为交互修复，
   semver minor；用户 2026-11-23 明确要求只发布 GitHub Release，crates.io 仍停在
   1.0.0。
+
+### 2026-11-23 — FIX 批次蒸馏（REL-3 / FIX-5 / FIX-6；用户实测反馈，待确认）
+
+- **REL-3 根因（已核实）**：`v1.1.0` tag run 45101107044 九 job 全绿、四归档
+  齐全，`SHA256SUMS.txt` 却只有 1 行（`873b... windows-x64`）；`v1.0.0` 同病
+  （仅 aarch64 行）。`ci.yml` release job 为 4-target matrix，每腿在自身
+  `dist/`（只含本 target 归档）执行 `sha256sum *.tar.gz > SHA256SUMS.txt`
+  再 `gh release upload ... --clobber`——最后完成腿覆盖前面全部。WHY 用独立
+  汇总步骤而非让某腿聚合：matrix 各腿并行、完成顺序不定，聚合点必须在所有
+  归档上传之后且只执行一次；历史版本回填用 GitHub Release 实际归档的真实
+  sha256（下载实测），不改归档/tag/版本。
+- **REL-3 四归档实测 sha256（2026-11-23 下载 GitHub Release 归档 `sha256sum`）**：
+  - v1.0.0：`915e2375…` aarch64-gnu（现有唯一行，正确但不全）、
+    `a47cc01f…` x64-gnu、`9e2e7fdf…` x64-musl、`3c73bd91…` windows-x64。
+  - v1.1.0：`4efd7268…` aarch64-gnu、`73cd9a33…` x64-gnu、
+    `474f5297…` x64-musl、`873b1524…` windows-x64（现有唯一行）。
+  - 现有单行哈希与实测一致 → 回填只需补全缺失三行，不改动已有正确行。
+- **REL-3b 延期**：本机 `gh` 未安装、无 `GITHUB_TOKEN`/凭据（git remote 为 SSH，
+  `git credential fill` 无返回）→ 上传需人工鉴权。备置
+  `scripts/repair-release-checksums.sh`（`gh release download` → 数量守卫 4 →
+  `sha256sum` → `gh release upload --clobber`），人工 `gh auth login` 后一条命令
+  回填两版本；CI 侧修复对未来 tag 生效。属「必须人工执行步骤」按 AGENTS §3
+  延期处理，不阻塞 FIX-5/FIX-6。
+- **FIX-5 根因（代码定位）**：`app/render.rs` 中 SortDialog/ArchiveDialog/
+  HistoryMenu/ContextMenu 等覆盖层均先 `render_widget(Clear, area)`，而
+  `InputMode::TutorList`（~L887）与底部 Tutor Panel（`state.tutor`，~L1281）
+  直接 `render_widget(...)` 无 Clear/背景 → 下层目录列表/状态栏文字透出。
+  WHY 只清面板/列表区域而非全屏黑底：M42-1 设计意图是"主 TUI 背景保持可见"
+  作为练习上下文（透明放行 = 按键路由，非视觉透明）；用户诉求是面板**自身区域**
+  不透出干扰，两者不冲突。
+- **FIX-6 根因（代码定位 + 测试盲区）**：`save_session`（session.rs L91）无
+  `create_dir_all`，`session_path()` = config.toml 同目录 `session.toml`；全新
+  安装无 `~/.config/rvifm/` 时 `fs::write` 静默失败（仅 eprintln）。路由本身正确
+  （`:q` 与 `q` 均调用 save_session，序列化含全部 tab；测试 `m251_roundtrip`
+  直接驱动纯函数故未覆盖真实路径）。WHY 不作为需求变更：会话原设计即自动保存
+  （M25-1），本次是实现对不齐 tutor progress 已建立的 `create_dir_all` 模式。
