@@ -4684,6 +4684,46 @@ fn jump_to_dir_navigates_and_pushes_history() {
 }
 
 #[test]
+fn m457a_extract_dest_defaults_to_opposite_pane() {
+    // M45-7a：`:extract` 缺省目标为对侧 pane；left/right/当前/对侧/绝对/
+    // 相对路径均可解析（纯函数，不触碰文件）。
+    let tmp = TempDir::new().unwrap();
+    let left = tmp.path().join("L");
+    let right = tmp.path().join("R");
+    fs::create_dir(&left).unwrap();
+    fs::create_dir(&right).unwrap();
+    let mut state = AppState::new(Tab::from_physical(&left, Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(&right, Config::default()).unwrap();
+
+    // 左焦点：缺省 = 右栏。
+    assert_eq!(extract_dest(&state, None).unwrap(), right, "缺省对侧");
+    assert_eq!(extract_dest(&state, Some("left")).unwrap(), left);
+    assert_eq!(extract_dest(&state, Some("right")).unwrap(), right);
+    assert_eq!(extract_dest(&state, Some("当前")).unwrap(), left);
+    assert_eq!(extract_dest(&state, Some("对侧")).unwrap(), right);
+    let abs = tmp.path().join("out");
+    assert_eq!(
+        extract_dest(&state, Some(&abs.display().to_string())).unwrap(),
+        abs
+    );
+    assert_eq!(
+        extract_dest(&state, Some("sub/dir")).unwrap(),
+        right.join("sub/dir"),
+        "相对路径锚定对侧"
+    );
+
+    // 右焦点：缺省 = 左栏。
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    assert_eq!(
+        extract_dest(&state, None).unwrap(),
+        left,
+        "右焦点缺省对侧为左"
+    );
+    assert_eq!(extract_dest(&state, Some("当前")).unwrap(), right);
+}
+
+#[test]
 fn m456b_jump_to_writes_focused_pane() {
     // M45-6b：`o` 结果跳转写入焦点 pane——右焦点时左 pane 保持不变。
     let tmp = TempDir::new().unwrap();

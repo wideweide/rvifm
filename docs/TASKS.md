@@ -601,7 +601,7 @@
 - [x] M45-5c `:` 命令名辅助提示（见 SPEC M45-5③；2026-11-23 完成：范围自决为命令名 Tab 补全（NOTES 记录）+ COMMAND_NAMES + m455c 测试，529 单测）
 - [x] M45-6b `o` 结果跳转写焦点 pane（见 SPEC M45-6②；2026-11-23 完成：jump_to 焦点感知（右 pane 直接 location+refresh/左 pane 沿用 history）+ m456b 测试，530 单测）
 - [x] M45-6c 右键栏归档 `l`/Enter 进入虚拟目录（见 SPEC M45-6③；2026-11-23 完成：Pane::enter_selected/refresh/return_parent 归档分支 + m456c 测试，531 单测）
-- [ ] M45-7a `:extract` 对侧/指定侧或路径（见 SPEC M45-7①）
+- [x] M45-7a `:extract` 对侧/指定侧或路径（见 SPEC M45-7①；2026-11-23 完成：extract_dest 缺省对侧 + left/right/当前/对侧/路径 + m457a 测试，532 单测）
 - [ ] M45-7b 归档虚拟目录 `yy`+`p`/`P` 解压粘贴（见 SPEC M45-7②）
 - [ ] M45-8c tutor 布局避让（见 SPEC M45-8③）
 - [ ] M45-8d 模块列表左侧显示进度（见 SPEC M45-8④）

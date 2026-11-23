@@ -2012,6 +2012,47 @@ pub(crate) fn command_name_position(input: &str) -> bool {
     !input.is_empty() && !input.chars().any(char::is_whitespace)
 }
 
+/// M45-7a：`:extract` 目标解析——缺省 = **对侧 pane** 物理目录（裁决推翻
+/// 旧「当前目录」默认）；`left`/`right`/`当前`/`对侧` 指定侧；绝对路径直用，
+/// 相对路径锚定对侧物理目录。纯函数便于测试。
+pub(crate) fn extract_dest(state: &AppState, arg: Option<&str>) -> Result<PathBuf, String> {
+    use crate::tab::Focus;
+    let tab = state.active_tab();
+    let base = |focus: Focus| -> Result<PathBuf, String> {
+        let loc = match focus {
+            Focus::Left => &tab.location,
+            Focus::Right => &tab.right.location,
+        };
+        match loc {
+            Location::Physical(p) => Ok(p.clone()),
+            _ => Err(format!(
+                "{} pane 非物理目录，无法作为解压目标",
+                if focus == Focus::Left { "左" } else { "右" }
+            )),
+        }
+    };
+    let opposite = if tab.focus == Focus::Left {
+        Focus::Right
+    } else {
+        Focus::Left
+    };
+    match arg {
+        None => base(opposite),
+        Some("left") => base(Focus::Left),
+        Some("right") => base(Focus::Right),
+        Some("当前") => base(tab.focus),
+        Some("对侧") => base(opposite),
+        Some(d) => {
+            let p = PathBuf::from(expand_home_arg(d));
+            if p.is_absolute() {
+                Ok(p)
+            } else {
+                Ok(base(opposite)?.join(p))
+            }
+        }
+    }
+}
+
 pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
     if let Some(rest) = line.strip_prefix('!') {
@@ -2675,22 +2716,11 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             }
         }
         Some("extract") => {
-            // M37-2：归档解压——光标条目为归档文件 → 全量解压到目标目录
-            //（缺省当前物理目录）；ArchiveFs 逐成员 read → 本地写；
-            // zip-slip 防护（成员路径规范化拒绝 .. / 绝对路径）；单成员
-            // 64MB 上限沿用护栏；逐成员入撤销栈（u 可逆）。
-            let dest_dir = match parts.next() {
-                Some(d) => {
-                    let base = physical_base(state)?;
-                    let p = std::path::Path::new(d);
-                    if p.is_absolute() {
-                        p.to_path_buf()
-                    } else {
-                        base.join(p)
-                    }
-                }
-                None => physical_base(state)?,
-            };
+            // M37-2 + M45-7a：归档解压——缺省目标 = **对侧** pane 物理目录
+            // （裁决推翻旧「当前目录」默认）；支持 left/right/当前/对侧/路径。
+            // ArchiveFs 逐成员 read → 本地写；zip-slip 防护（成员路径规范化
+            // 拒绝 .. / 绝对路径）；单成员 64MB 护栏；逐成员入撤销栈（u 可逆）。
+            let dest_dir = extract_dest(state, parts.next())?;
             if !dest_dir.is_dir() {
                 return Err(format!("extract: 目标目录不存在: {}", dest_dir.display()));
             }
