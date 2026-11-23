@@ -650,7 +650,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
             let [_, left, _, _] =
                 pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode);
-            let list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
+            let mut list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
+            // M45-8c：Tutor 面板遮住 pane 底部——视口高度须扣除面板，
+            // `G`/j 滚动到底部时高亮仍落在可见区（不被面板挡住）。
+            if state.tutor.is_some() {
+                let panel_h = crate::app::render::tutor_panel_height(area.height) as usize;
+                list_h = list_h.saturating_sub(panel_h);
+            }
             state.active_tab_mut().sync_viewport_scroll(list_h);
         }
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的

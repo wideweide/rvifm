@@ -479,6 +479,13 @@ pub(crate) fn hit_right_index(
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
 }
 
+/// M45-8c：Tutor 底部面板高度——render 与输入循环视口同步共用（纯函数），
+/// 列表渲染区与 `sync_viewport_scroll` 都须扣除它，避免 `G` 跳到底部条目
+/// 被面板遮住。
+pub(crate) fn tutor_panel_height(total_height: u16) -> u16 {
+    (total_height / 4).clamp(6, 10)
+}
+
 /// M45-3c：删除确认居中弹窗矩形——宽取终端减边距（24–72），高按正文行数
 /// +2 边框，小终端取终端本身。
 pub(crate) fn confirm_rect(
@@ -717,6 +724,21 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     let viewing = tab.view_mode;
     let [tab_bar_area, left_area, right_area, status_area] =
         pane_layout(frame.area(), layout, viewing);
+    // M45-8c：Tutor 面板覆盖 pane 底部——列表渲染区扣除面板高度（`G` 跳末尾
+    // 不被遮挡）；状态栏在面板下不受影响。
+    let panel_h = if state.tutor.is_some() {
+        crate::app::render::tutor_panel_height(frame.area().height)
+    } else {
+        0
+    };
+    let left_area = ratatui::layout::Rect {
+        height: left_area.height.saturating_sub(panel_h),
+        ..left_area
+    };
+    let right_area = ratatui::layout::Rect {
+        height: right_area.height.saturating_sub(panel_h),
+        ..right_area
+    };
     // M23-6：Frecency Pane 模式——焦点 pane 显示搜索 UI，对侧显示快速预览。
     if state.active_tab().pane_frecency.is_some() {
         render_frecency_panes(frame, state);

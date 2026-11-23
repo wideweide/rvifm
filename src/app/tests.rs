@@ -4684,6 +4684,53 @@ fn jump_to_dir_navigates_and_pushes_history() {
 }
 
 #[test]
+fn m458c_tutor_panel_does_not_hide_bottom_entry() {
+    // M45-8c：Tutor 面板遮住 pane 底部——列表渲染区与视口高度都须扣除面板，
+    // G 跳末尾条目时高亮行落在面板之上。
+    assert_eq!(tutor_panel_height(24), 6);
+    assert_eq!(tutor_panel_height(40), 10);
+    let tmp = TempDir::new().unwrap();
+    for i in 0..20 {
+        fs::write(tmp.path().join(format!("f{i:02}.txt")), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let module = crate::tutor::module_by_id("core_nav").unwrap();
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: module.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+    state.active_tab_mut().cursor_bottom();
+    let panel_h = tutor_panel_height(24) as usize;
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let [_, left, _, _] = pane_layout(area, state.config.ui.layout(), false);
+    let list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
+    state
+        .active_tab_mut()
+        .sync_viewport_scroll(list_h.saturating_sub(panel_h));
+
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    // 面板顶行（panel_y）以上不应有被遮住的列表高亮末尾项；末尾项名出现在面板上方。
+    let panel_y = (24 - panel_h - 1) as u16;
+    let mut above = String::new();
+    for y in 1..panel_y {
+        for x in 0..40u16 {
+            above.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(
+        above.contains("f19.txt"),
+        "末尾条目应在面板上方可见: {above}"
+    );
+}
+
+#[test]
 fn m457b_archive_yy_paste_extracts_to_focused_pane() {
     // M45-7b：归档虚拟目录 yy（成员）→ p 粘贴到焦点 pane 物理目录；
     // 逐成员解压、u 可逆、不写归档内。
