@@ -506,6 +506,7 @@ rvifm record  → 静默记录访问
   - ENH-4 的 R/:rename $EDITOR 多选已实现于 M13-6 cw → R 复用 cw 管线，I/cc/A 为新增光标定位变体。
   - FIX-6：directory_preview 已存在（M11-2），但用户实测报"无法读取"——缺陷在视图层分流（view_mode 或右 pane 路径），登记为修复。
   - FIX-7：preview_kind 有 Office/Pdf 分流，但实测仍报错——同上，视图层分流缺陷。
+
   - FIX-8 根因：`system_open` 用 `Command::status()` 继承 GUI 程序 stderr（winit_wayland 警告直漏终端）→ 修复 Stdio::null。
   - FIX-9/ENH-8 记录补全与 GAP-2（退出批量刷写）互补：F9/E8 是实时 record 调用点。
 - **降级规则**（用户指定）：F5 超 5 轮缩到"仅当前目录刷新"；F9/记录补全缩到"仅目录进入记录"。
@@ -781,6 +782,7 @@ rvifm record  → 静默记录访问
 
 - **背景**：HEAD（dee51d4）为执行中断的 M27-3 提交，用户要求验证正确性。验证结论：**提交含 3 处缺陷 + 连带发现 2 处更早批次的潜伏缺陷**，全部本轮修复。根因共性：Windows 本机门禁不编译 `cfg(unix)` 测试代码（M12-2 教训再现×2），且 AUDIT-7 起本机 `cargo test` 因 opener E0369 根本无法编译——"357 单测双环境绿"的 STATE 陈述对 ubuntu 侧不成立，本轮起恢复以实际全量运行为准。
 - **M27-3 缺陷**：① `render_page_png_with` spawn 用硬编码 `"mutool"`/`"pdftoppm"` 而非注入的程序路径——`ext` 注入形同虚设，测试假工具永远不执行（连带：假工具测试 expect 失败毒化全局缓存锁，级联其余缓存测试）；② "预览切换清理"只替换同 key 条目，换目标时旧 PDF 临时 PNG 留在磁盘——改为插入新 key 时 purge 其它路径（缓存同时只保留当前目标）；③ render 层提示分支反逻辑：`pngs.len()>=2 && 高度不足` 时**无提示**（违反"至少显示第 1 页并提示"），`pngs.len()<2` 时误报"高度不足"（实为第 2 页生成失败/单页文档）——抽出 `pdf_overflow_note(pages, pngs_len)` 纯函数区分两种文案并单测。
+
 - **潜伏缺陷（更早批次）**：① AUDIT-7 的 `open_with_layers_falls_through_use_list_on_spawn_failure` 断言 `r == Ok(None)`——`io::Error` 无 PartialEq，Linux 下 E0369 编译失败（cfg(unix) 行在 Windows 从未编译）；改 `!matches!(r, Ok(Some(_)))` 同语义。② **M27-1 的符号链接跟随判定实际无效**：`DirEntry::metadata()` 与 `file_type()` 同为 lstat 语义（不穿越链接），`entry.metadata().is_dir()` 对 link-to-dir 恒 false——M27-1 的 unix 测试从未编译运行故未发现；改 path 版 `std::fs::metadata(entry.path())`（load_entries + build_tree_entries 两处 + meta 跟随取值），本机独立程序复现后修复，m271 测试随修复通过。该测试另有一处自伤：测试直改 `location` 绕过 navigate_to，残留 `on_parent_row=true` 使第二次 open_selected 正确走了 `..` 返回分支——测试补 `on_parent_row=false`（模拟 navigate_to 复位，生产行为无误）。
 - **测试补齐（对照 ACCEPTANCE §27 M27-3 六项）**：pages=0 关闭不写缓存 / 假工具注入生成两页 / 第 2 页失败保留第 1 页 / Text+prefer_image=true 仍生成 / 切换 purge / 退出 cleanup（幂等）/ overflow 文案三分支 / [preview] 表解析与缺省。假工具 = 注入路径的 sh 脚本（mutool 分支 $3=输出 $5=页号，顺带验证逐参数传递）；VISUAL_CACHE 进程级全局——pdf.rs 缓存类测试统一 `cache_lock()` 串行（M13-10 同款）；AUDIT-2 旧 len 断言改 purge 无关形态。
 - **环境边界**：本机 rustc 1.95.0，`exprim@0.4.0` 需 1.97——`cargo check --features pdf-visual` 本机不可执行，维持 CI 门禁（AGENTS §7 口径）；本轮未改动 `cfg(feature="pdf-visual")` 代码。门禁实测：385 单测 + 8 集成全绿（连续 4 次全量稳定）、clippy all-targets 干净、fmt 无改动、`--version/--help` 通过。
@@ -1054,6 +1056,7 @@ rvifm record  → 静默记录访问
 
 - **四面结论**：ubuntu/macos build、windows test、audit 三面在 0e232c7（M40-6）已绿（匿名 GitHub API job/step 级核实；E0631 确系 M40-6 前修复 + rust-cache 陈旧混合，M40-6 后未再复现）；仅剩 fuzz build 一面红。
 - **fuzz 根因（两处，fuzz 工作区从未在任何环境编译过——Windows 无 nightly/cargo-fuzz，CI 注解被淹没）**：① `fuzz_paths.rs` 引用 `rvifm::app::exec::normalize_lexical`，M40-2 只 pub 了函数没 pub 模块（E0603 module `exec` is private）→ `src/app/mod.rs` `mod exec` → `pub mod exec`（模块内其余项均 pub(crate)，对外实际仅暴露该函数）；② `fuzz_targets/common.rs` `fsx` 缺 `mut`（E0596，`ArchiveFs::list/read` 取 `&mut self`）。
+
 - **注解误报教训**：CI fuzz annotate 的 `grep -E "error"` 把 crate 名含 "error" 的行（quick-error、thiserror-impl）连 -A4 上下文一起注解，真实错误文本（E0603/E0596）不在注解中——注解通道对 fuzz job 无诊断价值，本次靠 Linux 本地复现定位。
 - **顺带删除**：`src/remote/sftp.rs` tests 模块死函数 `backend()`（M39-4 改 auth-tolerant 后无人调用）——本地 Arch rustc 1.99.1 的 dead-code 比 CI stable（≥1.100）更严，仅本地 clippy -D warnings 报错；CI 与本地结论以 CI 为准（STATE 门禁段已记）。
 - **fuzz/Cargo.lock 转为提交**：原被 cargo-fuzz 模板 .gitignore 忽略，CI fuzz job 每次全新 resolve——锁定解析消除漂移红风险（1.0 前收口）。
@@ -1167,3 +1170,17 @@ rvifm record  → 静默记录访问
   发现；不进 harness_check 自动检查）。
 - **验收**：499 单测（m43_1 放行/热键/滚动渲染 + m43_2 requires 解析）+ 12
   集成 + 门禁全绿/轮；harness_check 过。CI 结论以 tag 推送为准。
+
+### 2026-11-23 — M44 预览焦点修复（1.1.0）
+
+- **WHY 独立 `preview_focus` 而非扩展 `Focus` 枚举**：既有两个 pane 的焦点语义
+  （Left/Right）被渲染、鼠标命中、命令作用域大量复用；把预览作为第三种 Focus
+  会强迫所有 match 分支重审。`preview_focus: bool` 只回答"按键是否路由给查看器"，
+  预览位置仍由既有"渲染在非焦点 pane"规则推导。
+- **WHY 跟随在绘制前统一刷新**：光标可由 j/k、gg/G、目录切换、搜索结果、鼠标、
+  命令等多种路径改变；逐路径调用易漏。事件循环在每帧 `draw` 前调用
+  `refresh_viewer_follow()`，单一入口覆盖全部路径；同一文件仅钳制滚动，换文件
+  按新文件重建（保持 grep 命中定位语义）。
+- **WHY 版本 1.1.0 且不发 crates.io**：M42/M43 为新增功能、M44 为交互修复，
+  semver minor；用户 2026-11-23 明确要求只发布 GitHub Release，crates.io 仍停在
+  1.0.0。

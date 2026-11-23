@@ -1321,6 +1321,7 @@ pub(crate) fn remote_navigate(state: &mut AppState, path: &std::path::Path) -> R
             mtime: i.mtime,
         })
         .collect();
+
     tab.cursor = 0;
     tab.scroll = 0;
     tab.on_parent_row = false;
@@ -2525,6 +2526,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // --apply 执行。
             let mut applied = 0usize;
             let mut failures: Vec<String> = Vec::new();
+
             let tab_id = state.active;
             for name in &to_copy {
                 let (src, dst) = if direction == "left-to-right" {
@@ -3614,14 +3616,15 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let on = state.active_tab_mut().toggle_view();
             Ok(ExecOutcome::Done {
                 msg: Some(if on {
-                    "view: 完整内容视图开启".to_owned()
+                    "view: 预览已开启（Tab 进入预览）".to_owned()
                 } else {
-                    "view: 已恢复摘要预览".to_owned()
+                    "view: 已关闭预览".to_owned()
                 }),
             })
         }
         Some(cmd @ ("select" | "unselect")) => {
             // M13-2：按 pattern 批量选择/取消（对齐 vifm :select/:unselect）。
+
             // 无参 = 仅当前光标条目；unselect 无参 = 清空全部。
             let pattern = parts.next();
             let select = cmd == "select";
@@ -4917,6 +4920,7 @@ pub(crate) fn undo_last(state: &mut AppState, msg: &mut Option<String>) {
         match result {
             Ok(()) => {
                 *msg = Some(format!("已撤销: {}", op.describe()));
+
                 if let Some(p) = current_remote_path(state) {
                     let _ = remote_navigate(state, &p);
                 }

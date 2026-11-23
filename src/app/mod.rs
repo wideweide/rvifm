@@ -651,6 +651,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
             let list_h = left_list_area(state.config.ui.pane_borders, left).height as usize;
             state.active_tab_mut().sync_viewport_scroll(list_h);
         }
+        // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
+        // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。
+        state.active_tab_mut().refresh_viewer_follow();
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
         let viewport_h = terminal.size()?.height.saturating_sub(1);
@@ -1107,6 +1110,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 *pos -= 1;
                                 *input = chars.into_iter().collect();
                             }
+
                             KeyCode::Delete if *pos < chars.len() => {
                                 chars.remove(*pos);
                                 *input = chars.into_iter().collect();

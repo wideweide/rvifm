@@ -422,6 +422,10 @@ pub struct Tab {
     /// view 模式（M13-9/M14-1）：右 pane 显示活动 pane 光标文件的完整
     /// 内容预览（false = 右 pane 显示目录列表）。
     pub view_mode: bool,
+    /// M42：预览窗格焦点——`w`/`:view` 开启后仍为 false（焦点留在原
+    /// pane，j/k 移动光标、对侧预览跟随）；`Tab` 显式进入预览窗格后为
+    /// true，此时按键路由给查看器（滚动/搜索），`Tab` 返回原 pane。
+    pub preview_focus: bool,
     /// 右 pane（M14-1）：独立目录列表（独立 Location/光标/滚动）。
     pub right: Pane,
     /// 焦点 pane（M14-1）：Tab 键切换；导航与文件操作作用于焦点 pane。
@@ -524,6 +528,8 @@ pub struct ViewerState {
     pub hex: bool,
     /// M39-2：PDF 查看器当前页（0-based；`[`/`]` 翻页）。
     pub page: u32,
+    /// M42：当前查看的目标文件（预览跟随：光标换文件时据此判断重建）。
+    pub path: Option<std::path::PathBuf>,
 }
 
 /// M39-1：二进制判定——前 8KB 含 NUL 字节即视为二进制（hex 查看器进入）。
@@ -560,6 +566,7 @@ impl Tab {
             char_search: None,
             tree: None,
             view_mode: false,
+            preview_focus: false,
             // M14-1：右 pane 默认同目录（vifm 启动行为），独立导航。
             right: Pane::from_physical(dir, config)?,
             focus: Focus::Left,
@@ -1086,51 +1093,83 @@ impl Tab {
 
     /// 切换 view 模式（M13-9）：预览窗格在摘要预览与完整内容视图间切换。
     /// 返回切换后的状态（true = 完整视图开启）。
+    /// M42：开关预览不改变焦点 pane——焦点留在原 pane，`Tab` 才显式进入
+    /// 预览窗格；这样原 pane 的 j/k 仍切换文件，对侧预览自动跟随。
     pub fn toggle_view(&mut self) -> bool {
         self.view_mode = !self.view_mode;
+        self.preview_focus = false;
         if self.view_mode {
-            // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
-            // M39-1：二进制文件（前 8KB 含 NUL）→ hex 模式（16 字节/行，
-            // 总行数 = ceil(size/16)，滚动走同一行机制、内容分块读取）。
-            let hex = self.preview_path().is_some_and(|p| looks_binary(&p));
-            let hit_line = if hex {
-                None
-            } else {
-                self.results
-                    .as_ref()
-                    .and_then(|r| r.items.get(self.cursor))
-                    .and_then(|i| i.line)
-            };
-            let (capped, total) = if hex {
-                let size = self
-                    .preview_path()
-                    .and_then(|p| std::fs::metadata(p).ok())
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let total = size.div_ceil(16) as usize;
-                (total, total)
-            } else {
-                self.viewer_lines()
-                    .map(|(lines, total)| (lines.len(), total))
-                    .unwrap_or((0, 0))
-            };
-            let scroll = hit_line
-                .map(|l| l.saturating_sub(2))
-                .unwrap_or(0)
-                .min(capped.saturating_sub(1));
-            self.viewer = Some(ViewerState {
-                scroll,
-                line_count: capped,
-                total_lines: total,
-                query: None,
-                match_line: 0,
-                hex,
-                page: 0,
-            });
+            self.activate_viewer();
         } else {
             self.viewer = None;
         }
         self.view_mode
+    }
+
+    /// M42：按当前焦点 pane 的光标文件初始化/重建查看器（toggle 开启与
+    /// 光标换文件时共用）。
+    fn activate_viewer(&mut self) {
+        let target = self.preview_path();
+        // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
+        // M39-1：二进制文件（前 8KB 含 NUL）→ hex 模式（16 字节/行，
+        // 总行数 = ceil(size/16)，滚动走同一行机制、内容分块读取）。
+        let hex = target.as_ref().is_some_and(|p| looks_binary(p));
+        let hit_line = if hex {
+            None
+        } else {
+            self.results
+                .as_ref()
+                .and_then(|r| r.items.get(self.cursor))
+                .and_then(|i| i.line)
+        };
+        let (capped, total) = if hex {
+            let size = target
+                .as_ref()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let total = size.div_ceil(16) as usize;
+            (total, total)
+        } else {
+            self.viewer_lines()
+                .map(|(lines, total)| (lines.len(), total))
+                .unwrap_or((0, 0))
+        };
+        let scroll = hit_line
+            .map(|l| l.saturating_sub(2))
+            .unwrap_or(0)
+            .min(capped.saturating_sub(1));
+        self.viewer = Some(ViewerState {
+            scroll,
+            line_count: capped,
+            total_lines: total,
+            query: None,
+            match_line: 0,
+            hex,
+            page: 0,
+            path: target,
+        });
+    }
+
+    /// M42：预览跟随——焦点留在原 pane 时，光标移动/目录切换后把对侧预览
+    /// 切到当前光标文件；同一文件只钳制滚动位置（保留滚动）。
+    pub fn refresh_viewer_follow(&mut self) {
+        if !self.view_mode || self.preview_focus {
+            return;
+        }
+        let target = self.preview_path();
+        if self.viewer.as_ref().and_then(|v| v.path.clone()) == target {
+            let max = self
+                .viewer
+                .as_ref()
+                .map(|v| v.line_count.saturating_sub(1))
+                .unwrap_or(0);
+            if let Some(v) = self.viewer.as_mut() {
+                v.scroll = v.scroll.min(max);
+            }
+        } else {
+            self.activate_viewer();
+        }
     }
 
     /// M17 VIEW-1：查看器内容行（激活时一次性读取；上限 10 万行）。
@@ -1329,6 +1368,7 @@ impl Tab {
     /// 退出树视图（M13-7）：恢复平铺目录列表。
     pub fn exit_tree(&mut self) -> std::io::Result<()> {
         self.tree = None;
+
         let cfg = Config::default();
         let _ = self.refresh(cfg);
         Ok(())
@@ -2325,6 +2365,7 @@ mod tests {
             char_search: None,
             tree: None,
             view_mode: false,
+            preview_focus: false,
             right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
@@ -2438,6 +2479,7 @@ mod tests {
             char_search: None,
             tree: None,
             view_mode: false,
+            preview_focus: false,
             right: Pane::from_physical(Path::new("."), Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
@@ -2595,6 +2637,7 @@ mod proptests {
             p in "[a-z0-9._]{0,12}",
             n in "[a-z0-9._]{0,12}",
         ) {
+
             let expected = p.to_lowercase() == n.to_lowercase();
             prop_assert_eq!(glob_match(&p, &n), expected);
         }

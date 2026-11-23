@@ -457,6 +457,7 @@
 - [x] M37-3 `:sync` 目录同步（dry-run、删除显式开关；见 SPEC M37-3；2026-11-21 完成：l2r/r2l + --apply/--delete + dry-run 缺省，446 单测；三策略 deferred——复选框漂移修正 2026-11-21，STATE/NOTES 均记 M37 7/7 关闭，见 NOTES）
 - [x] M37-4 `:du` 磁盘占用视图（并行、可取消、top-N；见 SPEC M37-4；2026-11-21 完成：10k 上限顺序遍历 + top-5，449 单测）
 - [x] M37-5 `:dup` 查重（三段哈希、硬链接识别、结果可操作；见 SPEC M37-5；2026-11-21 完成：SHA-256 精确比对 + 分组报告；inode 裁剪）
+
 - [x] M37-6 `:checksum` 生成/校验（并行、sidecar 兼容；见 SPEC M37-6；2026-11-21 完成：md5 sidecar md5sum 兼容）
 - [x] M37-7 暂存区增强（容量/清空/按时间清理/恢复到指定路径；见 SPEC M37-7；2026-11-21 完成：:trash clear/purge，450 单测；容量配置与恢复到指定路径裁剪）
 
@@ -535,6 +536,11 @@
 
 - [x] REL-1 发布两通道解耦（GitHub Release 自动 / crates.io publish 人工发起；AGENTS §3 自动发布段修订；2026-11-22 完成；清单门形态当日撤销，见 REL-2）
 - [x] REL-2 门禁简化（删除 RELEASE_CHECKLIST.md；SPEC REL/AGENTS §3·§10/PLAN §4/ACCEPTANCE §16 stub 改写为"publish 仅人工发起 + `:tutor` 自验"；2026-11-22 完成）
+
+## M44 — 预览焦点修复（2026-11-23 增补；用户指令）
+
+- [x] M44-1 `w`/`:view` 焦点保持 + 光标跟随 + `Tab` 进入/返回 + 关闭恢复（见 SPEC M44；2026-11-23 完成：`Tab.preview_focus` + `refresh_viewer_follow` + 3 个回归用例；500 单测）
+- [x] M44-2 文档同步与 1.1.0 GitHub Release（crates.io 不发布；见 SPEC M44；2026-11-23 完成）
 
 ## 排队缺口（2026-11-15 M16 实施中发现，见 NOTES 同日条目）
 

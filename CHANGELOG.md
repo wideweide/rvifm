@@ -3,7 +3,12 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [1.1.0] — 2026-11-23
+
+1.1 版本：tutor 导师模式（M42/M43）+ 预览焦点修复（M44）。crates.io 不发布，仅 GitHub Release 分发。
+
+**预览焦点修复**
+- `w`/`:view` 开启预览不再移动焦点：原 pane `j/k` 切换文件，对侧预览自动跟随当前文件；`Tab` 显式进入预览窗格滚动/搜索，再 `Tab` 返回原 pane；关闭预览后焦点与原键位表保持不变。
 
 **导师模式（M42）**
 - `:tutor` 导师模式：TUI 内交互式教程+自验清单（单一模式，两用）。底部 Tutor Panel（左 prompt/expected、右进度与按键提示），y=掌握 / n=未掌握记错题本 / q 退出保存；模块完成后 Panel 内结算。

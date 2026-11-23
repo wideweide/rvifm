@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v1.0.0 发布（M0–M40 全部完成，CHANGELOG 批次并入；0.9.0/0.10.0 跳过、0.11.0/0.11.1 先行上线，见 CHANGELOG）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v1.1.0 发布（M0–M44 全部完成，CHANGELOG 批次并入；0.9.0/0.10.0 跳过、0.11.0/0.11.1 先行上线，见 CHANGELOG）。** 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -248,6 +248,8 @@ append_rules = [
 | M32 | 远端健壮性与会话扩展（重连/.part） | 已完成（2026-11-20，4/4） |
 | M33 | 键位模式分层扩展（`[visual]`/`[view]`） | 已完成（2026-11-20，3/3） |
 | M34 | 主题、预览统一与文档（默认 gruvbox/snowwhite/右 pane 搜索/对侧预览/jar/信息面板/GUIDE/尺寸适配） | 已完成（2026-11-21，10/10） |
+| M42–M43 | `:tutor` 导师模式与全功能覆盖（13 模块 100 项 / 透明放行 / Ctrl 标记） | 已完成（1.1.0） |
+| M44 | 预览焦点修复（`w`/`:view` 焦点保持 + 光标跟随 + `Tab` 进入/返回） | 已完成（1.1.0） |
 
 **优先保证 M0–M2 闭环**，尤其是 `u` 撤销的可逆语义。M0–M6 构成 v0.1.0 核心版本；M7–M11 是在核心可用之后逐步叠加的增强，不阻塞 v0.1.0 发布。
 

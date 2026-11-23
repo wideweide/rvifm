@@ -481,6 +481,7 @@ redb 三表，无后台守护进程：
 - **M25-7 frecency 通用化评估**（评估任务，不实现）：评估命令历史/路径补全迁移到 frecency 记录评分体系——记录与评分查询方法泛化（EntryKind 扩展命令类事件、命令书签 = keyword 事件泛化、补全候选 = 目录数据 + 当前路径邻近加权）的可行性、schema 影响、迁移成本；结论与边界入 NOTES；若可行给出下一批次任务建议。
 
 **SIMPLIFIED**
+
 - M25-1：会话文件不存归档/远端视图、不存 marks；无备份/迁移机制。
 - M25-2：marks 持久化在 frecency redb（与 bookmark 同源），不设 session.toml 存储；合法字符不含符号。
 - M25-3：目录递归打包，软链接按链接本身收录；打包条目数/总大小无上限护栏（用户显式发起）。
@@ -1147,6 +1148,7 @@ append_rules = [
 - **M36-3 `RemoteFs` 范围读写**：`read_range(path, offset, len)` / `write_range(path, offset, data)` 默认实现 = `read`+截拼/整写（兼容 mock 与现有后端）；SftpBackend 覆盖为真范围调用。
 - **M36-4 `Transfer` 状态机**：Pending/Running/Paused/Done/Failed/Cancelled 统一状态 + 进度；复用 `Job`/`JobProgress`/`JobControls`；`paste_yanked*` 三方向（本地/上传/下载）路由到 Transfer。
 - **M36-5 冲突策略**：Ask / Overwrite / Skip / RenameAuto / KeepNewer；策略为纯函数；"应用到全部"；Ask 为覆盖确认对话框扩展。
+
 - **M36-6 偏移续传**：`.part` + `.part.meta`（offset/size/mtime/分块哈希）；`write_range` 续写；完成原子 rename；取消清理；哈希不一致从头。
 - **M36-7 传输队列 `:queue`**：多选入队、顺序执行、全部暂停/恢复/取消、失败重试；TUI 退出可选持久化（`session.toml` 同目录）。
 - **M36-8 递归远端目录**：list walk + `create_dir` + 逐文件 Transfer；链接策略（跟随/跳过）；三方向（本地↔远端、远端↔远端经本地中转）。
@@ -1321,6 +1323,23 @@ append_rules = [
 **OUT_OF_SCOPE**
 - 写路径 sandbox 重定向；环境自动探测；逐条自动判定对错；学习/测试双模式；
   间隔重复调度；报告文件。
+
+## M44 — 预览焦点修复（2026-11-23 增补；用户指令，见 NOTES 同日条目）
+
+> 目标：修复 `w` / `:view` 预览模式的焦点行为——开启预览后焦点留在原 pane，
+> 原 pane 的 `j/k` 继续切换文件、对侧预览自动跟随；`Tab` 显式进入预览窗格
+> 滚动/搜索，再 `Tab` 返回；关闭预览焦点不变。
+
+**MUST**
+- **M44-1 焦点与跟随**：`w` / `:view` 开关预览不得改写 `Tab.focus`；`Tab.preview_focus` 仅在预览窗格内为 true。焦点在原 pane 时 `j/k`、`gg/G`、`Ctrl-u/d`、目录切换与搜索结果移动必须使对侧预览同步到当前光标文件（同一文件保留滚动，换文件重置到顶部/命中行）；预览窗格内 `Tab` 返回原 pane，`w`/`Esc`/`q` 关闭预览并恢复 normal 键位表。
+- **M44-2 验收与文档**：ACCEPTANCE §44 逐项通过；GUIDE/CHANGELOG/README/harness 文档同步；CI 三平台绿后随 1.1.0 发布（crates.io 不发布，用户 2026-11-23 指令）。
+
+**SIMPLIFIED**
+- 预览跟随在每帧绘制前统一刷新（不做文件监听）；同一路径的外部修改不主动重载，仅光标换文件时重建。
+- 预览焦点是 `Tab` 上的布尔状态，不扩展 `Focus` 枚举，避免影响既有左右 pane 语义。
+
+**OUT_OF_SCOPE**
+- 鼠标在预览窗格内滚动/搜索；预览窗格独立历史；文件内容热更新监听。
 
 ## REL — 发布流水线解耦（2026-11-22 增补；同日用户裁决修订：门禁简化为人工发起，见 NOTES）
 

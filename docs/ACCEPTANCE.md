@@ -712,6 +712,7 @@
 - [x] `<` 条目 `do` → 删除当前侧条目（可恢复路径 = 应用内暂存 + 撤销栈、`u` 可逆）；`>` 条目 → 可读拒绝（当前侧无此文件）。（2026-11-20：compare_sync obtain 分支复用 execute_delete；m292 删除/暂存恢复/重建断言——唯一副本删除后从结果消失）
 - [x] `!`（两侧不同）与 `=`（相同）条目上 dp/do → 可读拒绝（不支持覆盖同步——SIMPLIFIED，见 SPEC/NOTES）。（2026-11-20：m292 四类拒绝断言）
 - [x] 操作后对比结果按原模式自动重建（前缀变化正确；`u` 撤销后结果为静态快照、重跑 `:compare` 刷新）。（2026-11-20：run_compare 复用；compare 加入结果视图重执行豁免名单；m292 消息合并断言）
+
 - [x] 非对比视图（普通视图/其它结果视图）dp/do → 可读拒绝。（2026-11-20：compare_sync kind 守卫 + m292 退出视图断言）
 
 ### M29-3 M29 文档收尾
@@ -1000,3 +1001,8 @@
 - [ ] M43-2 requires 字段解析（逗号分隔多 token）；含 requires 条目 Panel 显示环境依赖提示行；无字段条目不受影响。（m43_2 测试）
 - [ ] M43-3/4/5 13 模块 ~85 项内容与实际键位/命令语义一致（逐条对照代码）；builtin_modules_parse_and_unique 固化；危险命令条目含「了解即可」标注；file_ops/maintenance 首条目含 sandbox 引导。
 - [ ] M43-6 GUIDE/help/README/CHANGELOG 同步；SPEC 内 tutor 条目维护规则条目存在；批次文档同步。
+
+## 44. M44 — 预览焦点修复（见 SPEC M44 节）
+
+- [x] M44-1 `w`/`:view` 开启预览后焦点留在原 pane；`j/k` 切换文件且对侧预览跟随（换文件重建、同文件保留滚动）；`Tab` 进入预览后 `j/k` 滚动、`Tab` 返回；`w`/`Esc` 关闭后焦点与键位表恢复。（2026-11-23：m42_* 三用例 + view/m21e2/m39_2 回归，500 单测）
+- [x] M44-2 GUIDE/CHANGELOG/README/SPEC/PLAN/TASKS/STATE/NOTES 同步；`cargo clippy --all-targets` 绿；GitHub Release 1.1.0（crates.io 不发布）。（2026-11-23）

@@ -30,6 +30,19 @@ fn press_msg(
     handle_key(state, input, msg, KeyEvent::new(code, mods), 10)
 }
 
+/// 测试辅助：模拟事件循环——按键后同步预览跟随（生产代码在绘制前调用）。
+fn press_follow(
+    state: &mut AppState,
+    input: &mut InputState,
+    msg: &mut Option<String>,
+    code: KeyCode,
+    mods: KeyModifiers,
+) -> Outcome {
+    let out = press_msg(state, input, msg, code, mods);
+    state.active_tab_mut().refresh_viewer_follow();
+    out
+}
+
 fn make_state(n: usize) -> (TempDir, AppState) {
     let tmp = TempDir::new().unwrap();
     for i in 0..n {
@@ -62,6 +75,7 @@ fn tab_at(path: &str) -> Tab {
         right: crate::tab::Pane::from_physical(Path::new("."), Config::default()).unwrap(),
         focus: Default::default(),
         view_mode: false,
+        preview_focus: false,
         on_parent_row: false,
         name: None,
     }
@@ -1485,6 +1499,7 @@ fn m303_completion_candidates_weighted() {
             mtime: 0,
         },
         crate::tab::FileItem {
+
             icon: crate::icons::icon_for_active(&tmp.path().join("mid")),
             name: "mid".to_owned(),
             is_dir: true,
@@ -2851,6 +2866,7 @@ fn m34_4_view_renders_in_opposite_pane() {
     };
 
     // 焦点右 + view：查看器（bb.txt 内容）在左 pane；右 pane 保持列表。
+
     {
         let tab = state.active_tab_mut();
         tab.focus = crate::tab::Focus::Right;
@@ -4280,6 +4296,7 @@ fn archive_search_reuses_m4_chain() {
             is_dir: true,
             is_link: false,
             is_exec: false,
+
             size: 0,
             perm: String::new(),
             mtime: 0,
@@ -4637,6 +4654,9 @@ fn view_mode_toggle_switches_preview_completeness() {
         KeyModifiers::NONE,
     );
     assert!(state.active_tab().view_mode);
+    // M42：w 不移动焦点；预览焦点只在显式 Tab 时进入。
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+    assert!(!state.active_tab().preview_focus);
     terminal
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
@@ -4652,7 +4672,15 @@ fn view_mode_toggle_switches_preview_completeness() {
         "view 模式从文件头渲染: {all}"
     );
 
-    // M17 VIEW-1：查看器内 j 滚动视口（列表光标不动）。
+    // M42：Tab 显式进入预览窗格后，j 才滚动查看器视口。
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().preview_focus, "Tab 进入预览焦点");
     press_msg(
         &mut state,
         &mut input,
@@ -5623,6 +5651,7 @@ fn m39_6_layout_modes_tabname_and_overflow() {
     ));
     assert!(pane_covered_by_viewer(
         LayoutMode::Dual,
+
         true,
         crate::tab::Focus::Left,
         crate::tab::Focus::Right
@@ -5687,6 +5716,9 @@ fn m39_2_pdf_viewer_page_flip_keys() {
     state.active_tab_mut().cursor = idx;
     state.active_tab_mut().toggle_view();
     let mut input = InputState::default();
+    // M42：Tab 进入预览窗格后 `[`/`]` 才作用于查看器。
+    press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(state.active_tab().preview_focus);
     assert_eq!(state.active_tab().viewer.as_ref().unwrap().page, 0);
     press(
         &mut state,
@@ -7008,6 +7040,7 @@ fn m181_sort_dialog_keys_apply_and_close() {
     }
     // 应用后排序生效（mtime 平手回退名称：a.doc 在前）。
     assert_eq!(state.active_tab().entries[0].name, "a.doc");
+
     // 状态栏指示数据源（首字段）。
     let sort = state.active_tab().sort.clone().unwrap();
     assert_eq!(sort[0].field, crate::tab::SortField::Mtime);
@@ -8367,6 +8400,7 @@ fn m21f6_dir_preview_empty_and_non_utf8_names_no_panic() {
     {
         use std::os::unix::ffi::OsStrExt;
         let misc = tmp.path().join("misc");
+
         fs::create_dir(&misc).unwrap();
         fs::write(
             misc.join(std::ffi::OsStr::from_bytes(b"n\xff\xff.txt")),
@@ -8754,10 +8788,77 @@ fn m21e2_w_preview_cycle_follows_and_restores() {
         KeyModifiers::NONE,
     );
     assert!(state.active_tab().view_mode, "w 开启视图模式");
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Left,
+        "M42：w 后焦点留在左 pane"
+    );
+    assert!(!state.active_tab().preview_focus);
     let buf = draw(&state);
     assert!(right_text(&buf).contains("line-01"), "右 pane 预览文件内容");
 
-    // j/k：查看器滚动跟随（列表光标不动，VIEW-1 语义）。
+    // M42：焦点仍在左 pane——j/k 切换文件，对侧预览自动跟随。
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 1, "j 移动原 pane 光标");
+    assert_eq!(
+        state
+            .active_tab()
+            .viewer
+            .as_ref()
+            .unwrap()
+            .path
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "b.txt",
+        "预览跟随到 b.txt"
+    );
+    let buf = draw(&state);
+    assert!(
+        !right_text(&buf).contains("line-01"),
+        "跟随 b.txt 后无 a.txt 内容"
+    );
+
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('k'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 0, "k 回到 a.txt");
+    assert_eq!(
+        state
+            .active_tab()
+            .viewer
+            .as_ref()
+            .unwrap()
+            .path
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "a.txt"
+    );
+    let buf = draw(&state);
+    assert!(right_text(&buf).contains("line-01"), "k 后预览跟随回 a.txt");
+
+    // M42：Tab 进入预览窗格后 j 滚动查看器（列表光标不动）。
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().preview_focus, "Tab 进入预览焦点");
     press_msg(
         &mut state,
         &mut input,
@@ -8765,6 +8866,7 @@ fn m21e2_w_preview_cycle_follows_and_restores() {
         KeyCode::Char('j'),
         KeyModifiers::NONE,
     );
+    assert_eq!(state.active_tab().cursor, 0, "预览焦点下光标不动");
     assert_eq!(
         state.active_tab().viewer.as_ref().unwrap().scroll,
         1,
@@ -8772,6 +8874,16 @@ fn m21e2_w_preview_cycle_follows_and_restores() {
     );
     let buf = draw(&state);
     assert!(!right_text(&buf).contains("line-01"), "滚动后首行移出视口");
+
+    // M42：预览窗格内 Tab 返回原 pane。
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(!state.active_tab().preview_focus, "Tab 返回原 pane");
 
     // 再按 w → 恢复右 pane 目录列表。
     press_msg(
@@ -8789,6 +8901,251 @@ fn m21e2_w_preview_cycle_follows_and_restores() {
         "右 pane 恢复目录列表: {restored}"
     );
     assert!(!restored.contains("line-01"), "不再显示文件内容");
+}
+
+#[test]
+fn m42_w_keeps_focus_and_preview_follows_cursor() {
+    // 验收：w 后焦点留在原 pane；j/k 切文件时对侧预览自动跟随。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "AAA-01\nAAA-02\n").unwrap();
+    fs::write(tmp.path().join("b.txt"), "BBB-01\nBBB-02\n").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+    let vname = |s: &AppState| {
+        s.active_tab()
+            .viewer
+            .as_ref()
+            .unwrap()
+            .path
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('w'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().view_mode);
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Left,
+        "w 后焦点留在原 pane"
+    );
+    assert!(!state.active_tab().preview_focus, "w 不进入预览焦点");
+    assert_eq!(vname(&state), "a.txt");
+
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 1, "原 pane j 切换文件");
+    assert_eq!(state.active_tab().viewer.as_ref().unwrap().scroll, 0);
+    assert_eq!(vname(&state), "b.txt", "预览自动跟随光标文件");
+
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('k'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 0);
+    assert_eq!(vname(&state), "a.txt");
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('w'),
+        KeyModifiers::NONE,
+    );
+    assert!(!state.active_tab().view_mode);
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Left,
+        "关闭预览后焦点不变"
+    );
+    assert!(!state.active_tab().preview_focus);
+}
+
+#[test]
+fn m42_tab_enters_preview_scrolls_then_returns() {
+    // 验收：Tab 进入预览 → j/k 滚动查看器；Tab 返回 → j/k 恢复切文件。
+    let tmp = TempDir::new().unwrap();
+    let mut content = String::new();
+    for i in 0..50 {
+        content.push_str(&format!("line {i:03}\n"));
+    }
+    fs::write(tmp.path().join("a.txt"), content).unwrap();
+    fs::write(tmp.path().join("b.txt"), "B\n").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('w'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().preview_focus, "Tab 进入预览焦点");
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 0, "预览焦点下不切文件");
+    assert_eq!(
+        state.active_tab().viewer.as_ref().unwrap().scroll,
+        1,
+        "预览焦点下 j 滚动内容"
+    );
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(!state.active_tab().preview_focus, "Tab 返回原 pane");
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().cursor, 1, "返回后 j 恢复切文件");
+    assert!(!state.active_tab().preview_focus);
+}
+
+#[test]
+fn m42_view_command_and_right_pane_keep_focus() {
+    // :view 同 w 不移动焦点；焦点在右 pane 时 w 预览在左、焦点留在右。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "AAA-01\n").unwrap();
+    let mut bcontent = String::new();
+    for i in 0..30 {
+        bcontent.push_str(&format!("BBB-{i:02}\n"));
+    }
+    fs::write(tmp.path().join("b.txt"), bcontent).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let _ = exec_command_impl(&mut state, "view").unwrap();
+    assert!(state.active_tab().view_mode);
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+    assert!(!state.active_tab().preview_focus);
+    let _ = exec_command_impl(&mut state, "view").unwrap();
+    assert!(!state.active_tab().view_mode);
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+    let vname = |s: &AppState| {
+        s.active_tab()
+            .viewer
+            .as_ref()
+            .unwrap()
+            .path
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('w'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().view_mode);
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Right,
+        "右 pane 开启预览后焦点不变"
+    );
+    assert!(!state.active_tab().preview_focus);
+    assert_eq!(vname(&state), "a.txt", "预览右 pane 光标文件");
+
+    press_follow(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().right.cursor, 1);
+    assert_eq!(state.active_tab().cursor, 0, "左 pane 光标不动");
+    assert_eq!(vname(&state), "b.txt", "预览跟随右 pane 光标");
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().preview_focus);
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.active_tab().viewer.as_ref().unwrap().scroll,
+        1,
+        "预览焦点下 j 滚动"
+    );
+    assert_eq!(state.active_tab().right.cursor, 1, "右 pane 光标不动");
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(!state.active_tab().preview_focus);
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
 }
 
 #[test]
@@ -9750,6 +10107,7 @@ fn m252_bmark_tag_validation() {
         Ok(_) => panic!("非法 tag 应拒绝"),
     }
     match exec_command_impl(&mut state, "bmark") {
+
         Err(e) => assert!(e.contains("缺少 tag"), "{e}"),
         Ok(_) => panic!("缺 tag 应拒绝"),
     }

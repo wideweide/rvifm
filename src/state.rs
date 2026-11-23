@@ -629,6 +629,7 @@ mod tests {
             tags: HashSet::new(),
             char_search: None,
             view_mode: false,
+            preview_focus: false,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),
@@ -658,6 +659,7 @@ mod tests {
             tags: HashSet::new(),
             char_search: None,
             view_mode: false,
+            preview_focus: false,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),

@@ -99,7 +99,7 @@ pub(crate) fn render_view_content(
             q
         ),
         None => format!(
-            "{trunc_hint}{shown} · 行 {}/{}（w/Esc 退出 / 搜索）",
+            "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
             viewer.scroll + 1,
             viewer.line_count
         ),

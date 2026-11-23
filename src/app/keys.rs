@@ -406,9 +406,9 @@ pub(crate) fn handle_right_key(
             // view 切换：右 pane 目录列表 ↔ 预览视图（M13-9 语义保持）。
             let on = tab.toggle_view();
             *msg = Some(if on {
-                "view: 预览视图（活动 pane 光标文件）".to_owned()
+                "view: 预览已开启（Tab 进入预览）".to_owned()
             } else {
-                "view: 已恢复目录列表".to_owned()
+                "view: 已关闭预览".to_owned()
             });
         }
         KeyCode::Char('d' | 'D' | 'c') if !ctrl => {
@@ -1155,17 +1155,45 @@ pub(crate) fn handle_key(
         None
     }
 
-    // M17 VIEW-1：查看器激活时按键路由——滚动/搜索/退出全部作用于
-    // 查看器（列表光标不动）；`:` 放行进入命令模式。
-    if state.active_tab().viewer.is_some() {
+    // M42：只有显式 `Tab` 进入预览窗格（preview_focus）时，按键才路由给
+    // 查看器（滚动/搜索）；焦点留在原 pane 时按键照常作用于目录列表，
+    // 对侧预览由 refresh_viewer_follow 跟随光标。
+    //
+    // M42：view 模式开着、焦点仍在原 pane 时，Tab/Space 显式进入预览窗格
+    // （按键随后路由给查看器）；预览窗格内的 Tab 由下方分支返回。
+    if state.active_tab().view_mode
+        && state.active_tab().viewer.is_some()
+        && !state.active_tab().preview_focus
+        && matches!(key.code, KeyCode::Tab | KeyCode::Char(' '))
+    {
+        input.count = None;
+        state.active_tab_mut().preview_focus = true;
+        input.switch_mode_map(Some("view"));
+        *msg = Some("view: 焦点进入预览（Tab 返回）".to_owned());
+        return Outcome::Continue;
+    }
+
+    // M17 VIEW-1：查看器内滚动/搜索/退出全部作用于查看器（列表光标不动）；
+    // `:` 放行进入命令模式。
+    if state.active_tab().viewer.is_some() && state.active_tab().preview_focus {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let half = (viewport_h.saturating_sub(1) / 2).max(1) as usize;
         match key.code {
+            KeyCode::Tab => {
+                // M42：预览窗格内 Tab → 焦点返回原 pane（预览保持开启）。
+                input.count = None;
+                state.active_tab_mut().preview_focus = false;
+                input.switch_mode_map(None);
+                *msg = Some("view: 焦点返回目录列表（Tab 再次进入预览）".to_owned());
+                return Outcome::Continue;
+            }
             KeyCode::Char('w') | KeyCode::Esc | KeyCode::Char('q') => {
                 input.count = None;
+                input.switch_mode_map(None);
                 let tab = state.active_tab_mut();
                 tab.viewer = None;
                 tab.view_mode = false;
+                tab.preview_focus = false;
                 *msg = Some("已退出查看器".to_owned());
                 return Outcome::Continue;
             }
@@ -1232,6 +1260,7 @@ pub(crate) fn handle_key(
             KeyCode::Char(':') => {} // 放行：进入命令模式
             _ => {
                 input.count = None;
+
                 return Outcome::Continue; // 查看器消费其余按键（列表不动）
             }
         }
@@ -1602,15 +1631,14 @@ pub(crate) fn handle_key(
         }
         KeyCode::Char('w') => {
             // M13-9：view 模式切换（预览窗格完整内容视图 ↔ 摘要预览）。
-            // M33-2：进入/退出 view → 切换 per-mode 键位表（未配置不换）。
+            // M42：焦点保持在当前 pane；Tab 才进入预览窗格（per-mode 键位表
+            // 随之切换，未配置时不换）。
             input.count = None;
-            let entering = !state.active_tab().view_mode;
             let on = state.active_tab_mut().toggle_view();
-            input.switch_mode_map(if on && entering { Some("view") } else { None });
             *msg = Some(if on {
-                "view: 完整内容视图开启".to_owned()
+                "view: 预览已开启（Tab 进入预览）".to_owned()
             } else {
-                "view: 已恢复摘要预览".to_owned()
+                "view: 已关闭预览".to_owned()
             });
         }
         KeyCode::Char('p') | KeyCode::Char('P') => {
