@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 
 /// 浏览位置：物理目录或归档内虚拟路径（只读）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// M45-3e：派生 `Hash` 以作 per-location 光标记忆的键。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Location {
     Physical(PathBuf),
     /// `host` 为归档文件的物理路径，`inner` 为归档内路径；构造与导航在 M7 接入
@@ -330,9 +331,24 @@ pub struct Pane {
     pub entries: Vec<FileItem>,
     pub cursor: usize,
     pub scroll: usize,
+    /// M45-3e：per-location 光标记忆（离开记下、重返还原）。仅内存。
+    pub cursor_memory: std::collections::HashMap<Location, usize>,
 }
 
 impl Pane {
+    /// M45-3e：离开当前位置前记忆光标。
+    pub fn remember_cursor(&mut self) {
+        self.cursor_memory
+            .insert(self.location.clone(), self.cursor);
+    }
+
+    /// M45-3e：进入位置后还原记忆的光标（按当前条目数钳制）。
+    pub fn restore_cursor(&mut self) {
+        if let Some(&saved) = self.cursor_memory.get(&self.location) {
+            self.cursor = saved.min(self.entries.len().saturating_sub(1));
+        }
+    }
+
     /// 从物理目录构建 pane（加载排序条目，M5-2 options 生效）。
     pub fn from_physical(dir: &Path, config: Config) -> std::io::Result<Self> {
         Ok(Self {
@@ -340,6 +356,7 @@ impl Pane {
             entries: load_entries(dir, &config)?,
             cursor: 0,
             scroll: 0,
+            cursor_memory: std::collections::HashMap::new(),
         })
     }
 
@@ -371,28 +388,37 @@ impl Pane {
     }
 
     /// 进入光标条目（M14-1）：仅物理目录；文件/归档 no-op（SIMPLIFIED）。
+    /// M45-3e：离开前记忆，进入后还原（h→l 往返不丢光标）。
     pub fn enter_selected(&mut self, config: Config) -> std::io::Result<()> {
         if let Location::Physical(base) = &self.location {
             let Some(item) = self.entries.get(self.cursor) else {
                 return Ok(());
             };
             if item.is_dir {
-                self.location = Location::Physical(base.join(&item.name));
+                let target = Location::Physical(base.join(&item.name));
+                self.remember_cursor();
+                self.location = target;
                 self.cursor = 0;
                 self.scroll = 0;
-                return self.refresh(config);
+                self.refresh(config)?;
+                self.restore_cursor();
+                return Ok(());
             }
         }
         Ok(())
     }
 
     /// 返回父目录（M14-1，h；M21-F4 返回后光标定位在来源目录条目上）。
+    /// M45-3e：离开前记忆子目录光标（重返时还原）；父目录光标仍按 M21-F4
+    /// 定位在来源条目。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
         if let Location::Physical(base) = &self.location
             && let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty())
         {
             let leaf = base.file_name().map(|n| n.to_string_lossy().into_owned());
-            self.location = Location::Physical(parent.to_path_buf());
+            let parent_loc = Location::Physical(parent.to_path_buf());
+            self.remember_cursor();
+            self.location = parent_loc;
             self.cursor = 0;
             self.scroll = 0;
             self.refresh(config)?;
@@ -486,6 +512,9 @@ pub struct Tab {
     pub pane_frecency: Option<FrecencyPane>,
     /// M19-2：进入远端前的本地位置（`h` 在远端根目录时返回此地）。
     pub pre_remote: Option<Location>,
+    /// M45-3e：per-location 光标记忆（离开记下、重返还原，`h`→`l` 往返）。
+    /// 仅内存，不入会话序列化（SIMPLIFIED）；键为 Location 本身。
+    pub cursor_memory: std::collections::HashMap<Location, usize>,
 }
 
 /// M23-6：Frecency Pane 状态（焦点 pane 内嵌搜索，非浮层）。
@@ -575,6 +604,19 @@ pub(crate) fn looks_binary(path: &Path) -> bool {
 }
 
 impl Tab {
+    /// M45-3e：离开当前位置前记忆光标。
+    fn remember_cursor(&mut self) {
+        self.cursor_memory
+            .insert(self.location.clone(), self.cursor);
+    }
+
+    /// M45-3e：进入位置后还原记忆的光标（按当前条目数钳制）。
+    fn restore_cursor(&mut self) {
+        if let Some(&saved) = self.cursor_memory.get(&self.location) {
+            self.cursor = saved.min(self.entries.len().saturating_sub(1));
+        }
+    }
+
     /// 从物理目录构建标签：按配置加载并排序条目（M5-2 起 options 生效）。
     pub fn from_physical(dir: &Path, config: Config) -> std::io::Result<Self> {
         Ok(Self {
@@ -603,6 +645,7 @@ impl Tab {
             focus: Focus::Left,
             on_parent_row: false,
             name: None,
+            cursor_memory: std::collections::HashMap::new(),
         })
     }
 
@@ -625,6 +668,8 @@ impl Tab {
     pub fn navigate_to(&mut self, new: Location, config: Config) -> std::io::Result<()> {
         // 先加载，成功才变更状态（损坏归档等失败路径无副作用，M7-4 契约）。
         let entries = Self::load_for(&new, config)?;
+        // M45-3e：离开前记忆当前光标（失败路径无副作用——记忆亦不写）。
+        self.remember_cursor();
         self.history.truncate(self.hist_pos + 1);
         self.history.push(new.clone());
         self.hist_pos = self.history.len() - 1;
@@ -632,6 +677,8 @@ impl Tab {
         self.entries = entries;
         self.cursor = 0;
         self.scroll = 0;
+        // M45-3e：重返已访问位置时还原其记忆光标（首次进入仍为 0）。
+        self.restore_cursor();
         self.on_parent_row = false;
         Ok(())
     }
@@ -2384,6 +2431,78 @@ mod tests {
     }
 
     #[test]
+    fn m453e_cursor_restored_on_h_l_roundtrip() {
+        // M45-3e：在子目录移动光标 → h 回父 → l 重返，光标还原到离开时的位置。
+        let tmp = TempDir::new().unwrap();
+        let child = tmp.path().join("child");
+        fs::create_dir(&child).unwrap();
+        for i in 0..4 {
+            fs::write(child.join(format!("f{i}.txt")), "").unwrap();
+        }
+        fs::write(tmp.path().join("sibling.txt"), "").unwrap();
+        let cfg = Config::default();
+        let mut tab = Tab::from_physical(tmp.path(), cfg.clone()).unwrap();
+
+        // 进入 child（首次 → cursor 0）。
+        let child_idx = tab.entries.iter().position(|e| e.name == "child").unwrap();
+        tab.cursor = child_idx;
+        tab.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(tab.location, Location::Physical(child.clone()));
+        assert_eq!(tab.cursor, 0, "首次进入落 0");
+        assert!(
+            !tab.cursor_memory
+                .contains_key(&Location::Physical(child.clone()))
+        );
+
+        // 在 child 内移动光标到 2。
+        tab.cursor = 2;
+        // h 回父（记忆 child=2；父目录光标按 M21-F4 落在 child 条目）。
+        tab.return_parent(cfg.clone()).unwrap();
+        assert_eq!(tab.location, Location::Physical(tmp.path().to_path_buf()));
+        assert_eq!(tab.cursor_memory[&Location::Physical(child.clone())], 2);
+
+        // l 重返 child → 还原 2。
+        let child_idx = tab.entries.iter().position(|e| e.name == "child").unwrap();
+        tab.cursor = child_idx;
+        tab.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(tab.cursor, 2, "h→l 往返还原光标");
+    }
+
+    #[test]
+    fn m453e_cursor_restored_clamped_and_pane() {
+        // 钳制：记忆的光标超出新条目数时取末尾；右 pane 同源。
+        let tmp = TempDir::new().unwrap();
+        let child = tmp.path().join("child");
+        fs::create_dir(&child).unwrap();
+        fs::write(child.join("only.txt"), "").unwrap(); // 仅 1 项
+        fs::write(tmp.path().join("sibling.txt"), "").unwrap();
+        let cfg = Config::default();
+
+        // 左 pane：手工注入超限记忆。
+        let mut tab = Tab::from_physical(tmp.path(), cfg.clone()).unwrap();
+        tab.cursor_memory
+            .insert(Location::Physical(child.clone()), 99);
+        let child_idx = tab.entries.iter().position(|e| e.name == "child").unwrap();
+        tab.cursor = child_idx;
+        tab.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(tab.cursor, 0, "99 钳制到仅 1 项的末位 0");
+
+        // 右 pane：h→l 往返同样还原。
+        let mut pane = Pane::from_physical(tmp.path(), cfg.clone()).unwrap();
+        let child_idx = pane.entries.iter().position(|e| e.name == "child").unwrap();
+        pane.cursor = child_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(pane.location, Location::Physical(child.clone()));
+        pane.cursor = 0; // 唯一条目
+        pane.return_parent(cfg.clone()).unwrap();
+        assert_eq!(pane.cursor_memory[&Location::Physical(child.clone())], 0);
+        let child_idx = pane.entries.iter().position(|e| e.name == "child").unwrap();
+        pane.cursor = child_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(pane.cursor, 0, "右 pane 还原");
+    }
+
+    #[test]
     fn return_parent_goes_up_and_noop_at_root() {
         let tmp = TempDir::new().unwrap();
         fs::create_dir(tmp.path().join("sub")).unwrap();
@@ -2435,6 +2554,7 @@ mod tests {
             focus: Focus::Left,
             on_parent_row: false,
             name: None,
+            cursor_memory: std::collections::HashMap::new(),
         };
         let _ = root_tab.return_parent(Config::default()); // 根目录 no-op 返回 Ok
         assert_eq!(root_tab.location, Location::Physical(root));
@@ -2549,6 +2669,7 @@ mod tests {
             focus: Focus::Left,
             on_parent_row: false,
             name: None,
+            cursor_memory: std::collections::HashMap::new(),
         };
         let cfg = Config::default(); // sort_dirs_first 默认 true（无目录，不影响）
 

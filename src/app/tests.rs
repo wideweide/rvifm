@@ -78,6 +78,7 @@ fn tab_at(path: &str) -> Tab {
         preview_focus: false,
         on_parent_row: false,
         name: None,
+        cursor_memory: std::collections::HashMap::new(),
     }
 }
 

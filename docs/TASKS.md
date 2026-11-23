@@ -594,7 +594,7 @@
 - [x] M45-3a opener 配置错误提示具体化 + 示例指引（不新增自动生成；见 SPEC M45-3①；2026-11-23 完成：路径+单行压缩+opener 表形态提示 + help.txt 示例 + m453a 测试，520 单测）
 - [x] M45-3b 可执行文件 Enter 特例：仅提示不执行（见 SPEC M45-3②；2026-11-23 完成：is_exec + 无 run 绑定时仅提示，显式 [open] run 规则可绕过 + m453b 测试，521 单测）
 - [x] M45-3c 删除确认居中阻塞弹窗带图标/高亮（见 SPEC M45-3③；2026-11-23 完成：confirm_dialog/confirm_rect + m453c 测试；同批串行化共享 trash 索引测试，522 单测）
-- [ ] M45-3e `h`→`l` 光标还原（per-location 光标记忆；见 SPEC M45-3⑤）
+- [x] M45-3e `h`→`l` 光标还原（per-location 光标记忆；见 SPEC M45-3⑤；2026-11-23 完成：Location Hash + Tab/Pane cursor_memory，navigate_to/enter_selected/return_parent 记忆还原 + m453e 测试，524 单测）
 - [ ] M45-4a 图片预览越界修复（native 协议字体尺寸兜底；见 SPEC M45-4①）
 - [ ] M45-4b 归档预览显示成员列表（`PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4②）
 - [ ] M45-5b `o`/`:j`/`:J` 鼠标点击选中（见 SPEC M45-5②）

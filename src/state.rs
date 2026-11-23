@@ -636,6 +636,7 @@ mod tests {
             focus: crate::tab::Focus::Left,
             on_parent_row: false,
             name: None,
+            cursor_memory: std::collections::HashMap::new(),
         }
     }
 
@@ -666,6 +667,7 @@ mod tests {
             focus: crate::tab::Focus::Left,
             on_parent_row: false,
             name: None,
+            cursor_memory: std::collections::HashMap::new(),
         }
     }
 
