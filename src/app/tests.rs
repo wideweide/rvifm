@@ -8104,6 +8104,30 @@ fn renders_active_tab_list_and_status_bar() {
 }
 
 #[test]
+fn m455c_command_name_tab_completion() {
+    // M45-5c：`:` 首词 Tab 补全命令名（路径场景仍由 command_name_position
+    // 分流到文件补全，纯函数已覆盖分流判定）。
+    use crate::app::exec::{COMMAND_NAMES, command_name_position};
+    assert!(command_name_position("ar"));
+    assert!(!command_name_position("cd /tmp"));
+    assert!(!command_name_position(""));
+
+    let names: Vec<String> = COMMAND_NAMES.iter().map(|n| (*n).to_owned()).collect();
+    let mut input = "ar".to_owned();
+    let mut comp = None;
+    let n = tab_complete(&mut input, &mut comp, &names);
+    assert_eq!(n, 1, "仅 archive 命中: {n}");
+    assert_eq!(input, "archive", "Tab 补全为命令名");
+
+    // 短前缀可补全多个候选（如 "ta" → tabclose/tabmove/tabname/tabnew/tag）。
+    let mut input2 = "tab".to_owned();
+    let mut comp2 = None;
+    let n2 = tab_complete(&mut input2, &mut comp2, &names);
+    assert!(n2 >= 4, "tab* 候选: {n2}");
+    assert!(input2.starts_with("tab"), "补全仍在命令名空间");
+}
+
+#[test]
 fn m455b_jump_click_index_geometry() {
     // M45-5b：选择器列表段点击 → 可见项下标；框外/标题/提示行返回 None。
     let area = ratatui::layout::Rect::new(0, 0, 80, 24);

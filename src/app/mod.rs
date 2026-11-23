@@ -835,20 +835,28 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 Some(CmdInput::Continue)
                             }
                             KeyCode::Tab => {
-                                // M30-3：候选加权排序（frecency 分数优先、
-                                // 字典序兜底；只读快照，store 缺失零成本降级）。
-                                let names: Vec<String> = {
-                                    let tab = state.active_tab();
-                                    let base = tab.focus_base().to_path_buf();
-                                    let items: Vec<crate::tab::FileItem> =
-                                        if tab.focus == crate::tab::Focus::Right {
-                                            tab.right.entries.clone()
-                                        } else {
-                                            tab.entries.clone()
-                                        };
-                                    let scores = crate::frecency::path_scores();
-                                    completion_candidates(&base, &items, &scores)
-                                };
+                                // M45-5c：首词位置补全命令名（`:ar` → `:archive`），
+                                // 有空白后仍按焦点 pane 文件路径补全（M30-3）。
+                                let names: Vec<String> =
+                                    if crate::app::exec::command_name_position(input) {
+                                        crate::app::exec::COMMAND_NAMES
+                                            .iter()
+                                            .map(|n| (*n).to_owned())
+                                            .collect()
+                                    } else {
+                                        // M30-3：候选加权排序（frecency 分数优先、
+                                        // 字典序兜底；只读快照，store 缺失零成本降级）。
+                                        let tab = state.active_tab();
+                                        let base = tab.focus_base().to_path_buf();
+                                        let items: Vec<crate::tab::FileItem> =
+                                            if tab.focus == crate::tab::Focus::Right {
+                                                tab.right.entries.clone()
+                                            } else {
+                                                tab.entries.clone()
+                                            };
+                                        let scores = crate::frecency::path_scores();
+                                        completion_candidates(&base, &items, &scores)
+                                    };
                                 let n = tab_complete(input, comp, &names);
                                 if n > 10 {
                                     msg = Some(format!("补全候选 {n} 个（Tab 循环切换）"));

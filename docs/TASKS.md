@@ -598,7 +598,7 @@
 - [x] M45-4a 图片预览越界修复（native 协议字体尺寸兜底；见 SPEC M45-4①；2026-11-23 完成：safe_font_size 合理性钳制 + clamp_slice_height 三屏上限 + frame intersection + m454a 测试，525 单测；真实终端验证 C6 deferred）
 - [x] M45-4b 归档预览显示成员列表（`PreviewKind::Archive`，Office 先于归档；见 SPEC M45-4②；2026-11-23 完成：preview_kind Archive 分流 + archive_preview（损坏/.rar 回退）+ render_view_content NUL 探测 + m454b 测试，527 单测）
 - [x] M45-5b `o`/`:j`/`:J` 鼠标点击选中（见 SPEC M45-5②；2026-11-23 完成：jump_areas/jump_click_index 同源 geometry + run 循环 JumpSelect 鼠标分支 + m455b 测试，528 单测）
-- [ ] M45-5c `:` 命令名辅助提示（见 SPEC M45-5③）
+- [x] M45-5c `:` 命令名辅助提示（见 SPEC M45-5③；2026-11-23 完成：范围自决为命令名 Tab 补全（NOTES 记录）+ COMMAND_NAMES + m455c 测试，529 单测）
 - [ ] M45-6b `o` 结果跳转写焦点 pane（见 SPEC M45-6②）
 - [ ] M45-6c 右键栏归档 `l`/Enter 进入虚拟目录（见 SPEC M45-6③）
 - [ ] M45-7a `:extract` 对侧/指定侧或路径（见 SPEC M45-7①）

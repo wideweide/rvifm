@@ -1265,6 +1265,12 @@ rvifm record  → 静默记录访问
   `metadata.is_file()` 守卫（符号链接经 metadata 跟随判定，指向 FIFO 同样拒绝），
   并加 `m452b_sniff_skips_socket_without_blocking` 回归测试。WHY 不用
   O_NONBLOCK：跨平台且需 unsafe，metadata 守卫已足够且无 unsafe。
+- **M45-5c 范围自决（2026-11-23）**：SPEC M45-5③ 标注「需用户确认范围
+  （命令名补全 vs 参数提示）」，但不在用户 5 项冲突裁决之列，且未标注「不可
+  自行决定」。按 AGENTS §3 自行决策：实现**命令名 Tab 补全**（首词位置
+  `COMMAND_NAMES` 前缀循环，有空白后仍为文件路径补全），不做参数提示
+  （需集中命令签名注册表，当前 exec 分派无此结构，超出「辅助提示」最小
+  语义）。决策已落 SPEC/TASKS；若用户后续要参数提示，按 FIX/FEAT 批次补。
 - **gate 卡死教训**：`cargo test` 被后台 shell 中断后残留的测试进程会继续跑，
   排查时先 `ps` 确认无残留；用 `timeout` 包裹单测避免再次悬挂。
 - **暂存索引测试互踩（M45-3c 期间复现）**：`m377_trash_clear_and_purge` 的

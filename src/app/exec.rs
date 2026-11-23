@@ -1914,6 +1914,75 @@ fn named_find_op(state: &mut AppState, op: &str, name: &str) -> Result<ExecOutco
 }
 
 /// 执行最小 `:` 命令（M1-5/M2-6）。
+/// M45-5c：`:` 命令行已知命令名（Tab 命令名补全用）。当前 exec 分派无
+/// 集中注册表，此表按 match 臂手工维护；新增命令须同步（SIMPLIFIED）。
+pub(crate) const COMMAND_NAMES: &[&str] = &[
+    "archive",
+    "asc",
+    "bmark",
+    "bmarks",
+    "bmgo",
+    "cd",
+    "checksum",
+    "chmod",
+    "clear",
+    "cmdmark",
+    "compare",
+    "confirm",
+    "copy",
+    "delbmarks",
+    "desc",
+    "du",
+    "dup",
+    "export",
+    "extract",
+    "file",
+    "find",
+    "frecency",
+    "gitui",
+    "goto",
+    "grep",
+    "help",
+    "his",
+    "histnext",
+    "histprev",
+    "history",
+    "jobs",
+    "keyword",
+    "link",
+    "mk",
+    "mkdir",
+    "move",
+    "prune",
+    "purge",
+    "q",
+    "quit",
+    "queue",
+    "recent",
+    "remote",
+    "rename",
+    "sort",
+    "stats",
+    "sync",
+    "tabclose",
+    "tabmove",
+    "tabname",
+    "tabnew",
+    "tag",
+    "theme",
+    "touch",
+    "trash",
+    "tree",
+    "tutor",
+    "view",
+];
+
+/// M45-5c：输入是否处于「命令名」位置（首词，无空白前缀）——此时 Tab
+/// 补全命令名而非文件路径。纯函数便于测试。
+pub(crate) fn command_name_position(input: &str) -> bool {
+    !input.is_empty() && !input.chars().any(char::is_whitespace)
+}
+
 pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<ExecOutcome, String> {
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
     if let Some(rest) = line.strip_prefix('!') {
