@@ -387,56 +387,126 @@ impl Pane {
         }
     }
 
-    /// 进入光标条目（M14-1）：仅物理目录；文件/归档 no-op（SIMPLIFIED）。
-    /// M45-3e：离开前记忆，进入后还原（h→l 往返不丢光标）。
+    /// 进入光标条目（M14-1 物理目录；M45-6c 裁决：右 pane 归档文件/归档内
+    /// 虚拟目录也可进入，文件仍 no-op）。M45-3e：离开前记忆、进入后还原。
     pub fn enter_selected(&mut self, config: Config) -> std::io::Result<()> {
-        if let Location::Physical(base) = &self.location {
-            let Some(item) = self.entries.get(self.cursor) else {
-                return Ok(());
-            };
-            if item.is_dir {
-                let target = Location::Physical(base.join(&item.name));
-                self.remember_cursor();
-                self.location = target;
-                self.cursor = 0;
-                self.scroll = 0;
-                self.refresh(config)?;
-                self.restore_cursor();
-                return Ok(());
+        let Some(item) = self.entries.get(self.cursor) else {
+            return Ok(());
+        };
+        let name = item.name.clone();
+        let is_dir = item.is_dir;
+        let target = match self.location.clone() {
+            Location::Physical(base) => {
+                let full = base.join(&name);
+                if is_dir {
+                    Some(Location::Physical(full))
+                } else if crate::archive::is_unsupported_archive(&name) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "该归档格式不支持虚拟浏览，请解压后浏览",
+                    ));
+                } else if crate::archive::is_archive_file(&name) {
+                    Some(Location::Archive {
+                        host: full,
+                        inner: std::path::PathBuf::new(),
+                    })
+                } else {
+                    None // 普通文件 no-op（M41-3 裁决）
+                }
             }
+            Location::Archive { host, inner } => {
+                if is_dir {
+                    let inner_str = inner.to_string_lossy().replace('\\', "/");
+                    let joined = if inner_str.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{inner_str}/{name}")
+                    };
+                    Some(Location::Archive {
+                        host,
+                        inner: std::path::PathBuf::from(crate::archive::normalize_inner(&joined)),
+                    })
+                } else {
+                    None // 归档内文件 no-op
+                }
+            }
+            Location::Remote { .. } => None,
+        };
+        if let Some(target) = target {
+            self.remember_cursor();
+            self.location = target;
+            self.cursor = 0;
+            self.scroll = 0;
+            self.refresh(config)?;
+            self.restore_cursor();
         }
         Ok(())
     }
 
     /// 返回父目录（M14-1，h；M21-F4 返回后光标定位在来源目录条目上）。
     /// M45-3e：离开前记忆子目录光标（重返时还原）；父目录光标仍按 M21-F4
-    /// 定位在来源条目。
+    /// 定位在来源条目。M45-6c：归档虚拟目录/h 继续上溯（根回物理宿主目录）。
     pub fn return_parent(&mut self, config: Config) -> std::io::Result<()> {
-        if let Location::Physical(base) = &self.location
-            && let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty())
-        {
-            let leaf = base.file_name().map(|n| n.to_string_lossy().into_owned());
-            let parent_loc = Location::Physical(parent.to_path_buf());
-            self.remember_cursor();
-            self.location = parent_loc;
-            self.cursor = 0;
-            self.scroll = 0;
-            self.refresh(config)?;
-            if let Some(name) = leaf
-                && let Some(idx) = locate_entry(&self.entries, &name)
-            {
-                self.cursor = idx;
+        let (target, leaf) = match self.location.clone() {
+            Location::Physical(base) => {
+                let Some(parent) = base.parent().filter(|p| !p.as_os_str().is_empty()) else {
+                    return Ok(());
+                };
+                (
+                    Location::Physical(parent.to_path_buf()),
+                    base.file_name().map(|n| n.to_string_lossy().into_owned()),
+                )
             }
+            Location::Archive { host, inner } => {
+                let inner_str = inner.to_string_lossy().replace('\\', "/");
+                if inner_str.is_empty() {
+                    // 归档根 → 宿主归档文件所在物理目录。
+                    let host_dir = host.parent().unwrap_or(host.as_path()).to_path_buf();
+                    (
+                        Location::Physical(host_dir),
+                        host.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    )
+                } else {
+                    let (parent, leaf) = match inner_str.rsplit_once('/') {
+                        Some((p, l)) => (p.to_owned(), l.to_owned()),
+                        None => (String::new(), inner_str.clone()),
+                    };
+                    (
+                        Location::Archive {
+                            host,
+                            inner: std::path::PathBuf::from(crate::archive::normalize_inner(
+                                &parent,
+                            )),
+                        },
+                        Some(leaf),
+                    )
+                }
+            }
+            Location::Remote { .. } => return Ok(()),
+        };
+        self.remember_cursor();
+        self.location = target;
+        self.cursor = 0;
+        self.scroll = 0;
+        self.refresh(config)?;
+        if let Some(name) = leaf
+            && let Some(idx) = locate_entry(&self.entries, &name)
+        {
+            self.cursor = idx;
         }
         Ok(())
     }
 
-    /// 重读当前目录条目并钳制光标。
+    /// 重读当前位置条目并钳制光标。M45-6c：右 pane 进入归档虚拟目录后
+    /// 也需按 Location 装载成员（原仅 Physical）。远端仍由会话驱动、no-op。
     pub fn refresh(&mut self, config: Config) -> std::io::Result<()> {
-        if let Location::Physical(dir) = &self.location {
-            self.entries = load_entries(dir, &config)?;
-            if self.cursor >= self.entries.len() {
-                self.cursor = self.entries.len().saturating_sub(1);
+        match self.location {
+            Location::Remote { .. } => {}
+            Location::Physical(_) | Location::Archive { .. } => {
+                self.entries = Tab::load_for(&self.location, config)?;
+                if self.cursor >= self.entries.len() {
+                    self.cursor = self.entries.len().saturating_sub(1);
+                }
             }
         }
         Ok(())
@@ -651,7 +721,7 @@ impl Tab {
 
     /// 任意 Location 的条目加载（NAV-3：历史跳转后恢复条目列表用）。
     /// M19-2：远端位置由会话驱动（remote_navigate），此处不支持。
-    fn load_for(location: &Location, config: Config) -> std::io::Result<Vec<FileItem>> {
+    pub(crate) fn load_for(location: &Location, config: Config) -> std::io::Result<Vec<FileItem>> {
         match location {
             Location::Physical(p) => load_entries(p, &config),
             Location::Archive { host, inner } => {
@@ -2466,6 +2536,82 @@ mod tests {
         tab.cursor = child_idx;
         tab.enter_selected(cfg.clone()).unwrap();
         assert_eq!(tab.cursor, 2, "h→l 往返还原光标");
+    }
+
+    #[test]
+    fn m456c_pane_enters_archive_virtual_dir_and_returns() {
+        // M45-6c：右 pane 归档文件 `l`/Enter 进入虚拟目录；h 上溯；文件 no-op。
+        let tmp = TempDir::new().unwrap();
+        let zip_path = tmp.path().join("bundle.zip");
+        crate::archive::make_test_zip(&zip_path);
+        fs::write(tmp.path().join("plain.txt"), "x").unwrap();
+        let cfg = Config::default();
+        let mut pane = Pane::from_physical(tmp.path(), cfg.clone()).unwrap();
+
+        let zip_idx = pane
+            .entries
+            .iter()
+            .position(|e| e.name == "bundle.zip")
+            .unwrap();
+        pane.cursor = zip_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(
+            pane.location,
+            Location::Archive {
+                host: zip_path.clone(),
+                inner: PathBuf::new()
+            },
+            "进入归档虚拟根"
+        );
+        let names: Vec<&str> = pane.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"readme.md") && names.contains(&"src"),
+            "{names:?}"
+        );
+
+        // 归档内虚拟目录继续进入。
+        let src_idx = pane.entries.iter().position(|e| e.name == "src").unwrap();
+        pane.cursor = src_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(
+            pane.location,
+            Location::Archive {
+                host: zip_path.clone(),
+                inner: PathBuf::from("src")
+            }
+        );
+        assert!(pane.entries.iter().any(|e| e.name == "main.rs"));
+
+        // h 上溯回归档根。
+        pane.return_parent(cfg.clone()).unwrap();
+        assert_eq!(
+            pane.location,
+            Location::Archive {
+                host: zip_path.clone(),
+                inner: PathBuf::new()
+            }
+        );
+        // 再 h 回物理宿主目录。
+        pane.return_parent(cfg.clone()).unwrap();
+        assert_eq!(pane.location, Location::Physical(tmp.path().to_path_buf()));
+
+        // 归档内普通文件 no-op。
+        let zip_idx = pane
+            .entries
+            .iter()
+            .position(|e| e.name == "bundle.zip")
+            .unwrap();
+        pane.cursor = zip_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        let file_idx = pane
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.md")
+            .unwrap();
+        let before = pane.location.clone();
+        pane.cursor = file_idx;
+        pane.enter_selected(cfg.clone()).unwrap();
+        assert_eq!(pane.location, before, "文件 no-op");
     }
 
     #[test]

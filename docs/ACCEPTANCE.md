@@ -1030,7 +1030,7 @@
 - [ ] M45-3 opener 配置错误提示具体化 + 示例指引（**M45-3a ✅ 2026-11-23**：m453a，路径+单行压缩+表形态提示+help 示例）；可执行文件 Enter 仅提示不执行（裁决后，**M45-3b ✅ 2026-11-23**：m453b，显式 [open] run 规则仍可执行）；删除确认居中阻塞弹窗带图标/高亮（**M45-3c ✅ 2026-11-23**：m453c，confirm_dialog 纯函数 + 居中渲染）；`v`+`d` 必现确认（**M45-3d ✅ 2026-11-23**：m453d_visual_delete_requires_confirmation，确认前文件保留）；`h`→`l` 光标还原（**M45-3e ✅ 2026-11-23**：m453e，Tab/Pane per-location cursor_memory + 钳制）。
 - [ ] M45-4 图片在预览区内不越界（native 协议字体尺寸兜底，**M45-4a ✅ 2026-11-23**：m454a，字体尺寸钳制+切片高度上限+帧相交；真实终端项 C6 deferred）；归档预览显示成员列表且 Office/PDF/zip 容器仍优先（**M45-4b ✅ 2026-11-23**：m454b，PreviewKind::Archive + archive_preview）；损坏/加密/.rar 回退信息面板；主 TUI 预览不再对 tar 显示乱码（NUL 探测）。
 - [ ] M45-5 `o` 不显示 cmd topic 条目（**M45-5a ✅ 2026-11-23**：without_cmd_topic + m455a 测试）；`o`/`:j`/`:J` 鼠标点击可选中（**M45-5b ✅ 2026-11-23**：m455b，jump_areas 同源 geometry + 点击选中）；`:` 命令名辅助提示（**M45-5c ✅ 2026-11-23**：m455c，范围自决为命令名 Tab 补全，见 NOTES）；
-- [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后）。
+- [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后，**M45-6c ✅ 2026-11-23**：m456c，Pane 归档虚拟目录进/退 + 文件 no-op）。
 - [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后）；虚拟目录 `yy`→粘贴（OUT_OF_SCOPE 裁决后）。
 - [ ] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让；列表左侧显示进度；进度持久化保持。
 - [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断；对话框宽度/去后缀/默认名/选中高亮/任意字段回车。
