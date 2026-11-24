@@ -6453,9 +6453,14 @@ fn m39_6_layout_modes_tabname_and_overflow() {
     // PreviewBottom + viewing：列表上半、查看器下半全宽。
     let [_, l, r, _] = pane_layout(area, LayoutMode::PreviewBottom, true);
     assert!(r.width > 0 && l.height < 12, "上半高度: {}", l.height);
-    let v = viewer_rect(area, LayoutMode::PreviewBottom, true).unwrap();
+    // M46-1：viewer_rect 接收 pane_layout 产出的主区（去掉标签栏/状态栏），
+    // 与列表区同源；80x24 帧的主区为 y=1、height=22。
+    let main = ratatui::layout::Rect::new(0, 1, 80, 22);
+    let v = viewer_rect(main, LayoutMode::PreviewBottom, true).unwrap();
     assert!(v.y >= l.y + l.height, "查看器在列表下方");
     assert_eq!(v.width, 80, "查看器全宽");
+    let single = viewer_rect(main, LayoutMode::Single, true).unwrap();
+    assert_eq!(single, main, "Single 查看器 = 主区");
     // 覆盖矩阵（命中守卫）。
     assert!(pane_covered_by_viewer(
         LayoutMode::Single,

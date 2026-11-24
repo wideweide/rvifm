@@ -62,11 +62,12 @@ pub(crate) fn pane_layout(
     [tab_bar, left, right, status]
 }
 
-/// M39-6：view 模式查看器占位（Single = 全宽主区 / PreviewBottom = 主区
-/// 下半；Dual/PreviewRight 经 pane 分派，返回 None）。与 pane_layout 同源
-/// 推导（上下切分对称）。
+/// M39-6 / M46-1：view 模式查看器占位（Single = 全宽主区 / PreviewBottom =
+/// 主区下半；Dual/PreviewRight 经 pane 分派，返回 None）。参数 `main` 必须是
+/// `pane_layout` 产出的主区（左右 pane 的并集），与列表区同源——避免再用
+/// 整帧重算导致查看器与（被 tutor 面板收缩后的）pane 几何错位、图片外溢。
 pub(crate) fn viewer_rect(
-    area: ratatui::layout::Rect,
+    main: ratatui::layout::Rect,
     layout: crate::config::LayoutMode,
     viewing: bool,
 ) -> Option<ratatui::layout::Rect> {
@@ -74,22 +75,8 @@ pub(crate) fn viewer_rect(
         return None;
     }
     match layout {
-        crate::config::LayoutMode::Single => {
-            let [_, main, _] = Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Min(0),
-                Constraint::Length(1),
-            ])
-            .areas(area);
-            Some(main)
-        }
+        crate::config::LayoutMode::Single => Some(main),
         crate::config::LayoutMode::PreviewBottom => {
-            let [_, main, _] = Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Min(0),
-                Constraint::Length(1),
-            ])
-            .areas(area);
             let [_top, bottom] =
                 Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).areas(main);
             Some(bottom)
@@ -848,6 +835,14 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         pane_layout(frame.area(), layout, viewing);
     // M45-8c：Tutor 面板覆盖 pane 底部——列表渲染区扣除面板高度（`G` 跳末尾
     // 不被遮挡）；状态栏在面板下不受影响。
+    // M46-1：查看器几何与左右 pane 同源——用收缩前的左右 pane 并集作为主区，
+    // 不再对整帧重算（PreviewBottom 的 bottom 与列表主区严格对半）。
+    let main_area = ratatui::layout::Rect {
+        x: left_area.x,
+        y: left_area.y,
+        width: right_area.right().saturating_sub(left_area.x),
+        height: left_area.height,
+    };
     let panel_h = if state.tutor.is_some() {
         crate::app::render::tutor_panel_height(frame.area().height)
     } else {
@@ -894,7 +889,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // M39-6：PreviewBottom——查看器占主区下半（全宽）。
     if viewing
         && layout == crate::config::LayoutMode::PreviewBottom
-        && let Some(bottom) = viewer_rect(frame.area(), layout, viewing)
+        && let Some(bottom) = viewer_rect(main_area, layout, viewing)
     {
         crate::app::preview::render_view_content(frame, state, bottom);
     }

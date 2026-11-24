@@ -36,15 +36,67 @@ fn safe_font_size(picker: &Picker) -> FontSize {
     if plausible { fs } else { FontSize::new(10, 20) }
 }
 
-/// M45-4a：`SlicedProtocol` 虚拟高度钳制——fit-width 后超高图片的虚拟高度
-/// 最多保留 3 屏（预览窗格不滚动，只需顶部切片）；避免原生协议把巨大图形
-/// 画到窗格外（同时限制内存）。纯函数便于测试。
+/// M45-4a / M46-1：虚拟高度上限（单位：格）。超高图片只保留顶部一屏，
+/// 不再向 `SlicedProtocol` 提交 3 屏虚拟图形——原生协议的绝对定位图形不受
+/// widget 裁剪约束，会在窗格外（甚至窗口顶部）残留。纯函数便于测试。
 const MAX_SLICE_SCREENS: u32 = 3;
 fn clamp_slice_height(dh: u16, pane_height: u16) -> u16 {
     let max = (pane_height as u32)
         .saturating_mul(MAX_SLICE_SCREENS)
         .min(u16::MAX as u32) as u16;
     dh.min(max).max(1)
+}
+
+/// M46-1：纯几何规划。产出图片最终绘制矩形与（超高时）源图顶部裁剪像素
+/// 高度。关键不变量：`rect` 严格落在调用方传入的预览窗格 `area` 内，且协议
+/// 尺寸 == `rect` 尺寸——从源头杜绝"虚拟图形/绝对定位图形超出预览区"。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImagePlan {
+    rect: Rect,
+    crop_px: Option<u32>,
+}
+
+fn plan_image(area: Rect, img_w: u32, img_h: u32, fw: f64, fh: f64) -> ImagePlan {
+    let iw = img_w.max(1) as f64;
+    let ih = img_h.max(1) as f64;
+    let cell_w = (iw / fw).ceil().max(1.0);
+    let cell_h = (ih / fh).ceil().max(1.0);
+    // 原尺寸放得下：不放大，居中。
+    if cell_w <= area.width as f64 && cell_h <= area.height as f64 {
+        let w = (cell_w as u16).clamp(1, area.width);
+        let h = (cell_h as u16).clamp(1, area.height);
+        return ImagePlan {
+            rect: Rect {
+                x: area.x + (area.width - w) / 2,
+                y: area.y + (area.height - h) / 2,
+                width: w,
+                height: h,
+            },
+            crop_px: None,
+        };
+    }
+    // 超出：fit-width。
+    let scale = (area.width as f64 * fw) / iw;
+    let dh = ((ih * scale / fh).ceil() as u16).max(1);
+    if dh <= area.height {
+        return ImagePlan {
+            rect: Rect {
+                x: area.x,
+                y: area.y + (area.height - dh) / 2,
+                width: area.width,
+                height: dh,
+            },
+            crop_px: None,
+        };
+    }
+    // 超高：只取顶部一屏，源图裁到对应像素高度；协议尺寸恰好等于窗格尺寸，
+    // 不再生成 3 屏虚拟图形（M46-1 真修复）。
+    let rows = clamp_slice_height(dh, area.height).min(area.height).max(1);
+    let crop = ((rows as f64 * fh) / scale).ceil() as u32;
+    ImagePlan {
+        rect: area,
+        crop_px: Some(crop.clamp(1, img_h.max(1))),
+    }
 }
 
 /// 支持图片预览的扩展名（小写比较）。
@@ -127,75 +179,37 @@ impl ImageEngine {
         area: Rect,
         img: image::DynamicImage,
     ) -> std::io::Result<()> {
-        // M45-4a：先与整帧相交——即便调用方传入越界 area，协议绘制也不得
-        // 超出帧边界（原生协议图形不受 widget 裁剪自动约束）。
+        // M46-1：只与调用方传入的预览 pane 相交（不再拿整帧兜底——那会把
+        // 越界 area 原样放行，使原生协议图片出现在窗口顶部）。调用方传入的
+        // 是 `pane.inner(preview_area)`，即唯一的预览区真值。
         let area = area.intersection(frame.area());
         if area.width == 0 || area.height == 0 {
             return Ok(());
         }
         // M45-4a：字体尺寸合理性钳制（原生协议探测兜底 10×20）。
         let fs = safe_font_size(&self.picker);
-        let fw = fs.width.max(1) as f64;
-        let fh = fs.height.max(1) as f64;
-        let iw = img.width() as f64;
-        let ih = img.height() as f64;
-        // 图像占用的格子尺寸（像素 / 每格像素，向上取整）。
-        let cell_w = (iw / fw).ceil().max(1.0);
-        let cell_h = (ih / fh).ceil().max(1.0);
-        // 小于窗格：原尺寸（Fit 不放大），窗格内居中。
-        if cell_w <= area.width as f64 && cell_h <= area.height as f64 {
-            let w = (cell_w as u16).clamp(1, area.width);
-            let h = (cell_h as u16).clamp(1, area.height);
-            let rect = Rect {
-                x: area.x + (area.width - w) / 2,
-                y: area.y + (area.height - h) / 2,
-                width: w,
-                height: h,
-            };
-            let protocol = self
-                .picker
-                .new_protocol(img, Size::new(w, h), Resize::Fit(None))
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            frame.render_widget(Image::new(&protocol), rect);
-            return Ok(());
-        }
-        // 超出窗格：fit-width——缩放至窗格宽度，高度按比例。
-        let scale = (area.width as f64 * fw) / iw;
-        let dw = area.width;
-        let dh = ((ih * scale / fh).ceil() as u16).max(1);
-        if dh <= area.height {
-            // fit-width 后纵向放得下：纵向居中。
-            let rect = Rect {
-                x: area.x,
-                y: area.y + (area.height - dh) / 2,
-                width: dw,
-                height: dh,
-            };
-            let protocol = self
-                .picker
-                .new_protocol(img, Size::new(dw, dh), Resize::Fit(None))
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            frame.render_widget(Image::new(&protocol), rect);
-            return Ok(());
-        }
-        // 超高：顶部切片（SlicedImage position 0）——普通预览窗格显示顶部；
-        // 图像纵向滚动不在本任务范围（SPEC SIMPLIFIED）。
-        // M45-4a：虚拟高度钳制到至多 3 屏，杜绝原生协议超大图形溢出窗格。
-        let dh = clamp_slice_height(dh, area.height);
-        let sliced = ratatui_image::sliced::SlicedProtocol::new_with_resize(
-            &self.picker,
-            img,
-            Size::new(dw, dh),
-            Resize::Fit(None),
-        )
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        frame.render_widget(
-            ratatui_image::sliced::SlicedImage::new(
-                &sliced,
-                ratatui_image::sliced::SignedPosition::from((0i16, 0i16)),
-            ),
+        let plan = plan_image(
             area,
+            img.width(),
+            img.height(),
+            fs.width.max(1) as f64,
+            fs.height.max(1) as f64,
         );
+        // 超高图：把源图裁到与窗格等高的像素带，协议尺寸 == 绘制矩形，
+        // 原生协议不再生成超出窗格的绝对定位图形（M46-1）。
+        let img = match plan.crop_px {
+            Some(h) => img.crop_imm(0, 0, img.width(), h.min(img.height())),
+            None => img,
+        };
+        let protocol = self
+            .picker
+            .new_protocol(
+                img,
+                Size::new(plan.rect.width, plan.rect.height),
+                Resize::Fit(None),
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        frame.render_widget(Image::new(&protocol), plan.rect);
         Ok(())
     }
 }
@@ -379,6 +393,60 @@ mod tests {
             cells.iter().all(|(x, y)| *x < 40 && *y < 12),
             "切片不越界: {:?}",
             cells.iter().max().unwrap()
+        );
+    }
+
+    /// M46-1：几何规划产出矩形严格落在预览 pane 内；超高图改为等高裁剪，
+    /// 不再产生超过窗格高度的虚拟图形。
+    #[test]
+    fn m461_image_plan_stays_within_pane() {
+        let pane = Rect::new(20, 5, 30, 10);
+        // 小图：居中且在 pane 内。
+        let small = plan_image(pane, 8, 8, 10.0, 20.0);
+        assert!(small.crop_px.is_none());
+        assert!(
+            small.rect.x >= pane.x
+                && small.rect.y >= pane.y
+                && small.rect.right() <= pane.right()
+                && small.rect.bottom() <= pane.bottom()
+        );
+        // 大图（fit-width 后仍超高）：目标矩形 == pane，源图被裁剪。
+        let huge = plan_image(pane, 600, 600, 10.0, 20.0);
+        assert_eq!(huge.rect, pane);
+        let crop = huge.crop_px.expect("超高图必须裁剪源图");
+        assert!((1..=600).contains(&crop), "crop={crop}");
+        // 中等图：fit-width 后高度放得下，不裁剪。
+        let medium = plan_image(pane, 600, 60, 10.0, 20.0);
+        assert!(medium.crop_px.is_none());
+        assert!(medium.rect.width == pane.width && medium.rect.height <= pane.height);
+    }
+
+    /// M46-1：图片渲染只落在传入的预览子矩形内，不向窗口其它区域溢出。
+    #[test]
+    fn m461_render_into_subrect_does_not_leak() {
+        let engine = ImageEngine::halfblocks();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("big.png");
+        std::fs::write(&path, opaque_png(600, 600)).unwrap();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let pane = Rect::new(20, 5, 30, 10);
+        terminal
+            .draw(|f| {
+                let _ = engine.render_file(f, pane, &path);
+            })
+            .unwrap();
+        let cells = content_cells(terminal.backend().buffer());
+        assert!(!cells.is_empty());
+        assert!(
+            cells
+                .iter()
+                .all(|(x, y)| (20..50).contains(x) && (5..15).contains(y)),
+            "图片内容不得越出预览子矩形: {cells:?}"
+        );
+        assert!(
+            cells.iter().all(|(_, y)| *y >= 5),
+            "图片顶部不得出现在窗口顶部（y<5）"
         );
     }
 }

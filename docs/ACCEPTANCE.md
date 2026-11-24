@@ -1067,7 +1067,7 @@
 
 ## 51. M46 — 用户实测批次 2（见 SPEC M46 节）
 
-- [ ] M46-1 图片（原生协议/SlicedImage/halfblocks/PDF 图像/pick 预览）绘制矩形完全落在预览 pane inner rect 内，窗口顶部不再出现图片；TestBackend 回归断言 widget rect 被预览区包含；真实终端大图项沿用 M11-6/C6 deferred。
+- [x] M46-1 图片（原生协议/SlicedImage/halfblocks/PDF 图像/pick 预览）绘制矩形完全落在预览 pane inner rect 内，窗口顶部不再出现图片；TestBackend 回归断言 widget rect 被预览区包含（**2026-11-24**：plan_image 等高顶部裁剪替代 3 屏 SlicedProtocol，viewer_rect 与 pane 同源，m461_image_plan_stays_within_pane / m461_render_into_subrect_does_not_leak；原生协议真实终端项沿用 M11-6/C6 deferred）。
 - [ ] M46-2 焦点在左时仅左栏高亮搜索匹配、焦点在右时仅右栏高亮；`n`/`N` 与计数不变；Tab 级 SearchState 未拆分。
 - [ ] M46-3 右 pane 当前/可视选择行整行背景一致（无独立 `ft_*` 文字色），未搜索态与左栏对称；搜索高亮保留。
 - [ ] M46-4 `/tmp/test/b` → `h` → `l` 光标落在 `b` 且 `on_parent_row == false`；左右 pane 各有回归测试。
