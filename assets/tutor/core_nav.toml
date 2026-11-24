@@ -25,7 +25,7 @@ expected = "进入该目录，pane 顶部路径更新。"
 [[items]]
 id = "parent_dir"
 prompt = "按 `h` 返回上级目录。"
-expected = "回到上级目录，光标定位在刚才进入的子目录上。"
+expected = "回到上级目录，光标定位在刚才进入的子目录上；再按 `l` 重返会还原子目录内上次的光标（不会停在 `..` 行）。"
 
 [[items]]
 id = "jump_top"

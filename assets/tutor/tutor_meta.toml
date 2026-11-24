@@ -30,4 +30,4 @@ expected = "错题本 skipped 项自动排前（面板标题显示「复习」�
 [[items]]
 id = "tutor_reset"
 prompt = "输入 `:tutor reset core_nav` 清空该模块进度。"
-expected = "该模块错题本与掌握记录清空，下次进入从头开始；进度文件在数据目录 tutor_progress.toml（删文件等效重置）。"
+expected = "该模块错题本与掌握记录清空，下次进入从头开始；进度文件在数据目录 tutor_progress.toml（删文件等效重置）。首次启动还会在配置目录生成带注释的 config.toml 与键位/opener 示例，不覆盖已有文件。"

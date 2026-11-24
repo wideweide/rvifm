@@ -16,7 +16,7 @@ expected = "查看器占对侧 pane（行号 + 完整内容滚动）；焦点右
 [[items]]
 id = "viewer_search"
 prompt = "查看器内按 `/` 输入片段回车。"
-expected = "定位到首个命中行并高亮；`n`/`N` 在命中间跳转。"
+expected = "定位到首个命中行并高亮；`n`/`N` 在命中间跳转。图片预览严格限制在预览区内；归档 `w` 预览带缓存，大包给「按 l 进入浏览」提示。"
 
 [[items]]
 id = "sort_dialog"

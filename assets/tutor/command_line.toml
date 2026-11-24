@@ -52,7 +52,7 @@ expected = "列出可用主题（内置+捆绑+用户）；切换即时生效且
 [[items]]
 id = "cmd_help"
 prompt = "输入 `:help` 打开全屏帮助。"
-expected = "j/k 滚动、`/` 搜索帮助文本（n/N 跳转）、q/Esc 关闭恢复原状态。"
+expected = "帮助页不透明、j/k 滚动、`/` 输入搜索（n/N 跳转）、q/Esc 关闭；tmux/screen 下默认新窗口打开（[ui] help_in_new_window），命令行 `rvifm help` 可单独输出正文。"
 
 [[items]]
 id = "ime_normal_mode"

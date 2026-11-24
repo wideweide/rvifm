@@ -10,7 +10,7 @@ description = "掌握实时搜索、匹配跳转与通配符过滤"
 [[items]]
 id = "search_incsearch"
 prompt = "按 `/` 输入文件名片段（如 `f0`），逐字符输入观察列表。"
-expected = "输入即跳到第一个匹配并高亮，状态栏显示 `i/N` 计数；Esc 清空并还原光标。"
+expected = "输入即跳到第一个匹配并高亮（只高亮当前焦点 pane），状态栏显示 `i/N` 计数；Esc 清空并还原光标。"
 
 [[items]]
 id = "search_next_prev"
@@ -20,7 +20,7 @@ expected = "n 下一个匹配、N 上一个（环绕列表首尾）；Esc 退出
 [[items]]
 id = "search_right_pane"
 prompt = "Tab 把焦点切到右 pane，再按 `/` 搜索。"
-expected = "搜索作用于右 pane 列表（焦点感知）；切回左 pane 后 `/` 作用左 pane。"
+expected = "搜索只作用于右 pane 列表与高亮（焦点感知）；切回左 pane 后 `/` 只作用左 pane，不会双侧同时高亮。"
 
 [[items]]
 id = "filter_glob"

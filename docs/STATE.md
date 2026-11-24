@@ -3,8 +3,8 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-24
-- **当前阶段**：**M0–M45 + FIX/REL-4 + FIX-7/8/9 全部完成；v1.3.0 GitHub Release；M46 用户实测批次 2 执行中**（2026-11-24；FIX-9 自动门禁全绿；真实 Linux IME 会话及 Windows/macOS 编译验收 deferred）。
-- **当前任务**：M46-12 更新导师模式测试项目与提示（M46 批次 11/12；按 TASKS 节序连续执行）。FIX-9-M1 真实桌面测试与 FIX-9-CI 跨平台编译仍为 deferred。
+- **当前阶段**：**M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 用户实测批次 2 全部完成；v1.3.0 GitHub Release 为当前基线**（2026-11-25；M46 12/12 勾选，567 单测 + 13 集成 + clippy/fmt/build + harness_check 全绿；后续发布待 CI 验证）。
+- **当前任务**：无自动可执行任务（TASKS 全部勾选或明确 deferred）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,11 +20,13 @@
 
 ## 下一步
 
-1. M46 批次 12 任务按 TASKS 节序连续执行（M46-1 起）；一轮一任务、质量门禁后勾选提交。
-2. FIX-9 批次已关闭；用户登录支持的输入法桌面会话后可补验 FIX-9-M1。
-3. M46 全部落地后视 CI 情况决定维护版本发布（crates.io 仍停 1.0.0）。
+1. M46 批次 12/12 已全部落地并提交；等待 CI（ubuntu/windows/macos 三平台 + fuzz + supply-chain）验证后再决定维护版本发布（crates.io 仍停 1.0.0）。
+2. 用户可在真实终端补验 M11-6/C6 大图不越界、M46-8 firefox tarball 预览提速、M46-9 rar 工具环境；如需新批次按 §8 蒸馏登记。
+3. FIX-9 批次已关闭；用户登录支持的输入法桌面会话后可补验 FIX-9-M1。
 
 ## 批次关闭记录
+
+- M46（2026-11-25，用户实测批次 2）：12/12 全部落地——图片越界真修复（plan_image 顶部裁剪替代 3 屏虚拟图形 + viewer_rect 同源）、搜索高亮仅焦点 pane、右栏整行背景一致、h→l 光标还原不覆盖 `..`、extract 双侧刷新、首次启动生成带注释默认配置 + 示例、help 三修（不透明/新窗口/rvifm help）、归档预览缓存 + 大小护栏、deb/rar 只读 VFS、yazi 删除确认、help/GUIDE/CHANGELOG/tutor 同步。567 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿。原生协议真实终端大图、用户机 firefox tarball 提速与 rar 工具环境验证 deferred；未触发版本发布（待 CI）。
 
 - FIX-9（2026-11-24）：Linux IBus/Fcitx/Fcitx5 Normal 模式自动切英文并在文本输入模式恢复原状态；新增 `[ime]` 配置与命令 runner，不增 Cargo/C 依赖。553 单测 + 12 集成、clippy/build/CLI 冒烟全绿，harness_check 通过。真实桌面往返验证与 Windows/macOS 编译留 deferred。
 
