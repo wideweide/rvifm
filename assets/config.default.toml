@@ -68,8 +68,10 @@ seq_timeout_ms = 500
 
 # ── 输入法（Linux） ─────────────────────────────────────────────────────
 [ime]
-# Normal 模式自动切英文、回到文本输入时恢复（需系统已有 ibus/fcitx 命令）
-enabled = true
+# Normal 模式自动切英文、回到文本输入时恢复（需系统已有 ibus/fcitx 命令）。
+# Linux 默认开启，Windows/macOS 默认关闭（此平台无输入法切换，选项无效）。
+# 默认值随平台而定，故留注释由 serde 采用平台默认；需要显式关闭时取消注释并设为 false。
+# enabled = true
 # IBus 无英文状态接口时使用的 engine 标识
 ibus_english_engine = "xkb:us::eng"
 
