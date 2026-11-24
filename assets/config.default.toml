@@ -1,0 +1,90 @@
+# rvifm 默认配置（首次启动自动生成；可自由修改，不会被再次覆盖）
+# 全部选项都有内置默认值——本文件仅用于说明与便于定制。
+# 文档：应用内 :help ｜ docs/GUIDE.md ｜ README.md
+
+# 显示以 . 开头的隐藏文件（默认 false）
+show_hidden = false
+# 目录排在文件之前（默认 true）
+sort_dirs_first = true
+# 排序忽略大小写（默认 true）
+ignore_case_sort = true
+
+# ── 界面 ────────────────────────────────────────────────────────────────
+[ui]
+# 主题名：opaline 内置主题，或 ~/.config/rvifm/themes/ 下的用户主题
+theme = "gruvbox-dark"
+# 外部命令 / shell 在 tmux/screen 新窗口执行（无复用器时回退当前 pane）
+terminal_in_new_window = true
+# 文件列表显示大小 / 修改时间列（窄终端自动隐藏）
+attrs_column = true
+# 退出保存标签会话、启动恢复
+session_restore = true
+# 文件列表 git 状态列（非 git 仓库自动隐藏）
+git_column = true
+# true = 旧整框边框；false（默认）= vifm 风格无整框布局
+pane_borders = false
+# 双栏之间的分隔列（默认关）
+pane_separator = false
+# 主区布局：dual（默认）| single | preview-right | preview-bottom
+# layout = "dual"
+# :help 在复用器新窗口打开（默认开；无 tmux/screen 时回退应用内帮助）
+# help_in_new_window = true
+
+# ── 预览 ────────────────────────────────────────────────────────────────
+[preview]
+# PDF 图像预览页数：0=关闭 / 1=首页（默认）/ 2=前两页
+pdf_image_pages = 1
+# true = 文本提取后仍优先展示图像；false = 仅文本层不足时用图像
+pdf_prefer_image = false
+
+# ── 归档 ────────────────────────────────────────────────────────────────
+[archive]
+# 归档创建后生成的校验文件：md5（默认）| sha256 | none
+checksum = "md5"
+
+# ── Frecency（模糊跳转） ─────────────────────────────────────────────────
+[frecency]
+# 命中 glob 的路径不写入 frecency（可排除敏感目录）
+ignore_patterns = []
+# 各 topic 衰减系数（留空使用内置默认）
+# lambda_dir = 0.01
+# lambda_file = 0.01
+# lambda_unified = 0.005
+# lambda_cmd = 0.01
+# 容量上限（超限清理最低分未书签条目）
+# max_entries = 1500
+
+# ── 传输 ────────────────────────────────────────────────────────────────
+[transfer]
+# 冲突策略：ask（默认）| overwrite | skip | rename | newer
+conflict_policy = "ask"
+# 粘贴入队（多选传输顺序执行）
+queue = false
+
+# ── 键位解析 ────────────────────────────────────────────────────────────
+[keymap]
+# 多键序列（yy、gg、gt …）待决超时，毫秒
+seq_timeout_ms = 500
+
+# ── 输入法（Linux） ─────────────────────────────────────────────────────
+[ime]
+# Normal 模式自动切英文、回到文本输入时恢复（需系统已有 ibus/fcitx 命令）
+enabled = true
+# IBus 无英文状态接口时使用的 engine 标识
+ibus_english_engine = "xkb:us::eng"
+
+# ── 键位分层（可选；完整示例见同目录 keymap.example.toml） ───────────────
+# [normal]
+# append_keymap = [ { on = ["g", "t"], run = "next_tab" } ]
+# [visual]
+# append_keymap = [ { on = "J", run = "move_down" } ]
+
+# ── 文件打开规则（可选；完整示例见同目录 opener.example.toml） ───────────
+# [opener]
+# edit_text = { run = "nvim %s", block = true, desc = "编辑文本" }
+# [open]
+# append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
+
+# ── 快速跳转别名（可选） ────────────────────────────────────────────────
+# [quickjump]
+# d = "~/Downloads"

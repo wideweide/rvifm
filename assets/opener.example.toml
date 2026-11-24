@@ -1,0 +1,30 @@
+# rvifm 文件打开规则示例
+#
+# 用法：把 [opener] 与 [open] 两个片段复制进 config.toml。
+# [opener] 定义命名 opener：run 命令（%s = 路径占位符）、block（是否挂起 TUI）、desc。
+# [open] 规则按序取第一个命中；prepend_rules 覆盖默认、append_rules 补充、
+# rules 完全替换默认表。mime 优先、name（glob）回退。
+
+# [opener]
+# preview_image = { run = "imv %s", desc = "用 imv 看图" }
+# edit_text = { run = "nvim %s", block = true, desc = "用 nvim 编辑" }
+# play_audio = { run = "mpv %s", block = true }
+
+# [open]
+# prepend_rules = [
+#     { mime = "image/*", use = ["preview_image"] },
+#     { mime = "text/*", use = ["edit_text", "open"] },
+#     { name = "*.mp3", use = ["play_audio"] },
+# ]
+# append_rules = [
+#     { name = "*.md", use = ["edit_text"] },
+# ]
+# 完全替换默认规则表（留空即禁用所有内建 opener 规则，回退系统 opener）
+# rules = []
+
+# 未命中任何规则时走系统 opener（Linux gio open → xdg-open；macOS open；Windows start）。
+# 可执行文件按 Enter 默认仅提示「请在终端执行」；如需显式执行，添加：
+# [opener]
+# run_exec = { run = "%s", block = true }
+# [open]
+# append_rules = [ { name = "*.sh", use = ["run_exec"] } ]

@@ -267,6 +267,42 @@ pub fn config_path() -> PathBuf {
     base.join("rvifm").join("config.toml")
 }
 
+/// M46-6：首次启动写入的默认配置与示例模板（随二进制内嵌，零外部依赖）。
+const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../assets/config.default.toml");
+const KEYMAP_EXAMPLE_TEMPLATE: &str = include_str!("../assets/keymap.example.toml");
+const OPENER_EXAMPLE_TEMPLATE: &str = include_str!("../assets/opener.example.toml");
+
+/// M46-6：在给定配置文件路径所在目录生成默认配置与键位/opener 示例。
+///
+/// 只写缺失的文件——已存在的 `config.toml` 绝不覆盖（用户修改是事实来源）。
+/// 目录不存在则创建；任何 IO 失败静默降级（不影响 TUI 启动）。接受路径参数
+/// 以便测试隔离，避免 `cargo test` 污染真实配置目录（AUDIT-14）。
+pub fn ensure_default_config_at(config_file: &std::path::Path) {
+    let Some(parent) = config_file.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    if !config_file.exists() {
+        let _ = std::fs::write(config_file, DEFAULT_CONFIG_TEMPLATE);
+    }
+    for (name, body) in [
+        ("keymap.example.toml", KEYMAP_EXAMPLE_TEMPLATE),
+        ("opener.example.toml", OPENER_EXAMPLE_TEMPLATE),
+    ] {
+        let path = parent.join(name);
+        if !path.exists() {
+            let _ = std::fs::write(path, body);
+        }
+    }
+}
+
+/// 按平台默认位置生成配置（TUI 启动钩子用；不改变 `load_from` 的测试语义）。
+pub fn ensure_default_config() {
+    ensure_default_config_at(&config_path());
+}
+
 /// 数据目录（frecency 数据库与降级文件）：Windows `%LOCALAPPDATA%\rvifm`；
 /// Unix `$XDG_DATA_HOME/rvifm`，缺省 `~/.local/share/rvifm`（M8-3）。
 pub fn data_dir() -> PathBuf {
@@ -324,7 +360,8 @@ fn compact_toml_error(raw: &str) -> String {
 }
 
 /// M45-3a：opener 常见误写提示——`edit_text = "nvim %s"` 字符串形态反序列化
-/// 失败（OpenerDef 是表）；给出正确形态与文档指引（不自动生成配置文件）。
+/// 失败（OpenerDef 是表）；给出正确形态与文档指引（首次启动已自动生成带注释
+/// 的 config.toml 与示例文件，见 M46-6）。
 fn opener_hint(raw: &str) -> Option<&'static str> {
     let lower = raw.to_ascii_lowercase();
     if !(lower.contains("openerdef") || lower.contains("[opener]") || lower.contains("opener")) {
@@ -934,5 +971,36 @@ dl = "bad"
             &mut layers.commands,
         );
         assert_eq!(layers.commands.len(), 1, "命令模板去重");
+    }
+
+    #[test]
+    fn m466_default_config_generation_and_no_overwrite() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("rvifm");
+        let cfg_file = dir.join("config.toml");
+        ensure_default_config_at(&cfg_file);
+
+        assert!(cfg_file.is_file(), "config.toml 已生成");
+        assert!(dir.join("keymap.example.toml").is_file());
+        assert!(dir.join("opener.example.toml").is_file());
+        let text = std::fs::read_to_string(&cfg_file).unwrap();
+        assert!(
+            text.contains("[ui]") && text.contains('#'),
+            "含默认项与注释"
+        );
+        // 模板必须能被自身解析（防止示例字段漂移阻断启动）。
+        assert_eq!(
+            toml::from_str::<Config>(&text).unwrap(),
+            Config::default(),
+            "默认模板应等同于内置默认值"
+        );
+
+        // 已存在文件绝不覆盖。
+        std::fs::write(&cfg_file, "show_hidden = true\n").unwrap();
+        ensure_default_config_at(&cfg_file);
+        assert_eq!(
+            std::fs::read_to_string(&cfg_file).unwrap(),
+            "show_hidden = true\n"
+        );
     }
 }

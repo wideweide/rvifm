@@ -599,6 +599,9 @@ fn spawn_job_from_plan(
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
     let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
+    // M46-6：首次启动生成带注释的默认 config.toml 与键位/opener 示例；
+    // 已存在文件不覆盖，失败静默降级（不与下面的加载错误提示冲突）。
+    config::ensure_default_config();
     // M5-1：启动加载用户配置；缺失用默认值，语法错误在状态栏提示（不退出）。
     let mut msg: Option<String> = None;
     let config = match config::load() {

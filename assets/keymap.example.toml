@@ -1,0 +1,35 @@
+# rvifm 键位分层示例
+#
+# 用法：把需要的片段复制进 config.toml（与默认配置同一个文件）。
+# 三层语义：prepend_keymap 覆盖默认、append_keymap 补充、keymap 完全替换。
+# 四个模式表：[normal] / [visual] / [view] / [command]，结构完全相同。
+# 动作名（run）来自内置 Action 枚举；命令可用 "cmd:<命令文本>" 模板。
+
+# 覆盖默认：把 P 改成移动（默认 P 已是 PutMove，这里仅演示 prepend 形态）
+# [normal]
+# prepend_keymap = [
+#     { on = "P", run = "put_move" },
+# ]
+# 补充：gt 切下一个标签（多键序列，受 [keymap] seq_timeout_ms 约束）
+# append_keymap = [
+#     { on = ["g", "t"], run = "next_tab" },
+#     { on = ["g", "T"], run = "prev_tab" },
+#     { on = "q", run = "cmd:quit" },
+# ]
+# 完全替换默认表（谨慎：会丢掉所有未列出的默认键位）
+# keymap = [
+#     { on = "j", run = "move_down" },
+#     { on = "k", run = "move_up" },
+#     { on = "l", run = "enter_selected" },
+#     { on = "h", run = "return_parent" },
+# ]
+
+# 可视模式 / 查看器 / 命令行可分别覆盖
+# [visual]
+# append_keymap = [ { on = "J", run = "move_down" } ]
+# [view]
+# append_keymap = [ { on = "j", run = "viewer_down" } ]
+# [command]
+# append_keymap = [ { on = ["c", "d"], run = "cmd:cd ~" } ]
+
+# 多键序列超时在 config.toml 的 [keymap] seq_timeout_ms 配置（默认 500ms）。

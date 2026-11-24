@@ -657,7 +657,7 @@
 - [x] M46-3 右 pane 未搜索态整行背景一致（M45-2a 同款 row_reversed 守卫右移；见 SPEC M46-3；2026-11-24 完成：render_right_pane 增 row_reversed/ft 守卫，m463 右栏反显行 fg 断言，557 单测）
 - [x] M46-4 `h`→`l` 光标还原真修复（on_parent_row 不再覆盖还原 cursor；见 SPEC M46-4；2026-11-24 完成：enter_selected 增 had_memory 判定，左右 pane 与归档分支同源，m453e 双测试补 on_parent_row 断言）
 - [x] M46-5 `:extract` 解压到对侧后刷新目标 pane（extract/yy→p + job 完成刷新双侧；见 SPEC M46-5；2026-11-24 完成：extract 命令臂/归档 yy→p 接 refresh_tab_panes，apply_job_update 双侧刷新，m465 端到端 + m457b 断言，558 单测）
-- [ ] M46-6 启动创建默认 config.toml（注释说明默认设置）+ 键位/命令示例配置，不覆盖已有（见 SPEC M46-6）
+- [x] M46-6 启动创建默认 config.toml（注释说明默认设置）+ 键位/命令示例配置，不覆盖已有（见 SPEC M46-6；2026-11-24 完成：三份内嵌模板 + ensure_default_config_at 路径注入、启动钩子接线、m466 模板自解析/不覆盖测试，559 单测）
 - [ ] M46-7 `:help` 修复：不透明背景 + 新终端窗口打开 + `/` 搜索可用（见 SPEC M46-7）
 - [ ] M46-8 归档 `w` 预览提速（去每帧全量解压/重开，缓存 + 护栏；见 SPEC M46-8）
 - [ ] M46-9 `.deb`/`.apk`/`.rar` 的 `w` 预览与 `l`/Enter VFS（apk 保持；deb ar+tar；rar 外部 CLI；见 SPEC M46-9）
