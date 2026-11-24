@@ -20,8 +20,8 @@ rvifm 帮助（vim 风格文件管理器）
                   过滤器：--size [+-=]N[bkmg] --mtime [+-]N(天)
                   --type f|d --depth N；命名搜索 save/load <名>（仅本会话）
   :grep {模式}    内容搜索（regex；条目 = 路径:行号: 内容；上限 1 万）
-  o               跳转选择器（frecency 合一视角）
-  :j / :J         仅目录 / 仅文件的跳转选择器
+  o               焦点 pane 内 frecency 搜索区（合并目录/文件）
+  :j / :J         同一搜索区，分别仅目录 / 仅文件
   :recent         近期视角（全部条目按最后访问时间倒序，含会话内跳转）
   '{字符}         marks/bookmark 跳转（跳到该 keyword 的最高排名条目：
                   目录 cd、文件父目录定位光标；多字符 keyword 在
@@ -79,7 +79,9 @@ rvifm 帮助（vim 风格文件管理器）
   Tab             切换左右 pane 焦点（双栏均可导航与操作）
   .. / h / l      双栏均可返回父目录（根目录隐藏 ..）/ 返回 / 进入
   : / gt / gT     双栏一致：: 命令作用于焦点 pane；gt/gT/{N}gt 切标签，gg 跳顶部
-  o / v / t       双栏均可调用历史选择、Visual 选择与 tag
+  o / :j / :J     焦点 pane 内 frecency 搜索（合并 / 仅目录 / 仅文件）
+                  对侧预览当前候选；输入匹配路径高亮，Enter/l 或单击跳转
+  v / t           Visual 选择与 tag
   yy / p / P      双栏均可复制条目、复制粘贴与移动粘贴（受 Location 能力限制）
   w               右 pane 在目录列表与预览间切换（预览小图原尺寸居中、大图按宽适配）
   w（二进制文件） hex 完整视图（16 字节/行：偏移 + ASCII 侧栏；分块读取；

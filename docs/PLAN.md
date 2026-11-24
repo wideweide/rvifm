@@ -206,3 +206,5 @@
 | CI 覆盖增强（非违规，本次评估建议） | AUDIT-9：clippy all-targets + Linux cross-check 入 CI |
 | Win2016 上 ZCode 可能无法启动 | 改用 VS Code + `rust-analyzer` 或纯命令行；不影响项目内容 |
 | CI 无 TTY 导致 TUI 测试失败 | 使用 `TestBackend`，冒烟只跑 `--version` / `--help` |
+
+| FIX-8 | Frecency 搜索面板融合与预览修复（2026-11-24；用户指令） | `o/:j/:J` 焦点面板统一 / 查询命中高亮 / 复用 `:view` 图片与文本预览 / 鼠标选定 | M23, M34, M45 | ✅ 完成（1/1；546 单测 + 12 集成全绿） | 后续维护版本 |

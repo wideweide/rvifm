@@ -1038,9 +1038,20 @@
 - [ ] M45-2 整行反显覆盖全宽（保持）；无后缀文件不显示 `*`，可执行/文本/jar/deb 图标按类型推断（**M45-2b ✅ 2026-11-23**：infer_icon + m452b，嗅探仅常规文件防 FIFO 阻塞）；未搜索态整行背景一致（**M45-2a ✅ 2026-11-23**：m452a，反显行去类型 fg，搜索高亮保留）；搜索子串高亮存留裁决后落实。
 - [ ] M45-3 opener 配置错误提示具体化 + 示例指引（**M45-3a ✅ 2026-11-23**：m453a，路径+单行压缩+表形态提示+help 示例）；可执行文件 Enter 仅提示不执行（裁决后，**M45-3b ✅ 2026-11-23**：m453b，显式 [open] run 规则仍可执行）；删除确认居中阻塞弹窗带图标/高亮（**M45-3c ✅ 2026-11-23**：m453c，confirm_dialog 纯函数 + 居中渲染）；`v`+`d` 必现确认（**M45-3d ✅ 2026-11-23**：m453d_visual_delete_requires_confirmation，确认前文件保留）；`h`→`l` 光标还原（**M45-3e ✅ 2026-11-23**：m453e，Tab/Pane per-location cursor_memory + 钳制）。
 - [ ] M45-4 图片在预览区内不越界（native 协议字体尺寸兜底，**M45-4a ✅ 2026-11-23**：m454a，字体尺寸钳制+切片高度上限+帧相交；真实终端项 C6 deferred）；归档预览显示成员列表且 Office/PDF/zip 容器仍优先（**M45-4b ✅ 2026-11-23**：m454b，PreviewKind::Archive + archive_preview）；损坏/加密/.rar 回退信息面板；主 TUI 预览不再对 tar 显示乱码（NUL 探测）。
-- [ ] M45-5 `o` 不显示 cmd topic 条目（**M45-5a ✅ 2026-11-23**：without_cmd_topic + m455a 测试）；`o`/`:j`/`:J` 鼠标点击可选中（**M45-5b ✅ 2026-11-23**：m455b，jump_areas 同源 geometry + 点击选中）；`:` 命令名辅助提示（**M45-5c ✅ 2026-11-23**：m455c，范围自决为命令名 Tab 补全，见 NOTES）；
+- [x] M45-5 `o` 不显示 cmd topic 条目（**M45-5a ✅ 2026-11-23**：without_cmd_topic + m455a 测试）；鼠标点击选择 frecency 候选（**M45-5b 初版 ✅ 2026-11-23**：JumpSelect 浮层路径；FIX-8-1 后 `o`/`:j`/`:J` 共用内嵌面板点击路径并回归通过）；`:` 命令名辅助提示（**M45-5c ✅ 2026-11-23**：m455c，范围自决为命令名 Tab 补全，见 NOTES）；
 - [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后，**M45-6c ✅ 2026-11-23**：m456c，Pane 归档虚拟目录进/退 + 文件 no-op）。
 - [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后，**M45-7a ✅ 2026-11-23**：m457a，缺省对侧 + 指定侧/路径）；虚拟目录 `yy`→粘贴（**M45-7b ✅ 2026-11-23**：m457b，YankSource::Archive + extract_members + u 可逆；OUT_OF_SCOPE 裁决作废）。
 - [ ] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让（**M45-8c ✅ 2026-11-23**：m458c，tutor_panel_height 同源 render/视口）；列表左侧显示进度（**M45-8d ✅ 2026-11-23**：m458d，tutor_progress 缓存 + 百分比标签）；进度持久化保持。
 - [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断（**M45-9b ✅ 2026-11-23**：m459b，扩展名推断格式 + checksum 显式）；对话框宽度/去后缀/默认名/选中高亮/任意字段回车（**M45-9c ✅ 2026-11-23**：m459c，加宽 + 去后缀 + 多选父目录默认名 + 逐项反显；任意字段回车已实现）。
 - [x] M45-10 文档收尾与冲突裁决记录；harness_check 通过。（2026-11-23：README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步 + tutor 条目更新，5 项冲突裁决与范围自决见 NOTES）
+
+
+## 49. FIX-8 — Frecency 搜索面板融合与预览修复（见 SPEC FIX-8）
+
+- [x] `o`/`:j`/`:J` 在焦点 pane 位置渲染相同尺寸的 frecency 面板；`:j` 仅目录、`:J` 仅文件；候选点击与 Enter 跳转一致。（2026-11-24：共享 FrecencyPane；右栏鼠标跳转回归通过）
+- [ ] 候选路径高亮所有匹配查询词；查询更新时高亮同步。
+- [ ] 对侧图片预览通过 ImageEngine 显示；文本预览使用 `:view` 同等语法高亮与信息面板行为。
+- [ ] 独立 `pick` 保持固定左候选、右预览，窄布局行为不回归。
+- [x] README/GUIDE/help/tutor 与实现一致；M45-5b 记录准确区分浮层与内嵌面板。（2026-11-24：README/GUIDE/help/tutor 更新，历史漏测注记补齐）
+
+- [x] FIX-8-1 `o`/`:j`/`:J` 使用焦点 pane 相同 frecency 面板；鼠标点击候选与键盘选定均跳转。（2026-11-24：`:j`/`:J` 移入共享面板；右焦点鼠标跳转回归通过）

@@ -1800,6 +1800,40 @@ pub(crate) fn handle_mouse(
     if !matches!(mode, InputMode::Normal) {
         return; // Command/Search 等输入模式忽略鼠标（SPEC M15 SIMPLIFIED）。
     }
+    if state.active_tab().pane_frecency.is_some() {
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+            let (focus, cursor) = {
+                let tab = state.active_tab();
+                (
+                    tab.focus,
+                    tab.pane_frecency
+                        .as_ref()
+                        .map(|pane| pane.cursor)
+                        .unwrap_or(0),
+                )
+            };
+            if let Some(index) = crate::app::render::frecency_click_index(
+                area,
+                focus,
+                cursor,
+                mouse.column,
+                mouse.row,
+            ) {
+                let picked =
+                    state.active_tab().pane_frecency.as_ref().and_then(|pane| {
+                        filter_jump(&pane.entries, &pane.query).get(index).cloned()
+                    });
+                if let Some(entry) = picked {
+                    state.active_tab_mut().pane_frecency = None;
+                    match jump_to(state, &entry) {
+                        Ok(text) => *msg = Some(text),
+                        Err(error) => *msg = Some(error),
+                    }
+                }
+            }
+        }
+        return;
+    }
     // 列表几何：与 render 同源（M21-F1）——M39-6 布局感知（Single 右零宽、
     // PreviewBottom 上半双栏；查看器覆盖 pane 的命中在 hit_*_index 守卫）。
     // 左 pane `..` 行占内区首行（FEAT-2，有父行时条目从第 2 行开始），

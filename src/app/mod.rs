@@ -933,8 +933,23 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                         };
                                     }
                                 }
+                                Ok(ExecOutcome::OpenJump {
+                                    kind: JumpKind::Dir | JumpKind::File,
+                                    entries,
+                                }) => {
+                                    // FIX-8：:j/:J 与 o 共用焦点 pane frecency 面板。
+                                    state.active_tab_mut().pane_frecency =
+                                        Some(crate::tab::FrecencyPane {
+                                            entries,
+                                            query: String::new(),
+                                            cursor: 0,
+                                            normal: false,
+                                            g_pending: false,
+                                        });
+                                    mode = InputMode::Normal;
+                                }
                                 Ok(ExecOutcome::OpenJump { kind, entries }) => {
-                                    // M8-12：:j/:J → 分型跳转选择器。
+                                    // :recent 保留其近期排序浮层语义。
                                     mode = InputMode::JumpSelect {
                                         input: String::new(),
                                         cursor: 0,

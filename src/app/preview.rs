@@ -9,7 +9,6 @@ pub(crate) fn render_view_content(
     area: ratatui::layout::Rect,
 ) {
     let tab = state.active_tab();
-    // M17 SRCH：预览源抽象——结果模式取命中文件，物理视图取 base.join。
     let Some(path) = tab.preview_path() else {
         let pane = ratatui::widgets::Block::bordered()
             .title("view · 预览")
@@ -19,6 +18,20 @@ pub(crate) fn render_view_content(
         frame.render_widget(Paragraph::new("归档内预览暂不支持"), inner);
         return;
     };
+    render_view_path(frame, state, &path, area, tab.viewer.as_ref());
+}
+
+/// FIX-8：按给定路径复用 `:view` 的图片、Office/PDF、目录、语法高亮与
+/// 二进制信息面板渲染，供 frecency 对侧预览使用。
+pub(crate) fn render_view_path(
+    frame: &mut Frame,
+    state: &AppState,
+    path: &std::path::Path,
+    area: ratatui::layout::Rect,
+    viewer_state: Option<&crate::tab::ViewerState>,
+) {
+    let tab = state.active_tab();
+    let path = path.to_path_buf();
     // 图片仍走 ImageEngine（查看器针对文本）。
     if matches!(
         crate::preview::preview_kind(&path),
@@ -82,7 +95,7 @@ pub(crate) fn render_view_content(
         frame.render_widget(Paragraph::new(lines), inner);
         return;
     }
-    let viewer = tab.viewer.clone().unwrap_or_default();
+    let viewer = viewer_state.cloned().unwrap_or_default();
     let shown = path.display().to_string().replace('\\', "/");
     // M21-E3：大文件截断提示前置（路径长会被 pane 宽度裁掉，放行尾不可见）。
     const VIEWER_MAX_LINES: usize = 100_000;
@@ -91,18 +104,22 @@ pub(crate) fn render_view_content(
     } else {
         String::new()
     };
-    let title = match &viewer.query {
-        Some(q) => format!(
-            "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
-            viewer.scroll + 1,
-            viewer.line_count,
-            q
-        ),
-        None => format!(
-            "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
-            viewer.scroll + 1,
-            viewer.line_count
-        ),
+    let title = if viewer_state.is_none() {
+        format!("{shown} · 预览")
+    } else {
+        match &viewer.query {
+            Some(q) => format!(
+                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
+                viewer.scroll + 1,
+                viewer.line_count,
+                q
+            ),
+            None => format!(
+                "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
+                viewer.scroll + 1,
+                viewer.line_count
+            ),
+        }
     };
     let pane = ratatui::widgets::Block::bordered()
         .title(title)

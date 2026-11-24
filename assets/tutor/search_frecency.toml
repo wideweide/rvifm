@@ -1,6 +1,6 @@
 # M42-3：导师模式首批内容——检索与记忆模块。
 # 条目语义与代码行为对齐：/ 搜索（FIX-1 incsearch + M34-3 焦点感知）、
-# = 过滤（M21-E7）、o 跳转选择器（M8-12）、:recent 近期视角（M16 NAV-4）。
+# = 过滤（M21-E7）、o 焦点 pane 内嵌 frecency 搜索（M23-6/FIX-8）、:recent 近期视角（M16 NAV-4）。
 
 [module]
 id = "search_frecency"
@@ -24,8 +24,8 @@ expected = "列表只剩匹配项，状态栏出现 [filter: …]；Esc 清除�
 
 [[items]]
 id = "jump_selector"
-prompt = "按 `o` 打开跳转选择器，输入目录名片段筛选后回车。"
-expected = "列出高频目录/文件（模糊筛选、按访问频率排序）；选定目录即 cd。"
+prompt = "按 `o` 在焦点 pane 打开 frecency 搜索区，输入目录名片段筛选后回车。"
+expected = "候选按访问频率排序；命中路径高亮，对侧预览当前条目；选定目录即 cd。"
 
 [[items]]
 id = "mark_directory"
@@ -39,5 +39,5 @@ expected = "打开\"近期\"视角：条目按最后访问时间倒序；选定�
 
 [[items]]
 id = "selector_readonly"
-prompt = "在选择器里按 `q` 退出。"
-expected = "回到原列表；选择器全程只读，不写入访问记录。"
+prompt = "在搜索区按 Esc 回到 Normal，再按 Esc 关闭。"
+expected = "回到原列表；搜索区全程只读，不写入访问记录。"

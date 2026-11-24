@@ -508,7 +508,7 @@ redb 三表，无后台守护进程：
 
 #### M23 — Frecency 对齐增强与 Pane 模式（2026-11-17 增补；来源：DeepSeek 分享讨论蒸馏）
 
-**硬约束**：不动已对齐的评分核心（events+snapshot+meta 三表、write-time 记录 + read-time 重放、dir/file 独立时钟、EMS 数学形式）；`pick` 保持纯只读；`c`/`v`/`e` 仅在 Frecency 模式下重映射，退出后恢复原语义（`v` 不得侵入 Visual、`e` 不与其他绑定冲突）；keyword 事件仍是元数据事件（不推进时钟、不加分）；容量清理永不删除带 keyword 的条目；IGNORE_PATTERNS 在 record 入口静默跳过（不追加事件）；Frecency 模式不新建独立预览渲染路径（复用 PreviewRenderer）。
+**硬约束**：不动已对齐的评分核心（events+snapshot+meta 三表、write-time 记录 + read-time 重放、dir/file 独立时钟、EMS 数学形式）；`pick` 保持纯只读；`c`/`v`/`e` 仅在 Frecency 模式下重映射，退出后恢复原语义（`v` 不得侵入 Visual、`e` 不与其他绑定冲突）；keyword 事件仍是元数据事件（不推进时钟、不加分）；容量清理永不删除带 keyword 的条目；IGNORE_PATTERNS 在 record 入口静默跳过（不追加事件）；Frecency 模式不新建独立预览渲染路径（复用既有 `:view` / PreviewRenderer 路径）。
 
 **MUST**
 - **M23-1 多词搜索与匹配分级**：`o`/`pick` 筛选升级——`MatchGrade`（Keyword > LastSegment > Substring）分级排序（grade 升序、score 降序）；多词查询 `split_whitespace`：ordered（按序命中路径）与 any-order（全词命中）两种模式；无命中降级现状子串过滤。
@@ -516,7 +516,7 @@ redb 三表，无后台守护进程：
 - **M23-3 容量清理与书签保护**：record 写事务/compaction 时检查 per-topic `max_entries`（默认 1500）；超限删除最低分的**未书签**条目至 90%；带 keyword 条目永不删除。
 - **M23-4 IGNORE_PATTERNS**：record 入口 glob 匹配配置模式（如 `*/.git`、`*/node_modules/*`），命中静默跳过不追加事件；模式列表来自 TOML 配置（复用既有 glob 匹配能力，不引新 crate）。
 - **M23-5 per-topic LAMBDA / MAX_ENTRIES 配置**：`[frecency]` TOML 段按 topic（dir/file/unified）各自配置 `lambda` 与 `max_entries`；默认值 unified 0.005、dir/file 0.01（与参考项目一致）；旧配置缺省兼容。
-- **M23-6 Frecency Pane 模式**：`o` 让**焦点 pane** 进入 Frecency 内嵌搜索（非浮层），对侧 pane 保持可见；结果光标移动时对侧自动预览当前条目（PreviewRenderer 分派：目录浅层 tree、图片、Office/PDF、文本截断 100–200 行 + 末尾"…已截断，按 v 查看全文"标记）；Esc 逐级退出（Search → Normal → Directory）。
+- **M23-6 Frecency Pane 模式**：`o` 让**焦点 pane** 进入 Frecency 内嵌搜索（非浮层），对侧 pane 保持可见；结果光标移动时对侧自动预览当前条目（目录浅层 tree、图片、Office/PDF、文本）；FIX-8 起复用 `:view` 的按路径渲染链（ImageEngine、语法高亮与信息面板），不再使用纯文本摘要预览；Esc 逐级退出（Search → Normal → Directory）。
 - **M23-7 `c`/`v`/`e` 模式内重映射**：`c` 复制选中路径到剪贴板（状态栏 `copied <path>`，不退出）；`v` 对侧进入 View 全文模式并聚焦（j/k/gg/G、`/` 搜索、n/N；Tab 切回 Frecency 搜索区）；`e` `$EDITOR` 打开选中文件并退出 Frecency（不自动跳转）；View 超大文件上限 10 万行（超出提示"文件过大，仅显示前 N 行"）。
 
 **SIMPLIFIED**
@@ -1416,6 +1416,19 @@ append_rules = [
   且可解析；`session_restore=false` 时仍不写不读（既有语义不变）。
 - **FIX-6-3** 设计澄清：会话**原设计即自动保存**（M25-1 退出保存/启动恢复），
   本次修复是实现缺陷，不改变需求；文档（README/GUIDE/help）维持既有描述。
+
+## FIX-8 — Frecency 搜索面板融合与预览修复（2026-11-24 增补；用户指令）
+
+**设计裁决**
+- TUI 内 `o`/`:j`/`:J` 共用焦点 pane 的嵌入式 frecency 搜索面板；候选来自 frecency 存储并以虚拟列表呈现（仅展示路径与条目，不挂载或修改原路径）。面板替换焦点 pane 的列表，对侧 pane 显示当前候选预览；焦点左右两侧的布局尺寸相同。
+- 独立 `rvifm pick` 没有原文件管理器 pane 焦点，固定左侧为候选搜索区、右侧为预览区；窄终端仍可降级单栏。
+- TUI 候选路径按查询词高亮；点击候选与键盘选定走同一跳转行为。
+
+**MUST**
+- **FIX-8-1** `o`、`:j`、`:J` 共用相同嵌入式面板、焦点 pane 位置与几何；`:j`/`:J` 保持类型过滤与跳转语义。候选路径高亮查询词；鼠标点击候选与 Enter 同样跳转；对侧预览复用 `:view` 的图片协议引擎与文本语法高亮/信息面板分流，跟随当前候选。同步 SPEC / ACCEPTANCE / NOTES / README / GUIDE / 内置 help 与 tutor；独立 `pick` 仍固定左候选、右预览；更正 M45-5b 历史验收描述。
+
+**OUT_OF_SCOPE**
+- 不把独立 `pick` 重新设计成可切换左右候选区；不变更 frecency 评分、存储、记录或只读边界。
 
 ## FIX-7 — 双栏焦点能力一致性（2026-11-24 增补；用户确认）
 

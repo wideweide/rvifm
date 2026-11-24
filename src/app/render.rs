@@ -661,6 +661,88 @@ pub(crate) fn jump_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
     }
 }
 
+/// FIX-8：与 frecency 搜索区渲染同源的列表区域和纵向偏移。
+pub(crate) fn frecency_list_offset(cursor: usize, height: usize) -> usize {
+    if height == 0 || cursor < height {
+        0
+    } else {
+        cursor + 1 - height
+    }
+}
+
+pub(crate) fn frecency_click_index(
+    area: ratatui::layout::Rect,
+    focus: crate::tab::Focus,
+    cursor: usize,
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
+    let focused = if focus == crate::tab::Focus::Left {
+        left
+    } else {
+        right
+    };
+    let list = ratatui::widgets::Block::bordered().inner(focused);
+    if col < list.x
+        || col >= list.x.saturating_add(list.width)
+        || row < list.y
+        || row >= list.y.saturating_add(list.height)
+    {
+        return None;
+    }
+    Some(frecency_list_offset(cursor, list.height as usize) + (row - list.y) as usize)
+}
+
+/// FIX-8：按 frecency 搜索词分段高亮所有路径匹配，复用文件列表搜索的
+/// smart-case byte range 语义；多词命中片段合并，避免重复覆盖。
+pub(crate) fn highlight_query_spans(value: &str, query: &str) -> Vec<Span<'static>> {
+    let mut ranges = Vec::new();
+    for term in query.split_whitespace() {
+        let mut offset = 0;
+        while offset < value.len() {
+            let rest = &value[offset..];
+            let Some((start, end)) = crate::tab::match_range(rest, term) else {
+                break;
+            };
+            let start = offset + start;
+            let end = offset + end;
+            ranges.push((start, end));
+            offset = end.max(offset + 1);
+        }
+    }
+    ranges.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in ranges {
+        if let Some(last) = merged.last_mut()
+            && start <= last.1
+        {
+            last.1 = last.1.max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    let mut spans = Vec::new();
+    let mut pos = 0;
+    for (start, end) in merged {
+        if start > pos {
+            spans.push(Span::from(value[pos..start].to_owned()));
+        }
+        spans.push(Span::styled(
+            value[start..end].to_owned(),
+            Style::new().fg(Color::Black).bg(Color::LightYellow),
+        ));
+        pos = end;
+    }
+    if pos < value.len() {
+        spans.push(Span::from(value[pos..].to_owned()));
+    }
+    if spans.is_empty() {
+        spans.push(Span::from(value.to_owned()));
+    }
+    spans
+}
+
 /// M23-6：Frecency Pane 渲染——焦点 pane 显示搜索+结果，对侧显示光标
 /// 条目的快速预览（PreviewRenderer，文本 100 行截断 + 标记）。
 pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
@@ -714,16 +796,20 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             } else {
                 format!(" ✦{}", e.keyword)
             };
-            ListItem::new(Line::from(format!("{} {}{}", icon.glyph, e.path, bm))).style(
-                if idx == pane.cursor {
-                    Style::new().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::new()
-                },
-            )
+            let mut spans = vec![Span::from(format!("{} ", icon.glyph))];
+            spans.extend(highlight_query_spans(&e.path, &pane.query));
+            spans.extend(highlight_query_spans(&bm, &pane.query));
+            ListItem::new(Line::from(spans)).style(if idx == pane.cursor {
+                Style::new().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::new()
+            })
         })
         .collect();
-    let mut list_state = ListState::default().with_selected(Some(pane.cursor));
+    let list_offset = frecency_list_offset(pane.cursor, inner.height as usize);
+    let mut list_state = ListState::default()
+        .with_selected(Some(pane.cursor))
+        .with_offset(list_offset);
     frame.render_stateful_widget(
         ratatui::widgets::List::new(frec_items)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
@@ -731,16 +817,10 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         &mut list_state,
     );
 
-    // 对侧：光标条目的快速预览（PreviewRenderer，100 行截断）。
-    let other_block = ratatui::widgets::Block::bordered()
-        .title("预览")
-        .border_style(pane_border_style(false));
-    let other_inner = other_block.inner(other_area);
-    frame.render_widget(other_block, other_area);
+    // 对侧：光标条目复用 :view 路径渲染（图像协议、语法高亮与类型分流）。
     if let Some(entry) = visible.get(pane.cursor) {
         let path = std::path::PathBuf::from(&entry.path);
-        let preview = crate::preview::render_preview(&path, 100);
-        frame.render_widget(preview.into_paragraph(), other_inner);
+        crate::app::preview::render_view_path(frame, state, &path, other_area, None);
     }
     // M34-5：搜索模式底部实时回显当前 query（键入即时更新、清空同步）；
     // Normal 显示操作提示。计数自标题移至两处提示行。

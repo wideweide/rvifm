@@ -8785,6 +8785,134 @@ fn m455c_command_name_tab_completion() {
 }
 
 #[test]
+fn fix8_frecency_query_highlights_all_matching_terms() {
+    let spans = crate::app::render::highlight_query_spans("/home/rvifm/src/main.rs", "rvifm main");
+    let rendered = spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(rendered, "/home/rvifm/src/main.rs");
+    let highlighted = spans
+        .iter()
+        .filter(|span| span.style.bg == Some(ratatui::style::Color::LightYellow))
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(highlighted, "rvifmmain");
+}
+
+#[test]
+fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
+    let tmp = TempDir::new().unwrap();
+    let target = tmp.path().join("target");
+    fs::create_dir(&target).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: target.to_string_lossy().into_owned(),
+            topic: "dir".to_owned(),
+            keyword: String::new(),
+            score: 1.0,
+            grade: crate::frecency::Grade::Substring,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: false,
+        g_pending: false,
+    });
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    let [_, _, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
+    let inner = ratatui::widgets::Block::bordered().inner(right);
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: inner.x,
+        row: inner.y,
+        modifiers: KeyModifiers::NONE,
+    };
+    let mut msg = None;
+    handle_mouse(&mut state, &InputMode::Normal, &click, &mut msg, area);
+    assert!(state.active_tab().pane_frecency.is_none());
+    assert_eq!(state.active_tab().right.location.base_dir(), target);
+}
+
+#[test]
+fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
+    let tmp = TempDir::new().unwrap();
+    let text_path = tmp.path().join("sample.rs");
+    fs::write(&text_path, "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+    let image_path = tmp.path().join("sample.png");
+    let image = image::DynamicImage::new_rgba8(2, 2);
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+    fs::write(&image_path, png.into_inner()).unwrap();
+    for path in [&text_path, &image_path] {
+        let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+        state.image_engine = crate::image::ImageEngine::halfblocks();
+        state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+            entries: vec![crate::frecency::ScoredEntry {
+                path: path.to_string_lossy().into_owned(),
+                topic: "file".to_owned(),
+                keyword: String::new(),
+                score: 1.0,
+                grade: crate::frecency::Grade::Substring,
+                last_visit: 0,
+            }],
+            query: String::new(),
+            cursor: 0,
+            normal: false,
+            g_pending: false,
+        });
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let output = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_owned()))
+            .collect::<String>();
+        if path == &text_path {
+            assert!(
+                output.contains("fn main"),
+                "syntax-aware :view text appears: {output}"
+            );
+            assert!(
+                output.contains("1 │"),
+                "line number gutter is reused: {output}"
+            );
+        } else {
+            assert!(
+                !output.contains("图形渲染不可用"),
+                "ImageEngine handled image preview: {output}"
+            );
+        }
+    }
+}
+
+#[test]
+fn fix8_frecency_click_targets_focused_pane_list() {
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    let [_, _, right, _] =
+        crate::app::render::pane_layout(area, crate::config::LayoutMode::Dual, false);
+    let inner = ratatui::widgets::Block::bordered().inner(right);
+    assert_eq!(
+        crate::app::render::frecency_click_index(
+            area,
+            crate::tab::Focus::Right,
+            0,
+            inner.x + 1,
+            inner.y + 1,
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        crate::app::render::frecency_click_index(area, crate::tab::Focus::Right, 0, 1, 1,),
+        None
+    );
+}
+
+#[test]
 fn m455b_jump_click_index_geometry() {
     // M45-5b：选择器列表段点击 → 可见项下标；框外/标题/提示行返回 None。
     let area = ratatui::layout::Rect::new(0, 0, 80, 24);
