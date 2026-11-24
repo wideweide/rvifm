@@ -396,6 +396,51 @@ pub(crate) fn help_find_match(
     None
 }
 
+/// M46-7：不透明帮助覆盖层（View 与 Search 共用）。`input = Some(...)` 时
+/// 在可视区底部渲染 `/输入` 行，保证 `/` 搜索过程可见且内容不被清空。
+fn render_help_overlay(
+    frame: &mut Frame,
+    scroll: usize,
+    search: Option<&str>,
+    input: Option<&String>,
+) {
+    let area = frame.area();
+    frame.render_widget(ratatui::widgets::Clear, area);
+    // 显式铺一层不透明背景（Paragraph 的 style 不保证填满空白单元）。
+    frame.render_widget(
+        ratatui::widgets::Block::default().style(Style::new().bg(Color::Black)),
+        area,
+    );
+    let lines = help_lines();
+    let title = match (input, search) {
+        (Some(q), _) => format!("帮助  /{q}（Enter 搜索  Esc 返回）"),
+        (_, Some(q)) => format!("帮助  /{q}（n/N 跳转）"),
+        _ => "帮助（j/k 滚动  / 搜索  n/N 跳转  q 返回）".to_owned(),
+    };
+    // 搜索输入期预留末行给输入框，避免挤压帮助正文。
+    let capacity = area.height.saturating_sub(2) as usize;
+    let body = capacity.saturating_sub(input.is_some() as usize);
+    let mut visible: Vec<Line> = lines
+        .iter()
+        .skip(scroll)
+        .take(body)
+        .map(|l| Line::from((*l).to_owned()))
+        .collect();
+    if let Some(q) = input {
+        visible.push(Line::from(vec![
+            Span::styled("/".to_owned(), Style::new().fg(Color::Yellow)),
+            Span::from(q.clone()),
+            Span::from("█".to_owned()),
+        ]));
+    }
+    frame.render_widget(
+        Paragraph::new(visible)
+            .block(ratatui::widgets::Block::bordered().title(title))
+            .style(Style::new().bg(Color::Black)),
+        area,
+    );
+}
+
 /// FEAT-1/FEAT-3：条目行命中测试——鼠标行 → 条目索引；不在条目区
 /// （边框/`..` 行/右 pane/标签栏/状态栏/越界）返回 None。
 /// 几何与 render 同源（M21-F1 pane_layout + 左 pane 边框内区）。
@@ -1132,24 +1177,20 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         _ => {}
     }
 
+    // M46-7：帮助页与帮助搜索共用不透明覆盖层——Clear + 背景色，杜绝透出
+    // 下层双栏内容；HelpSearch 增加可见输入框（旧实现无渲染分支，按下 `/`
+    // 后落到普通双栏，表现为"内容被清空"）。
     if let InputMode::HelpView { scroll, search } = mode {
-        // FEAT-4：全屏帮助视图（内容来自内嵌 help.txt，滚动状态独立）。
-        let lines = help_lines();
-        let title = match search {
-            Some(q) => format!("帮助  /{q}（n/N 跳转）"),
-            None => "帮助（j/k 滚动  / 搜索  n/N 跳转  q 返回）".to_owned(),
-        };
-        let area = frame.area();
-        let visible: Vec<Line> = lines
-            .iter()
-            .skip(*scroll)
-            .take(area.height.saturating_sub(2) as usize)
-            .map(|l| Line::from((*l).to_owned()))
-            .collect();
-        frame.render_widget(
-            Paragraph::new(visible).block(ratatui::widgets::Block::bordered().title(title)),
-            area,
-        );
+        render_help_overlay(frame, *scroll, search.as_deref(), None);
+        return;
+    }
+    if let InputMode::HelpSearch {
+        input,
+        scroll,
+        search,
+    } = mode
+    {
+        render_help_overlay(frame, *scroll, search.as_deref(), Some(input));
         return;
     }
     if let InputMode::FileInfo { path, text } = mode {
@@ -1786,9 +1827,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             }
         }
         InputMode::Filter { input } => Line::from(format!("={input}")),
-        InputMode::HelpView { .. } | InputMode::HelpSearch { .. } => {
-            Line::from(String::new()) // 帮助视图提前 return，不可达
-        }
+        InputMode::HelpView { .. } => Line::from(String::new()), // 帮助覆盖层提前 return
+        InputMode::HelpSearch { input, .. } => Line::from(format!("/{input}")), // 同上，保持语义一致
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达
         InputMode::Jobs { .. } => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达

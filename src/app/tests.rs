@@ -4675,7 +4675,9 @@ fn exec_q_cd_help_unified_parse() {
     // :q 请求退出。
     assert_eq!(exec_command_impl(&mut state, "q"), Ok(ExecOutcome::Quit));
 
-    // :help 请求帮助层。
+    // :help 请求帮助层。M46-7：新窗口路径依赖宿主复用器环境，测试显式
+    // 关闭以确定性覆盖应用内帮助层（AUDIT-14 测试环境隔离）。
+    state.config.ui.help_in_new_window = false;
     assert_eq!(
         exec_command_impl(&mut state, "help"),
         Ok(ExecOutcome::EnterHelp)
@@ -7540,6 +7542,66 @@ fn feat4_help_view_renders_embedded_text_and_scroll() {
         row2(1)
     );
     assert!(!row2(1).contains("rvifm"), "首行已被滚出");
+}
+
+/// M46-7：帮助覆盖层不透明（Clear + 黑底，不透出下层双栏）；HelpSearch
+/// 有独立渲染分支，`/` 输入期可见，内容不再被清空。
+#[test]
+fn m467_help_overlay_opaque_and_search_input_visible() {
+    let (_tmp, state) = make_state(2);
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(
+                frame,
+                &state,
+                &InputMode::HelpView {
+                    scroll: 0,
+                    search: None,
+                },
+                None,
+            )
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    // 不透明：内部单元被黑色背景覆盖，且下层双栏文件名不得透出。
+    let black = buf.content.iter().filter(|c| c.bg == Color::Black).count();
+    assert!(black > 700, "帮助页应铺满不透明背景（实际 {black} 格）");
+    let first_view = (0..12u16)
+        .map(|y| (0..80u16).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !first_view.contains("f00"),
+        "下层文件列表不得透出: {first_view}"
+    );
+
+    // HelpSearch：输入框与已键入查询可见。
+    terminal
+        .draw(|frame| {
+            render(
+                frame,
+                &state,
+                &InputMode::HelpSearch {
+                    input: "filter".to_owned(),
+                    scroll: 0,
+                    search: None,
+                },
+                None,
+            )
+        })
+        .unwrap();
+    let b2 = terminal.backend().buffer().clone();
+    let text = (0..12u16)
+        .map(|y| (0..80u16).map(|x| b2[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("/filter"), "搜索输入应可见: {text}");
+    assert!(
+        text.contains("rvifm") && text.contains("导"),
+        "帮助正文仍在（未被清空）: {text}"
+    );
 }
 
 #[test]

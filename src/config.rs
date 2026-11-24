@@ -142,6 +142,9 @@ pub struct UiConfig {
     /// M39-6：主区布局（`layout = single|dual|preview-right|preview-bottom`；
     /// None/未知 = dual 缺省）。
     pub layout: Option<String>,
+    /// M46-7：`:help` 在 tmux/screen 新窗口打开（默认开）；无复用器或关闭时
+    /// 回退应用内不透明帮助覆盖层。
+    pub help_in_new_window: bool,
 }
 
 /// M39-6：主区布局模式——`[ui] layout`。
@@ -193,6 +196,7 @@ impl Default for UiConfig {
             pane_borders: false,
             pane_separator: false,
             layout: None,
+            help_in_new_window: true,
         }
     }
 }
@@ -636,6 +640,14 @@ mod tests {
         assert!(!cfg.ime.enabled);
         assert_eq!(cfg.ime.ibus_english_engine, "xkb:gb::eng");
         assert_eq!(ImeConfig::default().ibus_english_engine, "xkb:us::eng");
+    }
+
+    #[test]
+    fn m467_help_in_new_window_config_parses() {
+        let cfg = Config::default();
+        assert!(cfg.ui.help_in_new_window, "默认在复用器新窗口打开帮助");
+        let parsed: Config = toml::from_str("[ui]\nhelp_in_new_window = false\n").unwrap();
+        assert!(!parsed.ui.help_in_new_window);
     }
 
     #[test]

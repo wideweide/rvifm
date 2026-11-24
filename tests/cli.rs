@@ -48,6 +48,20 @@ fn help_flag_prints_usage_and_exits_zero() {
     assert!(stdout.contains("--version"), "stdout: {stdout}");
 }
 
+/// M46-7：新增 `rvifm help` 子命令——输出与 TUI 同源的内嵌帮助正文，
+/// 供 `:help` 在 tmux/screen 新窗口打开（CI 无 TTY 亦可冒烟）。
+#[test]
+fn help_subcommand_prints_embedded_text() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+        .arg("help")
+        .output()
+        .expect("rvifm help 可运行");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rvifm 帮助"), "stdout: {stdout}");
+    assert!(stdout.contains("搜索"), "stdout: {stdout}");
+}
+
 #[test]
 fn unknown_flag_exits_nonzero_without_panic() {
     let (code, _, stderr) = run_flag("--no-such-flag");

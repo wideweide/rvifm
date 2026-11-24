@@ -3263,7 +3263,23 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             record_live_visit(state, tab_id, 'L');
             Ok(ExecOutcome::Done { msg: None })
         }
-        Some("help") => Ok(ExecOutcome::EnterHelp),
+        Some("help") => {
+            // M46-7：复用器环境下在新窗口打开 `rvifm help`（内嵌正文），
+            // 并"激活"该窗口；无 tmux/screen 或配置关闭时回退应用内不透明
+            // 帮助覆盖层（CI/无 TTY 亦走此路径）。
+            if state.config.ui.help_in_new_window {
+                let exe = std::env::current_exe()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "rvifm".to_owned());
+                let cmd = format!("{} help", crate::opener::shell_quote(&exe));
+                match run_external_target(&state.config.ui, &cmd) {
+                    ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
+                    ExternalRun::CurrentPane(_) => Ok(ExecOutcome::EnterHelp),
+                }
+            } else {
+                Ok(ExecOutcome::EnterHelp)
+            }
+        }
         Some("tabnew") => {
             if state.new_tab_here() {
                 Ok(ExecOutcome::Done { msg: None })

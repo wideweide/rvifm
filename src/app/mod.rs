@@ -595,6 +595,12 @@ fn spawn_job_from_plan(
     None
 }
 
+/// M46-7：`rvifm help` 子命令输出的内嵌帮助文本（与 TUI `:help` 同源，
+/// 新终端窗口打开时无需再嵌入一份文档）。
+pub fn help_text() -> &'static str {
+    render::HELP_TEXT
+}
+
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
