@@ -647,3 +647,20 @@
 - [deferred] FIX-9-CI Windows/macOS 编译分支在对应 CI runner 补验（本地仅有 Linux target，见 SPEC FIX-9）
 
 - [x] FIX-8-1 统一 TUI frecency 焦点面板、查询高亮、鼠标跳转、`:view` 预览复用及文档收尾（2026-11-24：`o`/`:j`/`:J` 共用面板；README/GUIDE/help/tutor 同步；546 单测 + 12 集成全绿）
+
+## M46 — 用户实测批次 2（2026-11-24 蒸馏；vifm 对齐 + 缺陷真修复 + 配置/归档增强，见 SPEC M46 节）
+
+> 来源：用户 2026-11-24 实测反馈 12 项，按 AGENTS §8 蒸馏。多项为 M45/FIX 既有任务的"未真正修复"回退，登记时逐项对照代码定位根因（见 NOTES）。编号沿用 M45 用户实测批次先例取 M46。顺序：1→12（缺陷修复优先，文档收尾殿后；环境/平台相关人工验收 deferred）。
+
+- [ ] M46-1 图片预览越界真修复（预览 pane 几何/Clear/pane 级相交 + 原生协议 SlicedImage 高度钳制；见 SPEC M46-1）
+- [ ] M46-2 搜索高亮仅应用当前焦点 pane（左 pane 增焦点守卫，vifm 对齐；见 SPEC M46-2）
+- [ ] M46-3 右 pane 未搜索态整行背景一致（M45-2a 同款 row_reversed 守卫右移；见 SPEC M46-3）
+- [ ] M46-4 `h`→`l` 光标还原真修复（on_parent_row 不再覆盖还原 cursor；见 SPEC M46-4）
+- [ ] M46-5 `:extract` 解压到对侧后刷新目标 pane（extract/yy→p + job 完成刷新双侧；见 SPEC M46-5）
+- [ ] M46-6 启动创建默认 config.toml（注释说明默认设置）+ 键位/命令示例配置，不覆盖已有（见 SPEC M46-6）
+- [ ] M46-7 `:help` 修复：不透明背景 + 新终端窗口打开 + `/` 搜索可用（见 SPEC M46-7）
+- [ ] M46-8 归档 `w` 预览提速（去每帧全量解压/重开，缓存 + 护栏；见 SPEC M46-8）
+- [ ] M46-9 `.deb`/`.apk`/`.rar` 的 `w` 预览与 `l`/Enter VFS（apk 保持；deb ar+tar；rar 外部 CLI；见 SPEC M46-9）
+- [ ] M46-10 删除确认弹窗 yazi 风格重做（标题居中+图标+文件列表+固定高度+滚动条+j/k；见 SPEC M46-10）
+- [ ] M46-11 更新内置 help 文档（见 SPEC M46-11）
+- [ ] M46-12 更新导师模式测试项目与提示（见 SPEC M46-12）

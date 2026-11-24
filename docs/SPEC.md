@@ -1557,6 +1557,38 @@ append_rules = [
 - 不改归档内写入/嵌套递归；不做 vifm 脚本引擎或 `:highlight` 语法；
   不自动执行可执行文件；命令辅助不做外部 shell 补全脚本。
 
+## M46 — 用户实测批次 2（2026-11-24 蒸馏；vifm 对齐 + 缺陷真修复 + 配置/归档增强，见 NOTES 同日条目）
+
+> 来源：用户 2026-11-24 实测反馈 12 项，按 AGENTS §8 蒸馏。其中 M46-1/3/4/5 分别为 M45-4a/M45-2a/M45-3e/M45-7/M37-2 的"未真正修复"回退，登记时逐项对照代码定位根因（见 NOTES）。`.apk` 经代码核实已支持，保持不动；`.deb`/`.rar` 需新增只读后端。
+
+**MUST**
+- **M46-1 图片预览越界真修复**：图片（含原生 Kitty/iTerm2/Sixel、halfblocks、PDF 首页图像、`pick` 预览）必须严格绘制在预览窗格 inner rect 内，顶部不得出现在整个 rvifm 窗口顶部。修正三处：① `image.rs` 的相交从 `frame.area()` 改为调用方传入的预览 pane rect（禁止用整屏兜底）；② `SlicedImage`/`clamp_slice_height` 的虚拟高度与 widget 实际绘制区域一致，原生协议的绝对定位图形不得超出窗格；③ `render.rs` 中 `viewer_rect`（PreviewBottom）与经 tutor 面板收缩后的 pane rect 同源，消除几何错位。补 TestBackend 回归断言（图片 widget 目标 rect 完全落在预览 inner rect 内）；真实终端大图验证沿用 M11-6/C6 deferred。
+- **M46-2 搜索高亮仅焦点 pane**：`/` 搜索的 LightYellow 匹配子串高亮只渲染在当前焦点 pane（左 pane `render()` 的 active_query 增焦点守卫，与右 pane `render_right_pane` 现有守卫对称）。Tab 级共享 `SearchState` 存储不变（不改成 per-pane），`n`/`N` 与状态栏计数行为不变。
+- **M46-3 右 pane 整行背景一致**：`render_right_pane` 对当前行/可视选择行应用与 M45-2a 左 pane 相同的 `row_reversed` 守卫（反显/选中行去除 `ft_*` 文字前景色，未搜索态整行背景一致）；搜索匹配子串高亮保留（FIX-1 不推翻）；补右 pane 回归测试。
+- **M46-4 `h`→`l` 光标还原真修复**：`enter_selected`（左右 pane）在通过 `restore_cursor()` 还原目标目录光标后，不得再无条件把 `on_parent_row` 置为 `true` 覆盖还原结果；仅当还原后的光标确实指向 `..` 行时才设 `on_parent_row=true`。`/tmp/test/b` → `h` → `l` 光标必须落在 `b` 而非 `..`。补断言 `on_parent_row == false` 的回归测试。
+- **M46-5 `:extract` 目标 pane 刷新**：`:extract`、归档 `yy`→`p/P` 解压写入目标 pane（含对侧）后，必须立即刷新目标 pane 的目录条目；同步修正 `apply_job_update` 用 `refresh_tab_panes`（左右双侧）替代仅 `tab.refresh`。补"解压后对侧列表包含新文件"的回归测试。
+- **M46-6 启动生成默认配置**：TUI 启动时若 `config.toml` 不存在，在 `config_path()` 的目录（`create_dir_all`）写入带中文注释的默认 `config.toml`，逐节说明 `ui`/`preview`/`frecency`/`archive`/`transfer`/`ime`/`[normal]`/`[opener]`/`[open]` 等默认项；同时生成键位与 opener 示例文件（如 `keymap.example.toml`/`opener.example.toml`）供参考。已存在文件绝不覆盖；生成失败静默降级不影响启动；仅 TUI 启动钩子生成，`load_from(temp)` 与 `cargo test` 不得被污染。补纯函数/路径注入测试。
+- **M46-7 `:help` 修复**：① help 覆盖层与 `HelpSearch` 渲染分支用 `Clear` + 不透明背景，不再透出下层列表；② `/` 进入 `HelpSearch` 后可见输入框、可键入并 Enter 搜索、Esc 返回，内容不再被清空；③ `:help` 在检测到 tmux/screen 且 `[ui] help_in_new_window`（默认 true）为真时，通过既有 `run_external_target_with` 在新复用器窗口打开并激活 `rvifm help`（新增子命令，输出内嵌 help 文本）；无复用器或关闭时回退到应用内不透明覆盖层。补渲染/键位/CLI 冒烟测试。
+- **M46-8 归档 `w` 预览提速**：预览不得在每一帧重新 `open_dispatch` 并全量解压（尤其 `tar.xz` 整文件解码）；按 (路径, mtime, size) 缓存成员列表，首次打开后复用；为预览打开加输入文件大小护栏与轻量成员上限，超限给可读提示而非卡死；大归档优先给出"按 l 进入浏览"的快速提示。zip/纯 tar 等快速路径保持。补"同路径二次预览不重复 open"与护栏测试。
+- **M46-9 新增归档格式**：`.apk` 已在 `ZIP_CONTAINERS` 中，`w` 预览与 `l`/Enter VFS 均可用，保持不变并补文档。新增 `.deb`（`ar` 容器解析 + 内嵌 `data.tar.*` 复用 `TarFs`）与 `.rar`（外部 `unrar`/`7z`/`bsdtar` 只读列出/抽取，缺失给可读提示）的 `w` 预览成员列表与 `l`/Enter 虚拟目录进入；所有扩展名真值表（`ZIP_CONTAINERS`/`is_archive_file`/`is_unsupported_archive`/`open_dispatch`/`detect_kind`/`strip_archive_ext`）同步，统一单一来源避免漂移；沿用 64MB 成员上限与只读边界，不写归档内。补识别/浏览/损坏回退测试。
+- **M46-10 删除确认 yazi 风格**：删除确认（单文件与 `v`/`t` 多选）改为居中弹窗：标题「⚠ 是否删除选定的 N 个文件」居中并带确认图标；标题下方不再显示提示文字；列出待删除文件，图标/颜色与双栏列表一致；高度固定，条目过多时右侧显示滚动条，`j`/`k`（含方向键）导航查看，`y`/Enter 确认、Esc/`n` 取消。补渲染/交互测试。
+- **M46-11 help 文档同步**：`src/app/help.txt` 与 `docs/GUIDE.md`、`CHANGELOG.md` 同步本批次新增/修复项（图片越界、焦点高亮、右栏整行、h→l、extract 刷新、默认配置生成、help 新窗口与 `/` 搜索、归档预览提速与 deb/apk/rar、yazi 删除确认）。
+- **M46-12 tutor 同步**：按 SPEC M43-6 维护规则，`assets/tutor/*.toml` 与提示同步本批次变化（如帮助新窗口/搜索、归档格式、删除确认等），更新相关 `prompt`/`expected` 与 Panel 提示，保持 13 模块 100 项结构可解析。
+
+**SIMPLIFIED**
+- M46-2 不把 `SearchState` 拆成 per-pane（仅渲染层焦点守卫）。
+- M46-6 生成的示例文件为静态模板，不做交互式配置向导；不引入 `dirs`/`xdg` crate，复用 `config_path()`。
+- M46-7 "激活"在新复用器窗口为尽力而为（tmux `new-window` 切换/可选中），不抢占用户当前工作区焦点；非复用器终端回退应用内覆盖层，不强制启动 GUI 终端模拟器。
+- M46-8 缓存仅内存态（不落盘），进程重启后重建；预览成员上限给提示而非完整虚拟滚动。
+- M46-9 `.deb` 只浏览 `data.tar.*` 内容（`debian-binary`/`control.tar` 不展示）；`.rar` 依赖用户系统只读工具，缺失给提示。
+- 所有改动沿用既有 `Action`/Keymap、主题/图标与 `TestBackend` 测试路径，不引入必需外部依赖。
+
+**OUT_OF_SCOPE**
+- 不修改 `pick` 只读红线、frecency 评分/存储、撤销栈语义。
+- 不实现归档内写入/嵌套递归浏览、不嵌入视频播放、不引入 Vim 脚本/插件系统。
+- 不为 help 引入内嵌文档查看器依赖或外部终端模拟器的硬依赖。
+- 不改动 crates.io 发布状态（仍停在 1.0.0）。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

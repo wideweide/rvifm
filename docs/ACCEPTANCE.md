@@ -1064,3 +1064,18 @@
 - [deferred] Windows/macOS CI runner 确认其它平台 worker 不启动 Linux 子进程且配置字段可编译；本机只安装 Linux target。（FIX-9-CI）
 - [x] README/GUIDE/内置 help/tutor/CHANGELOG 说明配置、支持后端与降级行为。（FIX-9-2；见 SPEC FIX-9-3）
 - [deferred] 真实 Linux IBus/Fcitx/Fcitx5 桌面会话验证按 Esc 切英文、重新进入文本输入后恢复、退出恢复；需人工登录对应桌面会话。
+
+## 51. M46 — 用户实测批次 2（见 SPEC M46 节）
+
+- [ ] M46-1 图片（原生协议/SlicedImage/halfblocks/PDF 图像/pick 预览）绘制矩形完全落在预览 pane inner rect 内，窗口顶部不再出现图片；TestBackend 回归断言 widget rect 被预览区包含；真实终端大图项沿用 M11-6/C6 deferred。
+- [ ] M46-2 焦点在左时仅左栏高亮搜索匹配、焦点在右时仅右栏高亮；`n`/`N` 与计数不变；Tab 级 SearchState 未拆分。
+- [ ] M46-3 右 pane 当前/可视选择行整行背景一致（无独立 `ft_*` 文字色），未搜索态与左栏对称；搜索高亮保留。
+- [ ] M46-4 `/tmp/test/b` → `h` → `l` 光标落在 `b` 且 `on_parent_row == false`；左右 pane 各有回归测试。
+- [ ] M46-5 `:extract` 与归档 `yy`→`p/P` 解压后对侧/目标 pane 列表即时包含新文件；job 完成刷新左右双侧。
+- [ ] M46-6 首次启动在配置目录生成带注释的 `config.toml` 与示例键位/opener 文件；已有文件不被覆盖；生成失败静默降级；测试与 temp 路径不被污染。
+- [ ] M46-7 help 背景不透明不透视；`/` 进入 HelpSearch 可见输入框、可搜索、Esc 返回且内容不丢；tmux/screen 下 `:help` 新窗口打开（配置可关），无 mux 回退应用内覆盖层；`rvifm help` 输出内嵌帮助。
+- [ ] M46-8 同一归档二次 `w` 预览不重复 `open_dispatch`/全量解压；大 xz/bz2 预览不卡死（大小护栏与可读提示）；zip/纯 tar 快速路径不回归。
+- [ ] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容；`.rar` 有工具时可列出/进入、缺失给可读提示；扩展名真值表一致，归档只读与 64MB 上限不回归。
+- [ ] M46-10 单文件与多选删除确认为居中 yazi 风格弹窗：标题居中带图标、无标题下提示、文件列表样式与双栏一致、固定高度+滚动条、j/k 导航、y/Enter 与 Esc/n 行为正确。
+- [ ] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致。
+- [ ] M46-12 tutor 13 模块 100 项可解析、提示与新增/修复项一致；harness_check 通过。

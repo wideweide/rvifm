@@ -1399,3 +1399,20 @@ rvifm record  → 静默记录访问
 - **范围**：默认仅 Linux 自动探测；输入法并发由桌面或用户修改时不保证合并状态。英文 IBus engine 可配置，避免假定所有用户都使用同一键盘布局标识。
 - **验收延期**：真实桌面上的 IBus/Fcitx/Fcitx5 状态切换依赖登录中的图形会话，当前自动化环境不具备该会话，人工往返测试列为 FIX-9-M1 deferred；假命令 runner 覆盖自动化状态机，不依赖宿主输入法。
 - **跨平台延期**：本机只安装 Linux target；Windows/macOS 下 worker 条件分支等待对应 CI runner 编译验证（FIX-9-CI deferred）。
+
+### 2026-11-24 — M46 用户实测批次蒸馏（12 项；照例先蒸馏后执行）
+
+- **来源**：用户实测反馈 12 条，含 5 条"既有任务未真正修复"的回退。登记前对三条主线各做一次逐行代码定位（预览/归档、渲染/导航、配置/帮助/弹窗），根因均落到具体函数，避免再次"表面勾选"。
+- **回退根因（WHY）**：
+  - M45-4a 图片越界：`image.rs` 只把图片 area 与 `frame.area()`（整屏）相交而非预览 pane；原生协议 `SlicedImage` 虚拟高度可达 3×窗格，绝对定位图形不受 widget 裁剪；`render.rs` 中 `viewer_rect` 用未收缩的 frame 而 pane 被 tutor 面板收缩，几何错位。三处同修才算真修复。
+  - M45-2a 右栏：`render_right_pane` 的 `ft` 文字色无条件应用，缺左 pane `row_reversed` 守卫；且右栏无 `highlight_style`，整行背景无从统一。
+  - M45-3e `h`→`l`：`enter_selected` 在 `restore_cursor()` 还原后无条件 `on_parent_row = has_parent_row()`，视觉上高亮 `..` 覆盖还原值；旧测试只断言 `cursor` 不断言 `on_parent_row`，故漏检。
+  - M45-7/M37-2 extract：`extract_members` 与命令臂均不刷新任何 pane；`apply_job_update` 仅 `tab.refresh` 不刷 `tab.right`；watcher 只监听左栏目录。
+  - FIX-5 思路复用：help 覆盖层同样缺 `Clear`（bug a）；`/` 进 `HelpSearch` 后 render 无对应分支而落到普通双栏（bug c，内容"被清空"实为下层列表透视）。
+- **决策**：
+  - M46-2 只做渲染层焦点守卫，不把 `SearchState` 拆成 per-pane（改动面小、与右栏现有守卫对称）；per-pane 化作为 CUT 放弃（vifm 的 per-pane pattern 不在本批次范围）。NOTES 2026-11-21 M34-3 条旧边界记录自此更新。
+  - M46-6 默认配置**仅在 TUI 启动钩子**生成（复用 `config_path()` + `create_dir_all`），不放入 `load_from`/`load`，避免污染 temp 路径测试与 `cargo test`；旧注释"不自动生成配置文件"（`opener_hint`）随本任务改写；不引入 `dirs`/xdg crate。
+  - M46-7 新窗口走既有 `run_external_target_with` + tmux/screen（无 GUI 终端模拟器硬依赖），新增 `rvifm help` 子命令输出内嵌文本；`[ui] help_in_new_window` 默认 true，无复用器回退应用内不透明覆盖层；"激活"为尽力而为（可选中/切换），不强制抢焦点（SIMPLIFIED）。
+  - M46-8 预览提速采用内存缓存 (路径, mtime, size) + 大小护栏，不改 frecency/只读边界；`.apk` 已支持保持不动，`.deb`/`.rar` 新增只读后端，统一扩展名真值表避免三表漂移（M34-6 教训）；写端 `ops.rs` 不在本批次范围（CUT）。
+  - M46-10 删除确认重做沿用 M45-3c 的居中弹窗基座，扩展为携带文件列表 + 光标/滚动 + 滚动条，状态类型与 `Outcome` 同步扩容；tagged 多选与单文件共用一套渲染。
+- **排序**：1→12，缺陷修复先行，help/tutor 文档殿后；真实终端大图与 Windows/macOS 平台行为按既有 deferred 处理，不阻塞批次落地。
