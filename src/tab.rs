@@ -858,7 +858,7 @@ impl Tab {
     /// M41-4：视口偏移同步（每帧输入处理后、绘制前调用）——左/右 pane
     /// 各自按光标与既有偏移重算：光标在窗口内 → 偏移不变（列表不动、
     /// 高亮上移）；越界 → 光标贴顶/贴底。左 pane `..` 行占用首行
-    /// （结果视图除外，与渲染同口径），右 pane 无 `..` 行。
+    /// （结果视图除外，与渲染同口径）；左右 pane 均计入可见的 `..` 行。
     /// `list_h` 为单 pane 内区行数（左右同高）。
     pub fn sync_viewport_scroll(&mut self, list_h: usize) {
         let parent_taken = self.has_parent_row() && !self.in_results();
@@ -987,7 +987,7 @@ impl Tab {
 
     /// 从当前位置沿 `forward` 方向移动到下一个匹配（M1-7，`n`/`N`）。
     /// 未找到时 cursor 不变并返回 `false`。
-    /// M34-3：作用对象 = 焦点 pane（右 pane 无 `..` 行，无 on_parent_row）。
+    /// M34-3：作用对象 = 焦点 pane；两侧 pane 均维护 `..` 行状态。
     pub fn search_move(&mut self, query: &str, forward: bool) -> bool {
         let (entries, cursor) = match self.focus {
             Focus::Right => (&mut self.right.entries, &mut self.right.cursor),

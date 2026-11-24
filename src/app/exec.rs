@@ -3928,7 +3928,7 @@ pub(crate) fn run_search(state: &mut AppState, msg: &mut Option<String>, forward
 /// （状态栏与列表高亮随之消失）；run 循环与测试共用。
 pub(crate) fn search_cancel(state: &mut AppState, origin: usize) {
     let tab = state.active_tab_mut();
-    // M34-3：恢复焦点 pane 光标（右 pane 无 `..` 行语义）。
+    // M34-3：恢复焦点 pane 光标（左右 pane 的父行状态分别保留）。
     match tab.focus {
         crate::tab::Focus::Right => {
             tab.right.cursor = origin.min(tab.right.entries.len().saturating_sub(1));

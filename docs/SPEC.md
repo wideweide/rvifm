@@ -442,7 +442,7 @@ redb 三表，无后台守护进程：
 **MUST**
 - **M34-1 默认主题 gruvbox**：`[ui] theme` 缺省值 None → `gruvbox-dark`（opaline 内置；fresh install 视觉等价 vifm gruvbox，显式配置不受影响）。核查 M27-2 vifm 高亮组（TopLine/TabLine/TopLineSel/TabLineSel/Border/CurrLine/OtherLine/StatusLine/Selected）在激活主题下的映射——缺 token 的组按 gruvbox 色板补映射或明确回退；验证 `[ui] theme = "dracula"` 与 `:theme dracula` 生效；M27-2 的 16 色 vifm 回退保留为无主题兜底，不删除。
 - **M34-2 snowwhite 内置主题移植**：从 vifm-colors 仓库 `snowwhite.vifm`（约 32 行高亮组）一次性提取颜色映射 opaline token schema，生成 rvifm 捆绑 TOML（include_str! 或等价机制，经 AUDIT-13 activate 链路可发现）；`[ui] theme = "snowwhite"` / `:theme snowwhite` 可选。
-- **M34-3 右 pane `/` 搜索**：解除 M14"搜索仅左 pane"SIMPLIFIED——`/` 按 `tab.focus` 分派，焦点在右 pane 时对右 pane 目录列表执行搜索（匹配高亮 + 实时跳转 + 计数 + n/N + Esc 清理，与左 pane M15 FIX-1 语义一致）；右 pane 既有键位集不变。
+- **M34-3 右 pane `/` 搜索**：解除 M14"搜索仅左 pane"SIMPLIFIED——`/` 按 `tab.focus` 分派，焦点在右 pane 时对右 pane 目录列表执行搜索（匹配高亮 + 实时跳转 + 计数 + n/N + Esc 清理，与左 pane M15 FIX-1 语义一致）；后续 FIX-7 统一左右 pane 的普通模式键位分派。
 - **M34-4 对侧预览统一（用户裁决方案 A）**：`preview_path()` 焦点感知修复——预览目标 = 当前焦点 pane 光标文件（与其自身文档"活动 pane 光标文件"一致；含归档/远端 Location 语义）。:view（M13-9 交互查看器）与 frecency Pane（M23-6）统一为同一"焦点 pane 交互 + 对侧 pane 预览"模型——预览渲染在非焦点 pane（焦点在左预览在右，与现状兼容；焦点在右预览渲染到左 pane）；无预览模式时右 pane 保持第二目录列表默认；两处共用同一"对侧预览"定位/渲染路径（消除两套预览逻辑），Tab 切回焦点语义不变。
 - **M34-5 frecency Pane 视觉与输入回显**：搜索模式实时回显当前 query（底部状态栏，键入即时更新、清空同步）；结果行渲染 devicons 图标 + 全路径（图标链路与文件列表/预览共用，无 Nerd Font 降级同 M9-5；`[目录]/[文件]` 文本标记移除，`✦keyword` 标记保留）；顶部标题文案 `Frecency - 高频目录/文件搜索`。
 - **M34-6 `.jar` 归档识别**：`is_archive_file` 增加 `.jar`（复用 M7-2 ZipFs zip 后端）；浏览/预览/搜索链路自动生效；roundtrip 与损坏归档测试同 M26-3 模式。
@@ -655,7 +655,7 @@ redb 三表，无后台守护进程：
 - 右 pane 无独立撤销语义：撤销恢复后双 pane 均刷新。
 
 **OUT_OF_SCOPE**
-- 右 pane 独立搜索/可视选择/标签；超过两个 pane（vifm issue #1062）。
+- 超过两个 pane（vifm issue #1062）。
 
 #### vifm 对齐增强（M13，2026-11-14 增补；依据：vifm 官方文档 + GitHub issues）
 
@@ -1241,18 +1241,18 @@ append_rules = [
 #### M41 — 右栏一致性与交互缺陷修复（2026-11-21 增补；来源：用户 0.11.x 实测反馈，优先级排高）
 
 **MUST**
-- **M41-1 右 pane 命令模式与标签切换**：右 pane 焦点下 `:` 进入命令模式，输入的内部命令作用于焦点 pane（沿用 focus_base 既有语义）；`gt`/`gT`/`Ngt` 切换标签，语义与计数行为与左 pane 完全一致。右 pane"仅导航"边界不变（d/D/c 等文件操作键仍拒绝）。实现语义升格：M14-1 的右 pane 单键 `g` 直跳顶部退役，统一为 `gg` 序列（经待决序列机制，与左 pane 一致；未知第二键整体丢弃）。
+- **M41-1 右 pane 命令模式与标签切换**：右 pane 焦点下 `:` 进入命令模式，输入的内部命令作用于焦点 pane（沿用 focus_base 既有语义）；`gt`/`gT`/`Ngt` 切换标签，语义与计数行为与左 pane 完全一致。普通模式键位与命令按焦点 pane 分派；文件操作依 Location 能力判定。实现语义升格：M14-1 的右 pane 单键 `g` 直跳顶部退役，统一为 `gg` 序列（经待决序列机制，与左 pane 一致；未知第二键整体丢弃）。
 - **M41-2 方向键导航**：Normal 模式 `↑/↓/←/→` 等价 `k/j/h/l` 对应动作（左 pane 经默认 keymap 声明式注册，用户 TOML 三层覆盖规则对其生效；右 pane 处理器同步支持四键）。输入模式（命令行/搜索/对话框）内方向键既有编辑语义不变。
 - **M41-3 鼠标点击焦点与高亮一致**：单击任一 pane 的条目行 → 焦点切换到该 pane 且该 pane 光标移至命中条目（CurrLine/OtherLine 样式随焦点呈现）；已聚焦行再次单击 = 打开（**M45-6 裁决改规格**：右 pane 打开 = 进入目录语义，物理目录与归档虚拟目录均可进入，文件仍 no-op）；滚轮滚动作用于焦点 pane。左右双侧表现一致。
 - **M41-4 视口滚动钉底修复**：列表视口偏移改为有状态——仅当光标越出可见窗口（offset ≤ cursor < offset+height）时才滚动；光标自视口底行按 `k` 上移时列表保持不动、高亮上移一行。渲染（ListState offset）与鼠标命中测试共用同一偏移推导，不得分叉。
 
 **SIMPLIFIED**
-- 右键上下文菜单保持左 pane（右 pane 文件操作本就拒绝，不扩展菜单）。
-- 右 pane 打开语义沿用 M14-1（仅物理目录）。
+- 右键上下文菜单保持左 pane；键盘与命令的目标仍按焦点 pane 判定。
+- 右 pane 打开语义沿用 M45-6 裁决（物理目录与归档虚拟目录可进入，文件 no-op）。
 - 方向键不新增 Action，复用既有动作（CursorUp/CursorDown/ReturnParent/EnterSelected）。
 
 **OUT_OF_SCOPE**
-- 右 pane 文件操作（M14-1 边界不变）。
+- 鼠标右键菜单在右 pane 的入口。
 - 鼠标拖拽选择、拖拽滚动。
 
 ## M42 — :tutor 导师模式（2026-11-22 增补；用户蒸馏 Qwen 讨论稿·已确认，见 NOTES 同日条目）

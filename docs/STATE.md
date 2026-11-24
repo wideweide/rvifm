@@ -79,6 +79,11 @@
 - CI：`ubuntu-latest` + `windows-latest` + `macos-latest`（fmt --check / clippy -D warnings / build --locked / test --locked / pdf-visual check / fuzz job / supply-chain job）。
 - 发布外循环：`push/tag` → CI 矩阵构建 → 测试 → 归档 → GitHub Release（crates.io 发布沿用 Windows 机器凭据）。
 
+## FIX-7 关闭记录（2026-11-24）
+
+- FIX-7-1…7-4 已完成；双栏父目录导航、焦点键位/命令及用户文档已同步。
+- 验收与质量门禁记录见 `docs/ACCEPTANCE.md` FIX-7；本地 HEAD 为当前维护基线。
+
 ## 恢复方式
 
 1. 读本文件确认当前阶段与任务。

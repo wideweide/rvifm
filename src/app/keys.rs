@@ -350,10 +350,8 @@ pub(crate) fn handle_sort_dialog_key(
     }
 }
 
-/// 右 pane 焦点下的按键分发（M14-1）：精简导航集。
-/// SIMPLIFIED：可视选择（v）、标记（t）、树（:tree 仍可退出）、提权（写
-/// 命令 EACCES 时提示切回左 pane）仅左 pane；搜索（/、n/N）自 M34-3 起
-/// 解除——经上方分派进入与左 pane 共用的搜索链路（作用对象 = 焦点 pane）。
+/// 右 pane 焦点下的特殊按键分发：焦点切换、进入/返回目录、查看器切换。
+/// 其余 Normal 模式按键由 `dispatch_right_pane` 投影到共享分发器。
 pub(crate) fn handle_right_key(
     state: &mut AppState,
     msg: &mut Option<String>,
@@ -415,9 +413,6 @@ pub(crate) fn handle_right_key(
             } else {
                 "view: 已关闭预览".to_owned()
             });
-        }
-        KeyCode::Char('d' | 'D' | 'c') if !ctrl => {
-            *msg = Some("右 pane 仅导航（文件操作请 Tab 切回左 pane）".to_owned());
         }
         _ => {}
     }
@@ -1345,13 +1340,8 @@ pub(crate) fn handle_key(
         return Outcome::Quit;
     }
 
-    // M14-1：右 pane 焦点——精简导航分支（SIMPLIFIED：可视选择/标记/树/
-    // 选择器/提权仅左 pane；写命令经 exec 焦点化仍可用）。
-    // M34-3：搜索解除 SIMPLIFIED——`/`/n/N 与左 pane 共用 Search 链路，
-    // 作用对象为焦点 pane（Tab::search_move/status 已 focus-aware）。
-    // M41-1：`:` 与 gt/gT/Ngt/gg 解除 SIMPLIFIED——命令模式经 focus_base
-    // 作用于焦点 pane；`g` 起始待决序列复用左 pane seq 机制（gt/gT/Ngt 由
-    // 默认 keymap 命中，gg 由 ToTop 臂焦点化；未知第二键整体丢弃）。
+    // FIX-7：右 pane Normal 模式完整复用共享 Action 分发器；特殊的
+    // 进入/返回目录和焦点切换在投影前处理。
     if state.active_tab().focus == crate::tab::Focus::Right {
         match key.code {
             KeyCode::Char('/') => {
@@ -1795,7 +1785,7 @@ fn dispatch_right_pane(
 
 /// FEAT-1/M41-3：鼠标事件处理——左键单击切换焦点 pane 并移动该 pane 光标
 /// （高亮随焦点呈现；已聚焦行再次单击 = 打开，双击的第二击自然落到此路径；
-/// 右 pane 打开 = M14-1 进入目录语义，文件 no-op）、滚轮逐行滚动作用于
+/// 右 pane 打开 = 进入目录（物理目录或归档虚拟目录；文件 no-op）、滚轮逐行滚动作用于
 /// 焦点 pane（每次精确移动一行，不跳变）。仅 Normal 模式响应（输入模式
 /// 忽略）；标签栏/状态栏不响应；右键上下文菜单保持左 pane（SPEC M41
 /// SIMPLIFIED）。Visual 选择由 tab.visual 锚点 + 光标移动自然延伸，鼠标
@@ -1813,7 +1803,7 @@ pub(crate) fn handle_mouse(
     // 列表几何：与 render 同源（M21-F1）——M39-6 布局感知（Single 右零宽、
     // PreviewBottom 上半双栏；查看器覆盖 pane 的命中在 hit_*_index 守卫）。
     // 左 pane `..` 行占内区首行（FEAT-2，有父行时条目从第 2 行开始），
-    // 右 pane 无 `..` 行（M14-1，条目从内区首行开始）。
+    // 右 pane `..` 行使用与左 pane 相同的命中与滚动几何。
     let [tab_bar, left, right, _] =
         pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode);
     // M45-1b：标签栏鼠标点击切换 tab（此前明确不响应）。命中标签栏行且

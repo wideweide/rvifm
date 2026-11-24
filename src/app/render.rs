@@ -443,7 +443,7 @@ pub(crate) fn hit_entry_index(
     Some(idx.min(tab.entries.len().saturating_sub(1)))
 }
 
-/// M41-3：右 pane 命中索引——右 pane 无 `..` 行（M14-1），条目从内区首行
+/// M41-3：右 pane 命中索引——与左 pane 一样计入可见的 `..` 行，条目从其后
 /// 开始；offset 取 `Pane.scroll`（与渲染 ListState 同源，M41-4 有状态）。
 /// M39-6：布局感知 + 查看器覆盖守卫。空列表返回 None。
 pub(crate) fn hit_right_index(

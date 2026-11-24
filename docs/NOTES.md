@@ -316,7 +316,7 @@ rvifm record  → 静默记录访问
 - **背景**：v0.4.0 在 Linux（CachyOS）实测发现：①“启动进入 TUI（列表 + 右侧预览窗格）”与 vifm 经典模型不符——vifm 默认左右两个 pane 都是目录列表，w/:view 才把非活动 pane 切成预览；②多标签功能存在（exec/测试覆盖）但无标签栏 UI，`:tabnew` 落点为同目录导致视觉零变化，用户无从验证。
 - **根源归属**：①SPEC M1 SIMPLIFIED“可先做单栏”被 M1/M11 沿用且 M13 :view 立项时未把双栏模型作为前置一起修正（需求文档缺陷）；②SPEC §4.2 未定义标签栏 UI，ACCEPTANCE §3.C 无可见性验收（验收文档缺陷）。§16 手册标题滞留 v0.2.0（文档维护缺陷）。
 - **结论（用户确认“按此立项推进”）**：M14-1 右 pane 改为独立目录列表（独立 Location/光标，可导航，Tab 键切焦点，写操作作用于焦点 pane）+ `w`/:view 切换右 pane 预览视图；M14-2 标签栏 UI；M14-3 ACCEPTANCE §16 全面修订（0.5.0 语义）；M14-4 发布 0.5.0。
-- **SIMPLIFIED 裁剪（NOTES 记录）**：右 pane 仅导航（搜索/可视选择/标记/树/选择器/提权仅左 pane，触发时提示）；右 pane 无独立撤销语义（恢复后双 pane 刷新）；不实现第三 pane（issue #1062 不立项）。
+- **历史裁剪（已由 FIX-7 解除）**：M14 最初限制右 pane 为导航；FIX-7 将普通模式键位与命令统一改为焦点分派，Location 能力限制仍生效；右 pane 无独立撤销语义（恢复后双 pane 刷新），不实现第三 pane（issue #1062 不立项）。
 - **影响文件**：docs/SPEC.md M1 SIMPLIFIED/M14 节、docs/TASKS.md M14、docs/ACCEPTANCE.md §16、src/state.rs（Pane 结构）、src/tab.rs、src/app.rs（焦点分发/渲染）。
 
 ### 2026-11-14 — M13 vifm 对齐增强立项（第一/二档）+ :view 语义澄清
@@ -1376,3 +1376,10 @@ rvifm record  → 静默记录访问
   （`:q` 与 `q` 均调用 save_session，序列化含全部 tab；测试 `m251_roundtrip`
   直接驱动纯函数故未覆盖真实路径）。WHY 不作为需求变更：会话原设计即自动保存
   （M25-1），本次是实现对不齐 tutor progress 已建立的 `create_dir_all` 模式。
+
+
+### 2026-11-24 — FIX-7 双栏焦点能力一致性
+
+- **决策**：撤销 M14 初始“右 pane 仅导航”裁剪；键盘 Normal 动作与目录/文件命令按焦点 pane 分派，实际能力仍由 Location（归档只读、远端白名单等）决定。
+- **实现结论**：右 pane 的父目录行与左 pane 对齐；右 pane 普通键复用共享 Action 分发；`:mk`/`:mkdir`、粘贴目标及 `o` 历史入口按焦点处理；归档成员 `yy` 可经 `p`/`P` 解压到物理目标。旧 `d/D/c` 右栏禁用提示已移除。
+- **文档**：README、GUIDE、内置帮助与 SPEC/ACCEPTANCE 同步；tutor 内容未发现右栏限制。

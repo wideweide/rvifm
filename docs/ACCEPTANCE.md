@@ -985,7 +985,7 @@
 
 ## 41. M41 — 右栏一致性与交互缺陷修复（见 SPEC M41 节）
 
-- [x] M41-1 右 pane 焦点下 `:` 进入命令模式且命令作用于右 pane 路径；`gt`/`gT`/`2gt` 生效且语义与左 pane 一致；d/D/c 拒绝提示保持。（2026-11-21：m41_1 测试 + focus_base 既有链路）
+- [x] M41-1 右 pane 焦点下 `:` 进入命令模式且命令作用于右 pane 路径；`gt`/`gT`/`2gt` 生效且语义与左 pane 一致；FIX-7 后普通文件操作按焦点 pane 与 Location 能力分派。（2026-11-24：旧拒绝行为已由 FIX-7 退役）（2026-11-21：m41_1 测试 + focus_base 既有链路）
 - [x] M41-2 Normal 模式 `↑↓←→` 与 k/j/h/l 等价（左/右 pane 均生效，默认 keymap 注册可被 TOML 覆盖）；命令行/搜索输入内方向键编辑语义不变。（2026-11-21：m41_2 双测试；输入模式分支未触及）
 - [x] M41-3 单击右 pane 条目 → 焦点切至右 pane 且该条目按焦点样式高亮；单击左 pane 条目 → 焦点切回左 pane 且高亮；已聚焦行再击打开；滚轮作用于焦点 pane；两侧行为对称。（2026-11-21：m41_3 测试 + 渲染层焦点样式既有）
 - [x] M41-4 光标在视口底行按 `k`：列表滚动不动、高亮上移一行；光标越出视口（持续 j/G/gg/Ctrl-d）时仍正确跟随滚动；鼠标命中测试与渲染共用同一偏移推导（测试固化）。（2026-11-21：m41_4 sticky 单测 + feat1 用例重写为窗口语义；越界跟随经 sticky 贴顶/贴底语义固化）
@@ -1023,16 +1023,16 @@
 - [x] 两栏均显示 `..`（根目录隐藏），选中后 `l`/Enter 返回本栏父目录；`h`/左方向键行为一致。（2026-11-24：右栏父行渲染、键盘与鼠标进退、滚动偏移统一；fix7_1 + M41 回归）
 - [x] 左右焦点下均可执行 `o`/`:j`/`:J`，选择结果只改变焦点 pane。（2026-11-24：o 两栏按键入口测试，选择跳转焦点保持既有 M45-6b 覆盖）
 - [x] 左右焦点下 `:mk name` 在焦点 pane 创建并进入；`yy` 后 `p` 复制、`P` 移动，均作用于焦点 pane。（2026-11-24：FIX-7-3 右栏 `mk`/`mkdir` + FIX-7-2 p/P 焦点目标测试）
-- [ ] 左右焦点下 Visual/tag、搜索、常用导航/文件命令行为对称；不再出现仅因右栏焦点而提示禁用。
+- [x] 左右焦点下 Visual/tag、搜索、常用导航/文件命令复用焦点分发；禁用提示仅来自 Location 能力边界。（2026-11-24：FIX-7-2 共享 Action 分发与 pane 状态投影；命令入口核对）
 - [x] 右栏进入归档后 `yy` 可复制成员，`p`/`P` 解压到焦点 pane 物理目录；归档内仍只读。（2026-11-24：FIX-7-2 右栏 archive `yy` + 左侧物理焦点 `P` 解压；M45-7b 覆盖 p）
-- [ ] README/GUIDE/help/tutor 与实现一致，不再描述右栏仅导航。
+- [x] README/GUIDE/help/tutor 与实现一致，不再描述右栏仅导航；右栏 `..` 与焦点 pane 操作说明同步。（2026-11-24：GUIDE/help 更新；README/tutor 搜索无过时限制）
 
-## 46. REL-4 — Release 归档简化为 musl-only（见 SPEC REL-4 节）
+## 47. REL-4 — Release 归档简化为 musl-only（见 SPEC REL-4 节）
 
 - [x] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。（2026-11-23：本地 `cargo zigbuild --target aarch64-unknown-linux-musl` 实测成功，`file` = ARM aarch64 statically linked ELF）
 - [x] REL-4-2 版本 1.2.0（Cargo.toml/Cargo.lock/CHANGELOG/README 同步）；tag `v1.2.0` → CI 全绿 + GitHub Release 含且仅含 3 归档 + SHA256SUMS.txt（3 行、`sha256sum -c` 全通过）；crates.io 未发布。（2026-11-23：tag run 45132119778 九 job 全绿；三归档下载实测校验通过；aarch64 静态 musl ELF + `--version` 通过；crates.io 仍 1.0.0）
 
-## 47. M45 — 用户实测批次（见 SPEC M45 节；待用户确认，冲突项须裁决后实施）
+## 48. M45 — 用户实测批次（见 SPEC M45 节；待用户确认，冲突项须裁决后实施）
 
 - [ ] M45-1 HOME 下路径显示 `~/…` 且导航仍用绝对路径（**M45-1a ✅ 2026-11-23**：abbreviate_home + m451a）；标签栏鼠标点击切换 tab（**M45-1b ✅ 2026-11-23**：m451b）；标签样式与路径行解耦（灰白底反色字，**M45-1c ✅ 2026-11-23**：m451c）；分隔线可配置默认关（**M45-1d ✅ 2026-11-23**：m451d，m21f1 测试同步）。
 - [ ] M45-2 整行反显覆盖全宽（保持）；无后缀文件不显示 `*`，可执行/文本/jar/deb 图标按类型推断（**M45-2b ✅ 2026-11-23**：infer_icon + m452b，嗅探仅常规文件防 FIFO 阻塞）；未搜索态整行背景一致（**M45-2a ✅ 2026-11-23**：m452a，反显行去类型 fg，搜索高亮保留）；搜索子串高亮存留裁决后落实。
