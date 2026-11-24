@@ -533,7 +533,7 @@ pub(crate) fn archive_dialog_rect(area: ratatui::layout::Rect) -> ratatui::layou
 pub(crate) fn strip_archive_ext(name: &str) -> &str {
     const EXTS: &[&str] = &[
         ".tar.gz", ".tar.bz2", ".tar.zst", ".tar.xz", ".zip", ".tar", ".tgz", ".7z", ".rar",
-        ".cab", ".lzh",
+        ".cab", ".lzh", ".deb", ".apk",
     ];
     let lower = name.to_ascii_lowercase();
     for ext in EXTS {

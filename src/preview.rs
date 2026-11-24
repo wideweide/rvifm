@@ -535,6 +535,7 @@ fn magic_kind(head: &[u8]) -> Option<&'static str> {
         (b"\x1f\x8b", "gzip 压缩"),
         (b"7z\xbc\xaf\x27\x1c", "7z 归档"),
         (b"Rar!", "RAR 归档"),
+        (b"!<arch>\n", "deb/ar 容器"),
         (b"\x89PNG", "PNG 图像"),
         (b"\xff\xd8\xff", "JPEG 图像"),
         (b"GIF8", "GIF 图像"),

@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -395,13 +396,16 @@ pub struct TarFs {
     kind: TarKind,
     index: BTreeMap<String, (u64, u64, bool)>,
     dirs: BTreeSet<String>,
+    /// M46-9：内存来源（deb 内嵌 data.tar.*）——Some 时 read_block 从内存
+    /// 重建解码器，不依赖宿主文件本身是 tar。
+    source: Option<Vec<u8>>,
 }
 
 type Children = std::collections::BTreeMap<String, (bool, u64, String)>;
 
 /// tar 压缩形态（M7-8 扩展到五种）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TarKind {
+pub(crate) enum TarKind {
     Plain,
     Gz,
     Bz,
@@ -414,6 +418,8 @@ enum TarKind {
 /// - Xz 已在开档时整体解压为内存游标（可 seek）。
 enum Decoder {
     Plain(std::fs::File),
+    /// M46-9：内存中的已解码 tar 字节（deb 内嵌 data.tar / 测试用），可 seek。
+    Memory(std::io::Cursor<Vec<u8>>),
     Gz(Box<flate2::read::GzDecoder<std::fs::File>>),
     Bz(Box<bzip2_rs::DecoderReader<std::fs::File>>),
     Zst(Box<ruzstd::decoding::StreamingDecoder<std::fs::File, ruzstd::decoding::FrameDecoder>>),
@@ -453,9 +459,52 @@ impl Decoder {
         })
     }
 
+    /// M46-9：从内存字节构造解码器（deb 内嵌 data.tar.*）。压缩形态统一
+    /// 解码为可 seek 的 Memory，避开泛型 Reader 类型扩散。
+    fn from_bytes(bytes: Vec<u8>, kind: TarKind, xz_cap: u64) -> std::io::Result<Self> {
+        let mut cur = std::io::Cursor::new(bytes);
+        Ok(match kind {
+            TarKind::Plain => Decoder::Memory(cur),
+            TarKind::Gz => {
+                let mut out = Vec::new();
+                flate2::read::GzDecoder::new(&mut cur).read_to_end(&mut out)?;
+                Decoder::Memory(std::io::Cursor::new(out))
+            }
+            TarKind::Bz => {
+                let mut out = Vec::new();
+                bzip2_rs::DecoderReader::new(&mut cur).read_to_end(&mut out)?;
+                Decoder::Memory(std::io::Cursor::new(out))
+            }
+            TarKind::Zst => {
+                let mut out = Vec::new();
+                ruzstd::decoding::StreamingDecoder::new(&mut cur)
+                    .map_err(|e| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                    })?
+                    .read_to_end(&mut out)?;
+                Decoder::Memory(std::io::Cursor::new(out))
+            }
+            TarKind::Xz => {
+                let mut out = CappedWriter {
+                    out: Vec::new(),
+                    cap: xz_cap,
+                };
+                lzma_rs::xz_decompress(&mut cur, &mut out).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                })?;
+                Decoder::Memory(std::io::Cursor::new(out.out))
+            }
+        })
+    }
+
     /// 跳过解码流的前 `n` 字节：Plain/Xz 用 seek，其余流式读穿透（O(n) 解压）。
     fn skip(&mut self, n: u64) -> std::io::Result<()> {
         match self {
+            Decoder::Memory(c) => {
+                use std::io::Seek;
+                Seek::seek(c, std::io::SeekFrom::Start(n))?;
+                Ok(())
+            }
             Decoder::Plain(f) => {
                 use std::io::Seek;
                 Seek::seek(f, std::io::SeekFrom::Start(n))?;
@@ -485,6 +534,7 @@ impl Decoder {
 impl Read for Decoder {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
+            Decoder::Memory(c) => c.read(buf),
             Decoder::Plain(f) => f.read(buf),
             Decoder::Gz(g) => g.read(buf),
             Decoder::Bz(b) => b.read(buf),
@@ -519,7 +569,27 @@ impl TarFs {
     /// 打开 tar 归档并建立成员索引。损坏归档返回 InvalidData，不 panic。
     pub fn open(host: &Path) -> std::io::Result<Self> {
         let kind = Self::detect_kind(host);
-        let mut decoder = Decoder::open(host, kind)?;
+        let decoder = Decoder::open(host, kind)?;
+        Self::build_index(decoder, host.to_path_buf(), kind, None)
+    }
+
+    /// M46-9：从内存 tar 字节构建（deb 内嵌 data.tar.*）；保留原始字节以
+    /// 供成员读取时重建解码器。
+    pub(crate) fn from_bytes(
+        bytes: Vec<u8>,
+        kind: TarKind,
+        host: PathBuf,
+    ) -> std::io::Result<Self> {
+        let decoder = Decoder::from_bytes(bytes.clone(), kind, MAX_XZ_DECODED_BYTES)?;
+        Self::build_index(decoder, host, kind, Some(bytes))
+    }
+
+    fn build_index(
+        mut decoder: Decoder,
+        host: PathBuf,
+        kind: TarKind,
+        source: Option<Vec<u8>>,
+    ) -> std::io::Result<Self> {
         let mut archive = tar::Archive::new(&mut decoder);
         let mut index = BTreeMap::new();
         let mut dirs = BTreeSet::new();
@@ -553,16 +623,25 @@ impl TarFs {
             }
         }
         Ok(Self {
-            host: host.to_path_buf(),
+            host,
             kind,
             index,
             dirs,
+            source,
         })
+    }
+
+    /// 重建解码器（磁盘 tar 或内存 tar，M46-9）。
+    fn decoder(&self) -> std::io::Result<Decoder> {
+        match &self.source {
+            Some(bytes) => Decoder::from_bytes(bytes.clone(), self.kind, MAX_XZ_DECODED_BYTES),
+            None => Decoder::open(&self.host, self.kind),
+        }
     }
 
     /// 从解码流读取指定数据块（pos 即数据起始，raw_file_position 语义）。
     fn read_block(&self, pos: u64, size: u64) -> std::io::Result<Vec<u8>> {
-        let mut decoder = Decoder::open(&self.host, self.kind)?;
+        let mut decoder = self.decoder()?;
         decoder.skip(pos)?;
         let mut buf = vec![0u8; size as usize];
         decoder.read_exact(&mut buf)?;
@@ -631,6 +710,311 @@ impl ArchiveFs for TarFs {
     }
 }
 
+/// M46-9：`ar` 容器解析（`.deb` = `debian-binary` + `control.tar.*` +
+/// `data.tar.*`）。只解析成员头与数据偏移，单成员受 64MB 上限约束。
+fn parse_ar(bytes: &[u8]) -> std::io::Result<Vec<(String, Vec<u8>)>> {
+    if !bytes.starts_with(b"!<arch>\n") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "不是 ar 归档（缺少 !<arch> 标识）",
+        ));
+    }
+    let mut pos = 8usize;
+    let mut out = Vec::new();
+    while pos + 60 <= bytes.len() {
+        let hdr = &bytes[pos..pos + 60];
+        let name = String::from_utf8_lossy(&hdr[..16])
+            .trim()
+            .trim_end_matches('/')
+            .trim()
+            .to_owned();
+        let size: usize = String::from_utf8_lossy(&hdr[48..58])
+            .trim()
+            .parse()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "ar 成员尺寸非法"))?;
+        check_member_size(size as u64, MAX_MEMBER_READ_BYTES)?;
+        let start = pos + 60;
+        let end = start.saturating_add(size);
+        if end > bytes.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "ar 成员数据截断",
+            ));
+        }
+        if !name.is_empty() {
+            out.push((name, bytes[start..end].to_vec()));
+        }
+        pos = end + (size % 2); // ar 成员按偶数字节对齐
+    }
+    Ok(out)
+}
+
+/// M46-9：`.deb` 只读 VFS——根列出 ar 成员与虚拟目录 `data/`，`data/...`
+/// 委托给内嵌 `data.tar.*`（复用 TarFs，支持嵌套目录浏览）。
+pub struct DebFs {
+    host: PathBuf,
+    members: Vec<(String, Vec<u8>)>,
+    tar: Option<TarFs>,
+}
+
+impl DebFs {
+    pub fn open(host: &Path) -> std::io::Result<Self> {
+        if fs::metadata(host)?.len() > MAX_XZ_DECODED_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::FileTooLarge,
+                ".deb 文件超过 256MB 预览/浏览上限",
+            ));
+        }
+        let bytes = fs::read(host)?;
+        let members = parse_ar(&bytes)?;
+        let tar = members
+            .iter()
+            .find(|(name, _)| name.starts_with("data.tar"))
+            .and_then(|(name, data)| {
+                let kind = if name.ends_with(".gz") || name.ends_with(".tgz") {
+                    TarKind::Gz
+                } else if name.ends_with(".bz2") {
+                    TarKind::Bz
+                } else if name.ends_with(".zst") {
+                    TarKind::Zst
+                } else if name.ends_with(".xz") {
+                    TarKind::Xz
+                } else {
+                    TarKind::Plain
+                };
+                TarFs::from_bytes(data.clone(), kind, host.to_path_buf()).ok()
+            });
+        Ok(Self {
+            host: host.to_path_buf(),
+            members,
+            tar,
+        })
+    }
+}
+
+impl ArchiveFs for DebFs {
+    fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
+        let dir = normalize_inner(dir);
+        if dir == "data" || dir.starts_with("data/") {
+            let rest = dir.strip_prefix("data/").unwrap_or("");
+            return match &self.tar {
+                Some(t) => t.list(rest),
+                None => Ok(Vec::new()),
+            };
+        }
+        if !dir.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "deb 内只有根目录与 data/ 虚拟目录",
+            ));
+        }
+        let mut out: Vec<ArchiveEntry> = self
+            .members
+            .iter()
+            .filter(|(name, _)| !name.starts_with("data.tar"))
+            .map(|(name, data)| ArchiveEntry {
+                path: name.clone(),
+                is_dir: false,
+                size: data.len() as u64,
+            })
+            .collect();
+        if self.tar.is_some() {
+            out.push(ArchiveEntry {
+                path: "data".to_owned(),
+                is_dir: true,
+                size: 0,
+            });
+        }
+        out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.path.cmp(&b.path)));
+        Ok(out)
+    }
+
+    fn read(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        let path = normalize_inner(path);
+        if let Some(rest) = path.strip_prefix("data/") {
+            return match &mut self.tar {
+                Some(t) => t.read(rest),
+                None => Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "deb 内无 data.tar",
+                )),
+            };
+        }
+        self.members
+            .iter()
+            .find(|(name, _)| *name == path)
+            .map(|(_, data)| data.clone())
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "deb 成员不存在"))
+    }
+
+    fn metadata(&self, path: &str) -> std::io::Result<ArchiveEntry> {
+        let path = normalize_inner(path);
+        if path == "data" {
+            return Ok(ArchiveEntry {
+                path,
+                is_dir: true,
+                size: 0,
+            });
+        }
+        if let Some(rest) = path.strip_prefix("data/") {
+            return match &self.tar {
+                Some(t) => t.metadata(rest),
+                None => Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "deb 成员不存在",
+                )),
+            };
+        }
+        self.members
+            .iter()
+            .find(|(name, _)| *name == path)
+            .map(|(name, data)| ArchiveEntry {
+                path: name.clone(),
+                is_dir: false,
+                size: data.len() as u64,
+            })
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "deb 成员不存在"))
+    }
+
+    fn host(&self) -> &Path {
+        &self.host
+    }
+}
+
+/// M46-9：外部只读工具解析 rar 列表。bsdtar/unrar 每行一个路径；7z `-ba`
+/// 输出多列，取最后一列（SIMPLIFIED，路径含空格时可能截断）。
+fn parse_rar_listing(raw: &str) -> Vec<ArchiveEntry> {
+    let mut out = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let name = line
+            .split_whitespace()
+            .last()
+            .unwrap_or(line)
+            .replace('\\', "/");
+        if name.starts_with('/') || name.split('/').any(|p| p == "..") {
+            continue; // zip-slip 防御
+        }
+        out.push(ArchiveEntry {
+            path: name,
+            is_dir: false,
+            size: 0,
+        });
+    }
+    out
+}
+
+/// M46-9：`.rar` 只读 VFS（外部 bsdtar / unrar / 7z，缺失给可读错误）。
+pub struct RarFs {
+    host: PathBuf,
+    entries: Vec<ArchiveEntry>,
+    tool: &'static str,
+}
+
+impl RarFs {
+    pub fn open(host: &Path) -> std::io::Result<Self> {
+        let h = host.to_string_lossy().into_owned();
+        let attempts: [(&str, Vec<&str>); 3] = [
+            ("bsdtar", vec!["-tf", &h]),
+            ("unrar", vec!["lb", &h]),
+            ("7z", vec!["l", "-ba", &h]),
+        ];
+        for (tool, args) in attempts {
+            if let Ok(out) = std::process::Command::new(tool).args(args).output()
+                && out.status.success()
+            {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let entries = parse_rar_listing(&text);
+                if !entries.is_empty() || text.trim().is_empty() {
+                    return Ok(Self {
+                        host: host.to_path_buf(),
+                        entries,
+                        tool,
+                    });
+                }
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "rar 浏览需要系统安装 bsdtar / unrar / 7z（均未找到），请先解压后浏览",
+        ))
+    }
+
+    fn extract_args(&self, member: &str) -> Vec<String> {
+        let h = self.host.to_string_lossy().into_owned();
+        match self.tool {
+            "unrar" => vec!["p".into(), "-inul".into(), h, member.into()],
+            "7z" => vec!["e".into(), "-so".into(), h, member.into()],
+            _ => vec!["-xOf".into(), h, member.into()], // bsdtar
+        }
+    }
+}
+
+impl ArchiveFs for RarFs {
+    fn list(&self, dir: &str) -> std::io::Result<Vec<ArchiveEntry>> {
+        let dir = normalize_inner(dir);
+        let mut out = Vec::new();
+        for e in &self.entries {
+            let (parent, leaf) = split_parent(&e.path).unwrap_or(("", e.path.as_str()));
+            if parent == dir {
+                out.push(ArchiveEntry {
+                    path: leaf.to_owned(),
+                    is_dir: e.is_dir,
+                    size: e.size,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    fn read(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        let path = normalize_inner(path);
+        if path.is_empty() || path.split('/').any(|p| p == "..") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "非法 rar 成员路径",
+            ));
+        }
+        let args = self.extract_args(&path);
+        let mut child = std::process::Command::new(self.tool)
+            .args(&args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        let mut out = Vec::new();
+        if let Some(stdout) = child.stdout.as_mut() {
+            use std::io::Read as _;
+            stdout
+                .take(MAX_MEMBER_READ_BYTES + 1)
+                .read_to_end(&mut out)?;
+        }
+        if out.len() as u64 > MAX_MEMBER_READ_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::FileTooLarge,
+                "rar 成员超过 64MB 读取上限",
+            ));
+        }
+        let _ = child.wait();
+        Ok(out)
+    }
+
+    fn metadata(&self, path: &str) -> std::io::Result<ArchiveEntry> {
+        let path = normalize_inner(path);
+        self.entries
+            .iter()
+            .find(|e| e.path == path)
+            .cloned()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "rar 成员不存在"))
+    }
+
+    fn host(&self) -> &Path {
+        &self.host
+    }
+}
+
 /// M39-3：zip 容器扩展名白名单（zip/jar + Office 三件套 + APK/WAR）——
 /// 只读虚拟浏览复用 ZipFs；**is_archive_file 与 open_dispatch 共用本表**
 /// （M34-6 三表漂移教训的制度化：新容器只改这一处）。魔数 PK 校验在
@@ -655,13 +1039,16 @@ pub fn is_archive_file(name: &str) -> bool {
         || n.ends_with(".tar.zst")
         || n.ends_with(".tar.xz")
         || n.ends_with(".7z")
+        // M46-9：deb（ar 容器）与 rar（外部只读工具）。.apk 已在 zip 白名单。
+        || n.ends_with(".deb")
+        || n.ends_with(".rar")
 }
 
-/// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）：`.rar`（M26-3 起
-/// `.7z` 升级为可浏览，移出本列表）。
+/// 判断文件名是否为**不支持虚拟浏览**的归档（M7-9）。M46-9：`.rar` 已
+/// 由外部只读工具支持，列表清空（保留函数供预览回退逻辑调用）。
 pub fn is_unsupported_archive(name: &str) -> bool {
-    let n = name.to_lowercase();
-    n.ends_with(".rar")
+    let _ = name;
+    false
 }
 
 /// 按扩展名分派到对应实现（M7-2 ZipFs / M7-3 TarFs）。
@@ -686,6 +1073,12 @@ pub fn open_dispatch(host: &Path) -> std::io::Result<Box<dyn ArchiveFs>> {
     } else if n.ends_with(".7z") {
         // M26-3：7z 升级为 ArchiveFs 虚拟浏览（M7-9 的"解压提示"退役）。
         Ok(Box::new(SevenZFs::open(host)?))
+    } else if n.ends_with(".deb") {
+        // M46-9：ar 容器 + 内嵌 data.tar.*（虚拟目录 data/）。
+        Ok(Box::new(DebFs::open(host)?))
+    } else if n.ends_with(".rar") {
+        // M46-9：外部 bsdtar/unrar/7z 只读；缺失给可读错误。
+        Ok(Box::new(RarFs::open(host)?))
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -1187,7 +1580,10 @@ mod tests {
         // is_archive_file / is_unsupported_archive 语义更新。
         assert!(is_archive_file("t.7z"));
         assert!(!is_unsupported_archive("t.7z"));
-        assert!(is_unsupported_archive("t.rar"));
+        assert!(
+            !is_unsupported_archive("t.rar"),
+            "M46-9：rar 已支持只读浏览"
+        );
         // open_dispatch 分派（M7-4 公共导航路径）。
         let mut fsx = open_dispatch(&z7).unwrap();
         let names: Vec<String> = fsx
@@ -1211,5 +1607,71 @@ mod tests {
             Ok(_) => panic!("损坏 7z 应打开失败"),
         };
         assert!(err.to_string().contains("7z"), "err: {err}");
+    }
+
+    /// M46-9：构造最小 ar 成员（60 字节头 + 数据 + 偶数对齐填充）。
+    fn write_ar_member(out: &mut Vec<u8>, name: &str, data: &[u8]) {
+        let mut hdr = [b' '; 60];
+        let n = name.as_bytes();
+        hdr[..n.len()].copy_from_slice(n);
+        hdr[48..58].copy_from_slice(format!("{:<10}", data.len()).as_bytes());
+        hdr[58..60].copy_from_slice(b"`\n");
+        out.extend_from_slice(&hdr);
+        out.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            out.push(b'\n');
+        }
+    }
+
+    #[test]
+    fn m469_extension_tables_cover_deb_apk_rar() {
+        assert!(is_archive_file("pkg.deb"));
+        assert!(is_archive_file("pkg.apk"), "apk 保持已支持");
+        assert!(is_archive_file("pkg.rar"));
+        assert!(!is_unsupported_archive("pkg.rar"), "rar 已由外部工具支持");
+    }
+
+    #[test]
+    fn m469_deb_browses_data_dir_and_reads_member() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let deb = tmp.path().join("pkg.deb");
+
+        // 内嵌 data.tar（含 etc/conf）。
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(3);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "etc/conf", &b"hi\n"[..])
+            .unwrap();
+        let tar_bytes = builder.into_inner().unwrap();
+
+        let mut ar = b"!<arch>\n".to_vec();
+        write_ar_member(&mut ar, "debian-binary", b"2.0\n");
+        write_ar_member(&mut ar, "data.tar", &tar_bytes);
+        fs::write(&deb, ar).unwrap();
+
+        let mut vfs = open_dispatch(&deb).unwrap();
+        let root = vfs.list("").unwrap();
+        assert!(root.iter().any(|e| e.path == "data" && e.is_dir));
+        assert!(root.iter().any(|e| e.path == "debian-binary"));
+        // TarFs::list 返回归档内完整路径（导航层取叶子段作为条目名）。
+        let etc = vfs.list("data/etc").unwrap();
+        assert!(etc.iter().any(|e| e.path == "etc/conf"), "etc: {etc:?}");
+        assert_eq!(vfs.read("data/etc/conf").unwrap(), b"hi\n");
+        assert_eq!(vfs.metadata("debian-binary").unwrap().size, 4);
+    }
+
+    #[test]
+    fn m469_rar_listing_parser_sanitizes_paths() {
+        let raw = "dir/a.txt\nC:\\work\\b.txt\n../escape.txt\n/abs.txt\n";
+        let entries = parse_rar_listing(raw);
+        let paths: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["dir/a.txt", "C:/work/b.txt"],
+            "路径规范化与 zip-slip 拒绝"
+        );
     }
 }

@@ -1075,7 +1075,7 @@
 - [x] M46-6 首次启动在配置目录生成带注释的 `config.toml` 与示例键位/opener 文件（**2026-11-24**：内嵌三模板，`ensure_default_config_at` 路径注入 + TUI 启动钩子，m466 自解析/不覆盖测试）；已有文件不被覆盖；生成失败静默降级；测试与 temp 路径不被污染。
 - [x] M46-7 help 背景不透明不透视（**2026-11-24**：Clear+黑底 backdrop，m467 不透明/无下层 f00 断言）；`/` 进入 HelpSearch 可见输入框、内容不丢（同测试 `/filter` 可见）；tmux/screen 下 `:help` 新窗口打开（`[ui] help_in_new_window` 默认 true，配置可关），无 mux 回退应用内覆盖层；`rvifm help` 输出内嵌帮助（CLI 冒烟 13 集成）。新窗口真实"激活"为尽力而为（SIMPLIFIED）。
 - [x] M46-8 同一归档二次 `w` 预览不重复 `open_dispatch`/全量解压（**2026-11-24**：ArchivePreviewCache 按路径+mtime+size + m468 命中/失效测试）；大 xz/bz2 预览不卡死（64MB 输入护栏 + 4000 成员上限 + 「按 l 进入浏览」提示）；zip/纯 tar 快速路径不回归。用户机 firefox tarball 实测提速待用户补验。
-- [ ] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容；`.rar` 有工具时可列出/进入、缺失给可读提示；扩展名真值表一致，归档只读与 64MB 上限不回归。
+- [x] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容（**2026-11-24**：DebFs ar 解析 + 内存 TarFs + `data/` 虚拟目录，m469 端到端）；`.rar` 有工具时可列出/进入、缺失给可读提示（RarFs + m469 路径净化测试；真实工具环境待用户补验）；扩展名真值表一致，归档只读与 64MB 上限不回归。
 - [ ] M46-10 单文件与多选删除确认为居中 yazi 风格弹窗：标题居中带图标、无标题下提示、文件列表样式与双栏一致、固定高度+滚动条、j/k 导航、y/Enter 与 Esc/n 行为正确。
 - [ ] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致。
 - [ ] M46-12 tutor 13 模块 100 项可解析、提示与新增/修复项一致；harness_check 通过。
