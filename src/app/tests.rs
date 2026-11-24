@@ -3207,6 +3207,7 @@ fn fix2_yy_p_copies_and_undo_removes_copy() {
 fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
     let source = TempDir::new().unwrap();
     fs::write(source.path().join("item.txt"), "payload").unwrap();
+    fs::write(source.path().join("move.txt"), "move").unwrap();
     let destination = TempDir::new().unwrap();
     let mut state = AppState::new(Tab::from_physical(source.path(), Config::default()).unwrap());
     state.active_tab_mut().right =
@@ -3262,6 +3263,50 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
     assert!(source.path().join("item.txt").exists());
     assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
 
+    state.active_tab_mut().right.location = Location::Physical(source.path().to_path_buf());
+    state
+        .active_tab_mut()
+        .right
+        .refresh(Config::default())
+        .unwrap();
+    state.active_tab_mut().right.cursor = state
+        .active_tab()
+        .right
+        .entries
+        .iter()
+        .position(|item| item.name == "move.txt")
+        .unwrap();
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    state.active_tab_mut().right.location = Location::Physical(destination.path().to_path_buf());
+    state
+        .active_tab_mut()
+        .right
+        .refresh(Config::default())
+        .unwrap();
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('P'),
+        KeyModifiers::NONE,
+    );
+    assert!(!source.path().join("move.txt").exists());
+    assert!(destination.path().join("move.txt").exists());
+    state.active_tab_mut().right.cursor = 0;
+
     press_msg(
         &mut state,
         &mut input,
@@ -3310,6 +3355,45 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
 }
 
 #[test]
+fn fix7_3_mk_and_mkdir_apply_to_focused_right_pane() {
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+
+    assert!(matches!(
+        exec_command_impl(&mut state, "mk created"),
+        Ok(ExecOutcome::Done { .. })
+    ));
+    assert!(right.path().join("created").is_dir());
+    assert_eq!(
+        state.active_tab().location,
+        Location::Physical(left.path().to_path_buf())
+    );
+    assert_eq!(
+        state.active_tab().right.location,
+        Location::Physical(right.path().join("created"))
+    );
+    assert!(state.active_tab().right.on_parent_row);
+
+    let cfg = state.config.clone();
+    state.active_tab_mut().right.location = Location::Physical(right.path().to_path_buf());
+    state.active_tab_mut().right.on_parent_row = false;
+    state.active_tab_mut().right.refresh(cfg).unwrap();
+    assert!(matches!(
+        exec_command_impl(&mut state, "mkdir child"),
+        Ok(ExecOutcome::Done { .. })
+    ));
+    assert!(right.path().join("child").is_dir());
+    assert_eq!(
+        state.active_tab().right.entries[state.active_tab().right.cursor].name,
+        "child"
+    );
+}
+
+#[test]
 fn fix7_2_frecency_o_dispatches_from_both_panes() {
     let _guard = STORE_TEST_LOCK.lock().unwrap();
     let tmp = TempDir::new().unwrap();
@@ -3338,6 +3422,21 @@ fn fix7_2_frecency_o_dispatches_from_both_panes() {
         KeyModifiers::NONE,
     );
     assert!(matches!(right, Outcome::OpenFrecencyPane { .. }));
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
+    assert!(matches!(
+        exec_command_impl(&mut state, "j"),
+        Ok(ExecOutcome::OpenJump {
+            kind: JumpKind::Dir,
+            ..
+        })
+    ));
+    assert!(matches!(
+        exec_command_impl(&mut state, "J"),
+        Ok(ExecOutcome::OpenJump {
+            kind: JumpKind::File,
+            ..
+        })
+    ));
     assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
 }
 
@@ -5101,7 +5200,7 @@ fn fix7_2_right_archive_yank_uses_shared_dispatch() {
         &mut state,
         &mut input,
         &mut msg,
-        KeyCode::Char('p'),
+        KeyCode::Char('P'),
         KeyModifiers::NONE,
     );
     assert_eq!(fs::read(dest.join("readme.md")).unwrap(), b"hi");

@@ -3634,9 +3634,19 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // 上方 Err 返回，光标不动；条目被隐藏过滤时保持原位）。
             if cmd == "mkdir" {
                 let tab = state.active_tab_mut();
-                if let Some(idx) = tab.entries.iter().position(|i| i.name == name) {
-                    tab.cursor = idx;
-                    tab.on_parent_row = false;
+                match tab.focus {
+                    crate::tab::Focus::Left => {
+                        if let Some(idx) = tab.entries.iter().position(|i| i.name == name) {
+                            tab.cursor = idx;
+                            tab.on_parent_row = false;
+                        }
+                    }
+                    crate::tab::Focus::Right => {
+                        if let Some(idx) = tab.right.entries.iter().position(|i| i.name == name) {
+                            tab.right.cursor = idx;
+                            tab.right.on_parent_row = false;
+                        }
+                    }
                 }
             }
             Ok(ExecOutcome::Done { msg: None })
@@ -3661,10 +3671,32 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let tab_id = state.active;
             // navigate_to 先加载成功才变更状态（M16 语义；失败不改光标）。
             if let Some(tab) = state.tabs.get_mut(tab_id) {
-                tab.navigate_to(Location::Physical(base.join(name)), cfg)
-                    .map_err(|e| format!("mk: {e}"))?;
+                let target = Location::Physical(base.join(name));
+                match tab.focus {
+                    crate::tab::Focus::Left => tab
+                        .navigate_to(target, cfg)
+                        .map_err(|e| format!("mk: {e}"))?,
+                    crate::tab::Focus::Right => {
+                        tab.right.remember_cursor();
+                        tab.right.location = target;
+                        tab.right.cursor = 0;
+                        tab.right.scroll = 0;
+                        tab.right.refresh(cfg).map_err(|e| format!("mk: {e}"))?;
+                        tab.right.restore_cursor();
+                        tab.right.on_parent_row = tab.right.has_parent_row();
+                    }
+                }
             }
             refresh_tab_panes(state, tab_id);
+            if state
+                .tabs
+                .get(tab_id)
+                .is_some_and(|tab| tab.focus == crate::tab::Focus::Right)
+            {
+                record_live_visit(state, tab_id, 'R');
+            } else {
+                record_live_visit(state, tab_id, 'L');
+            }
             Ok(ExecOutcome::Done { msg: None })
         }
         Some(cmd @ ("j" | "J")) => {
