@@ -5207,6 +5207,16 @@ fn m457b_archive_yy_paste_extracts_to_focused_pane() {
     );
     // 归档未被写入（只读）。
     assert!(zip.is_file());
+    // M46-5：粘贴解压后目标 pane 列表即时刷新（无需等待 watcher）。
+    assert!(
+        state
+            .active_tab()
+            .right
+            .entries
+            .iter()
+            .any(|e| e.name == "readme.md"),
+        "解压后目标 pane 应已刷新出 readme.md"
+    );
     // u 撤销：解压文件移除。
     let mut msg3 = None;
     undo_last(&mut state, &mut msg3);
@@ -5314,6 +5324,56 @@ fn m457a_extract_dest_defaults_to_opposite_pane() {
         "右焦点缺省对侧为左"
     );
     assert_eq!(extract_dest(&state, Some("当前")).unwrap(), right);
+}
+
+/// M46-5：`:extract` 解压到对侧 pane 后立即刷新该 pane 的条目列表。
+#[test]
+fn m465_extract_refreshes_destination_pane() {
+    let tmp = TempDir::new().unwrap();
+    let left = tmp.path().join("L");
+    let right = tmp.path().join("R");
+    fs::create_dir(&left).unwrap();
+    fs::create_dir(&right).unwrap();
+    // 在 left 目录内造一个仅含 readme.md 的 zip（避免 make_test_zip 的显式
+    // 目录条目触发 extract 路径拼接的既有缺陷，与本任务无关）。
+    {
+        use std::io::Write as _;
+        let file = std::fs::File::create(left.join("bundle.zip")).unwrap();
+        let mut w = zip::ZipWriter::new(file);
+        w.start_file("readme.md", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(b"hi").unwrap();
+        w.finish().unwrap();
+    }
+
+    let mut state = AppState::new(Tab::from_physical(&left, Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(&right, Config::default()).unwrap();
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "bundle.zip")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    assert!(state.active_tab().right.entries.is_empty());
+
+    let extract_result = exec_command(&mut state, "extract");
+    assert_eq!(
+        extract_result,
+        Ok(false),
+        "extract 结果: {extract_result:?}"
+    );
+    assert_eq!(fs::read(right.join("readme.md")).unwrap(), b"hi");
+    assert!(
+        state
+            .active_tab()
+            .right
+            .entries
+            .iter()
+            .any(|e| e.name == "readme.md"),
+        "对侧 pane 应即时看到解压产物"
+    );
 }
 
 #[test]

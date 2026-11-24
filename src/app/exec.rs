@@ -2836,13 +2836,18 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 return Err(format!("extract: {} 不是受支持的归档格式", item.name));
             }
             // 逐成员解压（zip-slip 防护 / 64MB 护栏 / u 可逆）共用 extract_members。
+            // M46-5：写入目标 pane 后立即刷新双侧列表（否则对侧条目滞后）。
+            let tab_id = state.active;
             match extract_members(state, &host, &[String::new()], &dest_dir) {
-                Ok(applied) => Ok(ExecOutcome::Done {
-                    msg: Some(format!(
-                        "extract: {applied} 个成员已解压到 {}（u 可撤销）",
-                        dest_dir.display()
-                    )),
-                }),
+                Ok(applied) => {
+                    crate::app::jobs::refresh_tab_panes(state, tab_id);
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!(
+                            "extract: {applied} 个成员已解压到 {}（u 可撤销）",
+                            dest_dir.display()
+                        )),
+                    })
+                }
                 Err(failures) => Err(format!(
                     "extract: 失败 {}: {}",
                     failures.len(),
@@ -4187,8 +4192,11 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
             .iter()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .collect();
+        let tab_id = state.active;
         match extract_members(state, host, &roots, &base) {
             Ok(applied) => {
+                // M46-5：粘贴解压后立即刷新目标 pane 列表。
+                crate::app::jobs::refresh_tab_panes(state, tab_id);
                 *msg = Some(format!(
                     "已从归档解压 {applied} 个成员到 {}",
                     base.display()

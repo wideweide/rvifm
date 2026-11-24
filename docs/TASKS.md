@@ -656,7 +656,7 @@
 - [x] M46-2 搜索高亮仅应用当前焦点 pane（左 pane 增焦点守卫，vifm 对齐；见 SPEC M46-2；2026-11-24 完成：render.rs active_query 增 left_focused 守卫，m462 焦点对称测试，556 单测）
 - [x] M46-3 右 pane 未搜索态整行背景一致（M45-2a 同款 row_reversed 守卫右移；见 SPEC M46-3；2026-11-24 完成：render_right_pane 增 row_reversed/ft 守卫，m463 右栏反显行 fg 断言，557 单测）
 - [x] M46-4 `h`→`l` 光标还原真修复（on_parent_row 不再覆盖还原 cursor；见 SPEC M46-4；2026-11-24 完成：enter_selected 增 had_memory 判定，左右 pane 与归档分支同源，m453e 双测试补 on_parent_row 断言）
-- [ ] M46-5 `:extract` 解压到对侧后刷新目标 pane（extract/yy→p + job 完成刷新双侧；见 SPEC M46-5）
+- [x] M46-5 `:extract` 解压到对侧后刷新目标 pane（extract/yy→p + job 完成刷新双侧；见 SPEC M46-5；2026-11-24 完成：extract 命令臂/归档 yy→p 接 refresh_tab_panes，apply_job_update 双侧刷新，m465 端到端 + m457b 断言，558 单测）
 - [ ] M46-6 启动创建默认 config.toml（注释说明默认设置）+ 键位/命令示例配置，不覆盖已有（见 SPEC M46-6）
 - [ ] M46-7 `:help` 修复：不透明背景 + 新终端窗口打开 + `/` 搜索可用（见 SPEC M46-7）
 - [ ] M46-8 归档 `w` 预览提速（去每帧全量解压/重开，缓存 + 护栏；见 SPEC M46-8）

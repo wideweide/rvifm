@@ -538,7 +538,10 @@ impl AppState {
         }
         let cfg = self.config.clone();
         if let Some(tab) = self.tabs.get_mut(update.tab_id) {
-            let _ = tab.refresh(cfg);
+            // M46-5：作业写入可能落在对侧 pane（如 :extract 到对侧），
+            // 必须双侧刷新——旧实现只刷左 pane，对侧列表长期陈旧。
+            let _ = tab.refresh(cfg.clone());
+            let _ = tab.right.refresh(cfg);
         }
         changed
     }
