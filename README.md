@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v1.3.0 发布（M0–M44 + FIX/REL-4 + M45 全部完成；GitHub Release 仅 musl 归档——linux-x64-musl / linux-aarch64-musl（静态）/ windows-x64，crates.io 停在 1.0.0；见 CHANGELOG）。** M45 用户实测批次（28 子任务）已全部落地：HOME 路径缩写、标签栏点击、可配置分隔线、类型图标、删除确认弹窗、预览越界修复、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示等（详见 CHANGELOG `[1.3.0]`）。 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双栏快捷键与目录/文件命令作用于焦点 pane，两侧均可显示并进入 `..` 父目录行（根目录隐藏）。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v1.4.0 发布（M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 全部完成；GitHub Release 仅 musl 归档——linux-x64-musl / linux-aarch64-musl（静态）/ windows-x64，crates.io 停在 1.0.0；见 CHANGELOG）。** M46 用户实测批次 2（12 子任务）已全部落地：图片预览不越界、搜索高亮仅焦点 pane、右栏整行背景一致、`h`→`l` 光标还原、extract 后刷新对侧、启动生成默认配置、`:help` 三修、归档预览提速、deb/rar VFS、yazi 删除确认（详见 CHANGELOG `[1.4.0]`）。M45 用户实测批次（28 子任务）已全部落地：HOME 路径缩写、标签栏点击、可配置分隔线、类型图标、删除确认弹窗、预览越界修复、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示等（详见 CHANGELOG `[1.3.0]`）。 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双栏快捷键与目录/文件命令作用于焦点 pane，两侧均可显示并进入 `..` 父目录行（根目录隐藏）。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -264,6 +264,7 @@ Fcitx/Fcitx5 优先停用当前输入法状态并保留所选引擎；IBus 使�
 | M44 | 预览焦点修复（`w`/`:view` 焦点保持 + 光标跟随 + `Tab` 进入/返回） | 已完成（1.1.0） |
 | FIX / REL-4 | 维护期修复（SHA256SUMS 完整性 / tutor 不透明 / 会话恢复）+ 发布产物 musl-only（aarch64 静态 musl） | 已完成（1.2.0） |
 | M45 | 用户实测批次 28 子任务（路径/图标/确认弹窗/预览/焦点/解压/tutor/archive） | 已完成（1.3.0） |
+| M46 | 用户实测批次 2（12 子任务：预览越界/焦点高亮/右栏整行/光标还原/extract 刷新/默认配置/help 三修/归档提速/deb·rar VFS/yazi 删除确认） | 已完成（1.4.0） |
 
 **优先保证 M0–M2 闭环**，尤其是 `u` 撤销的可逆语义。M0–M6 构成 v0.1.0 核心版本；M7–M11 是在核心可用之后逐步叠加的增强，不阻塞 v0.1.0 发布。
 

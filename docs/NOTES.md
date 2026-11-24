@@ -1400,6 +1400,12 @@ rvifm record  → 静默记录访问
 - **验收延期**：真实桌面上的 IBus/Fcitx/Fcitx5 状态切换依赖登录中的图形会话，当前自动化环境不具备该会话，人工往返测试列为 FIX-9-M1 deferred；假命令 runner 覆盖自动化状态机，不依赖宿主输入法。
 - **跨平台延期**：本机只安装 Linux target；Windows/macOS 下 worker 条件分支等待对应 CI runner 编译验证（FIX-9-CI deferred）。
 
+### 2026-11-25 — REL-6 发布：平台相关默认值不得进测试断言（WHY）
+
+- **CI 首跑 red**：run 45439549429 的 Windows job 仅 `m466_default_config_generation_and_no_overwrite` 失败——M46-6 生成的 `config.toml` 模板硬编码 `[ime] enabled = true`，而 `ImeConfig::default().enabled = cfg!(target_os = "linux")`（Windows/macOS 为 false），模板解析结果 != 内置默认，断言失败。Linux 本机该值恰为 true 故掩盖了缺陷（AUDIT-14 同类：宿主/平台相关值不得进测试断言）。
+- **修复**：模板把 `enabled = true` 改为注释行，由 serde 采用平台默认——既让模板准确（Linux 默认开、Windows/macOS 默认关且选项无效），又使三平台断言一致。run 45444178315 全绿（三平台 test + fuzz + supply-chain）。
+- **教训固化**：新增"默认配置模板"类内嵌文件时，必须逐字段核对 `Config::default()` 是否平台相关；凡 `cfg!(target_os)` / `cfg!(windows)` 默认值一律不硬编码进模板，留注释交 serde。与 NOTES 既有 AUDIT-14「测试环境隔离」同源，不单列新规则。
+
 ### 2026-11-24 — M46 用户实测批次蒸馏（12 项；照例先蒸馏后执行）
 
 - **来源**：用户实测反馈 12 条，含 5 条"既有任务未真正修复"的回退。登记前对三条主线各做一次逐行代码定位（预览/归档、渲染/导航、配置/帮助/弹窗），根因均落到具体函数，避免再次"表面勾选"。

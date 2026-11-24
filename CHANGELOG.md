@@ -3,7 +3,9 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.4.0] — 2026-11-25
+
+M46 用户实测批次 2（12 项，含 5 项"未真正修复"的回退真修复 + 配置/归档增强）：
 
 - Linux Normal 模式自动切换英文输入状态，支持系统已有 IBus/Fcitx/Fcitx5 命令并恢复先前输入法状态；无需新增 Cargo/C 依赖，可用 `[ime]` 配置关闭或设置 IBus 英文 engine。
 

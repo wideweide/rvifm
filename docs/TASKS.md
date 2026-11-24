@@ -572,6 +572,10 @@
 
 - [x] REL-5 版本 bump 1.3.0 + 文档同步 + tag v1.3.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-24 完成：tag run 45256802332 全绿，三归档 + SHA256SUMS 3 行 `sha256sum -c` 实测通过，aarch64 静态 ELF + `--version` = rvifm 1.3.0）
 
+## REL-6 — M46 批次发布（1.4.0；CI 全绿后触发）
+
+- [ ] REL-6 版本 bump 1.4.0 + 文档同步 + tag v1.4.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-25：CI run 45444178315 全绿，执行 bump 与 tag）
+
 ## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，待用户确认，见 SPEC M45 节）
 
 > 来源：用户 2026-11-23 测试反馈（29 项，按 §8 蒸馏）。登记前逐项核对代码与

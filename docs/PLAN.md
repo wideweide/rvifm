@@ -153,6 +153,12 @@
   预览焦点修复。tag v1.1.0 → CI 三平台测试全绿 → GitHub Release 四归档 + SHA256SUMS。
 - **crates.io 不发布**（用户 2026-11-23 指令）；版本 bump 与 tag 仅用于 GitHub 分发。
 
+### 1.4.0（2026-11-25，GitHub Release；crates.io 不发布）
+
+- M46 用户实测批次 2（12 子任务）随 **1.4.0** 发布：图片预览越界真修复、搜索高亮仅焦点 pane、右栏整行背景一致、`h`→`l` 光标还原、extract 后刷新对侧、首次启动生成带注释默认配置、`:help` 三修（不透明/新窗口/`rvifm help`）、归档预览缓存提速、`.deb`/`.rar` 只读 VFS、yazi 删除确认、help/GUIDE/CHANGELOG/tutor 同步。CI run 45444178315 全绿（三平台 test + fuzz + supply-chain）；tag v1.4.0 → GitHub Release 三 musl 归档 + SHA256SUMS（3 行）。crates.io 不发布（用户 2026-11-23 决策）。
+- 人工补验项 deferred：M11-6/C6 原生协议大图不越界、M46-8 用户机 firefox tarball 提速、M46-9 rar 工具环境、FIX-9-M1 真实 IME 桌面会话。
+- 发布前修复：M46-6 默认配置模板的 `[ime] enabled` 曾硬编码 true，在 Windows/macOS（默认 false）导致平台断言失败（CI run 45439549429），改为注释由 serde 采用平台默认后全绿。
+
 ### 1.3.0（2026-11-24，GitHub Release；crates.io 不发布）
 
 - M45 用户实测批次 28 子任务 + 文档收尾随 **1.3.0** 发布：HOME 路径缩写/标签栏点击/可配置分隔线/类型图标、opener 错误提示、可执行文件 Enter 特例、居中删除确认弹窗、per-location 光标记忆、图片预览越界钳制、归档成员预览 + NUL 检测、选择器鼠标点击/命令名补全、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示与布局避让、archive 命令/对话框细化。CI run 45240675080 全绿（三平台测试 + fuzz + supply-chain）；tag v1.3.0 → GitHub Release 三 musl 归档 + SHA256SUMS（3 行）。crates.io 不发布（用户 2026-11-23 决策）。
@@ -209,4 +215,4 @@
 
 | FIX-8 | Frecency 搜索面板融合与预览修复（2026-11-24；用户指令） | `o/:j/:J` 焦点面板统一 / 查询命中高亮 / 复用 `:view` 图片与文本预览 / 鼠标选定 | M23, M34, M45 | ✅ 完成（1/1；546 单测 + 12 集成全绿） | 后续维护版本 |
 | FIX-9 | Normal 模式输入法自动切换（2026-11-24；用户确认） | Linux IBus/Fcitx/Fcitx5 命令接口 / 模式边界状态恢复 / 配置与文档 | M10, M21 | ✅ 完成（2/2；553 单测 + 12 集成；真实桌面与 Windows/macOS 验收 deferred） | 后续维护版本 |
-| M46 | 用户实测批次 2（2026-11-24 蒸馏；vifm 对齐 + 缺陷真修复 + 配置/归档增强） | 预览越界/焦点高亮/右栏整行/h-l 光标/extract 刷新 · 默认配置生成 · help 三修 · 归档预览提速 · deb/apk/rar VFS · yazi 删除确认 · help/tutor 文档 | M14, M21, M34, M37, M43, M45 | ✅ 完成（2026-11-25，12/12；567 单测 + 13 集成 + harness_check 绿；原生协议大图与 rar 工具环境人工 deferred） | 后续维护版本（待 CI 验证） |
+| M46 | 用户实测批次 2（2026-11-24 蒸馏；vifm 对齐 + 缺陷真修复 + 配置/归档增强） | 预览越界/焦点高亮/右栏整行/h-l 光标/extract 刷新 · 默认配置生成 · help 三修 · 归档预览提速 · deb/apk/rar VFS · yazi 删除确认 · help/tutor 文档 | M14, M21, M34, M37, M43, M45 | ✅ 完成（2026-11-25，12/12；567 单测 + 13 集成 + harness_check 绿；原生协议大图与 rar 工具环境人工 deferred） | **1.4.0**（2026-11-25 GitHub Release） |
