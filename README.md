@@ -203,9 +203,21 @@ prepend_rules = [
 append_rules = [
     { name = "*.md", use = ["edit_text"] },
 ]
+
+# Linux 输入法模式切换（系统已有 IBus/Fcitx/Fcitx5 命令时生效）
+[ime]
+enabled = true
+ibus_english_engine = "xkb:us::eng" # 仅 IBus 英文引擎回退使用
 ```
 
 **普通用户不需要写任何配置。** 定制是让已经好用的东西变得更好用，而不是使用的前提。
+
+Linux 下进入 Normal（包括启动和从文本输入模式按 Esc 返回）时，rvifm 会保存当前
+输入法状态并切到英文；进入命令、搜索、过滤、重命名等文本输入模式时恢复先前状态。
+Fcitx/Fcitx5 优先停用当前输入法状态并保留所选引擎；IBus 使用配置的英文 engine
+回退。实现只调用系统已有命令，不增加 Cargo 或 C 库依赖；未安装或命令不可用时
+保持原行为。设置 `[ime] enabled = false` 可关闭；`ibus_english_engine` 可配置
+为桌面已安装的英文键盘 engine 标识。
 
 ## 开发路线
 

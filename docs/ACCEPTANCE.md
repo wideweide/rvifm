@@ -1062,5 +1062,5 @@
 - [x] 注入假命令 runner 覆盖 Fcitx5 状态查询/停用/恢复、IBus 引擎切换/恢复、后端失败回退与关闭配置；测试不触碰宿主输入法。（FIX-9-1；`ime::tests::*`）
 - [x] Normal↔可编辑模式边界通过事件循环对比状态驱动，避免重复保存；文本输入/选择器 Vim 态分类有回归覆盖；退出通过 worker shutdown 恢复。（FIX-9-2；`fix9_text_entry_modes_control_ime_transitions`）
 - [deferred] Windows/macOS CI runner 确认其它平台 worker 不启动 Linux 子进程且配置字段可编译；本机只安装 Linux target。（FIX-9-CI）
-- [ ] README/GUIDE/内置 help/tutor/CHANGELOG 说明配置、支持后端与降级行为。（FIX-9-2；见 SPEC FIX-9-3）
+- [x] README/GUIDE/内置 help/tutor/CHANGELOG 说明配置、支持后端与降级行为。（FIX-9-2；见 SPEC FIX-9-3）
 - [deferred] 真实 Linux IBus/Fcitx/Fcitx5 桌面会话验证按 Esc 切英文、重新进入文本输入后恢复、退出恢复；需人工登录对应桌面会话。

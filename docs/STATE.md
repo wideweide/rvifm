@@ -3,8 +3,8 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-24
-- **当前阶段**：M0–M44 + FIX/REL-4 + M45 + FIX-9 进行中；v1.3.0 GitHub Release。
-- **当前任务**：FIX-9-2 用户文档、内置帮助与 tutor 验收项同步（代码任务 FIX-9-1 已通过自动门禁；见 SPEC FIX-9）。
+- **当前阶段**：**M0–M44 + FIX/REL-4 + M45 + FIX-9 全部完成；v1.3.0 GitHub Release**（2026-11-24；FIX-9 自动门禁全绿；真实 Linux IME 会话及 Windows/macOS 编译验收 deferred）。
+- **当前任务**：无；FIX-9-1/2 完成。FIX-9-M1 真实桌面测试与 FIX-9-CI 跨平台编译为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -16,13 +16,16 @@
 - PROC-1：预算门控与断点落地协议已生效（用户 2026-11-19 确认），为「自动续轮」第 3 条停止条件。
 - REL-3b：**已完成**——用户鉴权后回填 v1.0.0/v1.1.0 的 `SHA256SUMS.txt`（各 4 行，API 核实）。
 - FIX-9-M1：真实 Linux IBus/Fcitx/Fcitx5 桌面会话人工验收 deferred；后端行为由注入 runner 自动测试，待用户在相应桌面登录后补验。
+- FIX-9-CI：Windows/macOS 条件编译验收 deferred；本机未安装这两个平台 target，交由对应 CI runner。
 
 ## 下一步
 
-1. 完成 FIX-9-2 文档收尾并提交。
-2. FIX-9-M1 真实桌面测试可在用户登录支持的输入法会话时补验。
+1. FIX-9 批次已关闭；用户登录支持的输入法桌面会话后可补验 FIX-9-M1。
+2. 后续需求按 FIX/FEAT 蒸馏批次登记。
 
 ## 批次关闭记录
+
+- FIX-9（2026-11-24）：Linux IBus/Fcitx/Fcitx5 Normal 模式自动切英文并在文本输入模式恢复原状态；新增 `[ime]` 配置与命令 runner，不增 Cargo/C 依赖。553 单测 + 12 集成、clippy/build/CLI 冒烟全绿，harness_check 通过。真实桌面往返验证与 Windows/macOS 编译留 deferred。
 
 - FIX 批次（2026-11-23，用户实测反馈，蒸馏后确认执行）：3 任务——REL-3a CI 修复（4 并行 release job 各自生成/`--clobber` 上传 SHA256SUMS 导致只含 1 行 → 新增独立 `release-checksums` 汇总作业 + 数量守卫 4 + `scripts/repair-release-checksums.sh` 回填脚本）；FIX-5 tutor 覆盖层不透明（render.rs `TutorList`/底部 Panel 两处 Clear，fix5_* 双测试）；FIX-6 会话保存建目录（`save_session_with_path` 路径注入 + `create_dir_all`，fix6_* 双测试）。宿主门禁 506 单测 + 12 集成 + clippy/fmt/build 全绿；**CI run 45119651902 全绿**（test ubuntu/macos/windows + fuzz + supply-chain；release/release-checksums 在分支推送正确 skipped，仅 tag 触发）。FIX-5 初版测试在 macOS 暴露 TestBackend CJK 续格伪影（见 NOTES），已加固后 CI 复验通过。**REL-3b 历史回填已由用户人工完成**（v1.0.0/v1.1.0 各 4 行，API 核实）——批次 3/3 全清零。
 - REL-4 + 1.2.0 发布（2026-11-23）：发布产物 musl-only——release matrix 3 腿（x64-musl / aarch64-musl / windows-x64），移除 gnu 腿；aarch64 由 gnu 动态链接改静态 musl，用 cargo-zigbuild + zig 0.14.1 交叉编译（musl.cc GCC 11 ICE / 裸 zig cc target 冲突，评估见 NOTES）；SHA256SUMS 数量守卫 3；版本 bump 1.2.0。首跑 tag run 45129475971 的 `release-checksums` 因无 checkout、gh 未显式 `--repo` 而上传失败（归档已上传，SHA256SUMS 缺）；加 `--repo "$GITHUB_REPOSITORY"` + tag 重指向后 **run 45132119778 九 job 全绿**；GitHub Release 三归档 + SHA256SUMS 3 行，下载实测 `sha256sum -c` 全通过，aarch64 产物静态 ELF + `--version` 通过。crates.io 未发布（停在 1.0.0）。

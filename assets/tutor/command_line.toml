@@ -53,3 +53,8 @@ expected = "列出可用主题（内置+捆绑+用户）；切换即时生效且
 id = "cmd_help"
 prompt = "输入 `:help` 打开全屏帮助。"
 expected = "j/k 滚动、`/` 搜索帮助文本（n/N 跳转）、q/Esc 关闭恢复原状态。"
+
+[[items]]
+id = "ime_normal_mode"
+prompt = "Linux 中文输入法开启时，按 `:` 进入命令行，再按 Esc 返回 Normal。"
+expected = "Normal 自动切到英文；重新进入文本输入模式恢复之前的输入法状态。未安装 IBus/Fcitx 时不影响快捷键。"

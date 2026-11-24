@@ -161,7 +161,11 @@ rvifm 帮助（vim 风格文件管理器）
   :cmdmark <tag>  命令书签（写入 frecency cmd topic；命令行内 ' 展开标签）
   gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
 
-提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap]）。
+输入法（Linux）：Normal 下默认自动切英文；进入命令/搜索等文本输入模式时恢复之前的状态。
+  使用系统已有的 fcitx5-remote / fcitx-remote / ibus 命令，不新增编译依赖；未检测到时不影响操作。
+  [ime] enabled = false 可关闭；ibus_english_engine 可配置 IBus 的英文 engine（默认 xkb:us::eng）。
+
+提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap] / [ime]）。
 opener 必须写成表（写成字符串会解析失败并整体回退默认配置）：
   [opener] edit_text = { run = "nvim %s", block = true }
   [open] prepend_rules = [{ mime = "text/*", use = ["edit_text", "open"] }]

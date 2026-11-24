@@ -642,7 +642,7 @@
 ## FIX-9 — Normal 模式输入法自动切换（2026-11-24 增补；用户确认，见 SPEC FIX-9）
 
 - [x] FIX-9-1 Linux IBus/Fcitx/Fcitx5 命令后端、`[ime]` 配置及输入模式边界保存/切换/恢复接线；零新增依赖（见 SPEC FIX-9）
-- [ ] FIX-9-2 用户文档、内置帮助与 tutor 验收项同步（见 SPEC FIX-9-3）
+- [x] FIX-9-2 用户文档、内置帮助与 tutor 验收项同步（见 SPEC FIX-9-3）
 - [deferred] FIX-9-M1 在真实 Linux IBus/Fcitx 桌面会话人工验证进入/离开文本输入模式与退出恢复（见 SPEC FIX-9）
 - [deferred] FIX-9-CI Windows/macOS 编译分支在对应 CI runner 补验（本地仅有 Linux target，见 SPEC FIX-9）
 
