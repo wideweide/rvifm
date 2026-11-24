@@ -209,9 +209,12 @@ pub(crate) enum InputMode {
         path: PathBuf,
         permanent: bool,
         remote: Option<String>,
+        /// M46-10：文件列表浏览光标/滚动（单文件通常为 0）。
+        cursor: usize,
+        scroll: usize,
     },
-    /// 标记批量删除确认模式（`:tag delete`，M3-3）。
-    ConfirmTagDelete,
+    /// 标记批量删除确认模式（`:tag delete`，M3-3；M46-10：带列表导航状态）。
+    ConfirmTagDelete { cursor: usize, scroll: usize },
     /// 全屏帮助视图（FEAT-4，`:help`）：独立滚动状态（与目录列表无关），
     /// j/k 滚动、/ 搜索（n/N 循环跳转）、q/Esc 关闭返回。
     HelpView {
@@ -938,7 +941,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 }
                                 Ok(ExecOutcome::Done { msg: m }) => msg = m,
                                 Ok(ExecOutcome::ConfirmTagDelete) => {
-                                    mode = InputMode::ConfirmTagDelete;
+                                    mode = InputMode::ConfirmTagDelete {
+                                        cursor: 0,
+                                        scroll: 0,
+                                    };
                                 }
                                 Ok(ExecOutcome::Escalate { op }) => {
                                     // M12-3：EACCES → 原地 sudo 密码输入（操作级提权）。
@@ -1266,9 +1272,18 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     path,
                     permanent,
                     remote,
+                    scroll,
+                    ..
                 } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
+                            // M46-10：j/k（含方向键）浏览文件列表（单文件为 0）。
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                *scroll = scroll.saturating_add(1);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                *scroll = scroll.saturating_sub(1);
+                            }
                             // y / Enter 确认删除；n / Esc / 其他 = 取消（无副作用）。
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 let path = std::mem::take(path);
@@ -1397,9 +1412,22 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 }
-                InputMode::ConfirmTagDelete => {
+                InputMode::ConfirmTagDelete { cursor, scroll } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
+                            // M46-10：j/k（含方向键）滚动查看待删除文件列表。
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                *cursor = cursor.saturating_add(1);
+                                if *cursor >= *scroll + crate::app::render::CONFIRM_LIST_HEIGHT {
+                                    *scroll = *cursor - crate::app::render::CONFIRM_LIST_HEIGHT + 1;
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                *cursor = cursor.saturating_sub(1);
+                                if *cursor < *scroll {
+                                    *scroll = *cursor;
+                                }
+                            }
                             // y / Enter 确认批量删除；n / Esc / 其他 = 取消（无副作用）。
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 mode = InputMode::Normal;
@@ -1477,11 +1505,16 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 path,
                                 permanent,
                                 remote,
+                                cursor: 0,
+                                scroll: 0,
                             };
                         }
                         Outcome::ConfirmTagDelete => {
                             // M45-3d：v+d/x 选中项已加 tag，进入批量删除确认。
-                            mode = InputMode::ConfirmTagDelete;
+                            mode = InputMode::ConfirmTagDelete {
+                                cursor: 0,
+                                scroll: 0,
+                            };
                         }
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };
@@ -1801,6 +1834,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                             path,
                                             permanent: false,
                                             remote: None,
+                                            cursor: 0,
+                                            scroll: 0,
                                         };
                                     }
                                     ContextMenuOutcome::RenamePrefill { line } => {
@@ -1927,6 +1962,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 path,
                                 permanent: false,
                                 remote: None,
+                                cursor: 0,
+                                scroll: 0,
                             };
                         }
                         ContextMenuOutcome::RenamePrefill { line } => {

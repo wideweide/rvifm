@@ -577,15 +577,69 @@ pub(crate) fn confirm_rect(
     }
 }
 
-/// M45-3c：删除确认弹窗内容——(标题, 正文行)。纯函数便于测试（不读状态）；
-/// 图标 ⚠ + 红色加粗警示，`y` 高亮反显，`n/Esc` 明确可取消。
+/// M46-10：删除确认列表固定高度（不全显示时右侧滚动条 + j/k 浏览）。
+pub(crate) const CONFIRM_LIST_HEIGHT: usize = 6;
+
+/// M46-10：yazi 风格删除确认弹窗内容——标题居中带 ⚠ 图标，标题下不再显示
+/// 提示文字；待删除文件列表样式与双栏一致（图标 + 类型色 + 当前行反显），
+/// 固定高度 + 右侧滚动条。纯函数便于测试。
 pub(crate) fn confirm_dialog(
     permanent: bool,
-    target: &str,
+    paths: &[std::path::PathBuf],
     remote: Option<&str>,
-    tag_count: Option<usize>,
+    cursor: usize,
+    scroll: usize,
+    width: u16,
 ) -> (String, Vec<Line<'static>>) {
-    let warn = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
+    let n = paths.len().max(1);
+    let title = if permanent {
+        format!("⚠ 是否永久删除选定的 {n} 个文件")
+    } else {
+        format!("⚠ 是否删除选定的 {n} 个文件")
+    };
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let start = scroll.min(n.saturating_sub(CONFIRM_LIST_HEIGHT));
+    let thumb = (start * CONFIRM_LIST_HEIGHT / n).min(CONFIRM_LIST_HEIGHT - 1);
+    let name_width = (width as usize).saturating_sub(5).max(8);
+    for row in 0..CONFIRM_LIST_HEIGHT {
+        let idx = start + row;
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        let bar = if n > CONFIRM_LIST_HEIGHT && row == thumb {
+            "▮"
+        } else if n > CONFIRM_LIST_HEIGHT {
+            "│"
+        } else {
+            " "
+        };
+        if let Some(path) = paths.get(idx) {
+            let icon = crate::icons::icon_for_active(path);
+            let label = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            let class = if path.is_dir() {
+                crate::tab::FileTypeClass::Directory
+            } else {
+                crate::tab::FileTypeClass::Other
+            };
+            spans.push(Span::from(format!("{} ", icon.glyph)));
+            let used = label.chars().count() + 2;
+            spans.push(Span::styled(label, filetype_style(class)));
+            spans.push(Span::from(" ".repeat(name_width.saturating_sub(used))));
+        } else {
+            spans.push(Span::from(" ".repeat(name_width + 2)));
+        }
+        spans.push(Span::from(bar.to_owned()));
+        let line = Line::from(spans);
+        lines.push(if idx == cursor {
+            line.style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            line
+        });
+    }
+    if let Some(r) = remote {
+        lines.push(Line::from(format!("远端: {r}")));
+    }
     let key_yes = Span::styled(
         " y ",
         Style::new()
@@ -594,48 +648,33 @@ pub(crate) fn confirm_dialog(
             .add_modifier(Modifier::BOLD),
     );
     let key_no = Span::styled(" n / Esc ", Style::new().add_modifier(Modifier::REVERSED));
-    let (title, head) = if tag_count.is_some() {
-        ("⚠ 批量删除".to_owned(), "删除标记文件？".to_owned())
-    } else if permanent {
-        (
-            "⚠ 永久删除（不可恢复）".to_owned(),
-            "此操作不可恢复".to_owned(),
-        )
-    } else {
-        ("⚠ 删除确认".to_owned(), "移入回收站（可撤销）".to_owned())
-    };
-    let mut lines = vec![
-        Line::from(vec![Span::styled("⚠ ", warn), Span::styled(head, warn)]),
-        Line::from(target.to_owned()),
-    ];
-    if let Some(r) = remote {
-        lines.push(Line::from(format!("远端: {r}")));
-    }
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         key_yes,
-        Span::from(" 确认    "),
+        Span::from(" 确认   "),
         key_no,
-        Span::from(" 取消"),
+        Span::from(" 取消   j/k 浏览"),
     ]));
     (title, lines)
 }
 
 fn render_confirm(
     frame: &mut Frame,
+    paths: &[std::path::PathBuf],
     permanent: bool,
-    target: &str,
     remote: Option<&str>,
-    tag_count: Option<usize>,
+    cursor: usize,
+    scroll: usize,
 ) {
-    let (title, lines) = confirm_dialog(permanent, target, remote, tag_count);
-    let rect = confirm_rect(frame.area(), lines.len());
+    let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 2);
+    let (title, lines) = confirm_dialog(permanent, paths, remote, cursor, scroll, rect.width);
     frame.render_widget(ratatui::widgets::Clear, rect);
     let border = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
+    // ratatui 0.30：Title 结构体退役，标题居中用 Line::centered()。
+    let centered = ratatui::text::Line::from(title).style(border).centered();
     frame.render_widget(
         Paragraph::new(lines).block(
             ratatui::widgets::Block::bordered()
-                .title(ratatui::text::Line::from(title).style(border))
+                .title(centered)
                 .border_style(border),
         ),
         rect,
@@ -1164,14 +1203,30 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             path,
             permanent,
             remote,
+            cursor,
+            scroll,
         } => {
-            let target = path.display().to_string().replace('\\', "/");
-            render_confirm(frame, *permanent, &target, remote.as_deref(), None);
+            render_confirm(
+                frame,
+                std::slice::from_ref(path),
+                *permanent,
+                remote.as_deref(),
+                *cursor,
+                *scroll,
+            );
             return;
         }
-        InputMode::ConfirmTagDelete => {
-            let n = tab.tagged_count();
-            render_confirm(frame, false, &format!("{n} 个标记文件"), None, Some(n));
+        InputMode::ConfirmTagDelete { cursor, scroll } => {
+            // 标记是名字集合——按焦点 pane 的 base_dir 还原为完整路径并排序。
+            let base = if tab.focus == crate::tab::Focus::Right {
+                tab.right.location.base_dir()
+            } else {
+                tab.location.base_dir()
+            };
+            let mut paths: Vec<std::path::PathBuf> =
+                tab.tags.iter().map(|name| base.join(name)).collect();
+            paths.sort();
+            render_confirm(frame, &paths, false, None, *cursor, *scroll);
             return;
         }
         _ => {}
@@ -1833,25 +1888,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::Jobs { .. } => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
         InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
-        InputMode::Confirm {
-            path,
-            permanent,
-            remote,
-        } => {
-            let prefix = if remote.is_some() { "远端" } else { "" };
-            if *permanent {
-                // M13-3：DD 永久删除强提示（不可恢复）。
-                Line::from(format!(
-                    "**{prefix}永久删除** {}（不可恢复）? [y/N]",
-                    path.display()
-                ))
-            } else {
-                Line::from(format!("删除{prefix} {}? [y/N]", path.display()))
-            }
-        }
-        InputMode::ConfirmTagDelete => {
-            let n = tab.tagged_count();
-            Line::from(format!("删除 {n} 个标记文件? [y/N]"))
+        InputMode::Confirm { .. } | InputMode::ConfirmTagDelete { .. } => {
+            Line::from(String::new()) // M46-10：居中弹窗提前 return，不可达
         }
         InputMode::AskPass { input, op } => {
             // M12-3：密码 masked 渲染（`*` 逐字符替换），带操作描述。

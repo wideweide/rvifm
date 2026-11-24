@@ -4186,10 +4186,11 @@ fn m453d_visual_delete_requires_confirmation() {
 
 #[test]
 fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
-    // M45-3c：确认弹窗内容——⚠ 图标、永久删除红色警示、y 键反色高亮。
-    let (title, lines) = crate::app::render::confirm_dialog(true, "/tmp/x/secret.txt", None, None);
+    // M46-10：yazi 风格——标题居中带 ⚠、无标题下提示、文件列表 + 滚动条。
+    let paths = vec![std::path::PathBuf::from("/tmp/x/secret.txt")];
+    let (title, lines) = crate::app::render::confirm_dialog(true, &paths, None, 0, 0, 72);
     assert!(
-        title.contains('⚠') && title.contains("永久删除"),
+        title.contains('⚠') && title.contains("是否") && title.contains("1 个文件"),
         "title={title}"
     );
     let joined: String = lines
@@ -4197,9 +4198,16 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
         .map(|l| l.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(joined.contains("⚠"), "正文带图标: {joined}");
     assert!(joined.contains("secret.txt"), "显示目标: {joined}");
-    assert!(joined.contains("不可恢复"), "永久删除强提示: {joined}");
+    assert!(
+        !joined.contains("不可恢复") && !joined.contains("移入回收站"),
+        "标题下不再显示提示文字: {joined}"
+    );
+    assert_eq!(
+        lines.len(),
+        crate::app::render::CONFIRM_LIST_HEIGHT + 1,
+        "固定高度 + 按键行（无 remote）"
+    );
     let key_line = lines.last().expect("按键行");
     let yes = key_line.spans.first().expect("y span");
     assert!(
@@ -4209,7 +4217,7 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
         "y 键高亮"
     );
 
-    // 渲染：弹窗居中（不在底部状态行），且不再有 [y/N] 文本。
+    // 渲染：弹窗居中（不在底部状态行）。
     let tmp = TempDir::new().unwrap();
     let target = tmp.path().join("gone.txt");
     fs::write(&target, "").unwrap();
@@ -4218,6 +4226,8 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
         path: target.clone(),
         permanent: false,
         remote: None,
+        cursor: 0,
+        scroll: 0,
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
@@ -4226,18 +4236,39 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
         .map(|y| (0..80u16).map(|x| buf[(x, y)].symbol()).collect())
         .collect();
     let joined = rows.join("\n");
-    // TestBackend 对 CJK 全宽字符留占位空格（M21-E3），比较前压掉空白。
     let compact = joined.replace(' ', "");
-    assert!(compact.contains("删除确认"), "弹窗标题可见: {joined}");
+    assert!(compact.contains("是否删除选定的"), "弹窗标题可见: {joined}");
     assert!(compact.contains("gone.txt"), "目标路径可见");
     assert!(!compact.contains("[y/N]"), "不再用状态栏行内提示");
-    let body = crate::app::render::confirm_dialog(false, "x", None, None)
-        .1
-        .len();
-    let rect = crate::app::render::confirm_rect(ratatui::layout::Rect::new(0, 0, 80, 24), body);
-    // 弹窗左上角为边框（居中块），底部状态行不含弹窗文本。
+    let rect = crate::app::render::confirm_rect(
+        ratatui::layout::Rect::new(0, 0, 80, 24),
+        crate::app::render::CONFIRM_LIST_HEIGHT + 2,
+    );
     assert_eq!(buf[(rect.x, rect.y)].symbol(), "┌", "居中弹窗边框");
-    assert!(!rows[23].contains("删除确认"), "状态行不再承担确认");
+    assert!(!rows[23].contains("是否删除"), "状态行不再承担确认");
+}
+
+/// M46-10：超过列表高度时右侧显示滚动条，j/k 导航状态独立。
+#[test]
+fn m4610_confirm_dialog_scrollbar_and_navigation() {
+    let paths: Vec<std::path::PathBuf> = (0..12)
+        .map(|i| std::path::PathBuf::from(format!("/tmp/f{i:02}.txt")))
+        .collect();
+    let (_, lines) = crate::app::render::confirm_dialog(false, &paths, None, 7, 4, 72);
+    let rendered: String = lines
+        .iter()
+        .map(|l| l.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains('▮') || rendered.contains('│'),
+        "右侧滚动条: {rendered}"
+    );
+    assert!(
+        rendered.contains("f04.txt"),
+        "滚动后可见对应文件: {rendered}"
+    );
+    assert!(!rendered.contains("f00.txt"), "滚出视口的文件不可见");
 }
 
 #[test]
