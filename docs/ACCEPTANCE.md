@@ -1055,3 +1055,12 @@
 - [x] README/GUIDE/help/tutor 与实现一致；M45-5b 记录准确区分浮层与内嵌面板。（2026-11-24：README/GUIDE/help/tutor 更新，历史漏测注记补齐）
 
 - [x] FIX-8-1 `o`/`:j`/`:J` 使用焦点 pane 相同 frecency 面板；鼠标点击候选与键盘选定均跳转。（2026-11-24：`:j`/`:J` 移入共享面板；右焦点鼠标跳转回归通过）
+
+## 50. FIX-9 — Normal 模式输入法自动切换（见 SPEC FIX-9）
+
+- [x] `[ime] enabled` 与 IBus 英文引擎配置可解析；默认 Linux 自动启用；无新增 Cargo/C 依赖。（FIX-9-1；config test + Cargo.toml diff）
+- [x] 注入假命令 runner 覆盖 Fcitx5 状态查询/停用/恢复、IBus 引擎切换/恢复、后端失败回退与关闭配置；测试不触碰宿主输入法。（FIX-9-1；`ime::tests::*`）
+- [x] Normal↔可编辑模式边界通过事件循环对比状态驱动，避免重复保存；文本输入/选择器 Vim 态分类有回归覆盖；退出通过 worker shutdown 恢复。（FIX-9-2；`fix9_text_entry_modes_control_ime_transitions`）
+- [deferred] Windows/macOS CI runner 确认其它平台 worker 不启动 Linux 子进程且配置字段可编译；本机只安装 Linux target。（FIX-9-CI）
+- [ ] README/GUIDE/内置 help/tutor/CHANGELOG 说明配置、支持后端与降级行为。（FIX-9-2；见 SPEC FIX-9-3）
+- [deferred] 真实 Linux IBus/Fcitx/Fcitx5 桌面会话验证按 Esc 切英文、重新进入文本输入后恢复、退出恢复；需人工登录对应桌面会话。

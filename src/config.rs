@@ -40,6 +40,27 @@ pub struct Config {
     /// AUDIT-6：[keymap] 表——键位解析选项（多键序列超时）。
     #[serde(default)]
     pub keymap: KeymapConfig,
+    /// FIX-9：Normal 模式自动切换输入法。
+    #[serde(default)]
+    pub ime: ImeConfig,
+}
+
+/// FIX-9：[ime] 输入法切换选项；默认仅 Linux 开启自动检测。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ImeConfig {
+    pub enabled: bool,
+    /// IBus 没有独立 ASCII 状态时使用的英文引擎标识。
+    pub ibus_english_engine: String,
+}
+
+impl Default for ImeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: cfg!(target_os = "linux"),
+            ibus_english_engine: "xkb:us::eng".to_owned(),
+        }
+    }
 }
 
 /// M25-4：[archive] 表——归档后校验文件类型（md5 默认 / sha256 / none）。
@@ -225,6 +246,7 @@ impl Default for Config {
             opener: std::collections::BTreeMap::new(),
             open: crate::opener::OpenLayers::default(),
             keymap: KeymapConfig::default(),
+            ime: ImeConfig::default(),
         }
     }
 }
@@ -562,6 +584,21 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg = load_from(&tmp.path().join("nope.toml")).unwrap();
         assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn ime_table_parses_and_defaults_are_stable() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[ime]\nenabled = false\nibus_english_engine = \"xkb:gb::eng\"\n",
+        )
+        .unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert!(!cfg.ime.enabled);
+        assert_eq!(cfg.ime.ibus_english_engine, "xkb:gb::eng");
+        assert_eq!(ImeConfig::default().ibus_english_engine, "xkb:us::eng");
     }
 
     #[test]

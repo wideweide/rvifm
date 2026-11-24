@@ -302,6 +302,24 @@ pub(crate) enum InputMode {
     },
 }
 
+/// 是否需要保留用户输入法以输入自然语言。其它模式（包括 Normal、确认框和菜单）
+/// 使用英文快捷键；JumpSelect 进入其 Vim 操作态后也属于 Normal 操作。
+fn ime_editable_mode(mode: &InputMode) -> bool {
+    matches!(
+        mode,
+        InputMode::Command { .. }
+            | InputMode::Search { .. }
+            | InputMode::Filter { .. }
+            | InputMode::HelpSearch { .. }
+            | InputMode::AskPass { .. }
+            | InputMode::JumpSelect { normal: false, .. }
+            | InputMode::ViewerSearch { .. }
+            | InputMode::ArchiveDialog { .. }
+            | InputMode::Rename { .. }
+            | InputMode::RemotePass { .. }
+    )
+}
+
 /// 命令行单键处理结果。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum CmdInput {
@@ -624,6 +642,9 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_mode_maps(keymap, &config::keymap_layers());
     let mut mode = InputMode::default();
+    let ime_worker = crate::ime::ImeWorker::start(state.config.ime.clone());
+    // Worker 启动时即处理初始 Normal 状态；后续转换由事件循环边界驱动。
+    let mut ime_was_editable = ime_editable_mode(&mode);
     // AUDIT-6：多键序列可配置超时（`[keymap] seq_timeout_ms`，缺省 500）。
     // 待决 seq 的截止时刻：seq 变化时重置，空时清除；超时清空 seq
     // （不吞后续按键）。`seq_len` 变化检测用于区分"同一段待决"与"新键"。
@@ -1950,6 +1971,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                 handle_mouse(&mut state, &mode, &mouse, &mut msg, area);
             }
         } // if event::poll && let Event::Key
+        let ime_is_editable = ime_editable_mode(&mode);
+        if ime_is_editable != ime_was_editable {
+            if ime_is_editable {
+                ime_worker.enter_editable();
+            } else {
+                ime_worker.enter_normal();
+            }
+            ime_was_editable = ime_is_editable;
+        }
     } // loop
 } // fn run
 

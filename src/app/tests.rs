@@ -1,4 +1,29 @@
 use super::*;
+
+#[test]
+fn fix9_text_entry_modes_control_ime_transitions() {
+    assert!(!ime_editable_mode(&InputMode::Normal));
+    assert!(ime_editable_mode(&InputMode::Search {
+        input: String::new(),
+        origin: 0,
+    }));
+    assert!(ime_editable_mode(&InputMode::Command {
+        input: String::new(),
+        hist_pos: None,
+        draft: String::new(),
+        comp: None,
+        ranked: Vec::new(),
+        cmd_mark_pending: false,
+    }));
+    assert!(!ime_editable_mode(&InputMode::JumpSelect {
+        input: String::new(),
+        cursor: 0,
+        entries: Vec::new(),
+        kind: JumpKind::Unified,
+        normal: true,
+        g_pending: false,
+    }));
+}
 use crate::config::Config;
 use crate::keymap::Key;
 use crate::tab::{FileItem, Location};

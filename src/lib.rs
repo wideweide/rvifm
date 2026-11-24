@@ -13,6 +13,7 @@ pub mod git;
 pub mod highlight;
 pub mod icons;
 pub mod image;
+pub mod ime;
 pub mod keymap;
 pub mod office;
 pub mod opener;

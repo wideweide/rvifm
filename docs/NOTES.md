@@ -1390,3 +1390,12 @@ rvifm record  → 静默记录访问
 - **裁决**：TUI 内保持“焦点 pane = frecency 搜索区、对侧 pane = 当前候选预览”；不统一强制左侧。该方案与双栏焦点一致，也保留右栏作为目标目录的场景。独立 `pick` 无文件管理器焦点，固定左搜索/右预览符合传统阅读方向。
 - **初查差异（FIX-8-1 已修复）**：`o` 原使用嵌入式 FrecencyPane，`:j`/`:J` 原用 JumpSelect 浮层；预览曾直接调用纯文本 `render_preview`，遗漏 ImageEngine 与 `:view` 语法高亮；鼠标事件未路由到嵌入面板。FIX-8-1 已统一面板、预览与点击路径，并补回归测试。
 - **边界**：`pick` 的固定左右双栏保留；不改评分、存储与 `pick` 只读语义。
+
+### 2026-11-24 — FIX-9 输入法切换方案
+
+- **决策**：沿用 Vim/Neovim 成熟的模式边界策略：离开可编辑模式时记录状态并转为英文，重新进入时恢复；不只拦截 Esc。Fcitx 优先停用当前输入法状态以保留引擎；IBus 通过保存/切换/恢复 engine 实现英文回退。
+- **依赖边界**：不增加 Cargo crate、C 库或 D-Bus 绑定。采用 Linux 桌面已有 `fcitx5-remote` / `fcitx-remote` / `ibus engine` 命令，以固定参数通过 Rust `Command` 调用；其缺失、失败或桌面会话不可用均降级为原行为。该命令接口做法与 Vim 插件生态一致，Fcitx5 原生 D-Bus 虽更直接，但为了零新增依赖不采用。
+- **Fcitx 状态码**：`fcitx-remote` 与 `fcitx5-remote` 的 `1` 是已连接但未激活，`2` 是激活；仅状态 `2` 才保存激活态并发送 `-c`，返回编辑模式时才发送 `-o`。状态 `1` 保持原样。
+- **范围**：默认仅 Linux 自动探测；输入法并发由桌面或用户修改时不保证合并状态。英文 IBus engine 可配置，避免假定所有用户都使用同一键盘布局标识。
+- **验收延期**：真实桌面上的 IBus/Fcitx/Fcitx5 状态切换依赖登录中的图形会话，当前自动化环境不具备该会话，人工往返测试列为 FIX-9-M1 deferred；假命令 runner 覆盖自动化状态机，不依赖宿主输入法。
+- **跨平台延期**：本机只安装 Linux target；Windows/macOS 下 worker 条件分支等待对应 CI runner 编译验证（FIX-9-CI deferred）。
