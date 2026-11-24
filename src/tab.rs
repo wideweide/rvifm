@@ -444,13 +444,20 @@ impl Pane {
             Location::Remote { .. } => None,
         };
         if let Some(target) = target {
+            // M46-4：先判断目标位置是否有记忆，再进入/还原；有记忆时保留
+            // 还原的光标，不再无条件高亮 `..` 行。
+            let had_memory = self.cursor_memory.contains_key(&target);
             self.remember_cursor();
             self.location = target;
             self.cursor = 0;
             self.scroll = 0;
             self.refresh(config)?;
             self.restore_cursor();
-            self.on_parent_row = self.has_parent_row();
+            self.on_parent_row = if had_memory {
+                false
+            } else {
+                self.has_parent_row()
+            };
         }
         Ok(())
     }
@@ -1755,9 +1762,17 @@ impl Tab {
             Location::Physical(base) => {
                 let target = base.join(&name);
                 if is_dir {
-                    self.navigate_to(Location::Physical(target), config)?;
-                    // FEAT-2：进入目录后光标落在 `..` 行（vifm 语义）。
-                    self.on_parent_row = self.has_parent_row();
+                    let target = Location::Physical(target);
+                    // M46-1/M46-4：重返已记忆位置时保留还原的光标；只有首次
+                    // 进入（无记忆）才落 `..` 行（FEAT-2）。旧实现无条件置
+                    // true，视觉上高亮 `..` 覆盖了还原值。
+                    let had_memory = self.cursor_memory.contains_key(&target);
+                    self.navigate_to(target, config)?;
+                    self.on_parent_row = if had_memory {
+                        false
+                    } else {
+                        self.has_parent_row()
+                    };
                     return Ok(());
                 }
                 // 归档文件：进入虚拟根目录（M7-4）；不支持的格式给出解压提示（M7-9）。
@@ -1768,15 +1783,17 @@ impl Tab {
                     ));
                 }
                 if crate::archive::is_archive_file(&name) {
-                    self.navigate_to(
-                        Location::Archive {
-                            host: target,
-                            inner: PathBuf::new(),
-                        },
-                        config,
-                    )?;
-                    // FEAT-2：进入归档后光标落在 `..` 行。
-                    self.on_parent_row = self.has_parent_row();
+                    let target = Location::Archive {
+                        host: target,
+                        inner: PathBuf::new(),
+                    };
+                    let had_memory = self.cursor_memory.contains_key(&target);
+                    self.navigate_to(target, config)?;
+                    self.on_parent_row = if had_memory {
+                        false
+                    } else {
+                        self.has_parent_row()
+                    };
                     return Ok(());
                 }
                 // 普通文件：由调用方（handle_key M11-7）决定是否调用系统 opener。
@@ -1792,14 +1809,17 @@ impl Tab {
                 } else {
                     format!("{inner_str}/{name}")
                 };
-                self.navigate_to(
-                    Location::Archive {
-                        host,
-                        inner: PathBuf::from(crate::archive::normalize_inner(&new_inner)),
-                    },
-                    config,
-                )?;
-                self.on_parent_row = self.has_parent_row();
+                let target = Location::Archive {
+                    host,
+                    inner: PathBuf::from(crate::archive::normalize_inner(&new_inner)),
+                };
+                let had_memory = self.cursor_memory.contains_key(&target);
+                self.navigate_to(target, config)?;
+                self.on_parent_row = if had_memory {
+                    false
+                } else {
+                    self.has_parent_row()
+                };
                 Ok(())
             }
         }
@@ -2585,6 +2605,7 @@ mod tests {
         tab.enter_selected(cfg.clone()).unwrap();
         assert_eq!(tab.location, Location::Physical(child.clone()));
         assert_eq!(tab.cursor, 0, "首次进入落 0");
+        assert!(tab.on_parent_row, "首次进入无记忆 → 落 `..` 行（FEAT-2）");
         assert!(
             !tab.cursor_memory
                 .contains_key(&Location::Physical(child.clone()))
@@ -2602,6 +2623,10 @@ mod tests {
         tab.cursor = child_idx;
         tab.enter_selected(cfg.clone()).unwrap();
         assert_eq!(tab.cursor, 2, "h→l 往返还原光标");
+        assert!(
+            !tab.on_parent_row,
+            "M46-4：h→l 往返后不得高亮 `..` 覆盖还原的光标"
+        );
     }
 
     #[test]
@@ -2698,6 +2723,7 @@ mod tests {
         tab.cursor = child_idx;
         tab.enter_selected(cfg.clone()).unwrap();
         assert_eq!(tab.cursor, 0, "99 钳制到仅 1 项的末位 0");
+        assert!(!tab.on_parent_row, "有记忆时不落 `..` 行（M46-4）");
 
         // 右 pane：h→l 往返同样还原。
         let mut pane = Pane::from_physical(tmp.path(), cfg.clone()).unwrap();
@@ -2712,6 +2738,7 @@ mod tests {
         pane.cursor = child_idx;
         pane.enter_selected(cfg.clone()).unwrap();
         assert_eq!(pane.cursor, 0, "右 pane 还原");
+        assert!(!pane.on_parent_row, "右 pane 重返不落 `..` 行（M46-4）");
     }
 
     #[test]
