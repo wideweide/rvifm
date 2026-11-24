@@ -344,6 +344,12 @@ pub(crate) fn render_right_pane(
                 .filter(|q| !q.is_empty()),
         }
     };
+    let visual_range = if focused {
+        tab.visual
+            .map(|anchor| (anchor.min(tab.right.cursor), anchor.max(tab.right.cursor)))
+    } else {
+        None
+    };
     let items: Vec<ListItem> = tab
         .right
         .entries
@@ -423,13 +429,21 @@ pub(crate) fn render_right_pane(
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             let mut li = ListItem::new(Line::from(spans));
-            if idx == tab.right.cursor {
+            let is_visual = visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi);
+            let mut modifiers = Modifier::empty();
+            if idx == tab.right.cursor || is_visual {
                 // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
-                li = li.style(if focused {
-                    Style::new().add_modifier(Modifier::REVERSED)
+                modifiers |= if focused {
+                    Modifier::REVERSED
                 } else {
-                    Style::new().add_modifier(Modifier::DIM)
-                });
+                    Modifier::DIM
+                };
+            }
+            if tab.tags.contains(&item.name) {
+                modifiers |= Modifier::BOLD;
+            }
+            if modifiers != Modifier::empty() {
+                li = li.style(Style::new().add_modifier(modifiers));
             }
             li
         })

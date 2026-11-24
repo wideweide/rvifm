@@ -648,6 +648,29 @@ pub(crate) fn handle_key(
     if state.active_tab().pane_frecency.is_some() {
         return frec_pane_key(state, input, msg, key);
     }
+    // FIX-7：普通模式左右 pane 共用完整 Action 分发。短暂将右 pane 的
+    // Location/entries/cursor/scroll/父行投影到活动列表字段，执行同一分发器，
+    // 再写回右 pane；左 pane 的位置状态在投影期间保存在 Pane 字段中。
+    let preview_owns_key = state.active_tab().view_mode
+        && state.active_tab().viewer.is_some()
+        && (state.active_tab().preview_focus
+            || matches!(key.code, KeyCode::Tab | KeyCode::Char(' ')));
+    if state.active_tab().focus == crate::tab::Focus::Right && !preview_owns_key {
+        if key.kind == KeyEventKind::Press && matches!(key.code, KeyCode::Tab | KeyCode::Char(' '))
+        {
+            state.active_tab_mut().focus = crate::tab::Focus::Left;
+            return Outcome::Continue;
+        }
+        if key.kind == KeyEventKind::Press
+            && matches!(
+                key.code,
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right
+            )
+        {
+            return handle_right_key(state, msg, key);
+        }
+        return dispatch_right_pane(state, input, msg, key, viewport_h);
+    }
     if key.kind != KeyEventKind::Press {
         return Outcome::Continue; // Release 先过滤，避免误消费待决序列。
     }
@@ -1738,6 +1761,36 @@ pub(crate) fn handle_key(
         }
     }
     Outcome::Continue
+}
+
+fn dispatch_right_pane(
+    state: &mut AppState,
+    input: &mut InputState,
+    msg: &mut Option<String>,
+    key: KeyEvent,
+    viewport_h: u16,
+) -> Outcome {
+    let tab_id = state.active;
+    {
+        let tab = &mut state.tabs[tab_id];
+        std::mem::swap(&mut tab.location, &mut tab.right.location);
+        std::mem::swap(&mut tab.entries, &mut tab.right.entries);
+        std::mem::swap(&mut tab.cursor, &mut tab.right.cursor);
+        std::mem::swap(&mut tab.scroll, &mut tab.right.scroll);
+        std::mem::swap(&mut tab.on_parent_row, &mut tab.right.on_parent_row);
+        tab.focus = crate::tab::Focus::Left;
+    }
+    let outcome = handle_key(state, input, msg, key, viewport_h);
+    {
+        let tab = &mut state.tabs[tab_id];
+        std::mem::swap(&mut tab.location, &mut tab.right.location);
+        std::mem::swap(&mut tab.entries, &mut tab.right.entries);
+        std::mem::swap(&mut tab.cursor, &mut tab.right.cursor);
+        std::mem::swap(&mut tab.scroll, &mut tab.right.scroll);
+        std::mem::swap(&mut tab.on_parent_row, &mut tab.right.on_parent_row);
+        tab.focus = crate::tab::Focus::Right;
+    }
+    outcome
 }
 
 /// FEAT-1/M41-3：鼠标事件处理——左键单击切换焦点 pane 并移动该 pane 光标

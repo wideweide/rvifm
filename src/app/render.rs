@@ -797,7 +797,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     let left_focused = tab.focus == crate::tab::Focus::Left;
     // M3-1：可视范围（状态栏指示 + 列表高亮共用；M34-4 提升至 pane 分派
     // 之前——查看器占左 pane 时其后置公共段仍在作用域内）。
-    let visual_range = tab.visual_range();
+    let visual_range = if tab.focus == crate::tab::Focus::Left {
+        tab.visual_range()
+    } else {
+        None
+    };
     // M34-4：预览渲染在非焦点 pane——焦点右 + view 模式时查看器占左 pane，
     // 右 pane 保持目录列表导航（与焦点左时"查看器在右"对称，共用同一渲染）。
     // M39-6：布局感知——Single 的查看器占全宽（列表隐藏）；PreviewRight

@@ -2602,10 +2602,9 @@ fn m34_3_right_pane_search_incsearch_commit_and_nn() {
 #[test]
 fn m41_1_right_pane_command_mode_and_tab_switch() {
     // M41-1：右 pane `:` 进入命令模式；gt/gT/Ngt/gg 与左 pane 同语义
-    // （`g` 起始待决序列复用左 pane seq 机制）；d 仍拒绝（M14-1 边界）。
+    // （`g` 起始待决序列复用左 pane seq 机制）。
     let (tmp, mut state) = make_state(3);
     let mut input = InputState::default();
-    let mut msg: Option<String> = None;
     {
         let tab = state.active_tab_mut();
         tab.right = crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
@@ -2715,16 +2714,6 @@ fn m41_1_right_pane_command_mode_and_tab_switch() {
         Outcome::Continue
     );
     assert_eq!(state.active_tab().right.cursor, 0, "gg 右 pane 顶部");
-    // d 仍拒绝（M14-1 边界不变）。
-    let out = press_msg(
-        &mut state,
-        &mut input,
-        &mut msg,
-        KeyCode::Char('d'),
-        KeyModifiers::NONE,
-    );
-    assert_eq!(out, Outcome::Continue);
-    assert!(msg.as_deref().unwrap_or("").contains("仅导航"));
 }
 
 #[test]
@@ -3212,6 +3201,144 @@ fn fix2_yy_p_copies_and_undo_removes_copy() {
     undo_last(&mut state, &mut msg);
     assert!(!out.path().join("a.txt").exists(), "u 应移除副本");
     assert!(tmp.path().join("a.txt").exists());
+}
+
+#[test]
+fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
+    let source = TempDir::new().unwrap();
+    fs::write(source.path().join("item.txt"), "payload").unwrap();
+    let destination = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(source.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(source.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.yank.as_ref().unwrap().paths,
+        vec![source.path().join("item.txt")]
+    );
+    assert_eq!(
+        state.active_tab().location,
+        Location::Physical(source.path().to_path_buf())
+    );
+    assert_eq!(
+        state.active_tab().right.location,
+        Location::Physical(source.path().to_path_buf())
+    );
+
+    state.active_tab_mut().right.location = Location::Physical(destination.path().to_path_buf());
+    state
+        .active_tab_mut()
+        .right
+        .refresh(Config::default())
+        .unwrap();
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('p'),
+        KeyModifiers::NONE,
+    );
+    assert!(destination.path().join("item.txt").exists());
+    assert!(source.path().join("item.txt").exists());
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().visual, Some(0), "右栏 v 进入可视选择");
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('t'),
+        KeyModifiers::NONE,
+    );
+    assert!(
+        state.active_tab().tags.contains("item.txt"),
+        "右栏 t 标记焦点条目"
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Esc,
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().visual.is_none());
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    let delete = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert!(
+        matches!(delete, Outcome::ConfirmDelete(..)),
+        "右栏 dd 进入共用删除确认"
+    );
+}
+
+#[test]
+fn fix7_2_frecency_o_dispatches_from_both_panes() {
+    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+
+    let left = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('o'),
+        KeyModifiers::NONE,
+    );
+    assert!(matches!(left, Outcome::OpenFrecencyPane { .. }));
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let right = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('o'),
+        KeyModifiers::NONE,
+    );
+    assert!(matches!(right, Outcome::OpenFrecencyPane { .. }));
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
 }
 
 #[test]
@@ -4915,6 +5042,69 @@ fn m457b_archive_yy_paste_extracts_to_focused_pane() {
     let mut msg3 = None;
     undo_last(&mut state, &mut msg3);
     assert!(!dest.join("readme.md").exists(), "u 撤销解压");
+}
+
+#[test]
+fn fix7_2_right_archive_yank_uses_shared_dispatch() {
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("bundle.zip");
+    crate::archive::make_test_zip(&zip);
+    let dest = tmp.path().join("dest");
+    fs::create_dir(&dest).unwrap();
+    let mut state = AppState::new(Tab::from_physical(&dest, Config::default()).unwrap());
+    state.active_tab_mut().right.location = Location::Archive {
+        host: zip.clone(),
+        inner: PathBuf::new(),
+    };
+    let loc = state.active_tab().right.location.clone();
+    state.active_tab_mut().right.entries = Tab::load_for(&loc, Config::default()).unwrap();
+    state.active_tab_mut().right.cursor = state
+        .active_tab()
+        .right
+        .entries
+        .iter()
+        .position(|item| item.name == "readme.md")
+        .unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let layers = config::keymap_layers();
+    let mut input = InputState::with_keymap(crate::keymap::Keymap::with_layers(
+        layers.prepend,
+        layers.append,
+        layers.replace,
+    ));
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.yank.as_ref().unwrap().paths,
+        vec![PathBuf::from("readme.md")]
+    );
+    assert!(matches!(
+        state.yank.as_ref().unwrap().source,
+        crate::state::YankSource::Archive { .. }
+    ));
+
+    state.active_tab_mut().focus = crate::tab::Focus::Left;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('p'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(fs::read(dest.join("readme.md")).unwrap(), b"hi");
 }
 
 #[test]

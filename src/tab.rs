@@ -904,6 +904,11 @@ impl Tab {
     /// 空目录为 no-op。
     pub fn move_cursor_wrap(&mut self, delta: isize) {
         if self.entries.is_empty() {
+            if delta < 0 && self.has_parent_row() {
+                self.on_parent_row = true;
+            } else if delta > 0 {
+                self.on_parent_row = false;
+            }
             return;
         }
         // FEAT-2：k 在首条目时上到 `..` 行（有父行时替代"首→尾"环绕）；
