@@ -3174,6 +3174,51 @@ fn fix1_render_search_highlight_and_count() {
     assert_eq!(highlighted2, 0, "无查询时不应有高亮");
 }
 
+/// M46-2：同一 Tab 级查询只高亮焦点 pane。焦点切到右栏后左栏不得再出现
+/// LightYellow 匹配高亮（vifm 对齐）。
+#[test]
+fn m462_search_highlight_only_on_focused_pane() {
+    let tmp = TempDir::new().unwrap();
+    for name in ["alpha", "src.txt", "srconly"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut msg = None;
+    live_search_jump(&mut state, 0, "src", &mut msg);
+
+    let mode = InputMode::Search {
+        input: "src".to_owned(),
+        origin: 0,
+    };
+    fn left_half_highlights(state: &AppState, mode: &InputMode) -> usize {
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render(frame, state, mode, None))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..40u16)
+            .flat_map(|x| (0..23u16).map(move |y| (x, y)))
+            .filter(|(x, y)| buf[(*x, *y)].bg == Color::LightYellow)
+            .count()
+    }
+
+    // 焦点左：左半（x<40）出现高亮。
+    state.active_tab_mut().focus = crate::tab::Focus::Left;
+    assert!(
+        left_half_highlights(&state, &mode) > 0,
+        "焦点左时左栏应高亮"
+    );
+
+    // 焦点右：左半不再高亮（右栏可能无条目，不强制其高亮）。
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    assert_eq!(
+        left_half_highlights(&state, &mode),
+        0,
+        "焦点右时左栏不得高亮"
+    );
+}
+
 #[test]
 fn fix2_yy_p_copies_and_undo_removes_copy() {
     let tmp = TempDir::new().unwrap();

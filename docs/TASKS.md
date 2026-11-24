@@ -653,7 +653,7 @@
 > 来源：用户 2026-11-24 实测反馈 12 项，按 AGENTS §8 蒸馏。多项为 M45/FIX 既有任务的"未真正修复"回退，登记时逐项对照代码定位根因（见 NOTES）。编号沿用 M45 用户实测批次先例取 M46。顺序：1→12（缺陷修复优先，文档收尾殿后；环境/平台相关人工验收 deferred）。
 
 - [x] M46-1 图片预览越界真修复（预览 pane 几何/Clear/pane 级相交 + 原生协议 SlicedImage 高度钳制；见 SPEC M46-1；2026-11-24 完成：plan_image 纯几何 + 等高顶部裁剪替代 3 屏 SlicedProtocol、viewer_rect 与 pane 同源、m461 双测试，555 单测）
-- [ ] M46-2 搜索高亮仅应用当前焦点 pane（左 pane 增焦点守卫，vifm 对齐；见 SPEC M46-2）
+- [x] M46-2 搜索高亮仅应用当前焦点 pane（左 pane 增焦点守卫，vifm 对齐；见 SPEC M46-2；2026-11-24 完成：render.rs active_query 增 left_focused 守卫，m462 焦点对称测试，556 单测）
 - [ ] M46-3 右 pane 未搜索态整行背景一致（M45-2a 同款 row_reversed 守卫右移；见 SPEC M46-3）
 - [ ] M46-4 `h`→`l` 光标还原真修复（on_parent_row 不再覆盖还原 cursor；见 SPEC M46-4）
 - [ ] M46-5 `:extract` 解压到对侧后刷新目标 pane（extract/yy→p + job 完成刷新双侧；见 SPEC M46-5）

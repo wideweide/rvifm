@@ -948,18 +948,24 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             left_inner
         };
 
-        // FIX-1：当前生效的搜索查询——搜索输入期用实时输入（不回退旧查询，
-        // 清空即无高亮），其余用已提交的 tab.search。
-        let active_query: Option<String> = match mode {
-            InputMode::Search { input, .. } => {
-                let query = input.trim();
-                (!query.is_empty()).then(|| query.to_owned())
+        // FIX-1 / M46-2：当前生效的搜索查询——搜索输入期用实时输入（不回退
+        // 旧查询，清空即无高亮），其余用已提交的 tab.search。
+        // M46-2：与右 pane（render_right_pane）对称，只在焦点位于左 pane 时
+        // 高亮——一个 Tab 级共享查询不得同时点亮两侧（vifm 对齐）。
+        let active_query: Option<String> = if !left_focused {
+            None
+        } else {
+            match mode {
+                InputMode::Search { input, .. } => {
+                    let query = input.trim();
+                    (!query.is_empty()).then(|| query.to_owned())
+                }
+                _ => tab
+                    .search
+                    .as_ref()
+                    .map(|s| s.query.clone())
+                    .filter(|query| !query.is_empty()),
             }
-            _ => tab
-                .search
-                .as_ref()
-                .map(|s| s.query.clone())
-                .filter(|query| !query.is_empty()),
         };
         // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
         let show_attrs = state.config.ui.attrs_column
