@@ -3,8 +3,8 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-24
-- **当前阶段**：**M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 用户实测批次 2 全部完成；v1.4.0 GitHub Release 发布中**（2026-11-25；M46 12/12 勾选，572 处 `#[test]`（本机编译 567 通过，5 处平台门控）+ 13 集成 + clippy/fmt/build + harness_check 全绿；CI run 45444178315 全绿：三平台 test + fuzz + supply-chain）。
-- **当前任务**：REL-6 版本 bump 1.4.0 + 文档同步 + tag v1.4.0 → GitHub Release（进行中）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前阶段**：**M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；M46 12/12 + REL-6 勾选；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。
+- **当前任务**：无自动可执行任务（TASKS 全部勾选或明确 deferred）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,12 +20,13 @@
 
 ## 下一步
 
-1. REL-6：版本 bump 1.4.0 已落，推送 main → 等待 bump run 全绿 → tag v1.4.0 触发 GitHub Release（三 musl 归档 + SHA256SUMS 3 行；crates.io 不发布）。
-2. 发布后核对 Release 归档 `sha256sum -c` 通过、aarch64 静态 ELF `--version = rvifm 1.4.0`。
-3. 用户可在真实终端补验 M11-6/C6 大图不越界、M46-8 firefox tarball 预览提速、M46-9 rar 工具环境与 FIX-9-M1 IME 会话；如需新批次按 §8 蒸馏登记。
+1. v1.4.0 已发布并验证（tag run 45452618998 九 job 全绿 + 下载校验）。无待执行的自动任务。
+2. 用户可在真实终端补验 M11-6/C6 大图不越界、M46-8 firefox tarball 预览提速、M46-9 rar 工具环境与 FIX-9-M1 IME 会话；如需新批次按 §8 蒸馏登记。
+3. crates.io 不发布（用户 2026-11-23 决策，仍停 1.0.0）。
 
 ## 批次关闭记录
 
+- REL-6（2026-11-25，1.4.0 发布）：版本 bump 1.4.0（Cargo.toml + Cargo.lock rvifm 项 + CHANGELOG/README/AGENTS/PLAN/STATE/TASKS/NOTES）；main bump run 45448879782 全绿 → tag v1.4.0 → tag run 45452618998 九 job 全绿（三平台 test + fuzz + supply-chain + 3 release 腿 + release-checksums）；GitHub Release v1.4.0 三 musl 归档 + SHA256SUMS 3 行，下载实测 `sha256sum -c` 全通过、aarch64 静态 ELF、x64-musl `--version = rvifm 1.4.0`。crates.io 不发布。
 - M46（2026-11-25，用户实测批次 2）：12/12 全部落地——图片越界真修复（plan_image 顶部裁剪替代 3 屏虚拟图形 + viewer_rect 同源）、搜索高亮仅焦点 pane、右栏整行背景一致、h→l 光标还原不覆盖 `..`、extract 双侧刷新、首次启动生成带注释默认配置 + 示例、help 三修（不透明/新窗口/rvifm help）、归档预览缓存 + 大小护栏、deb/rar 只读 VFS、yazi 删除确认、help/GUIDE/CHANGELOG/tutor 同步。567 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿。原生协议真实终端大图、用户机 firefox tarball 提速与 rar 工具环境验证 deferred；未触发版本发布（待 CI）。
 
 - FIX-9（2026-11-24）：Linux IBus/Fcitx/Fcitx5 Normal 模式自动切英文并在文本输入模式恢复原状态；新增 `[ime]` 配置与命令 runner，不增 Cargo/C 依赖。553 单测 + 12 集成、clippy/build/CLI 冒烟全绿，harness_check 通过。真实桌面往返验证与 Windows/macOS 编译留 deferred。

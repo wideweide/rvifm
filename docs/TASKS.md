@@ -574,7 +574,7 @@
 
 ## REL-6 — M46 批次发布（1.4.0；CI 全绿后触发）
 
-- [ ] REL-6 版本 bump 1.4.0 + 文档同步 + tag v1.4.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-25：CI run 45444178315 全绿，执行 bump 与 tag）
+- [x] REL-6 版本 bump 1.4.0 + 文档同步 + tag v1.4.0 → GitHub Release（三 musl 归档 + SHA256SUMS；crates.io 不发布；见 PLAN §4；2026-11-25 完成：tag run 45452618998 九 job 全绿，Release v1.4.0 三归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`）
 
 ## M45 — 用户实测批次（2026-11-23 蒸馏；vifm 对齐 + 缺陷修复，待用户确认，见 SPEC M45 节）
 
