@@ -313,6 +313,20 @@ pub(crate) fn render_right_pane(
         );
         rest
     };
+    let parent_available = tab.right.has_parent_row();
+    let list_area = if parent_available {
+        let [parent, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
+        let style = if tab.right.on_parent_row && focused {
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        } else {
+            Style::new().add_modifier(Modifier::DIM)
+        };
+        frame.render_widget(Paragraph::new(Line::from("../")).style(style), parent);
+        rest
+    } else {
+        inner
+    };
     // M34-3：右 pane 搜索高亮——焦点在右时生效（搜索输入期用实时输入，
     // 其余用已提交 tab.search；与左 pane FIX-1 同款式）。
     let active_query: Option<String> = if tab.focus != crate::tab::Focus::Right {
@@ -338,7 +352,7 @@ pub(crate) fn render_right_pane(
         .map(|(idx, item)| {
             // M21-E1：属性列自适应（与左 pane 同口径）。
             let show_attrs =
-                state.config.ui.attrs_column && inner.width as usize >= MIN_ATTRS_INNER_WIDTH;
+                state.config.ui.attrs_column && list_area.width as usize >= MIN_ATTRS_INNER_WIDTH;
             // M25-5：git 状态列（与左 pane 同口径；右 pane 独立目录缓存）。
             let git_col = show_attrs && state.config.ui.git_column;
             let git_map = if git_col {
@@ -350,11 +364,11 @@ pub(crate) fn render_right_pane(
                 None
             };
             let name_budget = if show_attrs {
-                (inner.width as usize).saturating_sub(
+                (list_area.width as usize).saturating_sub(
                     2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 },
                 )
             } else {
-                (inner.width as usize).saturating_sub(4)
+                (list_area.width as usize).saturating_sub(4)
             };
             let display_name = clip_name(&item.name, name_budget);
             let ft = filetype_style(item.filetype_class());
@@ -422,8 +436,13 @@ pub(crate) fn render_right_pane(
         .collect();
     // M41-4：偏移有状态（Pane.scroll，每帧 sync_viewport_scroll 落盘）；
     // 不再依赖 ListState 从 0 起的自动调整（会把光标钉在视口底行）。
-    let mut list_state = ListState::default()
-        .with_offset(tab.right.scroll)
-        .with_selected(Some(tab.right.cursor));
-    frame.render_stateful_widget(ratatui::widgets::List::new(items), inner, &mut list_state);
+    let mut list_state = ListState::default().with_offset(tab.right.scroll);
+    if !tab.right.on_parent_row {
+        list_state = list_state.with_selected(Some(tab.right.cursor));
+    }
+    frame.render_stateful_widget(
+        ratatui::widgets::List::new(items),
+        list_area,
+        &mut list_state,
+    );
 }

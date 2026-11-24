@@ -470,11 +470,15 @@ pub(crate) fn hit_right_index(
     {
         return None;
     }
+    let parent = tab.right.has_parent_row();
+    if parent && mouse.row == inner.y {
+        return None;
+    }
     if tab.right.entries.is_empty() {
         return None;
     }
     let offset = tab.right.scroll;
-    let idx = (mouse.row - inner.y) as usize;
+    let idx = (mouse.row - inner.y - parent as u16) as usize;
     idx.checked_add(offset)?;
     Some(idx.min(tab.right.entries.len().saturating_sub(1)))
 }

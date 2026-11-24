@@ -331,6 +331,8 @@ pub struct Pane {
     pub entries: Vec<FileItem>,
     pub cursor: usize,
     pub scroll: usize,
+    /// 焦点在右栏时是否选中渲染层 `..` 行。
+    pub on_parent_row: bool,
     /// M45-3e：per-location 光标记忆（离开记下、重返还原）。仅内存。
     pub cursor_memory: std::collections::HashMap<Location, usize>,
 }
@@ -356,6 +358,7 @@ impl Pane {
             entries: load_entries(dir, &config)?,
             cursor: 0,
             scroll: 0,
+            on_parent_row: false,
             cursor_memory: std::collections::HashMap::new(),
         })
     }
@@ -364,6 +367,12 @@ impl Pane {
     pub fn move_cursor(&mut self, delta: isize) {
         if self.entries.is_empty() {
             return;
+        }
+        if self.on_parent_row {
+            if delta < 0 {
+                return;
+            }
+            self.on_parent_row = false;
         }
         let len = self.entries.len();
         match delta {
@@ -379,12 +388,14 @@ impl Pane {
 
     pub fn cursor_top(&mut self) {
         self.cursor = 0;
+        self.on_parent_row = self.has_parent_row();
     }
 
     pub fn cursor_bottom(&mut self) {
         if !self.entries.is_empty() {
             self.cursor = self.entries.len() - 1;
         }
+        self.on_parent_row = false;
     }
 
     /// 进入光标条目（M14-1 物理目录；M45-6c 裁决：右 pane 归档文件/归档内
@@ -439,6 +450,7 @@ impl Pane {
             self.scroll = 0;
             self.refresh(config)?;
             self.restore_cursor();
+            self.on_parent_row = self.has_parent_row();
         }
         Ok(())
     }
@@ -494,6 +506,7 @@ impl Pane {
         {
             self.cursor = idx;
         }
+        self.on_parent_row = false;
         Ok(())
     }
 
@@ -509,7 +522,49 @@ impl Pane {
                 }
             }
         }
+        if !self.has_parent_row() {
+            self.on_parent_row = false;
+        }
         Ok(())
+    }
+
+    pub fn has_parent_row(&self) -> bool {
+        match &self.location {
+            Location::Physical(p) => p
+                .parent()
+                .is_some_and(|parent| !parent.as_os_str().is_empty()),
+            Location::Archive { .. } | Location::Remote { .. } => true,
+        }
+    }
+
+    pub fn move_cursor_wrap(&mut self, delta: isize) {
+        if self.entries.is_empty() {
+            if delta < 0 && self.has_parent_row() {
+                self.on_parent_row = true;
+            } else if delta > 0 {
+                self.on_parent_row = false;
+            }
+            return;
+        }
+        if delta == -1 {
+            if self.on_parent_row {
+                return;
+            }
+            if self.cursor == 0 && self.has_parent_row() {
+                self.on_parent_row = true;
+                return;
+            }
+        }
+        if delta == 1 && self.on_parent_row {
+            self.on_parent_row = false;
+            return;
+        }
+        let len = self.entries.len();
+        match delta {
+            1 => self.cursor = (self.cursor + 1) % len,
+            -1 => self.cursor = (self.cursor + len - 1) % len,
+            _ => self.move_cursor(delta),
+        }
     }
 }
 
@@ -810,7 +865,13 @@ impl Tab {
         let left_h = list_h.saturating_sub(parent_taken as usize);
         let left_cur = if self.on_parent_row { 0 } else { self.cursor };
         self.scroll = list_offset_sticky(left_cur, left_h, self.scroll);
-        self.right.scroll = list_offset_sticky(self.right.cursor, list_h, self.right.scroll);
+        let right_h = list_h.saturating_sub((self.right.has_parent_row()) as usize);
+        let right_cur = if self.right.on_parent_row {
+            0
+        } else {
+            self.right.cursor
+        };
+        self.right.scroll = list_offset_sticky(right_cur, right_h, self.right.scroll);
     }
 
     /// 焦点 pane 的基准目录（M14-1）：exec 写命令作用于焦点 pane。

@@ -2813,7 +2813,7 @@ fn m41_2_arrow_keys_match_jkhl_both_panes() {
 fn m41_3_mouse_click_focus_and_highlight_both_panes() {
     // M41-3：单击切焦点 + 光标移至命中条目（高亮随焦点）；已聚焦行再击
     // 打开（右 pane = M14-1 进入目录语义，文件 no-op）；滚轮作用于焦点
-    // pane。左 pane 有 `..` 行（条目从内区第 2 行开始），右 pane 无。
+    // pane。左右 pane 均有 `..` 行（普通条目从父行后开始）。
     let tmp = TempDir::new().unwrap();
     fs::create_dir(tmp.path().join("sub")).unwrap();
     for n in ["a.txt", "b.txt"] {
@@ -2834,11 +2834,11 @@ fn m41_3_mouse_click_focus_and_highlight_both_panes() {
         row,
         modifiers: KeyModifiers::NONE,
     };
-    // 1) 单击右 pane 第 2 行（idx 1 = a.txt）→ 焦点右 + 光标 1，不打开。
+    // 1) 单击右 pane idx 1（a.txt；父行之后第 2 项）→ 焦点右 + 光标 1。
     handle_mouse(
         &mut state,
         &InputMode::Normal,
-        &down(right_inner.x, right_inner.y + 1),
+        &down(right_inner.x, right_inner.y + 2),
         &mut msg,
         area,
     );
@@ -2853,11 +2853,11 @@ fn m41_3_mouse_click_focus_and_highlight_both_panes() {
         tmp.path(),
         "首次单击不打开"
     );
-    // 2) 再击同一行（idx 1 = 文件）→ enter_selected 文件 no-op（M14-1）。
+    // 2) 再击同一行（idx 1 = 文件）→ enter_selected 文件 no-op。
     handle_mouse(
         &mut state,
         &InputMode::Normal,
-        &down(right_inner.x, right_inner.y + 1),
+        &down(right_inner.x, right_inner.y + 2),
         &mut msg,
         area,
     );
@@ -2866,11 +2866,11 @@ fn m41_3_mouse_click_focus_and_highlight_both_panes() {
         tmp.path(),
         "已聚焦文件行再击不进入"
     );
-    // 3) 单击右 pane 首行（idx 0 = sub）→ 光标 0；再击 → 进入 sub。
+    // 3) 单击右 pane idx 0（sub）→ 光标 0；再击 → 进入 sub。
     handle_mouse(
         &mut state,
         &InputMode::Normal,
-        &down(right_inner.x, right_inner.y),
+        &down(right_inner.x, right_inner.y + 1),
         &mut msg,
         area,
     );
@@ -2878,7 +2878,7 @@ fn m41_3_mouse_click_focus_and_highlight_both_panes() {
     handle_mouse(
         &mut state,
         &InputMode::Normal,
-        &down(right_inner.x, right_inner.y),
+        &down(right_inner.x, right_inner.y + 1),
         &mut msg,
         area,
     );
@@ -5923,7 +5923,7 @@ fn feat1_list_offset_matches_cursor_visibility() {
 #[test]
 fn m41_4_viewport_scroll_sticky_sync() {
     // M41-4：sync_viewport_scroll——列表不动、高亮上移；越界才滚动；
-    // 左/右 pane 独立同步（右 pane 无 `..` 行）。
+    // 左/右 pane 独立同步（两栏均有 `..` 行）。
     let (tmp, mut state) = make_state(30);
     let _ = &tmp;
     {
@@ -5933,20 +5933,20 @@ fn m41_4_viewport_scroll_sticky_sync() {
         tab.right.cursor = 25;
     }
     // 首帧：cursor 15 越出窗口 → 贴底。左 pane 有 `..` 行（TempDir 有父
-    // 目录）→ 条目高 9：偏移 15+1-9=7；右 pane 无 `..` 行（高 10）：16。
+    // 目录）→ 条目高 9：偏移 15+1-9=7；右 pane 同为高 9：17。
     state.active_tab_mut().sync_viewport_scroll(10);
     assert_eq!(
         state.active_tab().scroll,
         7,
         "左 pane 越下界贴底（..行占 1）"
     );
-    assert_eq!(state.active_tab().right.scroll, 16, "右 pane 独立贴底");
-    // k 上移：cursor 14 仍在窗口 [7,16) → 偏移不变（列表不动、高亮上移）。
+    assert_eq!(state.active_tab().right.scroll, 17, "右 pane 独立贴底");
+    // k 上移：cursor 24 仍在窗口 [17,26) → 偏移不变（列表不动、高亮上移）。
     state.active_tab_mut().cursor = 14;
     state.active_tab_mut().right.cursor = 24;
     state.active_tab_mut().sync_viewport_scroll(10);
     assert_eq!(state.active_tab().scroll, 7, "窗口内列表不动");
-    assert_eq!(state.active_tab().right.scroll, 16, "右 pane 窗口内不动");
+    assert_eq!(state.active_tab().right.scroll, 17, "右 pane 窗口内不动");
     // 越上界：cursor 3 → 贴顶。
     state.active_tab_mut().cursor = 3;
     state.active_tab_mut().sync_viewport_scroll(10);
@@ -6564,6 +6564,42 @@ fn feat2_parent_row_navigates_like_h() {
         tmp.path().to_string_lossy().replace('\\', "/")
     );
     assert!(!state.active_tab().on_parent_row);
+}
+
+#[test]
+fn fix7_1_right_parent_row_is_visible_and_navigable() {
+    let tmp = TempDir::new().unwrap();
+    let sub = tmp.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(&sub, Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('k'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().right.on_parent_row);
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    );
+    assert!(!state.active_tab().right.on_parent_row);
+    assert_eq!(
+        state.active_tab().right.location.display_path(),
+        tmp.path().to_string_lossy().replace('\\', "/")
+    );
 }
 
 #[test]
@@ -8782,14 +8818,14 @@ fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
         terminal.backend().buffer().clone()
     };
 
-    // 几何与渲染同源：右 pane 条目首行 = 边框内区首行（无 `..` 行）。
+    // 几何与渲染同源：左右 pane 条目首行均在 `..` 行之后。
     let area = ratatui::layout::Rect::new(0, 0, 120, 24);
     let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
     let l_inner = ratatui::widgets::Block::bordered().inner(left);
     let r_inner = ratatui::widgets::Block::bordered().inner(right);
-    // 左 pane 条目 0 在 `..` 行之后（行 = inner.y + 1）；右 pane 无 `..` 行。
+    // 左右 pane 条目 0 均在 `..` 行之后（行 = inner.y + 1）。
     let l_row = l_inner.y + 1;
-    let r_row = r_inner.y;
+    let r_row = r_inner.y + 1;
     let lx = l_inner.x;
     let rx = r_inner.x;
 

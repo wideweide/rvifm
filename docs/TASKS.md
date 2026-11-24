@@ -618,6 +618,13 @@
 - [x] GAP-1 M10-5 收尾：keymap TOML 分层接线（config.rs 解析 prepend/append/replace 并合并进 InputState.keymap——当前仅默认表，用户绑定不可用；NAV-3 的推荐映射示例依赖此项）
 - [x] GAP-2 M8 收尾：TUI 退出时批量追加会话访问事件（SPEC §4.6"退出时批量追加"未实现——会话访问退出即丢，drain 各 tab history → append_events；NAV-4 的会话合并只覆盖即时可见性）
 
+## FIX-7 — 双栏焦点能力一致性（2026-11-24 增补；用户确认）
+
+- [x] FIX-7-1 两栏 `..` 行与父目录导航统一（见 SPEC FIX-7；2026-11-24：右 pane 独立 parent-row 状态、渲染/键盘/鼠标/视口同步，fix7_1 测试；538 单测 + 12 集成全绿）
+- [ ] FIX-7-2 修复焦点 pane 下快捷键分派（`o`、Visual/tag、`yy`/`p`/`P` 等，见 SPEC FIX-7）
+- [ ] FIX-7-3 修复焦点 pane 下目录命令及归档成员复制（`:mk`、归档 `yy`→`p/P`，见 SPEC FIX-7）
+- [ ] FIX-7-4 全仓键位/命令审计、文档与 tutor 同步（见 SPEC FIX-7）
+
 ## 不在任务清单中的事项
 
 以下内容明确不实现，不要为它们创建任务：

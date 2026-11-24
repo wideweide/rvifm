@@ -1018,6 +1018,15 @@
 - [x] FIX-6-2 回归测试注入不存在配置目录 → 保存 → 文件存在且可解析；`session_restore=false` 仍不写不读。（2026-11-23：fix6_save_disabled_does_not_write）
 - [x] FIX-6-3 文档澄清会话为"退出保存/启动恢复"的既有设计（README/GUIDE/help 描述不变）。（2026-11-23：SPEC FIX-6-3 + NOTES 设计澄清，无用户可见文档变更）
 
+## 46. FIX-7 — 双栏焦点能力一致性（见 SPEC FIX-7）
+
+- [x] 两栏均显示 `..`（根目录隐藏），选中后 `l`/Enter 返回本栏父目录；`h`/左方向键行为一致。（2026-11-24：右栏父行渲染、键盘与鼠标进退、滚动偏移统一；fix7_1 + M41 回归）
+- [ ] 左右焦点下均可执行 `o`/`:j`/`:J`，选择结果只改变焦点 pane。
+- [ ] 左右焦点下 `:mk name` 在焦点 pane 创建并进入；`yy` 后 `p` 复制、`P` 移动，均作用于焦点 pane。
+- [ ] 左右焦点下 Visual/tag、搜索、常用导航/文件命令行为对称；不再出现仅因右栏焦点而提示禁用。
+- [ ] 右栏进入归档后 `yy` 可复制成员，`p`/`P` 解压到焦点 pane 物理目录；归档内仍只读。
+- [ ] README/GUIDE/help/tutor 与实现一致，不再描述右栏仅导航。
+
 ## 46. REL-4 — Release 归档简化为 musl-only（见 SPEC REL-4 节）
 
 - [x] REL-4-1 `.github/workflows/ci.yml`：release matrix 仅 3 腿（x64-musl / aarch64-musl / windows-x64），无 gnu 归档；aarch64 用 `cargo zigbuild` + 固定 zig tarball，`file` smoke 断言 ARM aarch64 + statically linked；`release-checksums` 数量守卫 = 3；YAML 解析通过。（2026-11-23：本地 `cargo zigbuild --target aarch64-unknown-linux-musl` 实测成功，`file` = ARM aarch64 statically linked ELF）

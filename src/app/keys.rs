@@ -371,15 +371,20 @@ pub(crate) fn handle_right_key(
             // M21-F2：焦点经边框/当前行样式呈现，状态栏不再提示焦点文字。
             tab.focus = crate::tab::Focus::Left;
         }
-        KeyCode::Char('j') | KeyCode::Down if !ctrl => tab.right.move_cursor(1),
-        KeyCode::Char('k') | KeyCode::Up if !ctrl => tab.right.move_cursor(-1),
+        KeyCode::Char('j') | KeyCode::Down if !ctrl => tab.right.move_cursor_wrap(1),
+        KeyCode::Char('k') | KeyCode::Up if !ctrl => tab.right.move_cursor_wrap(-1),
         KeyCode::Char('d') if ctrl => tab.right.move_cursor(half),
         KeyCode::Char('u') if ctrl => tab.right.move_cursor(-half),
         // M41-1：`g` 序列（gt/gT/Ngt/gg）已由 handle_key 右 pane 分支拦截，
         // 此处不再有直跳顶部的单键 `g`（与左 pane gg 序列语义统一）。
         KeyCode::Char('G') if !ctrl => tab.right.cursor_bottom(),
         KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right if !ctrl => {
-            if let Err(e) = tab.right.enter_selected(cfg) {
+            let result = if tab.right.on_parent_row {
+                tab.right.return_parent(cfg)
+            } else {
+                tab.right.enter_selected(cfg)
+            };
+            if let Err(e) = result {
                 *msg = Some(format!("进入失败: {e}"));
             } else {
                 // M21-F9：右 pane 进入成功同样实时记录（侧别 'R'）。
@@ -1846,6 +1851,27 @@ pub(crate) fn handle_mouse(
         MouseEventKind::Down(MouseButton::Left) if in_right => {
             // 右 pane（M41-3）：单击切焦点 + 移光标；已聚焦行再击 = 进入
             // 目录（M14-1 语义，文件 no-op）。
+            let right_inner = left_list_area(
+                state.config.ui.pane_borders,
+                pane_layout(area, state.config.ui.layout(), state.active_tab().view_mode)[2],
+            );
+            let on_parent = state.active_tab().right.has_parent_row() && mouse.row == right_inner.y;
+            if on_parent {
+                let focused = state.active_tab().focus == crate::tab::Focus::Right
+                    && state.active_tab().right.on_parent_row;
+                {
+                    let tab = state.active_tab_mut();
+                    tab.focus = crate::tab::Focus::Right;
+                    tab.right.on_parent_row = true;
+                }
+                if focused {
+                    let cfg = state.config.clone();
+                    if let Err(e) = state.active_tab_mut().right.return_parent(cfg) {
+                        *msg = Some(format!("返回失败: {e}"));
+                    }
+                }
+                return;
+            }
             let Some(idx) = hit_right_index(state, mouse, area) else {
                 return;
             };
@@ -1868,6 +1894,7 @@ pub(crate) fn handle_mouse(
             } else {
                 let tab = state.active_tab_mut();
                 tab.focus = crate::tab::Focus::Right;
+                tab.right.on_parent_row = false;
                 tab.right.cursor = idx;
             }
         }
