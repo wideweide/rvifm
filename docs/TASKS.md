@@ -662,5 +662,5 @@
 - [x] M46-8 归档 `w` 预览提速（去每帧全量解压/重开，缓存 + 护栏；见 SPEC M46-8；2026-11-24 完成：ArchivePreviewCache 按路径+mtime+size、64MB 输入/4000 成员护栏、大归档快速提示，m468 双测试，563 单测）
 - [x] M46-9 `.deb`/`.apk`/`.rar` 的 `w` 预览与 `l`/Enter VFS（apk 保持；deb ar+tar；rar 外部 CLI；见 SPEC M46-9；2026-11-24 完成：DebFs（ar 解析 + 内存 data.tar + data/ 虚拟目录）、RarFs（bsdtar/unrar/7z 只读）、Decoder::from_bytes、扩展名真值表同步，m469 三测试，566 单测；rar 工具可用性的真实环境验证待用户补验）
 - [x] M46-10 删除确认弹窗 yazi 风格重做（标题居中+图标+文件列表+固定高度+滚动条+j/k；见 SPEC M46-10；2026-11-24 完成：标题居中 ⚠ + 无提示文字 + 图标/类型色文件列表 + 6 行固定高度 + 右侧滚动条 + j/k 导航，m453c/m4610 测试，567 单测）
-- [ ] M46-11 更新内置 help 文档（见 SPEC M46-11）
+- [x] M46-11 更新内置 help 文档（见 SPEC M46-11；2026-11-24 完成：help.txt 新增 M46 段并更新 :help/:extract/w/dd 行，GUIDE §11 配置生成说明 + 变化摘要，CHANGELOG [Unreleased] M46 小节；harness_check 通过）
 - [ ] M46-12 更新导师模式测试项目与提示（见 SPEC M46-12）

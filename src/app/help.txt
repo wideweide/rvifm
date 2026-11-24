@@ -50,7 +50,8 @@ rvifm 帮助（vim 风格文件管理器）
   y / yn / yf / yc
                   复制序列（y=条目名, yn=名称, yf=全路径, yc=内容；OSC52 优先）
   p / P           粘贴：p=复制到当前目录，P=移动到当前目录
-  dd              删除（应用内暂存，u 可恢复）
+  dd / v+d / t+d  删除（应用内暂存，u 可恢复；居中 yazi 风格确认弹窗：
+                  标题「是否删除选定的 N 个文件」+ 文件列表 + j/k 查看）
   DD              永久删除（不可恢复，强提示）
   u               撤销上一次操作（逆序，跨 tab）
   cw              批量重命名（$EDITOR 编辑名单）
@@ -83,7 +84,8 @@ rvifm 帮助（vim 风格文件管理器）
                   对侧预览当前候选；输入匹配路径高亮，Enter/l 或单击跳转
   v / t           Visual 选择与 tag
   yy / p / P      双栏均可复制条目、复制粘贴与移动粘贴（受 Location 能力限制）
-  w               右 pane 在目录列表与预览间切换（预览小图原尺寸居中、大图按宽适配）
+  w               右 pane 在目录列表与预览间切换（图片严格限制在预览区内；
+                  归档成员列表带缓存，大包给「按 l 进入浏览」快速提示）
   w（二进制文件） hex 完整视图（16 字节/行：偏移 + ASCII 侧栏；分块读取；
                   :goto <0x偏移|十进制> 跳转；无编辑）
   [ / ]（PDF）     查看器 PDF 翻页（任意页按需渲染；需 pdf_image_pages>0
@@ -97,7 +99,8 @@ rvifm 帮助（vim 风格文件管理器）
                   归档创建（内建 zip/tar/tar.gz/7z；rar/cab/lzh/tar.* 走外部 CLI；
                   tags 优先，空=光标条目；无参打开对话框；校验默认 md5）
   :chmod [-R] <mode>  批量属性（八进制/符号 u+x；POSIX only）
-  :extract [目录]  归档解压到磁盘（zip-slip 防护；u 可撤销）
+  :extract [目录]  归档解压到磁盘（zip-slip 防护；u 可撤销；缺省对侧 pane，
+                  完成后立即刷新目标栏列表）
   :sync [l2r|r2l] [--apply] [--delete]
                   目录同步（dry-run 缺省；--apply 执行）
   :du             磁盘占用（总计 + top-5）
@@ -151,7 +154,8 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 其他 ==
   :q / :quit      退出
-  :help           本帮助页
+  :help           本帮助页（tmux/screen 下默认在新窗口打开并激活；
+                  [ui] help_in_new_window = false 可回到应用内；页内 / 搜索）
   Esc             关闭当前覆盖层/退出可视选择
   ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
                   本会话未入库命令并入；Enter 执行，Esc 取消）
@@ -179,3 +183,12 @@ M45 实测批次的便利改动：状态栏 HOME 路径缩写 ~/…；标签栏�
 键位分层扩展（M33）：config.toml 除 [normal] 外支持 [visual]/[view] 三层
 （prepend/append/replace）——进入对应模式（v/w）时用户绑定生效，退出还原。
 未配置模式行为不变。
+
+M46 实测批次 2（缺陷真修复 + 配置/归档增强）：
+  图片预览严格限制在预览窗格内（原生协议不再溢出到窗口顶部）；
+  `/` 搜索高亮只作用于焦点 pane；右栏未搜索态整行背景与左栏一致；
+  `h`→`l` 往返还原光标而非高亮 `..`；`:extract`/归档 `yy`→`p` 解压后即时刷新目标栏；
+  首次启动自动生成带注释的 config.toml 与 keymap/opener 示例文件（不覆盖已有）；
+  `:help` 不透明且支持 `/` 搜索，tmux/screen 下新窗口打开（新增 `rvifm help` 子命令）；
+  归档 `w` 预览缓存提速；新增 .deb / .rar 只读 VFS（.apk 原已支持）；
+  删除确认改为居中 yazi 风格：标题 + 图标 + 文件列表 + 固定高度滚动条 + j/k 导航。

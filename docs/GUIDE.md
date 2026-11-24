@@ -216,9 +216,14 @@ PDF 查看器：`[`/`]` 逐页翻页（任意页按需渲染；`[preview] pdf_im
 
 配置目录：Linux/macOS `~/.config/rvifm/`，Windows `%APPDATA%\rvifm\`。
 
+**首次启动会自动生成带中文注释的 `config.toml`**，逐节说明默认值；同时生成
+`keymap.example.toml` 与 `opener.example.toml` 作为定制参考。已有文件不会被覆盖，
+生成失败静默降级，不影响启动。
+
 | 文件 | 作用 |
 |---|---|
-| `config.toml` | 键位分层（`[normal]`/`[visual]`/`[view]` 的 prepend/append/replace）、opener 规则、`[ui]`（theme/pane_borders/attrs_column…）、`[preview]`、`[frecency]`、`[keymap]`、Linux `[ime]` |
+| `config.toml` | 键位分层（`[normal]`/`[visual]`/`[view]` 的 prepend/append/replace）、opener 规则、`[ui]`（theme/pane_borders/help_in_new_window…）、`[preview]`、`[frecency]`、`[keymap]`、Linux `[ime]` |
+| `keymap.example.toml` / `opener.example.toml` | 首次启动生成的键位/打开规则示例（复制片段到 `config.toml` 即可生效） |
 | `themes/<名>.toml` | 用户主题（opaline TOML） |
 | `remotes.toml` | SFTP 远端覆盖（在**数据目录**：Linux/macOS `~/.local/share/rvifm/`、Windows `%LOCALAPPDATA%\rvifm\`） |
 | `session.toml` | 会话自动保存（可关） |
@@ -247,6 +252,12 @@ engine。功能调用系统已有的 `fcitx5-remote`、`fcitx-remote`、`ibus` �
 编译依赖；命令缺失或失败时保持原行为。可用 `[ime] enabled = false` 关闭。
 
 完整字段与示例见 README「配置」章节；主题可用名可用 `:theme` 无参列出。
+
+> 最近批次（M46）的用户可见变化：`/` 搜索高亮只作用于焦点 pane；`h`→`l` 往返还原
+> 光标；`:extract` 解压后立即刷新目标栏；`:help` 不透明、支持页内 `/` 搜索，并在
+> tmux/screen 下新窗口打开（`rvifm help` 可单独输出帮助正文）；归档 `w` 预览带缓存，
+> 新增 `.deb`/`.rar` 只读虚拟目录（`.apk` 原已支持）；删除确认为居中 yazi 风格弹窗，
+> 可 `j`/`k` 查看待删文件列表。
 
 ## 12. 键位速查表
 

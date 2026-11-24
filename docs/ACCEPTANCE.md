@@ -1077,5 +1077,5 @@
 - [x] M46-8 同一归档二次 `w` 预览不重复 `open_dispatch`/全量解压（**2026-11-24**：ArchivePreviewCache 按路径+mtime+size + m468 命中/失效测试）；大 xz/bz2 预览不卡死（64MB 输入护栏 + 4000 成员上限 + 「按 l 进入浏览」提示）；zip/纯 tar 快速路径不回归。用户机 firefox tarball 实测提速待用户补验。
 - [x] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容（**2026-11-24**：DebFs ar 解析 + 内存 TarFs + `data/` 虚拟目录，m469 端到端）；`.rar` 有工具时可列出/进入、缺失给可读提示（RarFs + m469 路径净化测试；真实工具环境待用户补验）；扩展名真值表一致，归档只读与 64MB 上限不回归。
 - [x] M46-10 单文件与多选删除确认为居中 yazi 风格弹窗（**2026-11-24**：`confirm_dialog` 重写为标题居中 ⚠「是否删除选定的 N 个文件」+ 无标题下提示 + 图标/类型色文件列表 + 6 行固定高度 + 右侧滚动条，j/k 导航状态进 InputMode，m453c/m4610 测试）；y/Enter 与 Esc/n 行为不变。
-- [ ] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致。
+- [x] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致（**2026-11-24**：help.txt 新增 M46 段与 :help/:extract/w/dd 更新，GUIDE §11 默认配置生成与变化摘要，CHANGELOG [Unreleased] M46 条目；harness_check OK）。
 - [ ] M46-12 tutor 13 模块 100 项可解析、提示与新增/修复项一致；harness_check 通过。
