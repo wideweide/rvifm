@@ -6689,6 +6689,43 @@ fn m452a_cursor_row_has_uniform_background() {
     }
 }
 
+/// M46-3：右 pane 光标/可视行与左 pane M45-2a 同款——整行背景一致，
+/// 不出现目录类型 Cyan 前景色单独着色。
+#[test]
+fn m463_right_pane_cursor_row_has_uniform_background() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("rdir")).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.active_tab_mut().right.on_parent_row = false;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+
+    let mut reversed_rows = HashSet::new();
+    for y in 2..11u16 {
+        for x in 41..80u16 {
+            if buf[(x, y)].modifier.contains(Modifier::REVERSED) {
+                reversed_rows.insert(y);
+            }
+        }
+    }
+    assert!(!reversed_rows.is_empty(), "右栏应有反显光标行");
+    for y in reversed_rows {
+        for x in 41..80u16 {
+            assert_ne!(
+                buf[(x, y)].fg,
+                Color::Cyan,
+                "右栏光标行不得带目录类型 fg（x={x}, y={y}）"
+            );
+        }
+    }
+}
+
 #[test]
 fn m451c_tab_label_style_decoupled_from_path() {
     // M45-1c：激活标签灰白底黑字加粗；非激活深灰底白字；borders 模式 REVERSED。

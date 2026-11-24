@@ -394,7 +394,15 @@ pub(crate) fn render_right_pane(
                 (list_area.width as usize).saturating_sub(4)
             };
             let display_name = clip_name(&item.name, name_budget);
-            let ft = filetype_style(item.filetype_class());
+            // M46-3：与左 pane M45-2a 同款守卫——当前行/可视选择行去除文件
+            // 类型前景色，避免反显行上"文字部分单独着色"（整行背景一致）。
+            let is_visual = visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi);
+            let row_reversed = (!tab.right.on_parent_row && idx == tab.right.cursor) || is_visual;
+            let ft = if row_reversed {
+                Style::new()
+            } else {
+                filetype_style(item.filetype_class())
+            };
             let mut spans = vec![Span::from(format!("{} ", item.icon.glyph))];
             match active_query
                 .as_deref()
@@ -446,7 +454,6 @@ pub(crate) fn render_right_pane(
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             let mut li = ListItem::new(Line::from(spans));
-            let is_visual = visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi);
             let mut modifiers = Modifier::empty();
             if idx == tab.right.cursor || is_visual {
                 // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
