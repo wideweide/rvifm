@@ -408,6 +408,9 @@ pub struct AppState {
     pub tutor: Option<crate::tutor::TutorSession>,
     /// M45-8d：导师学习进度缓存（列表左侧进度展示用；作答后即时刷新）。
     pub tutor_progress: crate::tutor::TutorProgress,
+    /// M46-8：归档 `w` 预览成员列表缓存（内存态，按路径+mtime+size 复用，
+    /// 避免每帧重新 `open_dispatch` / 全量解压压缩 tar）。
+    pub archive_preview_cache: crate::preview::ArchivePreviewCache,
 }
 
 /// M24-6：命令历史上限（FIFO 淘汰最旧条目；无持久化）。
@@ -451,6 +454,7 @@ impl AppState {
             // M45-8d：导师进度缓存（启动时读一次；作答后即时刷新）——列表
             // 左侧进度展示不必每帧读盘。
             tutor_progress: crate::tutor::load_progress(),
+            archive_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         }
     }
 

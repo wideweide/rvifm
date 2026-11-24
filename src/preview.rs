@@ -10,13 +10,44 @@
 #![allow(dead_code)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 /// 预览内容的最大读取字节数（防止大文件撑爆内存/渲染）。
 const MAX_PREVIEW_BYTES: u64 = 512 * 1024;
+
+/// M46-8：归档 `w` 预览的成员列表缓存（内存态，进程重启重建）。
+/// 键 = (路径, mtime, size)：文件未变则直接复用，避免每帧重复 `open_dispatch`
+/// 并对压缩 tar（尤其 xz/bz2）整文件解码。
+pub type ArchivePreviewCache =
+    std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), ArchivePreviewData>>;
+
+/// M46-8：缓存值——成员列表 + 是否因过大而跳过索引。
+#[derive(Debug, Clone)]
+pub struct ArchivePreviewData {
+    pub members: Vec<(String, bool)>,
+    pub too_large: bool,
+}
+
+/// M46-8：超过该压缩体积不生成成员列表（如 firefox tarball），只给
+/// 「按 l 进入浏览」提示——vifm 的快速返回体验，杜绝卡顿。
+const ARCHIVE_PREVIEW_MAX_BYTES: u64 = 64 * 1024 * 1024;
+/// 轻量成员上限（zip 中央目录可能有数万项，列表只取前若干）。
+const ARCHIVE_PREVIEW_MAX_MEMBERS: usize = 4000;
+
+fn archive_cache_key(path: &Path) -> (PathBuf, u64, u64) {
+    let meta = fs::metadata(path).ok();
+    let mtime = meta
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let size = meta.map(|m| m.len()).unwrap_or(0);
+    (path.to_path_buf(), mtime, size)
+}
 
 /// 预览结果：可直接交给 ratatui 渲染的行列表。
 pub struct Preview {
@@ -150,49 +181,106 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
 /// M45-4b：归档成员预览——打开 ArchiveFs 列根目录，复用 entries_preview
 /// 渲染成员名列表。损坏/加密/.rar → 结构化信息面板（不 panic）。
 fn archive_preview(path: &Path, max_lines: usize) -> Preview {
+    match archive_members(path) {
+        Ok(data) => archive_lines_from_data(path, &data, max_lines),
+        Err(e) => text_preview(&e),
+    }
+}
+
+/// M46-8：生成（或复用缓存的）归档预览。缓存键含 mtime+size，文件变化后
+/// 自动重建；大归档只显示提示，不触发整文件解压。
+pub fn archive_preview_cached(
+    path: &Path,
+    max_lines: usize,
+    cache: &ArchivePreviewCache,
+) -> Preview {
+    let key = archive_cache_key(path);
+    if let Ok(data) = cache.try_borrow()
+        && let Some(hit) = data.get(&key)
+    {
+        return archive_lines_from_data(path, hit, max_lines);
+    }
+    let data = match archive_members(path) {
+        Ok(d) => d,
+        Err(e) => return text_preview(&e),
+    };
+    if let Ok(mut cache) = cache.try_borrow_mut() {
+        // 只保留最近少量条目（路径切换不会无限增长）。
+        if cache.len() >= 16 {
+            cache.clear();
+        }
+        cache.insert(key, data.clone());
+    }
+    archive_lines_from_data(path, &data, max_lines)
+}
+
+/// M46-8：只读成员列表——加输入大小护栏与成员上限，避免大 xz/bz2 预览卡死。
+fn archive_members(path: &Path) -> Result<ArchivePreviewData, String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     if crate::archive::is_unsupported_archive(&name) {
-        return text_preview(&file_info_text(path));
+        return Err(file_info_text(path));
     }
-    match crate::archive::open_dispatch(path) {
-        Ok(fs) => match fs.list("") {
-            Ok(entries) => {
-                let mut items: Vec<(String, bool)> =
-                    entries.into_iter().map(|e| (e.path, e.is_dir)).collect();
-                items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-                let mut lines = vec![Line::from(format!(
-                    "归档 {}（{} 项，只读）",
-                    path.display(),
-                    items.len()
-                ))];
-                for (p, is_dir) in items.iter().take(max_lines.saturating_sub(1)) {
-                    let label = if *is_dir { format!("{p}/") } else { p.clone() };
-                    let icon = crate::icons::icon_for_active(std::path::Path::new(p));
-                    lines.push(Line::from(format!("  {} {label}", icon.glyph)));
-                }
-                if items.len() > max_lines.saturating_sub(1) {
-                    lines.push(Line::from(format!(
-                        "  …（共 {} 项，仅显示前 {}）",
-                        items.len(),
-                        max_lines.saturating_sub(1)
-                    )));
-                }
-                Preview { lines }
-            }
-            Err(e) => text_preview(&format!(
-                "[归档成员读取失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
-                path.display()
-            )),
-        },
-        Err(e) => text_preview(&format!(
+    if fs::metadata(path).map(|m| m.len()).unwrap_or(0) > ARCHIVE_PREVIEW_MAX_BYTES {
+        return Ok(ArchivePreviewData {
+            members: Vec::new(),
+            too_large: true,
+        });
+    }
+    let fs_archive = crate::archive::open_dispatch(path).map_err(|e| {
+        format!(
             "[归档打开失败] {}\n{e}\n{}",
             path.display(),
             file_info_text(path)
-        )),
+        )
+    })?;
+    let entries = fs_archive.list("").map_err(|e| {
+        format!(
+            "[归档成员读取失败] {}\n{e}\n按 Enter 用系统默认程序打开。",
+            path.display()
+        )
+    })?;
+    let mut items: Vec<(String, bool)> = entries
+        .into_iter()
+        .take(ARCHIVE_PREVIEW_MAX_MEMBERS)
+        .map(|e| (e.path, e.is_dir))
+        .collect();
+    items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    Ok(ArchivePreviewData {
+        members: items,
+        too_large: false,
+    })
+}
+
+/// M46-8：把缓存的成员数据渲染成行（廉价，可每帧执行）。
+fn archive_lines_from_data(path: &Path, data: &ArchivePreviewData, max_lines: usize) -> Preview {
+    if data.too_large {
+        return text_preview(&format!(
+            "归档 {} 较大，为保持界面响应未展开成员列表。\n按 l / Enter 进入虚拟目录浏览（只读），或按 Enter 用系统默认程序打开。",
+            path.display()
+        ));
     }
+    let items = &data.members;
+    let mut lines = vec![Line::from(format!(
+        "归档 {}（{} 项，只读）",
+        path.display(),
+        items.len()
+    ))];
+    for (p, is_dir) in items.iter().take(max_lines.saturating_sub(1)) {
+        let label = if *is_dir { format!("{p}/") } else { p.clone() };
+        let icon = crate::icons::icon_for_active(std::path::Path::new(p));
+        lines.push(Line::from(format!("  {} {label}", icon.glyph)));
+    }
+    if items.len() > max_lines.saturating_sub(1) {
+        lines.push(Line::from(format!(
+            "  …（共 {} 项，仅显示前 {}）",
+            items.len(),
+            max_lines.saturating_sub(1)
+        )));
+    }
+    Preview { lines }
 }
 
 /// 目录预览：成员名列表（目录后缀 `/`，按名排序，截断到 max_lines）。
@@ -781,5 +869,53 @@ mod tests {
         // 信息面板追加尺寸行（file_info_text 同源接线）。
         let info = file_info_text(&png);
         assert!(info.contains("尺寸: 1920×1080（PNG）"), "info: {info}");
+    }
+
+    /// M46-8：缓存命中时直接使用已有成员列表（无需打开归档）；键含
+    /// (路径, mtime, size)，文件变化后自动失效重建。
+    #[test]
+    fn m468_archive_preview_cache_hit_and_invalidate() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("bundle.zip");
+        crate::archive::make_test_zip(&path);
+        let cache: ArchivePreviewCache = std::cell::RefCell::new(std::collections::HashMap::new());
+        let key = archive_cache_key(&path);
+
+        // 预置哨兵成员：若缓存命中，输出必定出现该名字（即使归档实际不含）。
+        cache.borrow_mut().insert(
+            key.clone(),
+            ArchivePreviewData {
+                members: vec![("CACHED.bin".to_owned(), false)],
+                too_large: false,
+            },
+        );
+        let p1 = archive_preview_cached(&path, 10, &cache);
+        assert!(p1.line_texts().iter().any(|t| t.contains("CACHED.bin")));
+
+        // 修改文件（size 变化）→ 键变化 → 缓存未命中 → 真实成员列表。
+        fs::write(&path, b"x").unwrap();
+        assert_ne!(archive_cache_key(&path), key, "mtime/size 变化应使缓存失效");
+        let p2 = archive_preview_cached(&path, 10, &cache);
+        assert!(!p2.line_texts().iter().any(|t| t.contains("CACHED.bin")));
+    }
+
+    /// M46-8：超过大小护栏的归档只给快速提示，不做成员索引。
+    #[test]
+    fn m468_archive_preview_size_guard_hint() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("huge.tar.xz");
+        // 只写一个标记内容（远小于阈值时为 normal 路径；这里直接验证 data 层
+        // 的 too_large 分支渲染）。
+        fs::write(&path, b"not really huge").unwrap();
+        let data = ArchivePreviewData {
+            members: Vec::new(),
+            too_large: true,
+        };
+        let pv = archive_lines_from_data(&path, &data, 10);
+        let text = pv.line_texts().join("\n");
+        assert!(
+            text.contains("按 l / Enter 进入虚拟目录浏览"),
+            "text: {text}"
+        );
     }
 }

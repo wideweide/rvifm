@@ -141,15 +141,20 @@ pub(crate) fn render_view_path(
             return;
         }
         crate::preview::PreviewKind::Archive => {
-            // M45-4b：归档成员列表（Office/PDF 已在 preview_kind 中优先命中，
-            // 不会走到本分支）——复用 render_preview 同源渲染，损坏/.rar 回退
-            // 信息面板（不落文本读取路径，杜绝 tar 乱码）。
+            // M45-4b + M46-8：归档成员列表（Office/PDF 已在 preview_kind 中
+            // 优先命中）——缓存版同源渲染，损坏/.rar 回退信息面板。
             let pane = ratatui::widgets::Block::bordered()
                 .title(format!("{shown} · 归档成员（只读）"))
                 .border_style(pane_border_style(true));
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
-            let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+            // M46-8：按 (路径, mtime, size) 缓存成员列表，同一归档预览不再
+            // 每帧重复打开/全量解压（firefox tarball 等 xz/bz2 秒出提示）。
+            let preview = crate::preview::archive_preview_cached(
+                &path,
+                inner.height.max(1) as usize,
+                &state.archive_preview_cache,
+            );
             frame.render_widget(preview.into_paragraph(), inner);
             return;
         }
