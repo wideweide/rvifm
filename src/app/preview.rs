@@ -466,7 +466,9 @@ pub(crate) fn render_right_pane(
             }
             let mut li = ListItem::new(Line::from(spans));
             let mut modifiers = Modifier::empty();
-            if idx == tab.right.cursor || is_visual {
+            // M47-7：复用 row_reversed（含 !on_parent_row 守卫）——顶部 `..` 行
+            // 高亮时第一条真实条目不得同时反显（原无条件 idx==cursor）。
+            if row_reversed {
                 // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
                 modifiers |= if focused {
                     Modifier::REVERSED

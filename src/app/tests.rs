@@ -5073,6 +5073,31 @@ fn render_highlights_cursor_row() {
 }
 
 #[test]
+fn m477_right_parent_row_does_not_double_highlight() {
+    // M47-7：右栏 gg 到顶部时只高亮 `..`，第一条真实条目不高亮。
+    let tmp = TempDir::new().unwrap();
+    for name in ["alpha.txt", "beta.txt"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.active_tab_mut().right.cursor_top();
+    assert!(state.active_tab().right.on_parent_row);
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row_reversed =
+        |y: u16| -> bool { (41..80u16).any(|x| buf[(x, y)].modifier.contains(Modifier::REVERSED)) };
+    assert!(row_reversed(2), "`..` 行应反显");
+    assert!(!row_reversed(3), "第一条真实条目不得反显");
+}
+
+#[test]
 fn m471_viewer_directory_icons_are_indented() {
     // M47-1：TUI 目录预览（:view 分支）缩进必须在图标之前，而不是只缩进文件名。
     let tmp = TempDir::new().unwrap();
