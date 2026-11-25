@@ -763,7 +763,8 @@ pub(crate) fn frecency_click_index(
     } else {
         right
     };
-    let list = ratatui::widgets::Block::bordered().inner(focused);
+    // M47-5：frecency 面板与焦点栏目录区同几何（无边框，顶部 1 行路径/标题）。
+    let list = left_list_area(false, focused);
     if col < list.x
         || col >= list.x.saturating_add(list.width)
         || row < list.y
@@ -852,13 +853,16 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
 
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
-    // M34-5：标题固定文案（原 `Frecency · Normal（N 项）`——计数移至底部提示行）。
-    let title = "Frecency - 高频目录/文件搜索";
-    let frec_block = ratatui::widgets::Block::bordered()
-        .title(title)
-        .border_style(pane_border_style(true));
-    let inner = frec_block.inner(frec_area);
-    frame.render_widget(frec_block, frec_area);
+    // M34-5/M47-5：标题固定文案；M47-5 去掉边框，顶部路径行与焦点栏目录区
+    // 同款 TopLineSel 样式，列表区直接替换目录列表——无弹出/浮层观感。
+    let title = "Frecency - 高频目录/文件搜索 - Normal 模式";
+    let [topline, inner] =
+        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frec_area);
+    frame.render_widget(ratatui::widgets::Clear, topline);
+    frame.render_widget(
+        Paragraph::new(Line::from(title)).style(vifm_style("TopLineSel")),
+        topline,
+    );
     let frec_items: Vec<ListItem> = visible
         .iter()
         .enumerate()

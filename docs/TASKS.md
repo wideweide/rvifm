@@ -677,7 +677,7 @@
 - [x] M47-2 `=` 过滤作用于焦点 pane + 顶部路径显示状态 + Esc 取消（见 SPEC M47-2；2026-11-25 完成：Pane.filter + 焦点化 apply_filter + path_line_text + Normal Esc 清除，m472 测试）
 - [x] M47-3 `:archive` 源=焦点栏、产物=对侧栏；`:extract` 焦点化核对（见 SPEC M47-3；2026-11-25 完成：archive_plan 源/目标分离 + focused_entries/cursor + opposite_physical_base，m473 双测试）
 - [x] M47-4 剩余快捷键/冒号命令焦点化审计（见 SPEC M47-4；2026-11-25 完成：selected_names/%d/%f/`:file`/marks/`:sort`/`:select` 焦点化，审计清单入 NOTES，m474 测试）
-- [ ] M47-5 Frecency 面板样式融合焦点栏 + 新标题（见 SPEC M47-5）
+- [x] M47-5 Frecency 面板样式融合焦点栏 + 新标题（见 SPEC M47-5；2026-11-25 完成：无边框 + TopLineSel 顶部路径 + 新标题 + 点击几何同源，m475 测试）
 - [ ] M47-6 IME 启动/Normal Esc 防御性激活英文（见 SPEC M47-6）
 - [ ] M47-7 右栏顶部 `..` 行只高亮该行（见 SPEC M47-7）
 - [ ] M47-8 左右栏 `v` 多选状态各自独立（见 SPEC M47-8）

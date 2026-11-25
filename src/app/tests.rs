@@ -3135,12 +3135,49 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
     }
     // CJK 占 2 格、缓冲区按格插空格 → 去空白后断言（标题/回显为连续文案）。
     let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(compact.contains("Frecency-高频目录/文件搜索"), "标题: {s}");
+    assert!(
+        compact.contains("Frecency-高频目录/文件搜索-Normal"),
+        "标题: {s}"
+    );
     assert!(compact.contains("/ma"), "query 回显: {s}");
     assert!(compact.contains("✦rs"), "keyword 标记: {s}");
     assert!(compact.contains("main.rs"), "结果行路径: {s}");
     assert!(!compact.contains("[目录]"), "文本标记移除: {s}");
     assert!(!compact.contains("[文件]"), "文本标记移除: {s}");
+}
+
+#[test]
+fn m475_frecency_pane_is_borderless_and_click_matches_list() {
+    // M47-5：面板复用焦点栏几何（无边框），点击命中与渲染同源。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: "alpha".to_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 0.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+    });
+    let area = ratatui::layout::Rect::new(0, 0, 80, 12);
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    assert_ne!(buf[(0, 2)].symbol(), "│", "列表区首列不得是边框");
+    assert_eq!(
+        crate::app::render::frecency_click_index(area, crate::tab::Focus::Left, 0, 0, 2),
+        Some(0),
+        "首列点击应命中第一条"
+    );
 }
 
 #[test]
