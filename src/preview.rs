@@ -37,6 +37,77 @@ const ARCHIVE_PREVIEW_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// 轻量成员上限（zip 中央目录可能有数万项，列表只取前若干）。
 const ARCHIVE_PREVIEW_MAX_MEMBERS: usize = 4000;
 
+/// M48-7：外部列目录命令（按归档类型，参数固定，不经 shell）。
+fn archive_listing_tool(path: &Path) -> Option<(&'static str, &'static [&'static str])> {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if name.ends_with(".zip")
+        || name.ends_with(".jar")
+        || name.ends_with(".war")
+        || name.ends_with(".apk")
+        || name.ends_with(".docx")
+        || name.ends_with(".xlsx")
+        || name.ends_with(".pptx")
+    {
+        Some(("unzip", &["-Z1"]))
+    } else if name.ends_with(".tar.gz")
+        || name.ends_with(".tgz")
+        || name.ends_with(".tar.bz2")
+        || name.ends_with(".tbz2")
+        || name.ends_with(".tar.xz")
+        || name.ends_with(".txz")
+        || name.ends_with(".tar.zst")
+        || name.ends_with(".tar")
+        || name.ends_with(".deb")
+    {
+        Some(("tar", &["-tf"]))
+    } else if name.ends_with(".7z") || name.ends_with(".rar") {
+        Some(("7z", &["l", "-ba"]))
+    } else {
+        None
+    }
+}
+
+/// M48-7：用外部只读列目录命令快速取成员（vifm fileviewer 同思路）。
+/// stdout 有硬上限；失败/超限/空结果返回 None 由调用方回退内置 VFS。
+fn external_archive_members(path: &Path) -> Option<Vec<(String, bool)>> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let (tool, args) = archive_listing_tool(path)?;
+    let mut child = Command::new(tool)
+        .args(args)
+        .arg(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+        .ok()?;
+    let cap = 4 * 1024 * 1024usize;
+    let mut out = Vec::new();
+    let stdout = child.stdout.take()?;
+    stdout.take((cap + 1) as u64).read_to_end(&mut out).ok()?;
+    let _ = child.wait();
+    if out.len() > cap {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out);
+    let mut members: Vec<(String, bool)> = text
+        .lines()
+        .map(|s| s.trim().replace('\\', "/"))
+        .filter(|s| !s.is_empty())
+        .filter(|s| !s.starts_with('/') && !s.split('/').any(|p| p == ".."))
+        .map(|s| (s.trim_end_matches('/').to_owned(), s.ends_with('/')))
+        .collect();
+    if members.is_empty() {
+        return None;
+    }
+    members.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    members.truncate(ARCHIVE_PREVIEW_MAX_MEMBERS);
+    Some(members)
+}
+
 fn archive_cache_key(path: &Path) -> (PathBuf, u64, u64) {
     let meta = fs::metadata(path).ok();
     let mtime = meta
@@ -194,13 +265,23 @@ pub fn archive_preview_cached(
     max_lines: usize,
     cache: &ArchivePreviewCache,
 ) -> Preview {
+    archive_preview_cached_with_config(path, max_lines, cache, true)
+}
+
+/// M48-7：带配置的归档预览（外部列目录可关闭）。
+pub fn archive_preview_cached_with_config(
+    path: &Path,
+    max_lines: usize,
+    cache: &ArchivePreviewCache,
+    external_enabled: bool,
+) -> Preview {
     let key = archive_cache_key(path);
     if let Ok(data) = cache.try_borrow()
         && let Some(hit) = data.get(&key)
     {
         return archive_lines_from_data(path, hit, max_lines);
     }
-    let data = match archive_members(path) {
+    let data = match archive_members_with_config(path, external_enabled) {
         Ok(d) => d,
         Err(e) => return text_preview(&e),
     };
@@ -216,12 +297,26 @@ pub fn archive_preview_cached(
 
 /// M46-8：只读成员列表——加输入大小护栏与成员上限，避免大 xz/bz2 预览卡死。
 fn archive_members(path: &Path) -> Result<ArchivePreviewData, String> {
+    archive_members_with_config(path, true)
+}
+
+fn archive_members_with_config(
+    path: &Path,
+    external_enabled: bool,
+) -> Result<ArchivePreviewData, String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     if crate::archive::is_unsupported_archive(&name) {
         return Err(file_info_text(path));
+    }
+    // M48-7：外部列目录先试（对大归档也生效——这正是内置 64MB 护栏绕过的场景）。
+    if external_enabled && let Some(members) = external_archive_members(path) {
+        return Ok(ArchivePreviewData {
+            members,
+            too_large: false,
+        });
     }
     if fs::metadata(path).map(|m| m.len()).unwrap_or(0) > ARCHIVE_PREVIEW_MAX_BYTES {
         return Ok(ArchivePreviewData {
@@ -927,6 +1022,28 @@ mod tests {
 
     /// M46-8：缓存命中时直接使用已有成员列表（无需打开归档）；键含
     /// (路径, mtime, size)，文件变化后自动失效重建。
+    #[test]
+    fn m487_archive_listing_tool_mapping_and_guard() {
+        // M48-7：按归档类型映射到固定只读命令，不经 shell；未知类型无工具。
+        assert_eq!(
+            archive_listing_tool(std::path::Path::new("a.zip")),
+            Some(("unzip", &["-Z1"][..]))
+        );
+        assert!(archive_listing_tool(std::path::Path::new("a.tar.gz")).is_some());
+        assert!(archive_listing_tool(std::path::Path::new("a.7z")).is_some());
+        assert!(archive_listing_tool(std::path::Path::new("a.unknown")).is_none());
+
+        // 外部工具缺失/失败时归档预览仍不 panic，走内置回退（损坏归档给可读提示）。
+        let tmp = TempDir::new().unwrap();
+        let broken = tmp.path().join("broken.zip");
+        fs::write(&broken, b"not a zip").unwrap();
+        let texts = render_preview(&broken, 10).line_texts();
+        assert!(
+            texts.iter().any(|t| t.contains("归档打开失败")),
+            "{texts:?}"
+        );
+    }
+
     #[test]
     fn m468_archive_preview_cache_hit_and_invalidate() {
         let tmp = TempDir::new().unwrap();

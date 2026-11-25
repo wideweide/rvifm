@@ -1101,7 +1101,7 @@
 - [x] M48-4 `v` 多选 `y` 后对侧 `p` 与 `P` 均可用，不再提示「没有缓存」。（2026-11-25：m484_visual_yank_fills_buffer_for_paste 通过）
 - [x] M48-5 粘贴冲突为阻塞式弹窗（与删除确认同风格），取消状态不变、`y`/Enter 确认生效。（2026-11-25：m485_paste_conflict_uses_blocking_confirmation 通过；既有 fix2 用例同步）
 - [x] M48-6 归档内 `yy`→`p/P`：单文件不重建上级目录、目录递归解压、多选混合正确；`u` 可逆、不写归档内。（2026-11-25：m486_archive_paste_flattens_file_and_recurses_directory 通过）
-- [ ] M48-7 大归档首次 `w` 快速展示成员（外部列目录可用时），超限/缺工具回退内置提示；无必需外部依赖。
+- [x] M48-7 大归档首次 `w` 快速展示成员（外部列目录可用时），超限/缺工具回退内置提示；无必需外部依赖。（2026-11-25：m487_archive_listing_tool_mapping_and_guard 通过）
 - [ ] M48-8 `:archive` 无参直接执行、`-i` 打开对话框；任意字段回车执行、`Tab` 高亮当前字段、弹窗不遮罩全屏。
 - [ ] M48-9 Normal 模式下即使无 FocusGained 也周期性切英文，不覆盖保存状态、不与文本输入模式竞争。
 - [ ] M48-10 tutor 列表 `/` 搜索跳转、`d` reset 并刷新、有记录模块只显示错题、模块结束 `Ctrl+N` 回到列表；13 模块 100 项可解析。

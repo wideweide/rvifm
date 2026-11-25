@@ -88,6 +88,10 @@ impl Default for ArchiveConfig {
 pub struct PreviewConfig {
     pub pdf_image_pages: u32,
     pub pdf_prefer_image: bool,
+    /// M48-7：可选外部列目录工具（None = 内置 VFS）。按归档类型自动选择：
+    /// zip→`unzip -Z1`、tar→`tar -tf`、7z/rar→`7z l -ba`、deb→`bsdtar -tf`。
+    /// 仅用于加速大归档的成员列表预览，不写归档、不经 shell。
+    pub archive_external_listing: bool,
 }
 
 impl Default for PreviewConfig {
@@ -95,6 +99,7 @@ impl Default for PreviewConfig {
         Self {
             pdf_image_pages: 1,
             pdf_prefer_image: false,
+            archive_external_listing: true,
         }
     }
 }
