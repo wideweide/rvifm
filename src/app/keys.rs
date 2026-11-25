@@ -704,23 +704,53 @@ pub(crate) fn handle_key(
             }
             KeyCode::Char('y') => {
                 input.count = None;
+                // M48-4：可视态 y 同时写入 rvifm yank 缓冲区（原仅写系统剪贴板，
+                // 导致对侧 p/P 报「缓冲区为空」）；`yy` 第二次落在同一分支也安全。
                 let range = state.active_tab().visual_range();
                 if let Some((lo, hi)) = range {
-                    let base = state.active_tab().location.base_dir().to_path_buf();
-                    let paths: Vec<String> = state
-                        .active_tab()
-                        .entries
-                        .get(lo..=hi.min(state.active_tab().entries.len().saturating_sub(1)))
-                        .map(|slice| {
-                            slice
-                                .iter()
-                                .map(|i| base.join(&i.name).to_string_lossy().replace('\\', "/"))
-                                .collect()
-                        })
+                    let tab = state.active_tab();
+                    let location = tab.focused_location();
+                    let (source, prefix): (crate::state::YankSource, String) = match location {
+                        Location::Archive { host, inner } => (
+                            crate::state::YankSource::Archive { host: host.clone() },
+                            inner.to_string_lossy().replace('\\', "/"),
+                        ),
+                        Location::Remote { remote, path } => (
+                            crate::state::YankSource::Remote(remote.clone()),
+                            path.to_string_lossy().replace('\\', "/"),
+                        ),
+                        Location::Physical(base) => (
+                            crate::state::YankSource::Local,
+                            base.to_string_lossy().replace('\\', "/"),
+                        ),
+                    };
+                    let names: Vec<String> = tab
+                        .focused_entries()
+                        .get(lo..=hi.min(tab.focused_entries().len().saturating_sub(1)))
+                        .map(|slice| slice.iter().map(|i| i.name.clone()).collect())
                         .unwrap_or_default();
-                    let text = paths.join("\n");
+                    let paths: Vec<PathBuf> = names
+                        .iter()
+                        .map(|name| {
+                            if prefix.is_empty() {
+                                PathBuf::from(name)
+                            } else {
+                                PathBuf::from(format!("{prefix}/{name}"))
+                            }
+                        })
+                        .collect();
+                    let text = paths
+                        .iter()
+                        .map(|p| p.to_string_lossy().replace('\\', "/"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     copy_to_clipboard(&text);
-                    *msg = Some(format!("copied {} 项", paths.len()));
+                    state.yank = Some(crate::state::YankBuffer {
+                        paths,
+                        cut: false,
+                        source,
+                    });
+                    *msg = Some(format!("copied {} 项", names.len()));
                 }
                 return Outcome::Continue;
             }

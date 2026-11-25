@@ -7692,6 +7692,50 @@ fn m453b_executable_enter_shows_hint_only() {
 
 #[cfg(unix)]
 #[test]
+fn m484_visual_yank_fills_buffer_for_paste() {
+    // M48-4：v 多选 + y 写 yank 缓冲，对侧 p/P 均可粘贴（原仅写剪贴板）。
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    for name in ["a.txt", "b.txt"] {
+        fs::write(src.path().join(name), name).unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(src.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(dst.path(), Config::default()).unwrap();
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    let yanked = state.yank.clone().expect("y 应写缓冲区");
+    assert_eq!(yanked.paths.len(), 2);
+    assert!(!yanked.cut);
+
+    // p → 对侧复制；P → 对侧同样可用（移动语义另测，这里只断言不报空缓冲）。
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    paste_yanked(&mut state, false, &mut msg);
+    assert!(dst.path().join("a.txt").exists());
+    assert!(dst.path().join("b.txt").exists());
+    assert_ne!(msg.as_deref(), Some("缓冲区为空（先 yy 复制）"));
+}
+
+#[test]
 fn m483_right_pane_file_enter_uses_shared_opener() {
     // M48-3：右栏文件 l/Enter 与左栏一致走 opener（不再 no-op）。
     let tmp = TempDir::new().unwrap();
