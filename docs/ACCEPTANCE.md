@@ -1092,3 +1092,19 @@
 - [x] M47-8 右栏 `v` 多选后 `Tab`/`Space` 切到左栏，左栏无选中高亮、右栏选中集合保留；反之对称；批量操作作用于焦点栏，`t` tag 语义不变。（2026-11-25：m478_selection_stays_in_its_pane_after_focus_switch 通过）
 - [x] M47-9 左右列表左侧有可见留白且当前行/可视选择整行高亮覆盖留白区域；左右对称；列对齐与主题回归通过；TestBackend 几何断言。（2026-11-25：LIST_LEADING_BLANK 双侧 + frecency 同步、列宽预算同步，m479 通过）
 - [x] M47-10 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步本批次；tutor 13 模块 100 项可解析；harness_check 通过；未触发版本 bump/tag/GitHub Release。（2026-11-25：文档与 tutor 提示同步，`builtin_modules_parse_and_unique` + harness_check 通过）
+
+## 53. M48 — 用户实测批次 4（见 SPEC M48 节）
+
+- [x] M48-1 `s`/`:!` 新窗口激活到前台且起始目录为焦点 pane 路径（左右对称）；无复用器回退不变。（2026-11-25：m481_tmux_window_args_use_focused_dir_and_activate + 更新 m18_4 通过）
+- [ ] M48-2 `.md`/`.txt`/`.md5` 按 Enter 打开文本不覆盖界面、优先新窗口；`.sh` 有执行位仍按文本处理；回归 opener 分层不破坏。
+- [ ] M48-3 右栏焦点下文件 `l`/Enter 走与左栏同一打开链路；目录/归档进入语义不变。
+- [ ] M48-4 `v` 多选 `y` 后对侧 `p` 与 `P` 均可用，不再提示「没有缓存」。
+- [ ] M48-5 粘贴冲突为阻塞式弹窗（与删除确认同风格），取消状态不变、`y`/Enter 确认生效。
+- [ ] M48-6 归档内 `yy`→`p/P`：单文件不重建上级目录、目录递归解压、多选混合正确；`u` 可逆、不写归档内。
+- [ ] M48-7 大归档首次 `w` 快速展示成员（外部列目录可用时），超限/缺工具回退内置提示；无必需外部依赖。
+- [ ] M48-8 `:archive` 无参直接执行、`-i` 打开对话框；任意字段回车执行、`Tab` 高亮当前字段、弹窗不遮罩全屏。
+- [ ] M48-9 Normal 模式下即使无 FocusGained 也周期性切英文，不覆盖保存状态、不与文本输入模式竞争。
+- [ ] M48-10 tutor 列表 `/` 搜索跳转、`d` reset 并刷新、有记录模块只显示错题、模块结束 `Ctrl+N` 回到列表；13 模块 100 项可解析。
+- [ ] M48-11 删除确认框内底部状态栏 + 框内右侧滚动条，交互键不变。
+- [ ] M48-12 `:help` 新窗口真实打开并激活；`rv help` 以可搜索/高亮的查看器形态呈现，覆盖层不透明可搜索。
+- [ ] M48-13 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步；harness_check 通过；未触发版本 bump/tag/GitHub Release。

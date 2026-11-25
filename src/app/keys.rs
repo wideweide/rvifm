@@ -970,7 +970,8 @@ pub(crate) fn handle_key(
                 return Some(match crate::git::find_git_tui() {
                     Some(bin) => {
                         let ui = state.config.ui.clone();
-                        match run_external_target(&ui, bin) {
+                        let run_dir = state.active_tab().focus_base().to_path_buf();
+                        match crate::app::exec::run_external_target_with_dir(&ui, bin, &run_dir) {
                             ExternalRun::Multiplexer(m) => {
                                 *msg = Some(m);
                                 Outcome::Continue

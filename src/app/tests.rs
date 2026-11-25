@@ -8807,7 +8807,7 @@ fn m18_4_bang_routes_and_config() {
     assert!(cfg_true.ui.terminal_in_new_window, "缺省 true");
     assert!(
         matches!(
-            run_external_target_with(None, &cfg_true.ui, "x"),
+            run_external_target_with_and_dir(None, &cfg_true.ui, "x", std::path::Path::new("/tmp")),
             ExternalRun::CurrentPane(_)
         ),
         "无复用器 → 当前 pane"
@@ -8816,14 +8816,24 @@ fn m18_4_bang_routes_and_config() {
     cfg_false.ui.terminal_in_new_window = false;
     assert!(
         matches!(
-            run_external_target_with(Some(MuxKind::Tmux), &cfg_false.ui, "x"),
+            run_external_target_with_and_dir(
+                Some(MuxKind::Tmux),
+                &cfg_false.ui,
+                "x",
+                std::path::Path::new("/tmp")
+            ),
             ExternalRun::CurrentPane(_)
         ),
         "开关关闭时忽略复用器环境"
     );
     assert!(
         matches!(
-            run_external_target_with(Some(MuxKind::Screen), &cfg_false.ui, "x"),
+            run_external_target_with_and_dir(
+                Some(MuxKind::Screen),
+                &cfg_false.ui,
+                "x",
+                std::path::Path::new("/tmp")
+            ),
             ExternalRun::CurrentPane(_)
         ),
         "开关关闭时忽略 screen 环境"
@@ -8874,10 +8884,32 @@ fn m18_4_space_switches_focus_both_panes() {
 
 #[test]
 fn m18_4_tmux_window_args_quoting() {
-    let args = tmux_window_args("ls -la 'a b'");
+    let args = tmux_window_args_with_dir("ls -la 'a b'", std::path::Path::new("/tmp"));
     assert_eq!(args[0], "new-window");
-    assert_eq!(args[1], "-d");
-    assert!(args[2].starts_with("sh -c 'ls -la"));
+    // M48-1：去掉 -d（新窗口前台激活），改用 -c <dir> 指定起始目录。
+    assert_eq!(args[1], "-c");
+    assert!(args[3].starts_with("sh -c 'ls -la"));
+}
+
+#[test]
+fn m481_tmux_window_args_use_focused_dir_and_activate() {
+    let dir = std::path::Path::new("/tmp/focused");
+    let args = tmux_window_args_with_dir("pwd", dir);
+    assert_eq!(args[0], "new-window");
+    assert_eq!(args[1], "-c");
+    assert_eq!(args[2], "/tmp/focused");
+    assert!(!args.iter().any(|a| a == "-d"), "不得用 -d 分离窗口");
+    assert!(args[3].starts_with("sh -c"));
+
+    // 注入 runner 也不受宿主 TMUX/STY 影响（AUDIT-14 保持）。
+    let cfg = crate::config::UiConfig {
+        terminal_in_new_window: false,
+        ..crate::config::UiConfig::default()
+    };
+    assert!(matches!(
+        run_external_target_with_and_dir(Some(MuxKind::Tmux), &cfg, "pwd", dir),
+        ExternalRun::CurrentPane(_)
+    ));
 }
 
 /// 内存 mock 远端（M19-2/M20 测试用）——flat path → entry 模型。

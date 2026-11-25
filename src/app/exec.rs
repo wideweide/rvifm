@@ -41,10 +41,13 @@ pub(crate) fn parse_sort_spec(args: &str) -> Result<Vec<crate::tab::SortSpec>, S
 
 /// M18-4：tmux 新窗口参数（可测试纯函数）——命令经 sh -c 包裹，
 /// 退出后窗口自动关闭。
-pub(crate) fn tmux_window_args(cmd: &str) -> Vec<String> {
+/// M48-1：新窗口参数——去掉 `-d`（tmux 默认选中新窗口 = 激活），并用
+/// `-c <dir>` 指定起始目录为焦点 pane 路径。
+pub(crate) fn tmux_window_args_with_dir(cmd: &str, dir: &std::path::Path) -> Vec<String> {
     vec![
         "new-window".to_owned(),
-        "-d".to_owned(),
+        "-c".to_owned(),
+        dir.to_string_lossy().into_owned(),
         format!("sh -c {}", shell_quote(cmd)),
     ]
 }
@@ -65,42 +68,62 @@ pub(crate) fn detect_mux() -> Option<MuxKind> {
     }
 }
 
-pub(crate) fn run_external_target(cfg: &config::UiConfig, cmd: &str) -> ExternalRun {
-    run_external_target_with(detect_mux(), cfg, cmd)
+/// M48-1：带起始目录的新窗口路由（调用方传入焦点 pane 路径）。
+pub(crate) fn run_external_target_with_dir(
+    cfg: &config::UiConfig,
+    cmd: &str,
+    dir: &std::path::Path,
+) -> ExternalRun {
+    run_external_target_with_and_dir(detect_mux(), cfg, cmd, dir)
 }
 
 /// AUDIT-14：注入复用器形态的判定（`run_external_target` 与测试共用）。
 /// 注意：`cfg.terminal_in_new_window=true` 且 mux 有值时会真实 spawn 复用器
 /// （输出已静音）；测试只注入会短路到 `CurrentPane` 的组合。
-pub(crate) fn run_external_target_with(
+/// AUDIT-14 注入版 + M48-1 起始目录：测试可指定 mux 形态而不受宿主环境影响。
+pub(crate) fn run_external_target_with_and_dir(
     mux: Option<MuxKind>,
     cfg: &config::UiConfig,
     cmd: &str,
+    dir: &std::path::Path,
 ) -> ExternalRun {
     if cfg.terminal_in_new_window {
         match mux {
             Some(MuxKind::Tmux) => {
                 let out = std::process::Command::new("tmux")
-                    .args(tmux_window_args(cmd))
+                    .args(tmux_window_args_with_dir(cmd, dir))
                     // M21-F8 同款：复用器输出不进 TUI/测试输出。
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status();
                 return match out {
                     Ok(st) if st.success() => {
+                        // M48-1：`new-window` 无 `-d` 即激活新窗口；显式 select 兜底。
+                        let _ = std::process::Command::new("tmux")
+                            .args(["select-window", "-t", ":"])
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
                         ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
                     }
                     _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
                 };
             }
             Some(MuxKind::Screen) => {
+                // M48-1：screen 新窗口先 cd 到焦点目录，再切到下一个窗口激活。
+                let wrapped = format!("cd {} && {cmd}", shell_quote(&dir.to_string_lossy()));
                 let out = std::process::Command::new("screen")
-                    .args(["-X", "screen", "-t", "rvifm", "sh", "-c", cmd])
+                    .args(["-X", "screen", "-t", "rvifm", "sh", "-c", &wrapped])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status();
                 return match out {
                     Ok(st) if st.success() => {
+                        let _ = std::process::Command::new("screen")
+                            .args(["-X", "next"])
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
                         ExternalRun::Multiplexer(format!("已在 screen 新窗口执行: {cmd}"))
                     }
                     _ => ExternalRun::CurrentPane(cmd.to_owned()),
@@ -382,7 +405,8 @@ pub(crate) fn run_user_command(
         }
     };
     let ui = state.config.ui.clone();
-    match run_external_target(&ui, &cmd) {
+    let run_dir = state.active_tab().focus_base().to_path_buf();
+    match run_external_target_with_dir(&ui, &cmd, &run_dir) {
         ExternalRun::Multiplexer(m) => {
             *msg = Some(m);
             Outcome::Continue
@@ -2170,7 +2194,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     // M18-4：`!<cmd>` 外部命令（在所有守卫之前；执行目标由 run 循环定）。
     if let Some(rest) = line.strip_prefix('!') {
         let cfg = state.config.ui.clone();
-        return match run_external_target(&cfg, rest.trim()) {
+        let run_dir = state.active_tab().focus_base().to_path_buf();
+        return match run_external_target_with_dir(&cfg, rest.trim(), &run_dir) {
             ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
             ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
         };
@@ -3073,7 +3098,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             match crate::git::find_git_tui() {
                 Some(bin) => {
                     let cfg = state.config.ui.clone();
-                    match run_external_target(&cfg, bin) {
+                    let run_dir = state.active_tab().focus_base().to_path_buf();
+                    match run_external_target_with_dir(&cfg, bin, &run_dir) {
                         ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
                         ExternalRun::CurrentPane(cmd) => Ok(ExecOutcome::RunExternal { cmd }),
                     }
@@ -3287,7 +3313,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|_| "rvifm".to_owned());
                 let cmd = format!("{} help", crate::opener::shell_quote(&exe));
-                match run_external_target(&state.config.ui, &cmd) {
+                let run_dir = state.active_tab().focus_base().to_path_buf();
+                match run_external_target_with_dir(&state.config.ui, &cmd, &run_dir) {
                     ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
                     ExternalRun::CurrentPane(_) => Ok(ExecOutcome::EnterHelp),
                 }

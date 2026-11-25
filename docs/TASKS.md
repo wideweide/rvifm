@@ -683,3 +683,21 @@
 - [x] M47-8 左右栏 `v` 多选状态各自独立（见 SPEC M47-8；2026-11-25 完成：Pane.visual/tags + 投影 + 渲染各读自己栏，m478 测试）
 - [x] M47-9 双栏左侧留白 + 整行高亮覆盖间隙（见 SPEC M47-9；2026-11-25 完成：LIST_LEADING_BLANK + 列宽预算同步 + 双侧/frecency 列表，m479 测试）
 - [x] M47-10 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M47-10；2026-11-25 完成：README/GUIDE/help/CHANGELOG/tutor 四模块提示同步，13 模块 100 项可解析，harness_check 通过）
+
+## M48 — 用户实测批次 4（2026-11-25 蒸馏；外窗/打开/复制解压/归档预览/tutor/弹窗，见 SPEC M48 节）
+
+> 来源：用户 2026-11-25 实测反馈 12 条，按 AGENTS §8 蒸馏。编号沿用 M45–M47 先例取 M48。顺序：1→13（缺陷先行，文档殿后）。沿用「不 bump 版本 / 不 tag / 不 Release」口径。
+
+- [x] M48-1 `s`/`:!` 新窗口激活前台 + 路径取焦点栏（见 SPEC M48-1；2026-11-25 完成：去 tmux `-d` + `-c <focused dir>` + screen cwd/next，m481 测试）
+- [ ] M48-2 文本/`.sh`/`.md5` 打开优先新窗口且不覆盖界面（见 SPEC M48-2）
+- [ ] M48-3 右栏 `l`/Enter 文件打开与左栏一致（见 SPEC M48-3）
+- [ ] M48-4 `v` 多选 `y` 后对侧 `p`/`P` 缓存缺失修复（见 SPEC M48-4）
+- [ ] M48-5 `p`/`P` 冲突改阻塞式确认弹窗（见 SPEC M48-5）
+- [ ] M48-6 归档成员粘贴路径/递归/多选解压修复（见 SPEC M48-6）
+- [ ] M48-7 归档快速预览（可选外部列目录 + 大包可展开）（见 SPEC M48-7）
+- [ ] M48-8 `:archive` 无参直执行 / `-i` 交互 + 对话框细节（见 SPEC M48-8）
+- [ ] M48-9 IME 切回自动切英文稳健化（Normal 周期探测）（见 SPEC M48-9）
+- [ ] M48-10 tutor 列表 `/` 搜索 / `d` reset / 仅错题 / Ctrl+N 重选（见 SPEC M48-10）
+- [ ] M48-11 删除确认 yazi 真窗口化（状态栏/滚动条在框内）（见 SPEC M48-11）
+- [ ] M48-12 `:help` 新窗口修复 + `rv help` 改 view 查看器（见 SPEC M48-12）
+- [ ] M48-13 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M48-13）

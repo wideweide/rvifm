@@ -1592,9 +1592,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                             // 新窗口（不挂起）/ 当前 pane（挂起 TUI；state 全程
                             // 未动，光标/滚动与 raw mode/alt screen 恢复）。
                             let ui = state.config.ui.clone();
+                            let run_dir = state.active_tab().focus_base().to_path_buf();
                             let shell =
                                 std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-                            match run_external_target(&ui, &shell) {
+                            match run_external_target_with_dir(&ui, &shell, &run_dir) {
                                 ExternalRun::Multiplexer(m) => msg = Some(m),
                                 ExternalRun::CurrentPane(cmd) => {
                                     ratatui::restore();
