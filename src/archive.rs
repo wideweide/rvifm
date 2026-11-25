@@ -958,10 +958,12 @@ impl ArchiveFs for RarFs {
         let dir = normalize_inner(dir);
         let mut out = Vec::new();
         for e in &self.entries {
-            let (parent, leaf) = split_parent(&e.path).unwrap_or(("", e.path.as_str()));
+            let (parent, _) = split_parent(&e.path).unwrap_or(("", e.path.as_str()));
             if parent == dir {
+                // M49-8：与 Zip/Tar/7z 一致返回**完整归档内路径**（原返回 leaf，
+                // 导致 getcwd/解压时 read 找不到成员，只剩空目录）。
                 out.push(ArchiveEntry {
-                    path: leaf.to_owned(),
+                    path: e.path.clone(),
                     is_dir: e.is_dir,
                     size: e.size,
                 });

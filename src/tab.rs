@@ -687,6 +687,10 @@ pub struct FrecencyPane {
     pub preview_scroll: usize,
     pub preview_query: Option<String>,
     pub preview_match: usize,
+    /// M49-15：`dd` 删除记录待决 / 最近删除项（供 `u` 恢复）。
+    pub d_pending: bool,
+    pub y_pending: bool,
+    pub last_deleted: Option<(String, String)>,
 }
 
 /// M18-1：运行时排序字段。

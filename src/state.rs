@@ -375,6 +375,8 @@ pub struct AppState {
     /// M48-5：粘贴同名冲突的阻塞确认请求（冲突目标 + 是否移动）。
     pub pending_paste_conflicts: Vec<PathBuf>,
     pub pending_paste_move: bool,
+    /// M49-7：`v` 多选 `D` 永久删除确认标记（由 ConfirmTagDelete 消费）。
+    pub pending_permanent_delete: bool,
     /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
     /// M36-7：传输队列（粘贴入队；`:queue` 覆盖层消费/取消）。
@@ -442,6 +444,7 @@ impl AppState {
             yank: None,
             pending_paste_conflicts: Vec::new(),
             pending_paste_move: false,
+            pending_permanent_delete: false,
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
             watcher: None,

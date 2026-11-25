@@ -2021,6 +2021,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "file",
     "find",
     "frecency",
+    "gi",
     "gitui",
     "goto",
     "grep",
@@ -2189,6 +2190,14 @@ fn extract_members_with_strip(
             failures.push(format!("zip-slip 拒绝: {member}"));
             continue;
         }
+        if archive_fs
+            .metadata(&member)
+            .map(|m| m.size > 64 * 1024 * 1024)
+            .unwrap_or(false)
+        {
+            failures.push(format!("{member}: 超出 64MB 单成员上限"));
+            continue;
+        }
         if let Some(parent) = dest.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -2221,6 +2230,24 @@ fn extract_members_with_strip(
             // 再拼 inner 前缀造成 `a/a/c.json` 并读取失败（目录递归只建空壳）。
             let member_path = PathBuf::from(&entry.path);
             if entry.is_dir {
+                // M49-8：显式目录条目也要在目标端落地（原只在写文件时顺带建
+                // 父目录，纯空目录条目解压后只剩空壳/缺失）。
+                let rel_dir = member_path
+                    .to_string_lossy()
+                    .strip_prefix(strip_prefix)
+                    .map(|s| s.trim_start_matches('/').to_owned())
+                    .unwrap_or_default();
+                if !rel_dir.is_empty() {
+                    let dir_dest = dest_dir.join(&rel_dir);
+                    if normalize_lexical(&dir_dest).starts_with(dest_dir) {
+                        let _ = std::fs::create_dir_all(&dir_dest);
+                        state.undo_stack.push(crate::state::UndoableOp::Create {
+                            tab_id,
+                            path: dir_dest,
+                            recursive: true,
+                        });
+                    }
+                }
                 stack.push(member_path.to_string_lossy().into_owned());
                 continue;
             }
@@ -3175,7 +3202,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 _ => Err("archive: 参数过多（:archive [zip|tar|tar.gz] <名> [checksum=md5|sha256|none]）".to_owned()),
             }
         }
-        Some("gitui") => {
+        // M49-5：`:gi` 为主命令，`:gitui` 保留兼容别名（gitui 是外部软件名）。
+        Some("gi") | Some("gitui") => {
             // M25-6：`:gitui` 同 gi 语义——PATH 优先级探测，复用 RunUserCommand
             // 分流（terminal_in_new_window 一致）。
             // M48-FIX：非 git 仓库不得启动 git TUI——`gitui` 在非仓库目录会反复
@@ -3473,16 +3501,16 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
                 let base = physical_base(state)?;
                 let tab = state.active_tab();
-                let names: Vec<String> = if tab.tags.is_empty() {
-                    tab.entries
-                        .get(tab.cursor)
+                let names: Vec<String> = if tab.focused_tags().is_empty() {
+                    tab.focused_entries()
+                        .get(tab.focused_cursor())
                         .map(|i| i.name.clone())
                         .into_iter()
                         .collect()
                 } else {
-                    tab.entries
+                    tab.focused_entries()
                         .iter()
-                        .filter(|i| tab.tags.contains(&i.name))
+                        .filter(|i| tab.focused_tags().contains(&i.name))
                         .map(|i| i.name.clone())
                         .collect()
                 };
@@ -3535,8 +3563,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
-                .entries
-                .get(tab.cursor)
+                .focused_entries()
+                .get(tab.focused_cursor())
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "rename: 无选中条目".to_owned())?;
             // 提权重试的目标路径与 ops::rename_to 内部校验产物一致（base.join）。
@@ -3568,8 +3596,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
-                .entries
-                .get(tab.cursor)
+                .focused_entries()
+                .get(tab.focused_cursor())
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "move: 无选中条目".to_owned())?;
             let op = match ops::move_to(state.active, &path, &target) {
@@ -3600,8 +3628,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let base = physical_base(state)?;
             let tab = state.active_tab();
             let path = tab
-                .entries
-                .get(tab.cursor)
+                .focused_entries()
+                .get(tab.focused_cursor())
                 .map(|item| base.join(&item.name))
                 .ok_or_else(|| "copy: 无选中条目".to_owned())?;
             let op = match ops::copy_to(state.active, &path, &target) {
@@ -5428,11 +5456,21 @@ pub(crate) fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>)
         if !path.exists() {
             continue; // 标记后条目已消失：跳过
         }
-        match ops::delete_to_trash(state.active, &path) {
-            Ok(op) => {
-                state.undo_stack.push(op);
-                done += 1;
-            }
+        // M49-7：v+D 永久删除——直接删、不入暂存/撤销栈（不可恢复）。
+        let permanent = state.pending_permanent_delete;
+        let result = if permanent {
+            std::fs::remove_dir_all(&path)
+                .or_else(|_| std::fs::remove_file(&path))
+                .map_err(|e| e.to_string())
+        } else {
+            ops::delete_to_trash(state.active, &path)
+                .map(|op| {
+                    state.undo_stack.push(op);
+                })
+                .map_err(|e| e.to_string())
+        };
+        match result {
+            Ok(()) => done += 1,
             Err(e) => {
                 if first_err.is_none() {
                     first_err = Some(format!("删除 {name}: {e}"));
@@ -5446,7 +5484,16 @@ pub(crate) fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>)
         // M3-4：批量删除完成后清空标记状态。
         tab.clear_tags();
     }
-    let mut m = format!("tag delete: {done} 完成");
+    let permanent = state.pending_permanent_delete;
+    state.pending_permanent_delete = false;
+    let mut m = format!(
+        "{}: {done} 完成",
+        if permanent {
+            "永久删除"
+        } else {
+            "tag delete"
+        }
+    );
     if let Some(e) = first_err {
         m.push_str(&format!("; 错误: {e}"));
     }

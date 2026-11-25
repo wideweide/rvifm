@@ -1046,6 +1046,25 @@ fn tombstone_record(topic: &str, path: &str) -> EntryRecord {
             .as_secs(),
     }
 }
+/// M49-15：恢复被 `dd` 删除的 frecency 记录——追加一条 Navigate 事件，
+/// 重放时重建该条目（与 M23-8 原承诺的 `u` 恢复对齐；不写归档内容）。
+pub fn restore_entry(topic: &str, path: &str) -> std::io::Result<()> {
+    let record = EntryRecord {
+        path: path.replace('\\', "/").to_string(),
+        topic: topic.to_owned(),
+        kind: EntryKind::Navigate,
+        clock: 0,
+        keyword: String::new(),
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+    // 只写 events.pending（不打开 redb）——避免与并发测试/记录事务争锁；
+    // 下次 record/TUI 启动按既有降级合并链写回三表（AUDIT-1 口径不变）。
+    degraded_write_at(&pending_path(), &record, "frecency 记录恢复")
+}
+
 /// M23-4：IGNORE_PATTERNS——路径命中任一 glob 模式则不记录（静默跳过）。
 /// glob `*` 跨 `/`（tab::glob_match 语义），`*/.git` 命中任意深度的 .git。
 pub fn ignored(path: &str, patterns: &[String]) -> bool {

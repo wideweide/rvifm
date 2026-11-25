@@ -1,4 +1,5 @@
 use super::*;
+use std::fs;
 
 /// M34-4：查看器内容渲染（M17 VIEW-1 文本 + 图片/目录/PDF/Office 分流）——
 /// 对侧 pane 复用：render_right_pane（焦点左）与 render()（焦点右）分派到
@@ -31,12 +32,34 @@ pub(crate) fn render_view_path(
     viewer_state: Option<&crate::tab::ViewerState>,
 ) {
     let tab = state.active_tab();
+    // M49-9/10：快速切换时只做轻量预览；预览获焦（Tab 进入）后才全量加载。
+    let quick = !tab.preview_focus && tab.pane_frecency.as_ref().is_none_or(|p| !p.preview_focus);
     let path = path.to_path_buf();
-    // 图片仍走 ImageEngine（查看器针对文本）。
+    // 图片：快速态只显示元数据；获焦后仍走 ImageEngine 全量渲染。
     if matches!(
         crate::preview::preview_kind(&path),
         crate::preview::PreviewKind::Image
     ) {
+        if quick {
+            let pane = ratatui::widgets::Block::bordered()
+                .title(format!(
+                    "{} · 图片（快速预览）",
+                    path.display().to_string().replace('\\', "/")
+                ))
+                .border_style(pane_border_style(true));
+            let inner = pane.inner(area);
+            frame.render_widget(pane, area);
+            let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("图片预览（快速模式：仅元数据）"),
+                    Line::from(format!("大小: {} 字节", size)),
+                    Line::from("按 Tab 进入预览加载完整图像"),
+                ]),
+                inner,
+            );
+            return;
+        }
         let pane = ratatui::widgets::Block::bordered()
             .title(format!(
                 "{} · 图片预览",
@@ -167,7 +190,7 @@ pub(crate) fn render_view_path(
             // 翻页（任意页，按需渲染缓存）——不再 1–2 页网格。
             let pages_cfg = state.config.preview.pdf_image_pages.min(2);
             let prefer = state.config.preview.pdf_prefer_image;
-            if pages_cfg > 0 {
+            if pages_cfg > 0 && !quick {
                 let page = viewer.page;
                 let pane = ratatui::widgets::Block::bordered()
                     .title(format!("{shown} · PDF 第 {} 页（[ ] 翻页）", page + 1))
@@ -214,6 +237,14 @@ pub(crate) fn render_view_path(
         // M34-7：读取失败/非 UTF-8 → 结构化信息面板（类型/大小/修改）。
         frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
         return;
+    };
+    // M49-9：快速态仅展示前 300 字；预览获焦后（quick=false）展示完整内容。
+    let text = if quick && text.chars().count() > 300 {
+        let mut short: String = text.chars().take(300).collect();
+        short.push_str("\n…（快速预览仅前 300 字，Tab 进入预览加载完整内容）");
+        short
+    } else {
+        text
     };
     // M45-4b：tar 等归档的头部含大量 NUL 填充——`read_to_string` 仍能成功
     // （NUL 是合法 UTF-8），旧实现直接当文本渲染出乱码。NUL 即判二进制，

@@ -498,7 +498,7 @@ fn frecency_preview_match_lines(pane: &crate::tab::FrecencyPane) -> Vec<usize> {
 
 pub(crate) fn frec_pane_key(
     state: &mut AppState,
-    input: &mut InputState,
+    _input: &mut InputState,
     msg: &mut Option<String>,
     key: KeyEvent,
 ) -> Outcome {
@@ -600,11 +600,10 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('y') => {
-                // y 前缀：y-n 名称 / y-f 路径 / y-c 内容（作用于光标结果）。
-                // 用 seq 暂存等待第二键。
-                input
-                    .seq
-                    .push(crate::keymap::Key::plain(KeyCode::Char('y')));
+                // M49-15：y-f/y-n/y-c 前缀（不跳转、不关面板）；面板态绕过
+                // 全局 seq 分发，故用面板自己的 pending 标记。
+                pane.y_pending = true;
+                pane.d_pending = false;
                 return Outcome::Continue;
             }
             KeyCode::Char('e') => {
@@ -620,21 +619,97 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('d') => {
-                // M23-8：d 删除光标 frecency 条目（Remove 墓碑 + pane 内移除）。
+                // M49-15：删除记录（非文件）改为 dd 两键（原单键 d 易误触）。
+                if !pane.d_pending {
+                    pane.d_pending = true;
+                } else {
+                    pane.d_pending = false;
+                    let visible = filter_jump(&pane.entries, &pane.query);
+                    if let Some(entry) = visible.get(pane.cursor).cloned() {
+                        let topic = entry.topic.clone();
+                        let path = entry.path.clone();
+                        let _ = crate::frecency::remove_entry(&topic, &path);
+                        pane.last_deleted = Some((topic, path.clone()));
+                        pane.entries.retain(|e| e.path != entry.path);
+                        pane.cursor = pane.cursor.min(
+                            filter_jump(&pane.entries, &pane.query)
+                                .len()
+                                .saturating_sub(1),
+                        );
+                        *msg = Some(format!("已删除 frecency 条目: {path}（u 恢复）"));
+                    }
+                }
+            }
+            KeyCode::Char('u') => {
+                // M49-15：u 恢复最近被删的记录（追加 Navigate 事件）。
+                if let Some((topic, path)) = pane.last_deleted.take() {
+                    match crate::frecency::restore_entry(&topic, &path) {
+                        Ok(()) => {
+                            let entry = crate::frecency::ScoredEntry {
+                                path: path.clone(),
+                                topic: topic.clone(),
+                                keyword: String::new(),
+                                score: 1.0,
+                                grade: crate::frecency::Grade::None,
+                                last_visit: 0,
+                            };
+                            pane.entries.push(entry);
+                            *msg = Some(format!("已恢复 frecency 条目: {path}"));
+                        }
+                        Err(e) => *msg = Some(format!("恢复失败: {e}")),
+                    }
+                } else {
+                    *msg = Some("没有可恢复的 frecency 记录".to_owned());
+                }
+            }
+            KeyCode::Char('f') | KeyCode::Char('n') | KeyCode::Char('c') if pane.y_pending => {
+                // M49-15：yf/yn/yc 与目录列表同规则（不跳转、不关面板）。
+                pane.y_pending = false;
                 let visible = filter_jump(&pane.entries, &pane.query);
-                if let Some(entry) = visible.get(pane.cursor).cloned() {
-                    let topic = entry.topic.clone();
-                    let path = entry.path.clone();
-                    // 追加 Remove 墓碑事件（持久化删除）。
-                    let _ = crate::frecency::remove_entry(&topic, &path);
-                    // pane 内移除（从 entries 和可见列表）。
-                    pane.entries.retain(|e| e.path != entry.path);
-                    pane.cursor = pane.cursor.min(
-                        filter_jump(&pane.entries, &pane.query)
-                            .len()
-                            .saturating_sub(1),
-                    );
-                    *msg = Some(format!("已删除 frecency 条目: {path}"));
+                if let Some(entry) = visible.get(pane.cursor) {
+                    let what = match key.code {
+                        KeyCode::Char('f') => "路径",
+                        KeyCode::Char('n') => "名称",
+                        _ => "内容",
+                    };
+                    let text = if key.code == KeyCode::Char('n') {
+                        std::path::PathBuf::from(&entry.path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| entry.path.clone())
+                    } else if key.code == KeyCode::Char('f') {
+                        entry.path.clone()
+                    } else {
+                        std::fs::read_to_string(&entry.path).unwrap_or_else(|_| entry.path.clone())
+                    };
+                    copy_to_clipboard(&text);
+                    *msg = Some(format!("copied {what}: {text}"));
+                }
+            }
+            KeyCode::Char('i') if pane.g_pending => {
+                // M49-15：gi —— 查找光标目录/文件所在 git 仓库并调用交互工具。
+                pane.g_pending = false;
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(entry) = visible.get(pane.cursor) {
+                    let target = std::path::PathBuf::from(&entry.path);
+                    let probe = if target.is_dir() {
+                        target
+                    } else {
+                        target.parent().unwrap_or(&target).to_path_buf()
+                    };
+                    if crate::app::exec::git_root_of(&probe).is_none() {
+                        *msg = Some("gi: 该条目不在 git 仓库中".to_owned());
+                    } else if let Some(bin) = crate::git::find_git_tui() {
+                        let cfg = state.config.ui.clone();
+                        match run_external_target_with_dir(&cfg, bin, &probe) {
+                            ExternalRun::Multiplexer(m) => *msg = Some(m),
+                            ExternalRun::CurrentPane(cmd) => {
+                                return Outcome::RunUserCommand { cmd };
+                            }
+                        }
+                    } else {
+                        *msg = Some("gi: 未找到 git TUI".to_owned());
+                    }
                 }
             }
             KeyCode::Char('w') => {
@@ -650,6 +725,8 @@ pub(crate) fn frec_pane_key(
             }
             KeyCode::Char(c) => {
                 // 可打印字符回搜索态（携带字符重新筛选）。
+                pane.d_pending = false;
+                pane.y_pending = false;
                 pane.normal = false;
                 pane.query.clear();
                 pane.query.push(c);
@@ -663,9 +740,8 @@ pub(crate) fn frec_pane_key(
     // 搜索态
     match key.code {
         KeyCode::Esc => {
-            // 搜索态 Esc → Normal（清 query）。
+            // M49-14：搜索态 Esc → Normal 但保留过滤（原会清空 query）。
             pane.normal = true;
-            pane.query.clear();
             pane.cursor = pane.cursor.min(bottom);
             pane.g_pending = false;
         }
@@ -683,6 +759,17 @@ pub(crate) fn frec_pane_key(
         }
         KeyCode::Backspace => {
             pane.query.pop();
+            pane.cursor = 0;
+        }
+        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // M49-13：Ctrl+J/K 作为上下移动别名（fzf 习惯；Esc 仍返回 Normal）。
+            pane.cursor = (pane.cursor + 1).min(bottom);
+        }
+        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            pane.cursor = pane.cursor.saturating_sub(1);
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            pane.query.clear();
             pane.cursor = 0;
         }
         KeyCode::Down => {
@@ -751,11 +838,12 @@ pub(crate) fn handle_key(
     // M24-4：可视模式 d/y/x 直接对选中区域执行（不再需要 dd/yy 序列）。
     if state.active_tab().visual.is_some() {
         match key.code {
-            KeyCode::Char('d') | KeyCode::Char('x') => {
+            KeyCode::Char('d') | KeyCode::Char('x') | KeyCode::Char('D') => {
                 input.count = None;
                 // M24-4：可视范围条目加 tag → 批量删除确认（M3-3 管线）。
-                // M45-3d：不再直接删除——返回 ConfirmTagDelete 交主循环弹确认，
-                // 与 `:tag delete` 一致（用户实测 v+d 无确认缺陷）。
+                // M45-3d：不再直接删除——返回 ConfirmTagDelete 交主循环弹确认。
+                // M49-7：大写 D 走永久删除（跳过暂存/不可恢复，与 DD 同语义）。
+                state.pending_permanent_delete = key.code == KeyCode::Char('D');
                 if let Some((lo, hi)) = state.active_tab().visual_range() {
                     let tab = state.active_tab_mut();
                     for i in lo..=hi.min(tab.entries.len().saturating_sub(1)) {

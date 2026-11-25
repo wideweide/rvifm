@@ -1,5 +1,5 @@
 # M43-5：导师模式内容批 3——剪贴板与 git 模块。
-# 语义对照：y 序列（M23-10 OSC52 优先）、gi 键/:gitui（M25-6 探测
+# 语义对照：y 序列（M23-10 OSC52 优先）、gi 键/:gi（M25-6 探测
 # gitui→ziggity→lazygit）、git 状态列/状态栏（M25-5 异步缓存）。
 
 [module]
@@ -31,6 +31,6 @@ expected = "文件列表出现异步 git 状态列（M/A/?? 着色），状态�
 
 [[items]]
 id = "git_ui"
-prompt = "在仓库内按 `gi`（或输入 `:gitui`）。"
+prompt = "在仓库内按 `gi`（或输入 `:gi`）。"
 requires = "git"
 expected = "探测 gitui→ziggity→lazygit 顺序挂起 TUI 启动外部 git TUI；均未安装时给出可读提示。"

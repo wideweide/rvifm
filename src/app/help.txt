@@ -164,7 +164,7 @@ rvifm 帮助（vim 风格文件管理器）
   :frecency stats 导出/管理 frecency 数据库（export <file> JSON；
                   purge confirm 全清；prune --before <日期> 按时间裁剪）
   :cmdmark <tag>  命令书签（写入 frecency cmd topic；命令行内 ' 展开标签）
-  gi              打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 同）
+  gi / :gi         打开 git TUI（PATH 探测：gitui → ziggity → lazygit；:gitui 兼容别名）
 
 输入法（Linux）：Normal 下默认自动切英文；进入命令/搜索等文本输入模式时恢复之前的状态。
   从其它窗口切回（终端 FocusGained）与 Normal 模式按 Esc 也会防御性切英文，不覆盖已保存的输入法状态。

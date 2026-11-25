@@ -1074,6 +1074,9 @@ fn run_with_initial_mode(
                                             preview_scroll: 0,
                                             preview_query: None,
                                             preview_match: 0,
+                                            d_pending: false,
+                                            y_pending: false,
+                                            last_deleted: None,
                                         });
                                     mode = InputMode::Normal;
                                 }
@@ -1545,7 +1548,10 @@ fn run_with_initial_mode(
                                 mode = InputMode::Normal;
                                 execute_tag_delete(&mut state, &mut msg);
                             }
-                            _ => mode = InputMode::Normal,
+                            _ => {
+                                mode = InputMode::Normal;
+                                state.pending_permanent_delete = false;
+                            }
                         }
                     }
                 }
@@ -1708,6 +1714,9 @@ fn run_with_initial_mode(
                                 preview_scroll: 0,
                                 preview_query: None,
                                 preview_match: 0,
+                                d_pending: false,
+                                y_pending: false,
+                                last_deleted: None,
                             });
                         }
                         Outcome::EditFile { path } => {

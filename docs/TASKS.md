@@ -710,15 +710,15 @@
 - [x] M49-2 LAYOUT-2 `:view` 预览固定右侧（见 SPEC M49-2；2026-11-26 完成：render/render_right_pane/preview_path_with 统一固定右侧，动态对侧用例改 fixed_side=false）
 - [x] M49-3 LAYOUT-3 `[preview] fixed_side` 配置（默认 true，新会话生效）（见 SPEC M49-3；2026-11-26 完成：PreviewConfig + config.default.toml，渲染/点击同源读取）
 - [x] M49-4 LAYOUT-4 布局文档（GUIDE/SPEC/NOTES/ACCEPTANCE）（见 SPEC M49-4；2026-11-26 完成：GUIDE §2.4/§3 与 NOTES 决策同步，SPEC/ACCEPTANCE 已登记）
-- [ ] M49-5 `:gitui` → `:gi`（保留 `:gitui` 兼容别名）（见 SPEC M49-5）
-- [ ] M49-6 列表左侧留白收窄至约图标半宽（1 空格）（见 SPEC M49-6）
-- [ ] M49-7 可视模式 `D` 永久删除选中项（见 SPEC M49-7）
-- [ ] M49-8 `:extract` 显式目录条目只建空目录修复（见 SPEC M49-8）
-- [ ] M49-9 快速切换轻量预览（图片/PDF 元数据 + 文本 200–300 字）（见 SPEC M49-9）
-- [ ] M49-10 预览获焦后全量加载（见 SPEC M49-10）
-- [ ] M49-11 `:archive`/`:extract` 焦点化复核与残留命令（见 SPEC M49-11）
-- [ ] M49-12 frecency 标题动态 `${mode}`/`[filter]`（见 SPEC M49-12）
-- [ ] M49-13 SEARCH 提示 + `Ctrl+J/K`（见 SPEC M49-13）
-- [ ] M49-14 SEARCH Esc 保留过滤（见 SPEC M49-14）
-- [ ] M49-15 NORMAL `dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`（见 SPEC M49-15）
+- [x] M49-5 `:gitui` → `:gi`（保留 `:gitui` 兼容别名）（见 SPEC M49-5）；2026-11-26 完成：:gi 主命令 + :gitui 兼容别名 + 文档/测试
+- [x] M49-6 列表左侧留白收窄至约图标半宽（1 空格）（见 SPEC M49-6）；2026-11-26 完成：LIST_LEADING_BLANK 1 空格 + 高亮覆盖（m479 更新）
+- [x] M49-7 可视模式 `D` 永久删除选中项（见 SPEC M49-7）；2026-11-26 完成：v+D 永久删除（标记 + 确认 + 直删，DD 不回归）
+- [x] M49-8 `:extract` 显式目录条目只建空目录修复（见 SPEC M49-8）；2026-11-26 完成：显式目录条目落地 + RarFs 完整路径 + m498 测试
+- [x] M49-9 快速切换轻量预览（图片/PDF 元数据 + 文本 200–300 字）（见 SPEC M49-9）；2026-11-26 完成：quick 态图片元数据/文本 300 字 + PDF 跳过栅格化
+- [x] M49-10 预览获焦后全量加载（见 SPEC M49-10）；2026-11-26 完成：preview_focus 驱动全量加载（m4910 测试）
+- [x] M49-11 `:archive`/`:extract` 焦点化复核与残留命令（见 SPEC M49-11）；2026-11-26 完成：:rename/:move/:copy 焦点化复核；archive/extract 已焦点化
+- [x] M49-12 frecency 标题动态 `${mode}`/`[filter]`（见 SPEC M49-12）；2026-11-26 完成：标题 NORMAL/SEARCH + [filter] 黄底高亮
+- [x] M49-13 SEARCH 提示 + `Ctrl+J/K`（见 SPEC M49-13）；2026-11-26 完成：SEARCH 提示方向键 + Ctrl+J/K + Ctrl+U 清空
+- [x] M49-14 SEARCH Esc 保留过滤（见 SPEC M49-14）；2026-11-26 完成：Esc 返回 NORMAL 保留 query（m4912 测试）
+- [x] M49-15 NORMAL `dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`（见 SPEC M49-15）；2026-11-26 完成：dd 删记录 / u 经 pending 恢复 / yf·yn·yc / gi（m4915 测试）
 - [ ] M49-16 文档收尾（GUIDE/help/CHANGELOG/tutor/ACCEPTANCE）（见 SPEC M49-16）

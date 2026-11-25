@@ -3,7 +3,7 @@ use super::*;
 /// M47-9：列表项左侧留白（对齐 vifm 的栏内间距观感）。前导空白属于列表项
 /// 本身，整行高亮（List highlight_style / 右栏 item 级 REVERSED）自然覆盖它，
 /// 不留彩色断层。
-pub(crate) const LIST_LEADING_BLANK: &str = "  ";
+pub(crate) const LIST_LEADING_BLANK: &str = " ";
 
 /// FEAT-3：菜单浮窗矩形——固定 34×8 居中（含边框）。
 pub(crate) fn context_menu_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
@@ -880,14 +880,22 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
 
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
-    // M34-5/M47-5：标题固定文案；M47-5 去掉边框，顶部路径行与焦点栏目录区
-    // 同款 TopLineSel 样式，列表区直接替换目录列表——无弹出/浮层观感。
-    let title = "Frecency - 高频目录/文件搜索 - Normal 模式";
+    // M34-5/M47-5/M49-12：标题随模式变化，`[filter xxx]` 用 :view 同款黄底高亮。
     let [topline, inner] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frec_area);
     frame.render_widget(ratatui::widgets::Clear, topline);
+    let mut title_spans = vec![Span::from(format!(
+        "Frecency - 高频目录/文件搜索 - {} 模式",
+        if pane.normal { "NORMAL" } else { "SEARCH" }
+    ))];
+    if !pane.query.is_empty() {
+        title_spans.extend(highlight_query_spans(
+            &format!("[filter {}]", pane.query),
+            &pane.query,
+        ));
+    }
     frame.render_widget(
-        Paragraph::new(Line::from(title)).style(vifm_style("TopLineSel")),
+        Paragraph::new(Line::from(title_spans)).style(vifm_style("TopLineSel")),
         topline,
     );
     let frec_items: Vec<ListItem> = visible
@@ -955,7 +963,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         )
     } else {
         format!(
-            "/{}  输入=筛选 Enter=跳转 Esc=Normal（{} 项）",
+            "/{}  ↑↓/Ctrl+J/K=移动 输入=筛选 Enter=跳转 Esc=Normal（{} 项）",
             pane.query,
             visible.len()
         )
@@ -1310,7 +1318,14 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             let mut paths: Vec<std::path::PathBuf> =
                 tab.tags.iter().map(|name| base.join(name)).collect();
             paths.sort();
-            render_confirm(frame, &paths, false, None, *cursor, *scroll);
+            render_confirm(
+                frame,
+                &paths,
+                state.pending_permanent_delete,
+                None,
+                *cursor,
+                *scroll,
+            );
             return;
         }
         _ => {}

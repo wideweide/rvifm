@@ -2500,6 +2500,184 @@ fn m489_ime_periodic_probe_respects_editable_modes() {
 }
 
 #[test]
+fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
+    // M49-12/14：标题含 SEARCH + [filter]；Esc 返回 NORMAL 但保留过滤。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("alpha.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: tmp.path().join("alpha.txt").to_string_lossy().into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 1.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: "alpha".to_owned(),
+        cursor: 0,
+        normal: false,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    });
+    let backend = ratatui::backend::TestBackend::new(100, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let top: String = (0..100).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
+    assert!(top.contains("SEARCH"), "标题含模式: {top}");
+    assert!(top.contains("filter"), "标题含过滤: {top}");
+
+    let mut input = crate::app::InputState::default();
+    press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
+    let pane = state.active_tab().pane_frecency.as_ref().unwrap();
+    assert!(pane.normal, "Esc 回 NORMAL");
+    assert_eq!(pane.query, "alpha", "Esc 保留过滤");
+}
+
+#[test]
+fn m4915_frecency_dd_delete_and_u_restore() {
+    // M49-15：dd 删除记录（d 单键不再删除），u 恢复。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("alpha.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: tmp.path().join("alpha.txt").to_string_lossy().into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 1.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    });
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        1,
+        "单键 d 不删"
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    let pane = state.active_tab().pane_frecency.as_ref().unwrap();
+    assert!(pane.entries.is_empty(), "dd 删除记录");
+    assert!(pane.last_deleted.is_some(), "记录可恢复项");
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('u'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        1,
+        "u 恢复"
+    );
+}
+
+#[test]
+fn m4910_preview_focus_reloads_full_text() {
+    // M49-9/10：快速态只显示前 300 字；预览获焦后加载完整内容。
+    let tmp = TempDir::new().unwrap();
+    // 单行 400 字符：快速态第二行会出现截断提示，全量态无此提示。
+    let long = "A".repeat(400);
+    fs::write(tmp.path().join("long.txt"), &long).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().cursor = 0;
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    let dump = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| -> String {
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| buf[(x, y)].symbol().to_owned()))
+            .collect()
+    };
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let quick = dump(&terminal).replace(' ', "");
+    assert!(quick.contains("快速预览仅前300字"), "快速态提示: {quick}");
+
+    state.active_tab_mut().preview_focus = true;
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let full = dump(&terminal).replace(' ', "");
+    assert!(
+        !full.contains("快速预览仅前300字"),
+        "获焦后无快速提示: {full}"
+    );
+}
+
+#[test]
+fn m498_extract_explicit_dir_entries_yield_files() {
+    // M49-8：含显式目录条目的归档解压后必须有真实文件（非空目录）。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("bundle.zip");
+    crate::archive::make_test_zip(&zip);
+    let dest = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(dest.path(), Config::default()).unwrap();
+    // 焦点左（归档所在），默认解压目标 = 对侧右栏。
+    state.active_tab_mut().focus = crate::tab::Focus::Left;
+    state.active_tab_mut().cursor = 0;
+    let outcome = exec_command_impl(&mut state, "extract").unwrap();
+    assert!(matches!(outcome, ExecOutcome::Done { .. }));
+    assert_eq!(
+        fs::read_to_string(dest.path().join("readme.md")).unwrap(),
+        "hi"
+    );
+    assert_eq!(
+        fs::read_to_string(dest.path().join("src/main.rs")).unwrap(),
+        "fn main() {}"
+    );
+    assert!(dest.path().join("deep/nested/blob.bin").exists());
+}
+
+#[test]
 fn m491_frecency_preview_fixed_on_right() {
     // M49-1：默认固定右侧——标题/列表在左，预览在右；Tab 只切预览焦点。
     let tmp = TempDir::new().unwrap();
@@ -2522,6 +2700,9 @@ fn m491_frecency_preview_fixed_on_right() {
         preview_scroll: 0,
         preview_query: None,
         preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -2692,6 +2873,9 @@ fn m256_status_bar_shows_branch_and_diff() {
 fn m256_exec_gitui_conditionally() {
     let (_tmp, mut state) = make_state(1);
     // M48-FIX：非 git 仓库先拒绝（避免 gitui 反复提示建仓库）。
+    // M49-5：`:gi` 主命令与 `:gitui` 兼容别名走同一臂。
+    let r = exec_command_impl(&mut state, "gi");
+    assert!(r.is_err() && r.as_ref().unwrap_err().contains("不在 git 仓库"));
     let r = exec_command_impl(&mut state, "gitui");
     assert!(r.is_err());
     assert!(r.as_ref().unwrap_err().contains("不在 git 仓库"));
@@ -3305,6 +3489,9 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
         preview_scroll: 0,
         preview_query: None,
         preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -3322,7 +3509,7 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
     // CJK 占 2 格、缓冲区按格插空格 → 去空白后断言（标题/回显为连续文案）。
     let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(
-        compact.contains("Frecency-高频目录/文件搜索-Normal"),
+        compact.contains("Frecency-高频目录/文件搜索-SEARCH"),
         "标题: {s}"
     );
     assert!(compact.contains("/ma"), "query 回显: {s}");
@@ -3354,6 +3541,9 @@ fn m475_frecency_pane_is_borderless_and_click_matches_list() {
         preview_scroll: 0,
         preview_query: None,
         preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
     });
     let area = ratatui::layout::Rect::new(0, 0, 80, 12);
     let backend = ratatui::backend::TestBackend::new(80, 12);
@@ -5275,8 +5465,8 @@ fn m479_list_leading_blank_is_covered_by_row_highlight() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let buf = terminal.backend().buffer().clone();
+    // M49-6：留白收窄为 1 空格（约图标半宽）；第 1 列已是图标。
     assert_eq!(buf[(0, 3)].symbol(), " ", "左栏留白首列");
-    assert_eq!(buf[(1, 3)].symbol(), " ", "左栏留白次列");
     assert!(
         buf[(0, 3)].modifier.contains(Modifier::REVERSED),
         "左栏高亮覆盖留白"
@@ -5287,7 +5477,7 @@ fn m479_list_leading_blank_is_covered_by_row_highlight() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let buf = terminal.backend().buffer().clone();
-    assert_eq!(buf[(41, 3)].symbol(), " ", "右栏留白首列");
+    // 右栏同一 LIST_LEADING_BLANK 常量，整行高亮覆盖留白。
     assert!(
         buf[(41, 3)].modifier.contains(Modifier::REVERSED),
         "右栏高亮覆盖留白"
@@ -9850,6 +10040,9 @@ fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
         preview_scroll: 0,
         preview_query: None,
         preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
     });
     let area = ratatui::layout::Rect::new(0, 0, 100, 30);
     let [_, _, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
@@ -9896,6 +10089,9 @@ fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
             preview_scroll: 0,
             preview_query: None,
             preview_match: 0,
+            d_pending: false,
+            y_pending: false,
+            last_deleted: None,
         });
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();

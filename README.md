@@ -91,7 +91,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 - **选择与批量操作**：`v` 可视选择、`t` 标记（tag）、`:tag` 批量复制/移动/删除
 - **TOML 配置**：隐藏文件、排序方式等基本选项，零配置可用
 - **会话与归档创建**：退出保存/启动恢复物理标签；`:archive` 创建 zip/tar/tar.gz/7z 并生成校验文件，`u` 可逆
-- **git 集成**：异步状态列与分支/diff 摘要状态栏，`gi` / `:gitui` 启动外部 git TUI
+- **git 集成**：异步状态列与分支/diff 摘要状态栏，`gi` / `:gi` 启动外部 git TUI（`:gitui` 为兼容别名）
 - **声明式键位**（M10 已落地；M33 起 `[normal]`/`[visual]`/`[view]` 三层可配）：动作驱动 + TOML 分层定制
 - **命令历史与命令书签**（M30 已落地）：`:` 模式 ↑/↓ 为跨会话 frecency 排序（常用优先）；`:cmdmark <chars>` 标记命令、命令行内 `'`+<chars> 展开；Tab 路径补全按访问频率加权
 - **路径 marks**（已落地）：`m<char>` 标记当前条目、`'<char>` 跳转到该 keyword 的最高排名条目（目录 cd / 文件定位光标）；`:bmark` / `:bmarks` / `:bmgo` / `:delbmarks` 命令族与 marks 共用 frecency 持久化数据；多字符 keyword 在 `o` / `:j` / `:J` 搜索中享有高优先级匹配。TUI 的 frecency 搜索区显示在焦点 pane，对侧预览当前候选；独立 `pick` 使用左搜索、右预览布局。
