@@ -340,6 +340,8 @@ pub struct Pane {
     /// M47-8：右 pane 独立的 `v` 可视选择锚点与 `t` 标记集合。
     pub visual: Option<usize>,
     pub tags: HashSet<String>,
+    /// M47-4：右 pane 独立的 `:sort` 规格（刷新后重应用）。
+    pub sort: Option<Vec<SortSpec>>,
 }
 
 impl Pane {
@@ -368,6 +370,7 @@ impl Pane {
             filter: None,
             visual: None,
             tags: HashSet::new(),
+            sort: None,
         })
     }
 
@@ -531,10 +534,14 @@ impl Pane {
         match self.location {
             Location::Remote { .. } => {}
             Location::Physical(_) | Location::Archive { .. } => {
-                self.entries = Tab::load_for(&self.location, config)?;
+                self.entries = Tab::load_for(&self.location, config.clone())?;
                 // M47-2：右 pane 独立过滤在自身刷新时应用（与 Tab::refresh 同源）。
                 if let Some(pat) = &self.filter {
                     self.entries.retain(|item| filter_matches(pat, &item.name));
+                }
+                // M47-4：右 pane 的 :sort 在刷新后重应用（与左 pane 对称）。
+                if let Some(specs) = self.sort.clone() {
+                    sort_entries_specs(&mut self.entries, &specs, &config);
                 }
                 if self.cursor >= self.entries.len() {
                     self.cursor = self.entries.len().saturating_sub(1);
@@ -745,6 +752,39 @@ pub(crate) fn looks_binary(path: &Path) -> bool {
     let mut buf = vec![0u8; 8192];
     let n = f.read(&mut buf).unwrap_or(0);
     buf[..n].contains(&0)
+}
+
+/// M47-4：左右 pane 共用的排序比较器（目录优先 + 逐字段链 + 名称平手）。
+fn sort_entries_specs(entries: &mut [FileItem], specs: &[SortSpec], config: &Config) {
+    let dirs_first = config.sort_dirs_first;
+    entries.sort_by(|a, b| {
+        let dir_cmp = if dirs_first {
+            b.is_dir.cmp(&a.is_dir)
+        } else {
+            std::cmp::Ordering::Equal
+        };
+        dir_cmp.then_with(|| {
+            let mut ord = std::cmp::Ordering::Equal;
+            for spec in specs {
+                let base = match spec.field {
+                    SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    // M24-2：自然排序受 ignore_case_sort 影响（大小写敏感变体）。
+                    SortField::Natural => {
+                        if config.ignore_case_sort {
+                            natural_cmp(&a.name, &b.name)
+                        } else {
+                            natural_cmp_case(&a.name, &b.name)
+                        }
+                    }
+                    SortField::Mtime => a.mtime.cmp(&b.mtime),
+                    SortField::Size => a.size.cmp(&b.size),
+                    SortField::Ext => SortField::ext_of(&a.name).cmp(&SortField::ext_of(&b.name)),
+                };
+                ord = ord.then_with(|| if spec.desc { base.reverse() } else { base });
+            }
+            ord.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        })
+    });
 }
 
 impl Tab {
@@ -1072,38 +1112,23 @@ impl Tab {
 
     /// 排序比较器（目录优先 + 逐字段链 + 名称平手，确定性）。
     fn sort_entries(&mut self, config: &Config) {
-        let specs = self.sort.clone().unwrap_or_default();
-        let dirs_first = config.sort_dirs_first;
-        self.entries.sort_by(|a, b| {
-            let dir_cmp = if dirs_first {
-                b.is_dir.cmp(&a.is_dir)
-            } else {
-                std::cmp::Ordering::Equal
-            };
-            dir_cmp.then_with(|| {
-                let mut ord = std::cmp::Ordering::Equal;
-                for spec in &specs {
-                    let base = match spec.field {
-                        SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                        // M24-2：自然排序受 ignore_case_sort 影响（大小写敏感变体）。
-                        SortField::Natural => {
-                            if config.ignore_case_sort {
-                                natural_cmp(&a.name, &b.name)
-                            } else {
-                                natural_cmp_case(&a.name, &b.name)
-                            }
-                        }
-                        SortField::Mtime => a.mtime.cmp(&b.mtime),
-                        SortField::Size => a.size.cmp(&b.size),
-                        SortField::Ext => {
-                            SortField::ext_of(&a.name).cmp(&SortField::ext_of(&b.name))
-                        }
-                    };
-                    ord = ord.then_with(|| if spec.desc { base.reverse() } else { base });
-                }
-                ord.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-            })
-        });
+        sort_entries_specs(
+            &mut self.entries,
+            self.sort.as_deref().unwrap_or(&[]),
+            config,
+        );
+    }
+
+    /// M47-4：右 pane 的 `:sort`——复用左 pane 的 `apply_sort_multi`，临时
+    /// 投影右栏条目/光标/排序状态后交换回来，保证比较器只有一份实现。
+    pub fn apply_sort_multi_focused(&mut self, specs: Vec<SortSpec>, config: Config) {
+        std::mem::swap(&mut self.entries, &mut self.right.entries);
+        std::mem::swap(&mut self.cursor, &mut self.right.cursor);
+        std::mem::swap(&mut self.sort, &mut self.right.sort);
+        self.apply_sort_multi(specs, config);
+        std::mem::swap(&mut self.entries, &mut self.right.entries);
+        std::mem::swap(&mut self.cursor, &mut self.right.cursor);
+        std::mem::swap(&mut self.sort, &mut self.right.sort);
     }
 
     /// 重读当前物理目录条目并钳制光标（删除/撤销后刷新，M2-2）。
@@ -1152,6 +1177,86 @@ impl Tab {
                 self.visual = None;
             }
         }
+    }
+
+    /// M47-3/4：焦点 pane 的条目/光标/选择集合——命令层（不经键位投影）
+    /// 用它把源文件、批量集合等从"恒左栏"改为焦点栏。
+    pub fn focused_entries(&self) -> &[FileItem] {
+        if self.focus == Focus::Right {
+            &self.right.entries
+        } else {
+            &self.entries
+        }
+    }
+
+    pub fn focused_cursor(&self) -> usize {
+        if self.focus == Focus::Right {
+            self.right.cursor
+        } else {
+            self.cursor
+        }
+    }
+
+    pub fn focused_location(&self) -> &Location {
+        if self.focus == Focus::Right {
+            &self.right.location
+        } else {
+            &self.location
+        }
+    }
+
+    pub fn focused_on_parent_row(&self) -> bool {
+        if self.focus == Focus::Right {
+            self.right.on_parent_row
+        } else {
+            self.on_parent_row
+        }
+    }
+
+    pub fn focused_tags(&self) -> &HashSet<String> {
+        if self.focus == Focus::Right {
+            &self.right.tags
+        } else {
+            &self.tags
+        }
+    }
+
+    pub fn focused_visual_range(&self) -> Option<(usize, usize)> {
+        if self.focus == Focus::Right {
+            self.right
+                .visual
+                .map(|a| (a.min(self.right.cursor), a.max(self.right.cursor)))
+        } else {
+            self.visual_range()
+        }
+    }
+
+    /// M47-4：`:select`/`:unselect` 作用于焦点 pane 的条目与标记集合。
+    pub fn select_by_pattern_focused(&mut self, pattern: Option<&str>, select: bool) -> usize {
+        if self.focus == Focus::Right {
+            std::mem::swap(&mut self.entries, &mut self.right.entries);
+            std::mem::swap(&mut self.cursor, &mut self.right.cursor);
+            std::mem::swap(&mut self.tags, &mut self.right.tags);
+            let affected = self.select_by_pattern(pattern, select);
+            std::mem::swap(&mut self.entries, &mut self.right.entries);
+            std::mem::swap(&mut self.cursor, &mut self.right.cursor);
+            std::mem::swap(&mut self.tags, &mut self.right.tags);
+            affected
+        } else {
+            self.select_by_pattern(pattern, select)
+        }
+    }
+
+    pub fn clear_tags_focused(&mut self) {
+        if self.focus == Focus::Right {
+            self.right.tags.clear();
+        } else {
+            self.tags.clear();
+        }
+    }
+
+    pub fn tagged_count_focused(&self) -> usize {
+        self.focused_tags().len()
     }
 
     /// M47-2：焦点 pane 当前是否处于过滤态（Normal 模式 Esc 清除用）。

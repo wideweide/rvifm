@@ -1084,8 +1084,8 @@
 
 - [x] M47-1 目录/归档成员预览的图标按层级缩进显示，不再全部贴左边缘；导航/排序/内容不变；TestBackend 回归断言缩进存在。（2026-11-25：preview_indent + TUI 目录预览缩进置于图标前；m471 双测试通过）
 - [x] M47-2 焦点在右栏时 `=` 过滤右栏条目且状态显示在右栏顶部路径，焦点在左栏同理；状态栏不再显示过滤状态；Esc 清除对应栏过滤并恢复完整列表；左右过滤状态互不串扰。（2026-11-25：Pane.filter / 焦点化 apply_filter / path_line_text / Normal Esc 清除，m472 与更新后的 render_shows_filter_indicator 通过）
-- [ ] M47-3 `:archive` 焦点在右栏时取右栏 selected/tag/光标对应文件、产物落在左栏物理目录（反之对称）；`:extract` 源与对侧目标按焦点 pane 一致，目标栏刷新；归档只读与 `u` 撤销不回归。
-- [ ] M47-4 审计清单落 NOTES：无残留「右栏仅导航」快捷键/命令/鼠标入口，左右焦点对称、目标为焦点栏的回归用例通过。
+- [x] M47-3 `:archive` 焦点在右栏时取右栏 selected/tag/光标对应文件、产物落在左栏物理目录（反之对称）；`:extract` 源与对侧目标按焦点 pane 一致，目标栏刷新；归档只读与 `u` 撤销不回归。（2026-11-25：m473_archive_plan_uses_focused_pane_source_and_opposite_dest + m473_extract_source_follows_focused_pane）
+- [x] M47-4 审计清单落 NOTES：无残留「右栏仅导航」快捷键/命令/鼠标入口，左右焦点对称、目标为焦点栏的回归用例通过。（2026-11-25：命令层 selected_names/变量替换/:file/marks/:sort/:select 焦点化；m474 回归；审计清单见 NOTES M47 条）
 - [ ] M47-5 `o`/`:j`/`:J` 面板无边框、背景与焦点栏目录区一致、无弹出观感；顶部路径为「Frecency - 高频目录/文件搜索 - Normal 模式」；候选高亮/预览/点击跳转与 `pick` 只读不回归。
 - [ ] M47-6 Linux + `[ime] enabled` 下 TUI 启动处于 Normal 时调用一次英文激活，Normal 下 Esc 再触发一次；已进入文本输入模式时不覆盖已保存输入法状态；注入 runner 断言调用次数与节流，后端失败静默降级；退出恢复语义保留。
 - [ ] M47-7 左右栏按 `gg` 到顶部时只高亮 `..` 行，第一条真实条目不高亮；两栏对称；TestBackend 回归断言。

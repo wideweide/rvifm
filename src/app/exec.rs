@@ -147,8 +147,14 @@ pub(crate) fn suspend_execute(cmd: &str) -> (ratatui::DefaultTerminal, Option<St
 /// `host:/inner/name` 路径 + 成员索引元数据）。`:file` 与右键菜单同源。
 pub(crate) fn current_item_info(state: &AppState) -> Option<(PathBuf, String)> {
     let tab = state.active_tab();
-    let item = tab.entries.get(tab.cursor)?;
-    match &tab.location {
+    // M47-4：`:file` 信息取焦点栏条目与位置（原恒取左栏）。
+    let item = tab.focused_entries().get(tab.focused_cursor())?;
+    let location = if tab.focus == crate::tab::Focus::Right {
+        &tab.right.location
+    } else {
+        &tab.location
+    };
+    match location {
         Location::Physical(base) => {
             let path = base.join(&item.name);
             Some((path.clone(), file_info_text(&path, &item.name)))
@@ -332,31 +338,22 @@ pub(crate) fn git_root_of(dir: &std::path::Path) -> Option<std::path::PathBuf> {
 /// %g 为空时返回 Err（git 相关命令不执行，提示不是 git 仓库）。
 pub(crate) fn substitute_vars(template: &str, state: &AppState) -> Result<String, String> {
     let tab = state.active_tab();
-    let focus_dir = tab.location.base_dir().to_path_buf();
-    let other_dir = if tab.focus == crate::tab::Focus::Left {
-        tab.right.location.base_dir().to_path_buf()
-    } else {
-        tab.location.base_dir().to_path_buf()
-    };
-    let cursor_path = tab.location.base_dir().join(
-        tab.entries
-            .get(tab.cursor)
-            .map(|i| i.name.as_str())
-            .unwrap_or(""),
-    );
+    // M47-4：%d/%f/%F 均取焦点 pane（原 %d/%F 恒写左栏）。
+    let focus_dir = tab.focus_base().to_path_buf();
+    let other_dir = opposite_physical_base(state);
+    let cursor_name = tab
+        .focused_entries()
+        .get(tab.focused_cursor())
+        .map(|i| i.name.as_str())
+        .unwrap_or("");
+    let cursor_path = focus_dir.join(cursor_name);
     let sep = std::path::MAIN_SEPARATOR_STR;
     let g = git_root_of(&focus_dir)
         .map(|p| p.to_string_lossy().replace(sep, "/"))
         .unwrap_or_default();
     let out = template
         .replace("%d", &focus_dir.to_string_lossy().replace(sep, "/"))
-        .replace(
-            "%f",
-            tab.entries
-                .get(tab.cursor)
-                .map(|i| i.name.as_str())
-                .unwrap_or(""),
-        )
+        .replace("%f", cursor_name)
         .replace("%F", &cursor_path.to_string_lossy().replace(sep, "/"))
         .replace("%D", &other_dir.to_string_lossy().replace(sep, "/"))
         .replace("%g", &g);
@@ -852,23 +849,22 @@ pub(crate) fn apply_rename_preview(state: &mut AppState, msg: &mut Option<String
 /// 光标单条目（与 cw/R 的选集语义一致）。
 pub(crate) fn selected_names(state: &AppState) -> Vec<String> {
     let tab = state.active_tab();
-    if !tab.tags.is_empty() {
-        return tab
-            .entries
+    let entries = tab.focused_entries();
+    if !tab.focused_tags().is_empty() {
+        return entries
             .iter()
-            .filter(|i| tab.tags.contains(&i.name))
+            .filter(|i| tab.focused_tags().contains(&i.name))
             .map(|i| i.name.clone())
             .collect();
     }
-    if let Some((lo, hi)) = tab.visual_range() {
-        return tab
-            .entries
-            .get(lo..=hi.min(tab.entries.len().saturating_sub(1)))
+    if let Some((lo, hi)) = tab.focused_visual_range() {
+        return entries
+            .get(lo..=hi.min(entries.len().saturating_sub(1)))
             .map(|slice| slice.iter().map(|i| i.name.clone()).collect())
             .unwrap_or_default();
     }
-    tab.entries
-        .get(tab.cursor)
+    entries
+        .get(tab.focused_cursor())
         .map(|i| vec![i.name.clone()])
         .unwrap_or_default()
 }
@@ -1476,6 +1472,18 @@ pub(crate) fn physical_base(state: &AppState) -> Result<PathBuf, String> {
     Ok(tab.focus_base().to_path_buf())
 }
 
+/// M47-3：对侧 pane 的物理基准目录——`:archive` 的产物落在对侧栏。
+/// 归档/远端视图取其 host/path 基准（写入 host 目录本身，不写归档内）。
+pub(crate) fn opposite_physical_base(state: &AppState) -> PathBuf {
+    let tab = state.active_tab();
+    let location = if tab.focus == crate::tab::Focus::Right {
+        &tab.location
+    } else {
+        &tab.right.location
+    };
+    location.base_dir().to_path_buf()
+}
+
 // ── M16 NAV-1 / M25-2：' 快速跳转与 marks/bookmark（frecency keyword） ──────
 
 /// NAV-1/M25-2 纯函数：从重放条目中取 keyword 精确匹配的**最高排名条目**
@@ -1535,22 +1543,24 @@ pub(crate) fn mark_set(state: &mut AppState, c: char, msg: &mut Option<String>) 
         return;
     }
     let tab = state.active_tab();
-    if !matches!(tab.location, crate::tab::Location::Physical(_)) {
+    let location = tab.focused_location();
+    if !matches!(location, crate::tab::Location::Physical(_)) {
         *msg = Some("marks 仅物理视图可用（归档/远端/结果/树视图不记录）".to_owned());
         return;
     }
-    let path = if tab.on_parent_row {
-        tab.location.base_dir().to_path_buf()
-    } else if let Some(item) = tab.entries.get(tab.cursor) {
-        tab.location.base_dir().join(&item.name)
+    let on_parent = tab.focused_on_parent_row();
+    let path = if on_parent {
+        location.base_dir().to_path_buf()
+    } else if let Some(item) = tab.focused_entries().get(tab.focused_cursor()) {
+        location.base_dir().join(&item.name)
     } else {
         *msg = Some("无选中条目".to_owned());
         return;
     };
-    let is_dir = tab.on_parent_row
+    let is_dir = on_parent
         || tab
-            .entries
-            .get(tab.cursor)
+            .focused_entries()
+            .get(tab.focused_cursor())
             .map(|i| i.is_dir)
             .unwrap_or(true);
     let topic = if is_dir { "dir" } else { "file" };
@@ -1572,10 +1582,11 @@ pub(crate) fn bmark_set(state: &mut AppState, tags: &[String]) -> Result<String,
         }
     }
     let tab = state.active_tab();
-    if !matches!(tab.location, crate::tab::Location::Physical(_)) {
+    let location = tab.focused_location();
+    if !matches!(location, crate::tab::Location::Physical(_)) {
         return Err("bmark 仅物理视图可用（远端/归档不记录）".to_owned());
     }
-    let path = tab.location.base_dir().to_string_lossy().replace('\\', "/");
+    let path = location.base_dir().to_string_lossy().replace('\\', "/");
     for t in tags {
         crate::frecency::set_keyword_topic_now(&path, "dir", t)
             .map_err(|e| format!("bmark 失败: {e}"))?;
@@ -2314,7 +2325,12 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let args = parts.collect::<Vec<&str>>().join(" ");
             let specs = parse_sort_spec(&args)?;
             let cfg = state.config.clone();
-            state.active_tab_mut().apply_sort_multi(specs.clone(), cfg);
+            let tab = state.active_tab_mut();
+            if tab.focus == crate::tab::Focus::Right {
+                tab.apply_sort_multi_focused(specs.clone(), cfg);
+            } else {
+                tab.apply_sort_multi(specs.clone(), cfg);
+            }
             let text = specs
                 .iter()
                 .map(|s| {
@@ -2826,12 +2842,12 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             if !dest_dir.is_dir() {
                 return Err(format!("extract: 目标目录不存在: {}", dest_dir.display()));
             }
-            // 光标条目 = 归档文件。
+            // 光标条目 = 焦点 pane 的归档文件（M47-3：原恒取左栏）。
             let tab = state.active_tab();
-            let Some(item) = tab.entries.get(tab.cursor) else {
+            let Some(item) = tab.focused_entries().get(tab.focused_cursor()) else {
                 return Err("extract: 无选中条目".to_owned());
             };
-            let host = tab.location.base_dir().join(&item.name);
+            let host = tab.focus_base().join(&item.name);
             if !crate::archive::is_archive_file(&item.name) {
                 return Err(format!("extract: {} 不是受支持的归档格式", item.name));
             }
@@ -2971,20 +2987,19 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     // M25-4 + M45-9c：无参 → 对话框。单文件预填原名；多选
                     // （tags/v 连续选区）预填当前目录名（父目录名）。
                     let tab = state.active_tab();
-                    let multi = tab.tags.len() > 1
+                    let multi = tab.focused_tags().len() > 1
                         || tab
-                            .visual_range()
+                            .focused_visual_range()
                             .map(|(lo, hi)| hi > lo)
                             .unwrap_or(false);
                     let input = if multi {
-                        tab.location
-                            .base_dir()
+                        tab.focus_base()
                             .file_name()
                             .map(|n| n.to_string_lossy().into_owned())
                             .unwrap_or_default()
                     } else {
-                        tab.entries
-                            .get(tab.cursor)
+                        tab.focused_entries()
+                            .get(tab.focused_cursor())
                             .map(|i| i.name.clone())
                             .unwrap_or_default()
                     };
@@ -3911,18 +3926,18 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let select = cmd == "select";
             let tab = state.active_tab_mut();
             if select {
-                let n = tab.select_by_pattern(pattern, true);
+                let n = tab.select_by_pattern_focused(pattern, true);
                 Ok(ExecOutcome::Done {
                     msg: Some(format!("{cmd}: {n} 个条目")),
                 })
             } else if pattern.is_none() {
-                let n = tab.tagged_count();
-                tab.clear_tags();
+                let n = tab.tagged_count_focused();
+                tab.clear_tags_focused();
                 Ok(ExecOutcome::Done {
                     msg: Some(format!("unselect: 清除 {n} 个标记")),
                 })
             } else {
-                let n = tab.select_by_pattern(pattern, false);
+                let n = tab.select_by_pattern_focused(pattern, false);
                 Ok(ExecOutcome::Done {
                     msg: Some(format!("{cmd}: {n} 个条目")),
                 })
@@ -5002,32 +5017,40 @@ pub(crate) fn archive_plan(
     if name.trim().is_empty() {
         return Err("archive: 名称不能为空".to_owned());
     }
+    // M47-3：源 = 焦点 pane 的物理目录与条目；产物 = 对侧 pane 目录。
     let base = physical_base(state)?;
+    let dest_base = opposite_physical_base(state);
     // 目标已存在 → 同步预检（快速反馈；create_archive 内的同名不覆盖
     // 仍兜底——扩展名补齐后的真实产物路径以线程内检查为准）。
-    if base.join(name).exists() {
+    if dest_base.join(name).exists() {
         return Err(format!(
             "archive: 目标已存在: {}（不覆盖）",
-            base.join(name).display().to_string().replace('\\', "/")
+            dest_base
+                .join(name)
+                .display()
+                .to_string()
+                .replace('\\', "/")
         ));
     }
     // M45-9a：tags 优先（保留原语义——tag 可指向已消失条目，作业体须报
     // 源缺失，不能被 entries 过滤掉）；tags 为空时增补 v 可视选区（原实现
     // 只取光标条目，v 多选连续文件只打一个——用户实测缺陷）；再退光标。
+    // M47-3：以上集合均取焦点 pane。
     let tab = state.active_tab();
-    let names: Vec<String> = if !tab.tags.is_empty() {
-        let mut names: Vec<String> = tab.tags.iter().cloned().collect();
+    let entries = tab.focused_entries();
+    let names: Vec<String> = if !tab.focused_tags().is_empty() {
+        let mut names: Vec<String> = tab.focused_tags().iter().cloned().collect();
         names.sort();
         names
-    } else if let Some((lo, hi)) = tab.visual_range() {
-        tab.entries
-            .get(lo..=hi.min(tab.entries.len().saturating_sub(1)))
+    } else if let Some((lo, hi)) = tab.focused_visual_range() {
+        entries
+            .get(lo..=hi.min(entries.len().saturating_sub(1)))
             .map(|slice| slice.iter().map(|i| i.name.clone()).collect())
             .unwrap_or_default()
     } else {
         vec![
-            tab.entries
-                .get(tab.cursor)
+            entries
+                .get(tab.focused_cursor())
                 .ok_or_else(|| "archive: 无选中条目".to_owned())?
                 .name
                 .clone(),
@@ -5054,7 +5077,7 @@ pub(crate) fn archive_plan(
         ops::Checksum::None => "none",
     };
     let op = format!("archive:{fmt_name}:{cs_str}");
-    let target = base.join(name);
+    let target = dest_base.join(name);
     Ok((op, names, target, base))
 }
 

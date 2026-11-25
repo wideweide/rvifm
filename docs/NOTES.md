@@ -1438,4 +1438,10 @@ rvifm record  → 静默记录访问
 - **M47-7 根因**：`render_right_pane` 的 `..` 行按 `on_parent_row` 反显（正确），但条目高亮在 `idx == cursor` 时无条件 `REVERSED`（缺 `!on_parent_row` 守卫），与左栏 `ListState` 守卫不对称。
 - **M47-8 根因**：`visual`/`tags` 是 `Tab` 级共享字段，左右渲染器都无条件 `tab.tags.contains(...)`，右栏多选后切焦点左栏仍读到同一集合。裁决：`Pane` 增 `visual`/`tags`，`dispatch_right_pane` 一并投影，使键盘管道仍操作左栏字段（实为焦点栏数据）；渲染端各读自己 pane 的集合；exec.rs 命令显式按焦点取集合。
 - **M47-9 裁决**：采用「列表项前增加前导空白 + 整行高亮天然覆盖该空白」的低风险方案；不改动 `pane_layout` 的 gap 宽度（大量 TestBackend 几何断言依赖现有列坐标），避免无关回归。
+- **M47-4 审计结论（2026-11-25，逐项代码定位）**：
+  - 键位管道已由 `dispatch_right_pane` 投影 location/entries/cursor/scroll/on_parent_row（FIX-7）；本批次增投 `filter`/`visual`/`tags`，使 `=`/`v`/`t`/Esc 在右栏复用共享管道后写回右栏。
+  - 命令层已焦点化：`selected_names`（批量/重命名/复制公共选集）、`substitute_vars` 的 `%d`/`%f`/`%F`（原 `%d`/`%F` 恒左）、`current_item_info`（`:file`）、`mark_set`/`bmark_set`、`archive_plan`/`:extract`、`:sort`、`:select`/`:unselect`。`jump_to`/`physical_base`/`extract_dest`/搜索系在 FIX-7/M45/M46 已焦点化，不重复改。
+  - 保留既有边界：右键上下文菜单固定左栏（M41-3 裁决，鼠标右键命中同源）；`history_menu_nav` 依赖 Tab 级历史（右 pane 无历史栈，保持）；归档只读、远端白名单、输入模态语义不变。
+  - 排序比较器抽为 `sort_entries_specs` 纯函数，左/右 pane 共用；右 pane 增 `sort` 字段并在刷新后重应用。
+- **提交粒度说明**：M47-3 与 M47-4 共享 `focused_entries`/`focused_cursor` 等焦点访问器与同一批文件，合并为一次提交便于切换模型续跑，任务勾选仍逐项独立。
 - **排序**：1→10，缺陷/焦点化先行，文档殿后；人工终端类验证沿用既有 deferred 口径。

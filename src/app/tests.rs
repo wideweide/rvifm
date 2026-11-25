@@ -2060,6 +2060,76 @@ fn m459a_archive_plan_covers_visual_selection() {
 }
 
 #[test]
+fn m473_archive_plan_uses_focused_pane_source_and_opposite_dest() {
+    // M47-3：焦点在右栏 → 取右栏文件，产物落在左栏目录。
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(right.path().join("r.txt"), "R").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let (op, names, target, base) = crate::app::exec::archive_plan(
+        &state,
+        crate::ops::ArchiveFormat::Zip,
+        "out.zip",
+        crate::ops::Checksum::Md5,
+    )
+    .unwrap();
+    assert!(op.starts_with("archive:zip"));
+    assert_eq!(names, vec!["r.txt"], "源取焦点栏条目");
+    assert_eq!(base, right.path(), "源目录为焦点栏");
+    assert_eq!(target, left.path().join("out.zip"), "产物落在对侧栏");
+}
+
+#[test]
+fn m473_extract_source_follows_focused_pane() {
+    // M47-3：`:extract` 的源归档取焦点栏；对侧栏文件不被误当源。
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    let zip = left.path().join("left.zip");
+    crate::archive::make_test_zip(&zip);
+    fs::write(right.path().join("note.txt"), "N").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let err = crate::app::exec::exec_command_impl(&mut state, "extract").unwrap_err();
+    assert!(err.contains("note.txt"), "应报右栏光标条目: {err}");
+    assert!(err.contains("不是受支持的归档格式"), "{err}");
+}
+
+#[test]
+fn m474_remaining_commands_follow_focused_pane() {
+    // M47-4：`:sort`/`:select`/`m<char>` 与命令模板 %d/%f 均作用于焦点栏。
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    for name in ["b.txt", "a.txt"] {
+        fs::write(right.path().join(name), name).unwrap();
+    }
+    fs::write(left.path().join("l.txt"), "L").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+
+    crate::app::exec::exec_command_impl(&mut state, "sort name").unwrap();
+    assert_eq!(state.active_tab().right.entries[0].name, "a.txt");
+    assert_eq!(state.active_tab().entries[0].name, "l.txt");
+
+    crate::app::exec::exec_command_impl(&mut state, "select *.txt").unwrap();
+    assert_eq!(state.active_tab().right.tags.len(), 2);
+    assert!(state.active_tab().tags.is_empty());
+
+    let tmpl = crate::app::exec::substitute_vars("%d|%f", &state).unwrap();
+    assert!(
+        tmpl.contains(&right.path().to_string_lossy().replace('\\', "/")),
+        "{tmpl}"
+    );
+    assert!(tmpl.contains("a.txt"), "{tmpl}");
+}
+
+#[test]
 fn m459c_archive_dialog_layout_and_stripping() {
     // M45-9c：对话框加宽；名称显示去后缀；格式/校验仅选中项反显。
     let area = ratatui::layout::Rect::new(0, 0, 80, 24);
