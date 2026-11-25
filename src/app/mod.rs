@@ -608,6 +608,9 @@ pub fn help_text() -> &'static str {
 pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
     let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
+    // M47-6：终端焦点事件用于从其它窗口切回时防御性切英文（不支持的终端
+    // 不会发该事件，Normal 模式 Esc 兜底）。
+    let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableFocusChange);
     // M46-6：首次启动生成带注释的默认 config.toml 与键位/opener 示例；
     // 已存在文件不覆盖，失败静默降级（不与下面的加载错误提示冲突）。
     config::ensure_default_config();
@@ -800,6 +803,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         // 有待决序列时预算收缩到超时余量（AUDIT-6）。
         let polled = event::poll(std::time::Duration::from_millis(poll_ms))?;
         let key_ev = if polled { event::read().ok() } else { None };
+        // M47-6：切回终端窗口且不在可编辑模式时切英文；多数终端不发送此事件，
+        // 故 Normal 模式 Esc 也触发（见下方 Normal 分支）。
+        if matches!(key_ev, Some(Event::FocusGained)) && !ime_editable_mode(&mode) {
+            ime_worker.force_english();
+        }
         if let Some(Event::Key(key)) = key_ev {
             // M43-1：tutor 标记键前置拦截（透明放行——练习键不拦，标记在
             // 任意模式生效：命令输入/覆盖层激活时也可 Ctrl+Y/N 标记）。
@@ -1438,6 +1446,12 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     }
                 }
                 InputMode::Normal => {
+                    // M47-6：Normal 模式 Esc 防御性切英文（比依赖模式边界可靠）。
+                    // 仅捕获"按键前已是 Normal"的场景，文本输入模式按 Esc 返回
+                    // 仍由下方模式边界统一恢复输入法，不在此重复触发。
+                    if key.code == KeyCode::Esc {
+                        ime_worker.force_english();
+                    }
                     match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
                         Outcome::Continue => {}
                         Outcome::Quit => {

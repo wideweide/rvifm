@@ -58,6 +58,8 @@ pub(crate) struct ImeManager<R> {
     config: ImeConfig,
     backend: Option<Backend>,
     saved: Option<SavedState>,
+    /// M47-6：防御性激活的节流窗口（避免每次 Esc 都探测/切换）。
+    last_force: Option<std::time::Instant>,
 }
 
 #[cfg(target_os = "linux")]
@@ -68,6 +70,7 @@ impl<R: CommandRunner> ImeManager<R> {
             config,
             backend: None,
             saved: None,
+            last_force: None,
         }
     }
 
@@ -86,6 +89,60 @@ impl<R: CommandRunner> ImeManager<R> {
             return;
         }
         self.try_ibus();
+    }
+
+    /// M47-6：防御性切英文——从其它窗口/应用切回、Normal 模式 Esc 时调用。
+    /// 与 `enter_normal` 不同：不保存/覆盖原状态（否则会破坏进入文本输入模式
+    /// 后的恢复语义），仅在检测到非英文时发一次切换命令。节流避免连按 Esc
+    /// 反复探测/IPC。
+    pub(crate) fn force_english(&mut self) {
+        if !self.config.enabled || !cfg!(target_os = "linux") {
+            return;
+        }
+        const FORCE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(250);
+        let now = std::time::Instant::now();
+        if self
+            .last_force
+            .is_some_and(|at| now.duration_since(at) < FORCE_THROTTLE)
+        {
+            return;
+        }
+        self.last_force = Some(now);
+
+        for (backend, program) in [
+            (Backend::Fcitx5, "fcitx5-remote"),
+            (Backend::Fcitx, "fcitx-remote"),
+        ] {
+            let Ok(result) = self.runner.run(program, &[]) else {
+                continue;
+            };
+            if !result.success {
+                continue;
+            }
+            let Some(status @ (1 | 2)) = parse_fcitx_status(&result.stdout) else {
+                continue;
+            };
+            self.backend = Some(backend);
+            if status == 2 && self.runner.run(program, &["-c"]).is_ok_and(|r| r.success) {
+                // 不写 saved：外部窗口切回时用户并未经过 rvifm 的可编辑模式。
+            }
+            return;
+        }
+
+        let Ok(current) = self.runner.run("ibus", &["engine"]) else {
+            return;
+        };
+        if !current.success {
+            return;
+        }
+        let engine = String::from_utf8_lossy(&current.stdout).trim().to_owned();
+        self.backend = Some(Backend::Ibus);
+        if engine.is_empty() || engine == self.config.ibus_english_engine {
+            return;
+        }
+        let _ = self
+            .runner
+            .run("ibus", &["engine", &self.config.ibus_english_engine]);
     }
 
     /// 重新进入可编辑模式时恢复进入 Normal 前捕获的状态。
@@ -161,6 +218,8 @@ fn parse_fcitx_status(stdout: &[u8]) -> Option<u8> {
 enum WorkerCommand {
     EnterNormal,
     EnterEditable,
+    /// M47-6：防御性切英文（不覆盖已保存状态）。
+    ForceEnglish,
     Shutdown,
 }
 
@@ -183,6 +242,7 @@ impl ImeWorker {
                     match command {
                         WorkerCommand::EnterNormal => manager.enter_normal(),
                         WorkerCommand::EnterEditable => manager.enter_editable(),
+                        WorkerCommand::ForceEnglish => manager.force_english(),
                         WorkerCommand::Shutdown => {
                             manager.enter_editable();
                             break;
@@ -219,6 +279,14 @@ impl ImeWorker {
         #[cfg(target_os = "linux")]
         if let Some(tx) = &self.tx {
             let _ = tx.send(WorkerCommand::EnterEditable);
+        }
+    }
+
+    /// M47-6：请求防御性切英文（Normal 模式 Esc / 终端 FocusGained）。
+    pub(crate) fn force_english(&self) {
+        #[cfg(target_os = "linux")]
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(WorkerCommand::ForceEnglish);
         }
     }
 }
@@ -349,6 +417,36 @@ mod tests {
             },
         );
         manager.enter_normal();
+        manager.force_english();
         assert!(manager.runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn m476_force_english_does_not_overwrite_saved_state() {
+        // enter_normal 保存了中文态；随后 Esc/切回触发 force_english 时不得覆盖它，
+        // 回到可编辑模式仍须恢复（-o）。
+        let runner = FakeRunner::new([ok("2\n"), ok(""), ok("1\n"), ok("")]);
+        let mut manager = ImeManager::new(runner, ImeConfig::default());
+        manager.enter_normal();
+        manager.force_english();
+        manager.enter_editable();
+        let calls = manager.runner.calls.borrow();
+        assert_eq!(calls[1], ("fcitx5-remote".into(), vec!["-c".into()]));
+        assert_eq!(calls[2], ("fcitx5-remote".into(), vec![]));
+        assert_eq!(calls[3], ("fcitx5-remote".into(), vec!["-o".into()]));
+    }
+
+    #[test]
+    fn m476_force_english_switches_ibus_and_throttles() {
+        let runner = FakeRunner::new([Err(()), Err(()), ok("rime\n"), ok("")]);
+        let mut manager = ImeManager::new(runner, ImeConfig::default());
+        manager.force_english();
+        manager.force_english(); // 节流窗口内直接返回
+        let calls = manager.runner.calls.borrow();
+        assert_eq!(calls.len(), 4, "第二次调用被节流: {calls:?}");
+        assert_eq!(
+            calls[3],
+            ("ibus".into(), vec!["engine".into(), "xkb:us::eng".into()])
+        );
     }
 }
