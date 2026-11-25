@@ -668,3 +668,18 @@
 - [x] M46-10 删除确认弹窗 yazi 风格重做（标题居中+图标+文件列表+固定高度+滚动条+j/k；见 SPEC M46-10；2026-11-24 完成：标题居中 ⚠ + 无提示文字 + 图标/类型色文件列表 + 6 行固定高度 + 右侧滚动条 + j/k 导航，m453c/m4610 测试，567 单测）
 - [x] M46-11 更新内置 help 文档（见 SPEC M46-11；2026-11-24 完成：help.txt 新增 M46 段并更新 :help/:extract/w/dd 行，GUIDE §11 配置生成说明 + 变化摘要，CHANGELOG [Unreleased] M46 小节；harness_check 通过）
 - [x] M46-12 更新导师模式测试项目与提示（见 SPEC M46-12；2026-11-24 完成：search_filter/command_line/archive_ops/file_ops/tutor_meta/core_nav/panes_sort 七个模块的 prompt/expected 同步 M46 变化，保持 13 模块 100 项；builtin_modules_parse_and_unique 绿）
+
+## M47 — 用户实测批次 3（2026-11-25 蒸馏；焦点化收尾 + 视觉间距 + 防御性 IME + 缺陷修复，见 SPEC M47 节）
+
+> 来源：用户 2026-11-25 实测反馈 7 条（「右栏仅导航」含 3 子项），按 AGENTS §8 蒸馏。编号沿用 M45/M46 用户实测批次先例取 M47。顺序：1→10（缺陷/焦点化先行，文档殿后）。**本批次不触发版本 bump 与 GitHub Release（用户指令）。**
+
+- [x] M47-1 目录/归档成员预览图标按层级缩进（见 SPEC M47-1；2026-11-25 完成：preview_indent + TUI viewer 缩进移到图标前，m471 双测试）
+- [ ] M47-2 `=` 过滤作用于焦点 pane + 顶部路径显示状态 + Esc 取消（见 SPEC M47-2）
+- [ ] M47-3 `:archive` 源=焦点栏、产物=对侧栏；`:extract` 焦点化核对（见 SPEC M47-3）
+- [ ] M47-4 剩余快捷键/冒号命令焦点化审计（见 SPEC M47-4）
+- [ ] M47-5 Frecency 面板样式融合焦点栏 + 新标题（见 SPEC M47-5）
+- [ ] M47-6 IME 启动/Normal Esc 防御性激活英文（见 SPEC M47-6）
+- [ ] M47-7 右栏顶部 `..` 行只高亮该行（见 SPEC M47-7）
+- [ ] M47-8 左右栏 `v` 多选状态各自独立（见 SPEC M47-8）
+- [ ] M47-9 双栏左侧留白 + 整行高亮覆盖间隙（见 SPEC M47-9）
+- [ ] M47-10 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M47-10）

@@ -4916,6 +4916,36 @@ fn render_highlights_cursor_row() {
     assert!(!buffer[(1, 2)].modifier.contains(Modifier::REVERSED));
 }
 
+#[test]
+fn m471_viewer_directory_icons_are_indented() {
+    // M47-1：TUI 目录预览（:view 分支）缩进必须在图标之前，而不是只缩进文件名。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("alpha.txt"), "").unwrap();
+    fs::create_dir(tmp.path().join("beta")).unwrap();
+    fs::write(tmp.path().join("beta/nested.txt"), "").unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let backend = ratatui::backend::TestBackend::new(60, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    let area = ratatui::layout::Rect::new(0, 0, 60, 12);
+    terminal
+        .draw(|f| crate::app::preview::render_view_path(f, &state, tmp.path(), area, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut found = 0;
+    for y in 0..12u16 {
+        let row: String = (1..59u16)
+            .map(|x| buf[(x, y)].symbol().to_owned())
+            .collect();
+        if !row.contains("alpha.txt") && !row.contains("nested.txt") {
+            continue;
+        }
+        found += 1;
+        let leading = row.chars().take_while(|c| c.is_whitespace()).count();
+        assert!(leading >= 2, "图标前应有缩进（实际 {leading}）: {row:?}");
+    }
+    assert_eq!(found, 2, "应同时渲染顶层与嵌套条目");
+}
+
 // ── M8-12：跳转选择器（o 合一 / :j 仅目录 / :J 仅文件） ─────────────────
 
 fn scored(path: &str, topic: &str, score: f64) -> crate::frecency::ScoredEntry {

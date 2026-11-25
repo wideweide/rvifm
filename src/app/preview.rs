@@ -81,13 +81,15 @@ pub(crate) fn render_view_path(
                 .next()
                 .unwrap_or(&item.name)
                 .to_owned();
+            // M47-1：缩进放在图标之前（原实现只缩进文件名，图标全部贴左边缘）。
+            let indent = "  ".repeat(depth + 1);
             let label = if item.is_dir {
-                format!("{}{}/", "  ".repeat(depth), leaf)
+                format!("{leaf}/")
             } else {
-                format!("{}{}", "  ".repeat(depth), leaf)
+                leaf
             };
             let spans = vec![
-                Span::from(format!("{} ", item.icon.glyph)),
+                Span::from(format!("{indent}{} ", item.icon.glyph)),
                 Span::styled(label, filetype_style(item.filetype_class())),
             ];
             lines.push(Line::from(spans));

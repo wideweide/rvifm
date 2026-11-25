@@ -1425,3 +1425,17 @@ rvifm record  → 静默记录访问
 - **M46-9 实现决策**：`.deb` 不引入新 crate——手写 ar 头解析（60 字节头 + 偶数对齐）后把 `data.tar.*` 解码为内存字节，经新增 `Decoder::from_bytes` / `TarFs::from_bytes` 复用既有 tar 索引与读取逻辑；VFS 以虚拟目录 `data/` 暴露，导航层仍按叶子名拼接 inner 路径，无需改 tab.rs。`.rar` 走外部只读工具（bsdtar → unrar → 7z），缺失返回含「请先解压后浏览」的可读错误（保留旧 fix3 用例语义）；`is_unsupported_archive` 现恒 false，仅为兼容预览回退调用保留。真实工具可用性与大包性能待用户补验。
 - **M46-7 测试隔离**：宿主环境存在 `TMUX`，故 `:help` 新窗口路径在既有 `exec_q_cd_help_unified_parse` 用例中显式设 `help_in_new_window=false` 以确定性覆盖应用内分支（AUDIT-14 原则）；新窗口路径用 `rvifm help` CLI 冒烟覆盖，不依赖真实终端。
 - **M46-5 实施中发现（观察项，未在批次范围）**：`make_test_zip` 夹具含显式目录条目时，`:extract` 会把成员路径拼成 `src/src/main.rs` 并报"条目不存在"——`ZipFs::list` 返回全路径而 `extract_members` 又追加父目录前缀。属既有缺陷，与"刷新"无关；本批次用仅含文件的夹具绕开，后续批次单独登记修复。
+
+### 2026-11-25 — M47 用户实测批次蒸馏（7 条反馈，照例先蒸馏后执行）
+
+- **编号**：沿用 M45/M46 用户实测批次先例取 M47。范围 = 预览缩进 / 焦点化收尾（`=`/`:archive`/`:extract`/剩余快捷键）/ frecency 面板融合 / IME 防御性激活 / 右栏 `..` 高亮 / 每栏独立选择 / 栏间距高亮。**用户明确指令：本批次只提交并推送代码，不 bump 版本、不推送 tag、不触发 GitHub Release。**
+- **M47-1 根因**：TUI 目录预览（`app/preview.rs::render_view_path`）把 `"  ".repeat(depth)` 加在文件名前、图标仍在最左列；共享预览（`preview.rs`）已有 2 空格基础缩进但嵌套成员不分层。裁决：统一为「缩进在图标之前、按路径层级递增」，显示层专用。
+- **M47-2 根因**：`filter` 只存在 `Tab`（左栏字段），`Pane` 无该字段，且 `Tab::refresh` 只在左栏 `entries` 上 retain；`dispatch_right_pane` 只投影 5 个字段不含 `filter`，`=` 返回的 `Outcome::EnterFilter` 在投影撤销后才被 `mod.rs` 处理 → 永远写左栏。裁决：`Pane` 增 `filter`，`apply_filter` 按焦点写对应 pane；顶部路径显示状态栏指示移自 `render.rs:2004-2007`；Normal 模式 Esc 清焦点栏过滤。
+- **M47-3 根因**：`archive_plan` 源取 `tab.tags`/`tab.visual_range()`/`tab.entries[tab.cursor]`（左栏）而 `base=physical_base()` 已焦点感知，产物落焦点栏；`:extract` 目标已默认对侧（`extract_dest`）但源归档恒取左栏光标。裁决：源改焦点栏、产物改对侧栏；`:extract` 源改焦点栏。
+- **M47-4 根因**：`dispatch_right_pane` 仅投影 location/entries/cursor/scroll/on_parent_row；`keys.rs` 右栏早退块先处理 `/`、`:`、`g`、`n`/`N` 后落到 `handle_right_key`（导航 only）；exec.rs 多处命令（`selected_names`/`quickjump`/`mark_set`/`:sort`/`:select` 等）直接读左栏字段。裁决：增量改为焦点感知，不恢复「右栏仅导航」限制；能力边界（归档只读、远端白名单）保留。
+- **M47-5 根因**：`render_frecency_panes` 用 `Block::bordered()` + `pane_border_style(true)` 产生弹出观感；标题缺模式后缀；点击命中几何同用 bordered inner，改无边框需同步命中。
+- **M47-6 根因**：`ImeWorker::start` 只在启动时发一次 `EnterNormal`，之后仅在 `ime_editable_mode(&mode)` 翻转时切英文；Normal 下 Esc（`keys.rs:1494-1503`）不改 mode、不触发；从其它窗口切回时无焦点事件处理。且 `ImeManager::enter_normal` 有 `saved.is_some()` 守卫，重复发送无效。裁决：新增不覆盖 `saved` 的 `force_english` 通道（新 WorkerCommand），触发点 = 启动 + Normal 模式 Esc（终端焦点事件不可靠，不以桌面级监听替代）；节流靠「查询后仅在非英文时发切换命令」天然幂等；不修改 FIX-9 既有模式边界语义。
+- **M47-7 根因**：`render_right_pane` 的 `..` 行按 `on_parent_row` 反显（正确），但条目高亮在 `idx == cursor` 时无条件 `REVERSED`（缺 `!on_parent_row` 守卫），与左栏 `ListState` 守卫不对称。
+- **M47-8 根因**：`visual`/`tags` 是 `Tab` 级共享字段，左右渲染器都无条件 `tab.tags.contains(...)`，右栏多选后切焦点左栏仍读到同一集合。裁决：`Pane` 增 `visual`/`tags`，`dispatch_right_pane` 一并投影，使键盘管道仍操作左栏字段（实为焦点栏数据）；渲染端各读自己 pane 的集合；exec.rs 命令显式按焦点取集合。
+- **M47-9 裁决**：采用「列表项前增加前导空白 + 整行高亮天然覆盖该空白」的低风险方案；不改动 `pane_layout` 的 gap 宽度（大量 TestBackend 几何断言依赖现有列坐标），避免无关回归。
+- **排序**：1→10，缺陷/焦点化先行，文档殿后；人工终端类验证沿用既有 deferred 口径。

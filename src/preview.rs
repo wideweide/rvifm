@@ -254,6 +254,17 @@ fn archive_members(path: &Path) -> Result<ArchivePreviewData, String> {
     })
 }
 
+/// M47-1：预览条目的图标缩进。按路径层级逐级缩进（基础一级 2 空格），
+/// 只作用于显示层，不改变条目内容、排序或导航。
+fn preview_indent(entry_path: &str) -> String {
+    let depth = entry_path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .count()
+        .saturating_sub(1);
+    "  ".repeat(1 + depth)
+}
+
 /// M46-8：把缓存的成员数据渲染成行（廉价，可每帧执行）。
 fn archive_lines_from_data(path: &Path, data: &ArchivePreviewData, max_lines: usize) -> Preview {
     if data.too_large {
@@ -271,7 +282,11 @@ fn archive_lines_from_data(path: &Path, data: &ArchivePreviewData, max_lines: us
     for (p, is_dir) in items.iter().take(max_lines.saturating_sub(1)) {
         let label = if *is_dir { format!("{p}/") } else { p.clone() };
         let icon = crate::icons::icon_for_active(std::path::Path::new(p));
-        lines.push(Line::from(format!("  {} {label}", icon.glyph)));
+        lines.push(Line::from(format!(
+            "{} {} {label}",
+            preview_indent(p),
+            icon.glyph
+        )));
     }
     if items.len() > max_lines.saturating_sub(1) {
         lines.push(Line::from(format!(
@@ -313,7 +328,11 @@ fn directory_preview(path: &Path, max_lines: usize) -> Preview {
                 // M9-4：归档/预览共用同一 devicons 图标 + 激活主题。
                 let full = path.join(name);
                 let icon = crate::icons::icon_for_active(&full);
-                lines.push(Line::from(format!("  {} {label}", icon.glyph)));
+                lines.push(Line::from(format!(
+                    "{} {} {label}",
+                    preview_indent(name),
+                    icon.glyph
+                )));
             }
             if names.len() > max_lines.saturating_sub(1) {
                 lines.push(Line::from(format!(
@@ -599,6 +618,40 @@ mod tests {
         assert!(texts[0].contains("目录"), "first line: {}", texts[0]);
         assert!(texts.iter().any(|t| t.contains("adir/")));
         assert!(texts.iter().any(|t| t.contains("f.txt")));
+    }
+
+    #[test]
+    fn m471_preview_icons_are_indented_by_depth() {
+        // M47-1：图标前必须有随层级递增的缩进（基础一级 2 空格）。
+        assert_eq!(preview_indent("f.txt"), "  ");
+        assert_eq!(preview_indent("src/main.rs"), "    ");
+        assert_eq!(preview_indent("a/b/c.txt"), "      ");
+        let tmp = TempDir::new().unwrap();
+        let zip = tmp.path().join("nested.zip");
+        crate::archive::make_test_zip(&zip);
+        let texts = render_preview(&zip, 20).line_texts();
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.starts_with("  ") && !t.starts_with("    ") && t.contains("readme.md")),
+            "顶层成员基础缩进: {texts:?}"
+        );
+        let nested = archive_lines_from_data(
+            std::path::Path::new("nested.zip"),
+            &ArchivePreviewData {
+                members: vec![("src/main.rs".to_owned(), false)],
+                too_large: false,
+            },
+            20,
+        );
+        assert!(
+            nested
+                .line_texts()
+                .iter()
+                .any(|t| t.starts_with("    ") && t.contains("src/main.rs")),
+            "嵌套成员更深缩进: {:?}",
+            nested.line_texts()
+        );
     }
 
     #[test]
