@@ -709,7 +709,7 @@
 - [x] M49-1 LAYOUT-1 frecency 搜索左/预览右固定布局（见 SPEC M49-1；2026-11-26 完成：共享 preview_layout_areas + FrecencyPane 预览焦点态 + m491 测试）
 - [x] M49-2 LAYOUT-2 `:view` 预览固定右侧（见 SPEC M49-2；2026-11-26 完成：render/render_right_pane/preview_path_with 统一固定右侧，动态对侧用例改 fixed_side=false）
 - [x] M49-3 LAYOUT-3 `[preview] fixed_side` 配置（默认 true，新会话生效）（见 SPEC M49-3；2026-11-26 完成：PreviewConfig + config.default.toml，渲染/点击同源读取）
-- [ ] M49-4 LAYOUT-4 布局文档（GUIDE/SPEC/NOTES/ACCEPTANCE）（见 SPEC M49-4）
+- [x] M49-4 LAYOUT-4 布局文档（GUIDE/SPEC/NOTES/ACCEPTANCE）（见 SPEC M49-4；2026-11-26 完成：GUIDE §2.4/§3 与 NOTES 决策同步，SPEC/ACCEPTANCE 已登记）
 - [ ] M49-5 `:gitui` → `:gi`（保留 `:gitui` 兼容别名）（见 SPEC M49-5）
 - [ ] M49-6 列表左侧留白收窄至约图标半宽（1 空格）（见 SPEC M49-6）
 - [ ] M49-7 可视模式 `D` 永久删除选中项（见 SPEC M49-7）

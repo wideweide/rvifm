@@ -1114,7 +1114,7 @@
 - [x] M49-1 `o`/`:j`/`:J` 搜索列表固定左、预览固定右；Tab 进右预览（j/k 滚动、/ 与 n/N 搜索），再 Tab 回左；预览位置不随焦点移动。（2026-11-26：m491_frecency_preview_fixed_on_right 通过）
 - [x] M49-2 `w`/`:view` 预览固定右、左侧保持目录列表；Tab 进/出预览；再按 w 恢复双栏目录列表；与 M49-1 预览区位置一致。（2026-11-26：m34_4 用例显式 fixed_side=false，固定侧由 m491 覆盖）
 - [x] M49-3 `[preview] fixed_side` 默认 true；false 恢复动态对侧；仅新打开会话生效。（2026-11-26：PreviewConfig 默认值 + 旧动态用例改显式 false）
-- [ ] M49-4 GUIDE/SPEC/NOTES/ACCEPTANCE 布局描述一致。
+- [x] M49-4 GUIDE/SPEC/NOTES/ACCEPTANCE 布局描述一致。（2026-11-26：GUIDE §2.4/§3 与 NOTES 决策记录同步）
 - [ ] M49-5 `:gi` 可用，`:gitui` 兼容别名仍可用；文档同步。
 - [ ] M49-6 列表左侧留白约图标半宽且不超过图标宽，高亮覆盖留白。
 - [ ] M49-7 `v` 多选 `D` 永久删除选中项（强确认、不可恢复），既有 `DD` 不回归。

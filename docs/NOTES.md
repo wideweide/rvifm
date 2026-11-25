@@ -1466,3 +1466,10 @@ rvifm record  → 静默记录访问
   - 根因②：`gi`/`:gitui` 在非 git 仓库仍启动 `gitui`，其「Not a git repository. Create one here?」在无 TTY 的新窗口里循环刷屏。修法：启动前用 `git_root_of(focus_base)` 判定，非仓库直接给可读错误、不 spawn。
   - 另移除 `tmux select-window -t :` 兜底调用（目标表达式有歧义，`new-window` 不带 `-d` 本身已选中新窗口）。
 - **排序**：1→13，缺陷/交互先行，文档殿后。
+
+### 2026-11-26 — M49 用户实测批次蒸馏（LAYOUT-1..4 + 反馈 124–141）
+
+- **布局决策（LAYOUT-1..3）**：frecency 与 `:view` 默认预览**固定右侧**，搜索/目录列表固定左侧——理由是空间稳定性优先于视线距离（预览区不随焦点切换跳动，利于快速瞥确认内容）；对齐 yazi/ranger。动态对侧（焦点栏搜索、对侧预览）保留为 `[preview] fixed_side = false` 配置选项，不作默认。
+- **共享实现**：抽出 `render::preview_layout_areas()` 作为两模式共用的位置语义；`FrecencyPane` 增 `preview_focus/preview_scroll/preview_query/preview_match`，Tab 在原布局只切焦点归属、不切 pane，预览焦点复用 viewer 渲染链（滚动/搜索/高亮）。`Tab::preview_path_with(fixed_side)` 在固定模式恒取左栏光标文件。
+- **热切换**：配置只影响新打开的会话（用户明确授权「热切换成本高则按新会话交付」）；已打开的 frecency/`:view` 不重排。
+- **不发布**：沿用用户 2026-11-25 口径，本批次只提交并推送，不 bump / tag / Release。
