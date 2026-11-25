@@ -1106,5 +1106,5 @@
 - [x] M48-9 Normal 模式下即使无 FocusGained 也周期性切英文，不覆盖保存状态、不与文本输入模式竞争。（2026-11-25：m489_ime_periodic_probe_respects_editable_modes 通过）
 - [x] M48-10 tutor 列表 `/` 搜索跳转、`d` reset 并刷新、有记录模块只显示错题、模块结束 `Ctrl+N` 回到列表；13 模块 100 项可解析。（2026-11-25：m4810 + tutor_meta 条目同步通过）
 - [x] M48-11 删除确认框内底部状态栏 + 框内右侧滚动条，交互键不变。（2026-11-25：confirm_dialog 返回独立 footer + render_confirm 分栏布局；m453c/m4610 通过）
-- [ ] M48-12 `:help` 新窗口真实打开并激活；`rv help` 以可搜索/高亮的查看器形态呈现，覆盖层不透明可搜索。
+- [x] M48-12 `:help` 新窗口真实打开并激活（M48-1 去 `-d` + `-c` 焦点路径）；`rv help` 以可搜索/高亮的查看器形态呈现，覆盖层不透明可搜索。（2026-11-25：run_help_viewer + 无 TTY 回退，CLI 冒烟通过）
 - [ ] M48-13 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步；harness_check 通过；未触发版本 bump/tag/GitHub Release。

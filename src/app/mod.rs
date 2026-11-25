@@ -636,7 +636,25 @@ pub fn help_text() -> &'static str {
 }
 
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
-pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
+pub fn run(terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
+    run_with_initial_mode(terminal, InputMode::default())
+}
+
+/// M48-12：`rvifm help` 以查看器模式启动（高亮 + 页内搜索），而非打印即退出。
+pub fn run_help_viewer(terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
+    run_with_initial_mode(
+        terminal,
+        InputMode::HelpView {
+            scroll: 0,
+            search: None,
+        },
+    )
+}
+
+fn run_with_initial_mode(
+    mut terminal: ratatui::DefaultTerminal,
+    initial_mode: InputMode,
+) -> std::io::Result<()> {
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
     let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
     // M47-6：终端焦点事件用于从其它窗口切回时防御性切英文（不支持的终端
@@ -687,7 +705,7 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let layers = config::keymap_layers();
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_mode_maps(keymap, &config::keymap_layers());
-    let mut mode = InputMode::default();
+    let mut mode = initial_mode;
     let ime_worker = crate::ime::ImeWorker::start(state.config.ime.clone());
     // Worker 启动时即处理初始 Normal 状态；后续转换由事件循环边界驱动。
     let mut ime_was_editable = ime_editable_mode(&mode);

@@ -21,10 +21,22 @@ fn main() -> std::io::Result<()> {
             print_help();
             return Ok(());
         }
-        // M46-7：输出内嵌帮助正文（供 :help 在 tmux/screen 新窗口打开）。
+        // M48-12：以查看器形态打开内嵌帮助（高亮 + 页内 / 搜索 + q/Esc 退出）。
+        // 无 TTY（CI 冒烟/管道）时退回纯文本输出，保持脚本可用性。
         Some("help") => {
-            print!("{}", app::help_text());
-            return Ok(());
+            use std::io::IsTerminal;
+            if !std::io::stdout().is_terminal() {
+                print!("{}", app::help_text());
+                return Ok(());
+            }
+            let terminal = ratatui::init();
+            let result = app::run_help_viewer(terminal);
+            ratatui::restore();
+            let _ = ratatui::crossterm::execute!(
+                std::io::stdout(),
+                ratatui::crossterm::event::DisableMouseCapture
+            );
+            return result;
         }
         // M8-3：frecency 写入入口——record 是唯一写入入口（红线）。
         Some("record") => {
@@ -89,7 +101,7 @@ fn print_help() {
          -h, --help     显示帮助\n  \
          -V, --version  显示版本\n\n\
          子命令:\n  \
-         help                       输出完整帮助正文（应用内 :help 同款）\n  \
+         help                       以查看器打开完整帮助（支持 / 搜索，q 退出）\n  \
          record --topic dir <path>  记录一次已发生的访问（仅 cd/打开成功后调用）\n  \
          pick                       只读模糊选择器（stdin 候选 → stdout 选中）\n  \
          maintenance compact        合并事件到 snapshot（手动 compaction）\n\n\

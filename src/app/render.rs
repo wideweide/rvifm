@@ -438,7 +438,17 @@ fn render_help_overlay(
         .iter()
         .skip(scroll)
         .take(body)
-        .map(|l| Line::from((*l).to_owned()))
+        .map(|l| {
+            // M48-12：查看器式高亮——`== 段名 ==` 标题行着色，正文保持原样。
+            if l.starts_with("==") && l.ends_with("==") {
+                Line::from(Span::styled(
+                    (*l).to_owned(),
+                    Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))
+            } else {
+                Line::from((*l).to_owned())
+            }
+        })
         .collect();
     if let Some(q) = input {
         visible.push(Line::from(vec![
