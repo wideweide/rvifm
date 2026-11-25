@@ -2097,6 +2097,43 @@ fn extract_members(
     roots: &[String],
     dest_dir: &Path,
 ) -> Result<usize, Vec<String>> {
+    extract_members_with_strip(state, host, roots, dest_dir, "")
+}
+
+/// M48-6：归档内多条选中路径的最长公共目录前缀（用于剥离上级路径）。
+fn common_inner_prefix(paths: &[String]) -> String {
+    let segs: Vec<Vec<&str>> = paths
+        .iter()
+        .map(|p| {
+            p.rsplit_once('/')
+                .map(|(parent, _)| parent.split('/').filter(|s| !s.is_empty()).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    let min_len = segs.iter().map(Vec::len).min().unwrap_or(0);
+    let mut out = Vec::new();
+    for i in 0..min_len {
+        let seg = segs[0][i];
+        if segs.iter().all(|s| s[i] == seg) {
+            out.push(seg);
+        } else {
+            break;
+        }
+    }
+    out.join("/")
+}
+
+/// M48-6：带归档内前缀剥离的解压实现。yy 粘贴传 strip=选中项所在的 inner
+/// 前缀：成员 `a/c.json` 在内层 `a` 中 yy 后落盘为 `c.json`（不重建 `a/`）；
+/// `:extract` 全量解压传 strip="" 保留原层级。目录成员递归展开时不重复拼接
+/// 后端返回的完整归档内路径（原实现把 `inner/entry.path` 二次拼接导致读不到）。
+fn extract_members_with_strip(
+    state: &mut AppState,
+    host: &Path,
+    roots: &[String],
+    dest_dir: &Path,
+    strip: &str,
+) -> Result<usize, Vec<String>> {
     let mut archive_fs =
         crate::archive::open_dispatch(host).map_err(|e| vec![format!("归档打开失败: {e}")])?;
     let mut stack: Vec<String> = Vec::new();
@@ -2108,12 +2145,28 @@ fn extract_members(
             Err(_) => stack.push(root.clone()), // 隐式目录 → 试列
         }
     }
+    let strip_prefix = strip.trim_matches('/');
     let mut applied = 0usize;
     let mut failures: Vec<String> = Vec::new();
     let tab_id = state.active;
     // 显式文件成员。
     for member in direct {
-        let dest = dest_dir.join(&member);
+        // M48-6：剥离选中项所在的归档内前缀，只取相对文件名落盘。
+        let member_rel = if strip_prefix.is_empty() {
+            member.clone()
+        } else {
+            member
+                .strip_prefix(strip_prefix)
+                .map(|s| s.trim_start_matches('/').to_owned())
+                .unwrap_or_else(|| {
+                    member
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(member.as_str())
+                        .to_owned()
+                })
+        };
+        let dest = dest_dir.join(&member_rel);
         if !normalize_lexical(&dest).starts_with(dest_dir) {
             failures.push(format!("zip-slip 拒绝: {member}"));
             continue;
@@ -2146,16 +2199,27 @@ fn extract_members(
             }
         };
         for entry in entries {
-            let member_path = if inner.is_empty() {
-                PathBuf::from(&entry.path)
-            } else {
-                PathBuf::from(format!("{inner}/{}", entry.path))
-            };
+            // M48-6：后端 list 返回的 entry.path 已是完整归档内路径——原实现
+            // 再拼 inner 前缀造成 `a/a/c.json` 并读取失败（目录递归只建空壳）。
+            let member_path = PathBuf::from(&entry.path);
             if entry.is_dir {
                 stack.push(member_path.to_string_lossy().into_owned());
                 continue;
             }
-            let dest = dest_dir.join(&member_path);
+            // 相对 strip 前缀 + 相对选中目录的层级（粘贴只取被选目录子树）。
+            let rel = member_path
+                .to_string_lossy()
+                .strip_prefix(strip_prefix)
+                .map(|s| s.trim_start_matches('/').to_owned())
+                .unwrap_or_else(|| {
+                    member_path
+                        .to_string_lossy()
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .to_owned()
+                });
+            let dest = dest_dir.join(&rel);
             if !normalize_lexical(&dest).starts_with(dest_dir) {
                 failures.push(format!("zip-slip 拒绝: {}", member_path.display()));
                 continue;
@@ -4269,7 +4333,12 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .collect();
         let tab_id = state.active;
-        match extract_members(state, host, &roots, &base) {
+        // M48-6：yy 的路径含选中项所在 inner 前缀，剥离它使 `a/c.json` 只落
+        // `c.json`；目录成员在内部递归时保留相对结构（不再二次拼接前缀）。
+        // 多选时取所有成员 inner 前缀的最长公共前缀（否则不同前缀的条目会
+        // 被错误剥离，如 src/main.rs + readme.md → 公共前缀为空）。
+        let strip = common_inner_prefix(&roots);
+        match extract_members_with_strip(state, host, &roots, &base, &strip) {
             Ok(applied) => {
                 // M46-5：粘贴解压后立即刷新目标 pane 列表。
                 crate::app::jobs::refresh_tab_panes(state, tab_id);

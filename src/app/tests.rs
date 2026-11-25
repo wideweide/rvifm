@@ -7693,6 +7693,49 @@ fn m453b_executable_enter_shows_hint_only() {
 
 #[cfg(unix)]
 #[test]
+fn m486_archive_paste_flattens_file_and_recurses_directory() {
+    // M48-6：归档内 yy 文件只落末段文件名；yy 目录递归展开子项；多选混合正确。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("bundle.zip");
+    crate::archive::make_test_zip(&zip);
+    let dest = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(dest.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let mut msg = None;
+
+    // 单文件成员：src/main.rs → 目标根目录只出现 main.rs（无 src/ 上级）。
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![PathBuf::from("src/main.rs")],
+        cut: false,
+        source: crate::state::YankSource::Archive { host: zip.clone() },
+    });
+    paste_yanked(&mut state, false, &mut msg);
+    assert!(dest.path().join("main.rs").exists(), "文件末段落盘");
+    assert!(!dest.path().join("src").exists(), "不得重建归档内上级目录");
+
+    // 目录成员：递归展开 main.rs（原实现只建空壳）。
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![PathBuf::from("src")],
+        cut: false,
+        source: crate::state::YankSource::Archive { host: zip.clone() },
+    });
+    paste_yanked(&mut state, false, &mut msg);
+    assert!(dest.path().join("src/main.rs").exists(), "目录成员递归解压");
+
+    // 多选混合：文件 + 目录同时正确。
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![PathBuf::from("src/main.rs"), PathBuf::from("readme.md")],
+        cut: false,
+        source: crate::state::YankSource::Archive { host: zip },
+    });
+    paste_yanked(&mut state, false, &mut msg);
+    assert!(dest.path().join("main.rs").exists());
+    assert!(dest.path().join("readme.md").exists());
+}
+
+#[test]
 fn m485_paste_conflict_uses_blocking_confirmation() {
     // M48-5：同名冲突不再只写状态栏，进入阻塞确认；取消不改文件。
     let src = TempDir::new().unwrap();
