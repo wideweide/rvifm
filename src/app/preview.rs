@@ -372,12 +372,11 @@ pub(crate) fn render_right_pane(
                 .filter(|q| !q.is_empty()),
         }
     };
-    let visual_range = if focused {
-        tab.visual
-            .map(|anchor| (anchor.min(tab.right.cursor), anchor.max(tab.right.cursor)))
-    } else {
-        None
-    };
+    // M47-8：右栏选择状态独立——不再读 Tab 级（左栏）visual/tags。
+    let visual_range = tab
+        .right
+        .visual
+        .map(|anchor| (anchor.min(tab.right.cursor), anchor.max(tab.right.cursor)));
     let items: Vec<ListItem> = tab
         .right
         .entries
@@ -476,7 +475,7 @@ pub(crate) fn render_right_pane(
                     Modifier::DIM
                 };
             }
-            if tab.tags.contains(&item.name) {
+            if tab.right.tags.contains(&item.name) {
                 modifiers |= Modifier::BOLD;
             }
             if modifiers != Modifier::empty() {

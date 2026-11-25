@@ -5073,6 +5073,66 @@ fn render_highlights_cursor_row() {
 }
 
 #[test]
+fn m478_selection_stays_in_its_pane_after_focus_switch() {
+    // M47-8：右栏 v/t 多选后切焦点到左栏，左栏不得呈现右栏的选择状态。
+    let tmp = TempDir::new().unwrap();
+    for name in ["a.txt", "b.txt"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('t'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().right.visual.is_some());
+    assert!(!state.active_tab().right.tags.is_empty());
+
+    press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+    assert!(state.active_tab().visual.is_none(), "左栏未被右栏选区污染");
+    assert!(state.active_tab().tags.is_empty(), "左栏未被右栏 tag 污染");
+    assert!(
+        state.active_tab().right.visual.is_some(),
+        "右栏保留自己的选区"
+    );
+    assert!(
+        !state.active_tab().right.tags.is_empty(),
+        "右栏保留自己的 tag"
+    );
+
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let left_bold =
+        (0..40u16).any(|x| (3..5).any(|y| buf[(x, y)].modifier.contains(Modifier::BOLD)));
+    let right_bold =
+        (41..80u16).any(|x| (3..5).any(|y| buf[(x, y)].modifier.contains(Modifier::BOLD)));
+    assert!(!left_bold, "左栏不应显示右栏的多选状态");
+    assert!(right_bold, "右栏应保留自己的多选状态");
+}
+
+#[test]
 fn m477_right_parent_row_does_not_double_highlight() {
     // M47-7：右栏 gg 到顶部时只高亮 `..`，第一条真实条目不高亮。
     let tmp = TempDir::new().unwrap();

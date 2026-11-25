@@ -1089,6 +1089,6 @@
 - [x] M47-5 `o`/`:j`/`:J` 面板无边框、背景与焦点栏目录区一致、无弹出观感；顶部路径为「Frecency - 高频目录/文件搜索 - Normal 模式」；候选高亮/预览/点击跳转与 `pick` 只读不回归。（2026-11-25：m475 无边框/点击同源 + m34_5 标题更新；窄栏标题自然截断）
 - [x] M47-6 Linux + `[ime] enabled` 下 TUI 启动处于 Normal 时调用一次英文激活（既有 `ImeWorker::start` 的 `EnterNormal`），Normal 下 Esc / 终端 FocusGained 再触发一次；已进入文本输入模式时不覆盖已保存输入法状态；注入 runner 断言调用次数与 250ms 节流，后端失败静默降级；退出恢复语义保留。（2026-11-25：m476 双测试 + `fix9_text_entry_modes_control_ime_transitions` 通过）
 - [x] M47-7 左右栏按 `gg` 到顶部时只高亮 `..` 行，第一条真实条目不高亮；两栏对称；TestBackend 回归断言。（2026-11-25：m477_right_parent_row_does_not_double_highlight 通过）
-- [ ] M47-8 右栏 `v` 多选后 `Tab`/`Space` 切到左栏，左栏无选中高亮、右栏选中集合保留；反之对称；批量操作作用于焦点栏，`t` tag 语义不变。
+- [x] M47-8 右栏 `v` 多选后 `Tab`/`Space` 切到左栏，左栏无选中高亮、右栏选中集合保留；反之对称；批量操作作用于焦点栏，`t` tag 语义不变。（2026-11-25：m478_selection_stays_in_its_pane_after_focus_switch 通过）
 - [ ] M47-9 左右列表左侧有可见留白且当前行/可视选择整行高亮覆盖留白区域；左右对称；列对齐与主题回归通过；TestBackend 几何断言。
 - [ ] M47-10 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步本批次；tutor 13 模块 100 项可解析；harness_check 通过；未触发版本 bump/tag/GitHub Release。
