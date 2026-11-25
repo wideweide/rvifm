@@ -131,7 +131,7 @@ fn mime_of(path: &Path) -> String {
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     let mime = match ext.as_str() {
-        "txt" | "md" | "markdown" | "csv" | "log" | "toml" | "yaml" | "yml" => "text/plain",
+        "txt" | "md" | "markdown" | "md5" | "csv" | "log" | "toml" | "yaml" | "yml" => "text/plain",
         "html" | "htm" => "text/html",
         "css" => "text/css",
         "js" | "mjs" => "text/javascript",
@@ -160,6 +160,38 @@ fn mime_of(path: &Path) -> String {
         _ => "application/octet-stream",
     };
     mime.to_owned()
+}
+
+/// M48-2：文本类文件判定（扩展名 + 有界魔数嗅探）。`.sh` 等带执行位的
+/// 文本文件须先按文本识别，不走「可执行文件仅提示」特例；`.md5` 补齐映射。
+pub(crate) fn is_text_like(path: &Path) -> bool {
+    const TEXT_EXTS: &[&str] = &[
+        "txt", "md", "markdown", "md5", "sh", "csv", "log", "toml", "yaml", "yml", "rs", "c", "h",
+        "cpp", "py", "go", "json", "xml", "ini", "conf",
+    ];
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if TEXT_EXTS.contains(&ext.as_str()) {
+        return true;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut buf = [0u8; 4096];
+    let Ok(n) = file.read(&mut buf) else {
+        return false;
+    };
+    let slice = &buf[..n];
+    // 空文件/纯控制字符不算文本（避免 `.exe` 空文件被误判后绕过可执行特例）。
+    !slice.is_empty()
+        && slice
+            .iter()
+            .any(|b| b.is_ascii_graphic() || *b == b'\n' || *b == b'\t')
+        && !slice.contains(&0)
+        && std::str::from_utf8(slice).is_ok()
 }
 
 /// AUDIT-7：mime 规则匹配——`*` 全匹配；`image/*` 前缀匹配；其余精确
@@ -341,6 +373,8 @@ mod tests {
         // AUDIT-7：内建 ext → mime 表覆盖常见类别；未知兜底。
         assert_eq!(mime_of(Path::new("/a/b.png")), "image/png");
         assert_eq!(mime_of(Path::new("/a/notes.md")), "text/plain");
+        // M48-2：.md5 按文本识别（原误判 octet-stream 导致按 Enter 无反应）。
+        assert_eq!(mime_of(Path::new("/a/sum.md5")), "text/plain");
         assert_eq!(mime_of(Path::new("/a/paper.PDF")), "application/pdf");
         assert_eq!(mime_of(Path::new("/a/clip.MP4")), "video/mp4");
         assert_eq!(mime_of(Path::new("/a/noext")), "application/octet-stream");
@@ -348,6 +382,21 @@ mod tests {
             mime_of(Path::new("/a/unknown.xyz")),
             "application/octet-stream"
         );
+    }
+
+    #[test]
+    fn m482_text_like_includes_shell_scripts_and_checksums() {
+        // M48-2：文本判定走扩展名 + 有界嗅探，不依赖执行位。
+        let dir = tempfile::TempDir::new().unwrap();
+        let sh = dir.path().join("run.sh");
+        std::fs::write(&sh, b"#!/bin/sh\necho hi\n").unwrap();
+        assert!(is_text_like(&sh));
+        let md5 = dir.path().join("sum.md5");
+        std::fs::write(&md5, b"d41d8cd98f00b204e9800998ecf8427e  a\n").unwrap();
+        assert!(is_text_like(&md5));
+        let bin = dir.path().join("data.bin");
+        std::fs::write(&bin, [0u8, 1, 2, 3]).unwrap();
+        assert!(!is_text_like(&bin));
     }
 
     #[test]

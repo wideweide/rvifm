@@ -7612,6 +7612,8 @@ fn audit7_block_opener_hands_off_to_pending_external() {
         name: Some("*.md".to_owned()),
         use_rules: vec!["edit".to_owned()],
     }];
+    // AUDIT-14：宿主可能处于 tmux，显式关闭新窗口路由以确定性覆盖挂起分支。
+    state.config.ui.terminal_in_new_window = false;
     // 目录优先排序：sub(0)、notes.md(1)、other.txt(2)。cursor=1 → .md。
     state.active_tab_mut().cursor = 1;
     let mut msg = None;
@@ -7686,6 +7688,47 @@ fn m453b_executable_enter_shows_hint_only() {
     let cmd = state.pending_external.take().expect("显式 run 绑定应执行");
     assert!(cmd.contains("run.exe"), "命令已展开: {cmd}");
     assert!(msg2.is_none(), "显式绑定不提示: {msg2:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn m482_executable_text_file_enters_text_opener() {
+    // M48-2：带执行位的 .sh 仍按文本打开，不再落入「可执行文件仅提示」。
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = TempDir::new().unwrap();
+    let script = tmp.path().join("run.sh");
+    fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.ui.terminal_in_new_window = false; // AUDIT-14 测试隔离
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "run.sh")
+        .unwrap();
+    assert!(state.active_tab().entries[idx].is_exec, "执行位应被识别");
+    state.active_tab_mut().cursor = idx;
+    state.config.opener.insert(
+        "edit".to_owned(),
+        crate::opener::OpenerDef {
+            run: "echo %s".to_owned(),
+            block: true,
+            desc: None,
+        },
+    );
+    state.config.open.prepend_rules = vec![crate::opener::OpenRule {
+        mime: Some("text/*".to_owned()),
+        name: None,
+        use_rules: vec!["edit".to_owned()],
+    }];
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert!(!matches!(msg.as_deref(), Some("可执行文件，请在终端执行")));
+    assert!(
+        state.pending_external.is_some() || msg.is_some(),
+        "文本 opener 被消费或已开新窗"
+    );
 }
 
 #[test]

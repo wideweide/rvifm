@@ -4133,7 +4133,10 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
             crate::opener::resolve_open_actions(&state.config.open, &state.config.opener, &path)
                 .iter()
                 .any(|a| matches!(a, crate::opener::OpenAction::Run { .. }));
-        if is_exec && !has_run_binding {
+        // M48-2：`.sh`/`.txt`/`.md5` 等文本类先按文本识别，即使带执行位也不
+        // 落入「可执行文件仅提示」特例（默认特例本身保留）。
+        let text_like = crate::opener::is_text_like(&path);
+        if is_exec && !has_run_binding && !text_like {
             *msg = Some("可执行文件，请在终端执行".to_owned());
             return;
         }
@@ -4141,10 +4144,24 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         // （block=true 交 run 循环挂起），未命中/系统项回退系统 opener。
         match crate::opener::open_with_layers(&state.config.open, &state.config.opener, &path) {
             Ok(Some(cmd)) => {
-                // block=true：命令交由 run 循环挂起执行；frecency 记录在此
-                // 不做（退出码未知，避免记入未发生的访问）。
-                state.pending_external = Some(cmd);
-                *msg = None;
+                // M48-2：文本编辑类 block 规则优先在新终端窗口执行，避免 vim
+                // 覆盖 rvifm 界面；无复用器/关闭时回退挂起 TUI 的旧行为。
+                if text_like && state.config.ui.terminal_in_new_window {
+                    let run_dir = state.active_tab().focus_base().to_path_buf();
+                    match run_external_target_with_dir(&state.config.ui, &cmd, &run_dir) {
+                        ExternalRun::Multiplexer(m) => {
+                            *msg = Some(m);
+                            return;
+                        }
+                        ExternalRun::CurrentPane(cmd) => {
+                            state.pending_external = Some(cmd);
+                            *msg = None;
+                        }
+                    }
+                } else {
+                    state.pending_external = Some(cmd);
+                    *msg = None;
+                }
             }
             Ok(None) => {
                 // M21-E8：打开成功记录文件访问（o/:J 可见）。
