@@ -1008,6 +1008,11 @@ pub(crate) fn handle_key(
             Some(Action::GitUi) => {
                 // M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit；复用
                 // M18-4 分流（terminal_in_new_window 语义与 :! / 自定义命令一致）。
+                // M48-FIX：非 git 仓库不启动（否则 gitui 反复提示建仓库）。
+                if crate::app::exec::git_root_of(state.active_tab().focus_base()).is_none() {
+                    *msg = Some("gi: 当前焦点目录不在 git 仓库中".to_owned());
+                    return Some(Outcome::Continue);
+                }
                 return Some(match crate::git::find_git_tui() {
                     Some(bin) => {
                         let ui = state.config.ui.clone();

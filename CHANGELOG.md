@@ -7,6 +7,8 @@
 
 ### M48 用户实测批次 4（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
+- 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
+
 - 外窗：`s`/`:!`/`gi`/`:help` 新窗口前台激活，起始目录取焦点 pane（tmux 去 `-d` + `-c`；screen cd + next）。文本编辑类 opener 优先新窗口，`.md5` MIME 补齐，`.sh` 执行位文本优先。
 - 浏览：右栏文件 `l`/Enter/再击走共享 opener；`v` 多选 `y` 写 yank 缓冲；粘贴冲突改阻塞式确认弹窗。
 - 归档：成员粘贴剥离公共 inner 前缀（不重建上级目录）、目录递归解压、多选混合正确；`w` 预览可选外部 `unzip -Z1`/`tar -tf`/`7z l -ba` 快速列目录（4MB 输出护栏，缺工具回退内置）。

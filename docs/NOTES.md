@@ -1460,4 +1460,9 @@ rvifm record  → 静默记录访问
 - **M48-7 外部预览裁决**：不调用 `vim`/`view` 本身（会覆盖 TUI 且无法与预览窗格同源），只借 vifm `fileviewer` 的「调外部只读列表命令」思路；`unzip -Z1`/`tar -tf`/`7z l -ba` 固定参数、`Stdio::null()` stderr、4MB stdout 上限；`[preview] archive_external_listing` 默认 true，缺失/失败/超限静默回退内置 VFS；不引入新 crate。
 - **M48-8 行为变更**：`:archive` 无参从「打开对话框」改为「按默认直接执行」（zip + 文件名去扩展名 + `.zip` 后缀），交互入口改 `-i`；`archive_plan` 统一按格式补扩展名，避免预填名与源文件名冲突导致回车失败（这正是用户实测「任意字段回车不执行」的根因之一）。
 - **M48-6 根因**：归档后端 `list()` 返回的 `ArchiveEntry.path` 已是完整归档内路径，`extract_members` 再拼 `inner/` 造成 `a/a/c.json` 读取失败（目录只建空壳）；yy 固化 `base_inner` 前缀又使单文件落盘成 `a/c.json`。修法：目录分支直接用 `entry.path`；粘贴时取所有选中路径的最长公共 inner 前缀剥离。
+- **M48 外窗回归修复（2026-11-25，用户实测反馈）**：
+  - 现象：外窗执行时反复弹出 `sh: 0: getcwd() failed: No such file or directory` 与 `Not in a git repository. Create one here? (y/N)`（20+ 次）。
+  - 根因①：`tmux new-window -c <focused dir>` 未校验目录存在——焦点栏目录被删除/移走后传给新 shell 的 cwd 无效；`sh` 启动即 getcwd 失败，其启动脚本反复报错。修法：`safe_external_dir` 逐级回退（焦点目录 → 当前目录 → HOME → 临时目录），只把真实存在的目录交给 `-c`。
+  - 根因②：`gi`/`:gitui` 在非 git 仓库仍启动 `gitui`，其「Not a git repository. Create one here?」在无 TTY 的新窗口里循环刷屏。修法：启动前用 `git_root_of(focus_base)` 判定，非仓库直接给可读错误、不 spawn。
+  - 另移除 `tmux select-window -t :` 兜底调用（目标表达式有歧义，`new-window` 不带 `-d` 本身已选中新窗口）。
 - **排序**：1→13，缺陷/交互先行，文档殿后。

@@ -80,6 +80,26 @@ pub(crate) fn run_external_target_with_dir(
 /// AUDIT-14：注入复用器形态的判定（`run_external_target` 与测试共用）。
 /// 注意：`cfg.terminal_in_new_window=true` 且 mux 有值时会真实 spawn 复用器
 /// （输出已静音）；测试只注入会短路到 `CurrentPane` 的组合。
+/// M48-FIX：新窗口起始目录必须是真实存在的目录。焦点 pane 指向已被删除/移走的
+/// 目录时，`tmux -c <不存在>` 会让新 shell 报 `getcwd() failed`，进而触发其启动
+/// 脚本反复报错。逐级回退：焦点目录 → 当前目录 → HOME → 系统临时目录。
+pub(crate) fn safe_external_dir(dir: &std::path::Path) -> std::path::PathBuf {
+    if dir.is_dir() {
+        return dir.to_path_buf();
+    }
+    if let Ok(cwd) = std::env::current_dir()
+        && cwd.is_dir()
+    {
+        return cwd;
+    }
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from)
+        && home.is_dir()
+    {
+        return home;
+    }
+    std::env::temp_dir()
+}
+
 /// AUDIT-14 注入版 + M48-1 起始目录：测试可指定 mux 形态而不受宿主环境影响。
 pub(crate) fn run_external_target_with_and_dir(
     mux: Option<MuxKind>,
@@ -87,6 +107,8 @@ pub(crate) fn run_external_target_with_and_dir(
     cmd: &str,
     dir: &std::path::Path,
 ) -> ExternalRun {
+    let dir = safe_external_dir(dir);
+    let dir = dir.as_path();
     if cfg.terminal_in_new_window {
         match mux {
             Some(MuxKind::Tmux) => {
@@ -98,12 +120,8 @@ pub(crate) fn run_external_target_with_and_dir(
                     .status();
                 return match out {
                     Ok(st) if st.success() => {
-                        // M48-1：`new-window` 无 `-d` 即激活新窗口；显式 select 兜底。
-                        let _ = std::process::Command::new("tmux")
-                            .args(["select-window", "-t", ":"])
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status();
+                        // `new-window` 不带 `-d` 即选中新窗口；不再额外 select，
+                        // 避免目标表达式歧义（`:` 会误选别的窗口/反复触发）。
                         ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
                     }
                     _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
@@ -3160,6 +3178,12 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
         Some("gitui") => {
             // M25-6：`:gitui` 同 gi 语义——PATH 优先级探测，复用 RunUserCommand
             // 分流（terminal_in_new_window 一致）。
+            // M48-FIX：非 git 仓库不得启动 git TUI——`gitui` 在非仓库目录会反复
+            // 提示 "Not a git repository. Create one here?"（无 TTY 时循环刷屏）。
+            let focus = state.active_tab().focus_base().to_path_buf();
+            if git_root_of(&focus).is_none() {
+                return Err("gitui: 当前焦点目录不在 git 仓库中".to_owned());
+            }
             match crate::git::find_git_tui() {
                 Some(bin) => {
                     let cfg = state.config.ui.clone();

@@ -2464,6 +2464,21 @@ fn m4810_tutor_list_search_reset_wrong_only_and_exit_to_list() {
 }
 
 #[test]
+fn m48fix_invalid_focus_dir_falls_back_before_spawn() {
+    // 焦点目录被删除/移走时不得把不存在路径交给 tmux -c。
+    let tmp = TempDir::new().unwrap();
+    let gone = tmp.path().join("deleted");
+    assert!(!gone.exists());
+    let resolved = safe_external_dir(&gone);
+    assert!(
+        resolved.is_dir(),
+        "回退目录必须真实存在: {}",
+        resolved.display()
+    );
+    assert_ne!(resolved, gone);
+}
+
+#[test]
 fn m489_ime_periodic_probe_respects_editable_modes() {
     // M48-9：仅 Normal 且到期的周期探测生效；文本输入模式不竞争。
     let now = std::time::Instant::now();
@@ -2605,16 +2620,10 @@ fn m256_status_bar_shows_branch_and_diff() {
 #[test]
 fn m256_exec_gitui_conditionally() {
     let (_tmp, mut state) = make_state(1);
+    // M48-FIX：非 git 仓库先拒绝（避免 gitui 反复提示建仓库）。
     let r = exec_command_impl(&mut state, "gitui");
-    match crate::git::find_git_tui() {
-        // 本机无 git TUI → 可读报错。
-        None => {
-            assert!(r.is_err());
-            assert!(r.unwrap_err().contains("未找到 git TUI"));
-        }
-        // 装有 git TUI → RunExternal（当前 pane）或 Done（multiplexer 提示）。
-        Some(_) => assert!(r.is_ok()),
-    }
+    assert!(r.is_err());
+    assert!(r.as_ref().unwrap_err().contains("不在 git 仓库"));
 }
 
 #[test]
