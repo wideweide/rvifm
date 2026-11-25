@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-25
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：M47-1～M47-8 已完成；下一任务 M47-9（双栏左侧留白 + 整行高亮覆盖间隙）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前任务**：M47-1～M47-9 已完成；下一任务 M47-10（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 文档收尾）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 

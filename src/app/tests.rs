@@ -5073,6 +5073,37 @@ fn render_highlights_cursor_row() {
 }
 
 #[test]
+fn m479_list_leading_blank_is_covered_by_row_highlight() {
+    // M47-9：每栏列表左侧留白，且整行高亮覆盖该留白（左右对称）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    assert_eq!(buf[(0, 3)].symbol(), " ", "左栏留白首列");
+    assert_eq!(buf[(1, 3)].symbol(), " ", "左栏留白次列");
+    assert!(
+        buf[(0, 3)].modifier.contains(Modifier::REVERSED),
+        "左栏高亮覆盖留白"
+    );
+
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    assert_eq!(buf[(41, 3)].symbol(), " ", "右栏留白首列");
+    assert!(
+        buf[(41, 3)].modifier.contains(Modifier::REVERSED),
+        "右栏高亮覆盖留白"
+    );
+}
+
+#[test]
 fn m478_selection_stays_in_its_pane_after_focus_switch() {
     // M47-8：右栏 v/t 多选后切焦点到左栏，左栏不得呈现右栏的选择状态。
     let tmp = TempDir::new().unwrap();

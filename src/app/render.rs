@@ -1,5 +1,10 @@
 use super::*;
 
+/// M47-9：列表项左侧留白（对齐 vifm 的栏内间距观感）。前导空白属于列表项
+/// 本身，整行高亮（List highlight_style / 右栏 item 级 REVERSED）自然覆盖它，
+/// 不留彩色断层。
+pub(crate) const LIST_LEADING_BLANK: &str = "  ";
+
 /// FEAT-3：菜单浮窗矩形——固定 34×8 居中（含边框）。
 pub(crate) fn context_menu_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
     use ratatui::layout::Rect;
@@ -880,7 +885,10 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             } else {
                 format!(" ✦{}", e.keyword)
             };
-            let mut spans = vec![Span::from(format!("{} ", icon.glyph))];
+            let mut spans = vec![
+                Span::from(LIST_LEADING_BLANK),
+                Span::from(format!("{} ", icon.glyph)),
+            ];
             spans.extend(highlight_query_spans(&e.path, &pane.query));
             spans.extend(highlight_query_spans(&bm, &pane.query));
             ListItem::new(Line::from(spans)).style(if idx == pane.cursor {
@@ -1082,10 +1090,15 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             None
         };
         let name_budget = if show_attrs {
-            (left_inner.width as usize)
-                .saturating_sub(2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 })
+            (left_inner.width as usize).saturating_sub(
+                LIST_LEADING_BLANK.len()
+                    + 2
+                    + ATTRS_WIDTH
+                    + 2
+                    + if git_col { GIT_STATUS_WIDTH } else { 0 },
+            )
         } else {
-            (left_inner.width as usize).saturating_sub(4)
+            (left_inner.width as usize).saturating_sub(4 + LIST_LEADING_BLANK.len())
         };
         let list_items: Vec<ListItem> = tab
             .entries
@@ -1105,7 +1118,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 };
                 // FIX-1：匹配子串分段高亮（黄底黑字，与光标行反显区分）。
                 // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
-                let mut spans: Vec<Span> = vec![Span::from(format!("{} ", item.icon.glyph))];
+                let mut spans: Vec<Span> = vec![
+                    Span::from(LIST_LEADING_BLANK),
+                    Span::from(format!("{} ", item.icon.glyph)),
+                ];
                 let mut budget = name_budget;
                 if tab.tree.is_some() {
                     let depth = item.name.matches('/').count();

@@ -398,10 +398,15 @@ pub(crate) fn render_right_pane(
             };
             let name_budget = if show_attrs {
                 (list_area.width as usize).saturating_sub(
-                    2 + ATTRS_WIDTH + 2 + if git_col { GIT_STATUS_WIDTH } else { 0 },
+                    crate::app::render::LIST_LEADING_BLANK.len()
+                        + 2
+                        + ATTRS_WIDTH
+                        + 2
+                        + if git_col { GIT_STATUS_WIDTH } else { 0 },
                 )
             } else {
-                (list_area.width as usize).saturating_sub(4)
+                (list_area.width as usize)
+                    .saturating_sub(4 + crate::app::render::LIST_LEADING_BLANK.len())
             };
             let display_name = clip_name(&item.name, name_budget);
             // M46-3：与左 pane M45-2a 同款守卫——当前行/可视选择行去除文件
@@ -413,7 +418,10 @@ pub(crate) fn render_right_pane(
             } else {
                 filetype_style(item.filetype_class())
             };
-            let mut spans = vec![Span::from(format!("{} ", item.icon.glyph))];
+            let mut spans = vec![
+                Span::from(crate::app::render::LIST_LEADING_BLANK),
+                Span::from(format!("{} ", item.icon.glyph)),
+            ];
             match active_query
                 .as_deref()
                 .and_then(|query| crate::tab::match_range(&display_name, query))
