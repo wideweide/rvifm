@@ -315,7 +315,10 @@ pub(crate) fn render_right_pane(
     let borders = state.config.ui.pane_borders;
     let inner = if borders {
         let pane = ratatui::widgets::Block::bordered()
-            .title(tab.right.location.display_path().replace('\\', "/"))
+            .title(crate::app::render::path_line_text(
+                tab.right.location.display_path().replace('\\', "/"),
+                tab.right.filter.as_deref(),
+            ))
             .border_style(pane_border_style(focused));
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
@@ -329,9 +332,10 @@ pub(crate) fn render_right_pane(
             vifm_style("TopLine")
         };
         frame.render_widget(
-            Paragraph::new(Line::from(
+            Paragraph::new(Line::from(crate::app::render::path_line_text(
                 tab.right.location.display_path().replace('\\', "/"),
-            ))
+                tab.right.filter.as_deref(),
+            )))
             .style(path_style),
             topline,
         );

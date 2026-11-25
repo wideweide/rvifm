@@ -335,6 +335,11 @@ pub struct Pane {
     pub on_parent_row: bool,
     /// M45-3e：per-location 光标记忆（离开记下、重返还原）。仅内存。
     pub cursor_memory: std::collections::HashMap<Location, usize>,
+    /// M47-2：右 pane 独立的 glob 过滤模式（`=` 设置；None = 不过滤）。
+    pub filter: Option<String>,
+    /// M47-8：右 pane 独立的 `v` 可视选择锚点与 `t` 标记集合。
+    pub visual: Option<usize>,
+    pub tags: HashSet<String>,
 }
 
 impl Pane {
@@ -360,6 +365,9 @@ impl Pane {
             scroll: 0,
             on_parent_row: false,
             cursor_memory: std::collections::HashMap::new(),
+            filter: None,
+            visual: None,
+            tags: HashSet::new(),
         })
     }
 
@@ -524,6 +532,10 @@ impl Pane {
             Location::Remote { .. } => {}
             Location::Physical(_) | Location::Archive { .. } => {
                 self.entries = Tab::load_for(&self.location, config)?;
+                // M47-2：右 pane 独立过滤在自身刷新时应用（与 Tab::refresh 同源）。
+                if let Some(pat) = &self.filter {
+                    self.entries.retain(|item| filter_matches(pat, &item.name));
+                }
                 if self.cursor >= self.entries.len() {
                     self.cursor = self.entries.len().saturating_sub(1);
                 }
@@ -1122,14 +1134,34 @@ impl Tab {
         Ok(())
     }
 
-    /// 应用/清除 glob 过滤（M4-2，`=`）。空 pattern 清除过滤；应用后光标与选区归零。
+    /// 应用/清除 glob 过滤（M4-2，`=`；M47-2 焦点化）。空 pattern 清除过滤；
+    /// 应用后光标与选区归零。焦点在右时写入右 pane 的独立过滤状态。
     pub fn apply_filter(&mut self, pattern: &str, config: Config) {
         let pat = pattern.trim().to_owned();
-        self.filter = if pat.is_empty() { None } else { Some(pat) };
-        if self.refresh(config).is_ok() {
-            self.cursor = 0;
-            self.visual = None;
+        let filter = if pat.is_empty() { None } else { Some(pat) };
+        if self.focus == Focus::Right {
+            self.right.filter = filter;
+            if self.right.refresh(config).is_ok() {
+                self.right.cursor = 0;
+                self.right.visual = None;
+            }
+        } else {
+            self.filter = filter;
+            if self.refresh(config).is_ok() {
+                self.cursor = 0;
+                self.visual = None;
+            }
         }
+    }
+
+    /// M47-2：焦点 pane 当前是否处于过滤态（Normal 模式 Esc 清除用）。
+    pub fn focused_filter(&self) -> Option<&str> {
+        let filter = if self.focus == Focus::Right {
+            &self.right.filter
+        } else {
+            &self.filter
+        };
+        filter.as_deref()
     }
 
     /// 进入/退出可视选择（M3-1，`v`）。空目录为 no-op。

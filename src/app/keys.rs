@@ -1491,13 +1491,18 @@ pub(crate) fn handle_key(
         return Outcome::Continue;
     }
 
-    // Esc：退出可视选择（M3-1）；非可视模式忽略。
+    // Esc：退出可视选择（M3-1）；M47-2：清除焦点 pane 的过滤状态。
     if key.code == KeyCode::Esc {
         input.count = None;
         if state.active_tab().visual.is_some() {
             state.active_tab_mut().exit_visual();
             // M33-2：退出 visual → 还原 normal 主表。
             input.switch_mode_map(None);
+        }
+        if state.active_tab().focused_filter().is_some() {
+            let config = state.config.clone();
+            state.active_tab_mut().apply_filter("", config);
+            *msg = None;
         }
         return Outcome::Continue;
     }
@@ -1768,6 +1773,10 @@ fn dispatch_right_pane(
         std::mem::swap(&mut tab.cursor, &mut tab.right.cursor);
         std::mem::swap(&mut tab.scroll, &mut tab.right.scroll);
         std::mem::swap(&mut tab.on_parent_row, &mut tab.right.on_parent_row);
+        // M47-2/M47-8：过滤与选择状态也随焦点投影，使共享键位管道操作的是焦点栏数据。
+        std::mem::swap(&mut tab.filter, &mut tab.right.filter);
+        std::mem::swap(&mut tab.visual, &mut tab.right.visual);
+        std::mem::swap(&mut tab.tags, &mut tab.right.tags);
         tab.focus = crate::tab::Focus::Left;
     }
     let outcome = handle_key(state, input, msg, key, viewport_h);
@@ -1778,6 +1787,9 @@ fn dispatch_right_pane(
         std::mem::swap(&mut tab.cursor, &mut tab.right.cursor);
         std::mem::swap(&mut tab.scroll, &mut tab.right.scroll);
         std::mem::swap(&mut tab.on_parent_row, &mut tab.right.on_parent_row);
+        std::mem::swap(&mut tab.filter, &mut tab.right.filter);
+        std::mem::swap(&mut tab.visual, &mut tab.right.visual);
+        std::mem::swap(&mut tab.tags, &mut tab.right.tags);
         tab.focus = crate::tab::Focus::Right;
     }
     outcome

@@ -674,7 +674,7 @@
 > 来源：用户 2026-11-25 实测反馈 7 条（「右栏仅导航」含 3 子项），按 AGENTS §8 蒸馏。编号沿用 M45/M46 用户实测批次先例取 M47。顺序：1→10（缺陷/焦点化先行，文档殿后）。**本批次不触发版本 bump 与 GitHub Release（用户指令）。**
 
 - [x] M47-1 目录/归档成员预览图标按层级缩进（见 SPEC M47-1；2026-11-25 完成：preview_indent + TUI viewer 缩进移到图标前，m471 双测试）
-- [ ] M47-2 `=` 过滤作用于焦点 pane + 顶部路径显示状态 + Esc 取消（见 SPEC M47-2）
+- [x] M47-2 `=` 过滤作用于焦点 pane + 顶部路径显示状态 + Esc 取消（见 SPEC M47-2；2026-11-25 完成：Pane.filter + 焦点化 apply_filter + path_line_text + Normal Esc 清除，m472 测试）
 - [ ] M47-3 `:archive` 源=焦点栏、产物=对侧栏；`:extract` 焦点化核对（见 SPEC M47-3）
 - [ ] M47-4 剩余快捷键/冒号命令焦点化审计（见 SPEC M47-4）
 - [ ] M47-5 Frecency 面板样式融合焦点栏 + 新标题（见 SPEC M47-5）

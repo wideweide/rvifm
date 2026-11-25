@@ -3384,7 +3384,12 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
         KeyCode::Char('v'),
         KeyModifiers::NONE,
     );
-    assert_eq!(state.active_tab().visual, Some(0), "右栏 v 进入可视选择");
+    // M47-8：选择状态按 pane 独立保存，右栏 v/t 写入 right 自己的集合。
+    assert_eq!(
+        state.active_tab().right.visual,
+        Some(0),
+        "右栏 v 进入可视选择"
+    );
     press_msg(
         &mut state,
         &mut input,
@@ -3393,7 +3398,7 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
         KeyModifiers::NONE,
     );
     assert!(
-        state.active_tab().tags.contains("item.txt"),
+        state.active_tab().right.tags.contains("item.txt"),
         "右栏 t 标记焦点条目"
     );
     press_msg(
@@ -3403,7 +3408,7 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
         KeyCode::Esc,
         KeyModifiers::NONE,
     );
-    assert!(state.active_tab().visual.is_none());
+    assert!(state.active_tab().right.visual.is_none());
     press_msg(
         &mut state,
         &mut input,
@@ -4671,6 +4676,7 @@ fn filter_apply_and_clear() {
 
 #[test]
 fn render_shows_filter_indicator() {
+    // M47-2：过滤状态从状态栏移到对应 pane 的顶部路径行。
     let (_tmp, mut state) = make_state(3);
     state.active_tab_mut().filter = Some("*.txt".to_owned());
 
@@ -4680,10 +4686,53 @@ fn render_shows_filter_indicator() {
         .draw(|frame| render(frame, &state, &InputMode::Normal, None))
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
-    let status = (0..120u16)
-        .map(|x| buffer[(x, 7)].symbol())
+    let row = |y: u16| -> String { (0..120u16).map(|x| buffer[(x, y)].symbol()).collect() };
+    assert!(row(1).contains("[filter: *.txt]"), "top path: {}", row(1));
+    assert!(!row(7).contains("[filter:"), "status: {}", row(7));
+}
+
+#[test]
+fn m472_filter_applies_to_focused_pane_and_esc_clears() {
+    // M47-2：右栏过滤只筛右栏，Esc 清除；左栏不受影响。
+    let tmp = TempDir::new().unwrap();
+    for name in ["a.txt", "b.md"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state
+        .active_tab_mut()
+        .apply_filter("*.txt", Config::default());
+    assert_eq!(state.active_tab().right.entries.len(), 1);
+    assert_eq!(state.active_tab().right.entries[0].name, "a.txt");
+    assert_eq!(state.active_tab().entries.len(), 2, "左栏不受影响");
+
+    let backend = ratatui::backend::TestBackend::new(120, 10);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render(frame, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let left_top = (0..60u16)
+        .map(|x| buffer[(x, 1)].symbol())
         .collect::<String>();
-    assert!(status.contains("[filter: *.txt]"), "status: {status}");
+    let right_top = (60..120u16)
+        .map(|x| buffer[(x, 1)].symbol())
+        .collect::<String>();
+    assert!(!left_top.contains("[filter:"), "左栏路径无过滤: {left_top}");
+    assert!(
+        right_top.contains("[filter: *.txt]"),
+        "右栏路径显示过滤: {right_top}"
+    );
+
+    // Normal 模式 Esc 清除焦点栏过滤。
+    let mut input = crate::app::InputState::default();
+    let outcome = press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(matches!(outcome, crate::app::Outcome::Continue));
+    assert!(state.active_tab().right.filter.is_none());
+    assert_eq!(state.active_tab().right.entries.len(), 2);
 }
 
 #[test]

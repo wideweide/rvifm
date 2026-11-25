@@ -262,6 +262,15 @@ pub(crate) fn pane_gap_area(area: ratatui::layout::Rect) -> ratatui::layout::Rec
     gap
 }
 
+/// M47-2：pane 顶部路径行文本——在路径后追加当前 pane 的过滤状态；状态栏
+/// 不再显示过滤指示，左右 pane 各自显示自己的状态。
+pub(crate) fn path_line_text(path: String, filter: Option<&str>) -> String {
+    match filter {
+        Some(f) => format!("{path}  [filter: {f}]"),
+        None => path,
+    }
+}
+
 /// M27-2：vifm 命名样式（TabLine/TopLine/StatusLine/Border/Selected…）——
 /// 主题提供该命名样式时优先；缺失时按标准 token 推导（M34-1）；未激活/
 /// 缺 token 时回退 vifm Default 风格的 16 色（vifm_fallback）。
@@ -983,7 +992,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     } else {
         let left_inner = if borders {
             let left_pane = ratatui::widgets::Block::bordered()
-                .title(tab.location.display_path().replace('\\', "/"))
+                .title(path_line_text(
+                    tab.location.display_path().replace('\\', "/"),
+                    tab.filter.as_deref(),
+                ))
                 .border_style(pane_border_style(left_focused));
             let inner = left_pane.inner(left_area);
             frame.render_widget(left_pane, left_area);
@@ -997,8 +1009,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 vifm_style("TopLine")
             };
             frame.render_widget(
-                Paragraph::new(Line::from(tab.location.display_path().replace('\\', "/")))
-                    .style(path_style),
+                Paragraph::new(Line::from(path_line_text(
+                    tab.location.display_path().replace('\\', "/"),
+                    tab.filter.as_deref(),
+                )))
+                .style(path_style),
                 topline,
             );
             rest
@@ -2001,10 +2016,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     spans.push(Span::from(text));
                 }
             }
-            if let Some(f) = &tab.filter {
-                // M4-2：过滤指示。
-                spans.push(Span::from(format!("  [filter: {f}]")));
-            }
+            // M47-2：过滤状态移到对应 pane 的顶部路径行，状态栏不再显示。
             if let Some((lo, hi)) = visual_range {
                 // M3-1：可视选择指示（含行数，闭区间）。
                 spans.push(Span::from(format!("  VISUAL ({} selected)", hi - lo + 1)));
