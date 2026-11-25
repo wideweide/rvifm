@@ -10,7 +10,7 @@ description = "本模式的按键、错题本与重置"
 [[items]]
 id = "tutor_keys"
 prompt = "练习本条目：按 `Ctrl+Y` 标记掌握，再按 `Ctrl+N` 撤改当前条目。"
-expected = "Ctrl+Y 掌握、Ctrl+N 未掌握记错题本——面板自动推进；其余按键照常操作文件（练习键不被拦截）。"
+expected = "Ctrl+Y 掌握、Ctrl+N 未掌握记错题本——面板自动推进；模块全部结束后 Ctrl+N 改为退出并回到导师列表；其余按键照常操作文件（练习键不被拦截）。"
 
 [[items]]
 id = "tutor_passthrough"
@@ -30,4 +30,4 @@ expected = "错题本 skipped 项自动排前（面板标题显示「复习」�
 [[items]]
 id = "tutor_reset"
 prompt = "输入 `:tutor reset core_nav` 清空该模块进度。"
-expected = "该模块错题本与掌握记录清空，下次进入从头开始；进度文件在数据目录 tutor_progress.toml（删文件等效重置）。首次启动还会在配置目录生成带注释的 config.toml 与键位/opener 示例，不覆盖已有文件。"
+expected = "该模块错题本与掌握记录清空，下次进入从头开始；导师列表内把光标移到模块按 `d` 也可重置并即时刷新进度。进度文件在数据目录 tutor_progress.toml（删文件等效重置）。首次启动还会在配置目录生成带注释的 config.toml 与键位/opener 示例，不覆盖已有文件。列表内 `/` 可按模块名搜索跳转；有记录的模块进入后只显示错题。"

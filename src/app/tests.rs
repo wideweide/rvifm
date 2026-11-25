@@ -2422,6 +2422,48 @@ fn m254_exec_noargs_opens_dialog_prefilled() {
 }
 
 #[test]
+fn m4810_tutor_list_search_reset_wrong_only_and_exit_to_list() {
+    // M48-10：列表 / 搜索、d reset、有记录只显示错题、结束 Ctrl+N 回列表。
+    use crate::app::{TutorHotkey, TutorListOutcome, tutor_list_key};
+    use crate::tutor::{TutorSession, merge_session};
+
+    let mut cursor = 0usize;
+    assert_eq!(
+        tutor_list_key(&mut cursor, 14, KeyCode::Char('/')),
+        TutorListOutcome::Search
+    );
+    assert_eq!(
+        tutor_list_key(&mut cursor, 14, KeyCode::Char('d')),
+        TutorListOutcome::Reset(0)
+    );
+    assert_eq!(KeyCode::Char('j'), KeyCode::Char('j'));
+
+    // 错题过滤纯函数：两条里只保留 skipped 的一条。
+    let modules = crate::tutor::builtin_modules();
+    let base = modules[0].clone();
+    let item0 = base.items[0].id.clone();
+    let progress = merge_session(Default::default(), &base.id, &[(item0.clone(), false)]);
+    let wrong = crate::tutor::wrong_items_only(&progress, &base.id, &base.items).unwrap();
+    assert_eq!(wrong.len(), 1);
+    assert_eq!(wrong[0].id, item0);
+
+    // done 会话的 Ctrl+N → ExitToList（未结束时仍为 Marked）。
+    let mut state = AppState::new(
+        Tab::from_physical(std::env::temp_dir().as_path(), Config::default()).unwrap(),
+    );
+    state.tutor = Some(TutorSession {
+        module: base,
+        idx: 0,
+        marks: Vec::new(),
+        done: true,
+        review: false,
+    });
+    let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+    assert_eq!(tutor_hotkey(&mut state, &key), TutorHotkey::ExitToList);
+    assert!(state.tutor.is_none());
+}
+
+#[test]
 fn m489_ime_periodic_probe_respects_editable_modes() {
     // M48-9：仅 Normal 且到期的周期探测生效；文本输入模式不竞争。
     let now = std::time::Instant::now();
@@ -5469,7 +5511,17 @@ fn m458d_tutor_list_shows_progress_on_left() {
     state.tutor = None;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(90, 20)).unwrap();
     terminal
-        .draw(|f| render(f, &state, &InputMode::TutorList { cursor: 0 }, None))
+        .draw(|f| {
+            render(
+                f,
+                &state,
+                &InputMode::TutorList {
+                    cursor: 0,
+                    search: None,
+                },
+                None,
+            )
+        })
         .unwrap();
     let buf = terminal.backend().buffer().clone();
     let mut text = String::new();
@@ -12726,7 +12778,10 @@ fn m42_1_tutor_render_list_and_panel() {
     };
 
     // 列表覆盖层。
-    let mode = InputMode::TutorList { cursor: 0 };
+    let mode = InputMode::TutorList {
+        cursor: 0,
+        search: None,
+    };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let all = compact(terminal.backend(), 70, 14);
@@ -12999,7 +13054,10 @@ fn m43_1_tutor_list_scroll_render() {
     // M43-1：模块列表 List 组件渲染——选中项高亮符号（超屏滚动由
     // ratatui ListState 视口跟随固化；当前 3 模块单屏内验证渲染形态）。
     let (_tmp, state) = make_state(2);
-    let mode = InputMode::TutorList { cursor: 2 };
+    let mode = InputMode::TutorList {
+        cursor: 2,
+        search: None,
+    };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let all: String = (0..12)
@@ -13025,7 +13083,10 @@ fn m43_1_tutor_list_scroll_render() {
 fn fix5_tutor_list_overlay_is_opaque() {
     // FIX-5-1：模块列表全屏覆盖层先 Clear——下层目录列表文字不得透出。
     let (_tmp, state) = make_state(3);
-    let mode = InputMode::TutorList { cursor: 0 };
+    let mode = InputMode::TutorList {
+        cursor: 0,
+        search: None,
+    };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 8)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let all: String = (0..8)

@@ -1363,14 +1363,24 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
-    if let InputMode::TutorList { cursor } = mode {
+    if let InputMode::TutorList { cursor, search } = mode {
         // M42-1/M43-1：导师模式模块列表——List 组件渲染（M43 起模块数超屏，
         // 视口随选中项滚动）。键提示并入边框底部行。
         // FIX-5-1：全屏覆盖层先清除下层 TUI——否则目录列表/状态栏文字从
         // 列表空白行透出（与其它覆盖层的 Clear 模式一致）。
         frame.render_widget(ratatui::widgets::Clear, frame.area());
         let modules = crate::tutor::builtin_modules();
-        let items: Vec<Line> = modules
+        // M48-10：`/` 搜索按模块 id/name 过滤（大小写不敏感）。
+        let filtered: Vec<_> = modules
+            .iter()
+            .filter(|m| {
+                search.as_ref().is_none_or(|q| {
+                    let q = q.to_lowercase();
+                    m.id.to_lowercase().contains(&q) || m.name.to_lowercase().contains(&q)
+                })
+            })
+            .collect();
+        let items: Vec<Line> = filtered
             .iter()
             .map(|m| {
                 // M45-8d：左侧列显示该模块学习进度（掌握数/总数百分比）。
@@ -1393,15 +1403,48 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     .title("🎓 导师模式 (:tutor)")
                     .title_bottom(
                         ratatui::text::Line::from(
-                            " 选择要学习或自验的模块  j/k=选择 Enter/l=进入 q/Esc=关闭 ",
+                            " j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 ",
                         )
                         .centered(),
                     ),
             )
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol("▶ ");
+        let list_area = if let Some(q) = search {
+            let [_top, rest] = ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Min(0),
+            ])
+            .areas(frame.area());
+            frame.render_widget(
+                Paragraph::new(format!("/{q}  (Enter=应用 Esc=清除)")),
+                ratatui::layout::Rect {
+                    y: frame.area().y,
+                    height: 1,
+                    ..frame.area()
+                },
+            );
+            rest
+        } else {
+            frame.area()
+        };
         let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
-        frame.render_stateful_widget(list, frame.area(), &mut list_state);
+        frame.render_stateful_widget(list, list_area, &mut list_state);
+        return;
+    }
+    if let InputMode::TutorListSearch { input, cursor } = mode {
+        frame.render_widget(ratatui::widgets::Clear, frame.area());
+        frame.render_widget(
+            Paragraph::new(format!("/{input}▏"))
+                .block(ratatui::widgets::Block::bordered().title("导师模块搜索")),
+            ratatui::layout::Rect {
+                x: frame.area().x,
+                y: frame.area().y,
+                width: frame.area().width,
+                height: 3,
+            },
+        );
+        let _ = cursor;
         return;
     }
     if let InputMode::JobDetail { index } = mode {
@@ -1880,7 +1923,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::Queue { .. } => {
             Line::from(String::new()) // 队列覆盖层提前 return，不可达（M36-7）
         }
-        InputMode::TutorList { .. } => {
+        InputMode::TutorList { .. } | InputMode::TutorListSearch { .. } => {
             Line::from(String::new()) // 列表覆盖层提前 return，不可达
         }
         InputMode::ViewerSearch { input } => Line::from(format!("/{}（查看器）", input)),

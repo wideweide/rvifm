@@ -219,6 +219,8 @@ pub(crate) enum InputMode {
     ConfirmTagDelete { cursor: usize, scroll: usize },
     /// M48-5：粘贴同名冲突的阻塞确认（复用删除确认视觉）。
     ConfirmPaste { cursor: usize, scroll: usize },
+    /// M48-10：导师列表搜索输入（按模块名过滤并跳转）。
+    TutorListSearch { input: String, cursor: usize },
     /// 全屏帮助视图（FEAT-4，`:help`）：独立滚动状态（与目录列表无关），
     /// j/k 滚动、/ 搜索（n/N 循环跳转）、q/Esc 关闭返回。
     HelpView {
@@ -271,7 +273,10 @@ pub(crate) enum InputMode {
     Queue { cursor: usize },
     /// 导师模式模块列表覆盖层（M42-1：`:tutor` 无参）：j/k 选择、Enter/l
     /// 进入、Esc/q 关闭。
-    TutorList { cursor: usize },
+    TutorList {
+        cursor: usize,
+        search: Option<String>,
+    },
     /// 归档创建对话框（M25-4：`:archive` 无参）——名称/格式/校验三字段。
     ArchiveDialog {
         input: String,
@@ -440,6 +445,10 @@ pub(crate) enum TutorListOutcome {
     Close,
     /// 进入选中模块（携带模块下标）。
     Enter(usize),
+    /// M48-10：`/` 进入列表搜索。
+    Search,
+    /// M48-10：`d` 重置光标模块进度。
+    Reset(usize),
 }
 
 /// M42-1：导师列表按键（纯函数，run 循环与测试共用）。
@@ -462,6 +471,8 @@ pub(crate) fn tutor_list_key(
         KeyCode::Enter | KeyCode::Char('l') if *cursor < modules_len => {
             TutorListOutcome::Enter(*cursor)
         }
+        KeyCode::Char('/') => TutorListOutcome::Search,
+        KeyCode::Char('d') if *cursor < modules_len => TutorListOutcome::Reset(*cursor),
         _ => TutorListOutcome::None,
     }
 }
@@ -475,6 +486,8 @@ pub(crate) enum TutorHotkey {
     Marked,
     /// Ctrl+Q——退出会话（作答已即时落盘，调用方清理 state.tutor）。
     Exit,
+    /// M48-10：模块结束后 Ctrl+N 退出会话并回到导师列表重选。
+    ExitToList,
 }
 
 /// M43-1：tutor 标记键（会话激活时拦截 Ctrl+Y/N/Q；其余键一律放行——
@@ -494,6 +507,11 @@ pub(crate) fn tutor_hotkey(state: &mut AppState, key: &KeyEvent) -> TutorHotkey 
             TutorHotkey::Marked
         }
         KeyCode::Char('n') => {
+            // M48-10：模块已结束时 Ctrl+N 回到导师列表（否则仍是「未掌握」标记）。
+            if state.tutor.as_ref().is_some_and(|s| s.done) {
+                state.tutor = None;
+                return TutorHotkey::ExitToList;
+            }
             if let Some(session) = &mut state.tutor {
                 session.advance(false);
             }
@@ -869,6 +887,15 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     state.tutor = None; // 作答已即时落盘，退出仅关闭面板。
                     continue;
                 }
+                TutorHotkey::ExitToList => {
+                    // M48-10：作答已落盘，回到导师列表重新选模块。
+                    state.tutor_progress = crate::tutor::load_progress();
+                    mode = InputMode::TutorList {
+                        cursor: 0,
+                        search: None,
+                    };
+                    continue;
+                }
             }
             match &mut mode {
                 InputMode::Command {
@@ -1056,7 +1083,10 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 }
                                 Ok(ExecOutcome::EnterTutorList) => {
                                     // M42-1：:tutor 无参 → 模块列表覆盖层。
-                                    mode = InputMode::TutorList { cursor: 0 };
+                                    mode = InputMode::TutorList {
+                                        cursor: 0,
+                                        search: None,
+                                    };
                                 }
                                 Ok(ExecOutcome::EnterTutorSession { module_id }) => {
                                     // M42-1：进入导师会话（模块克隆持有，渲染
@@ -1749,22 +1779,73 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 }
-                InputMode::TutorList { cursor } => {
+                InputMode::TutorListSearch { input, cursor } => {
+                    if key.kind == KeyEventKind::Press {
+                        match command_input(input, key) {
+                            CmdInput::Submit => {
+                                let q = input.trim().to_owned();
+                                mode = InputMode::TutorList {
+                                    cursor: *cursor,
+                                    search: (!q.is_empty()).then_some(q),
+                                };
+                            }
+                            CmdInput::Cancel => {
+                                mode = InputMode::TutorList {
+                                    cursor: *cursor,
+                                    search: None,
+                                };
+                            }
+                            CmdInput::Continue => {}
+                        }
+                    }
+                }
+                InputMode::TutorList { cursor, search } => {
                     // M42-1：导师模式模块列表——j/k 选择、Enter/l 进入、
                     // Esc/q 关闭（覆盖层独立于当前目录/位置）。
                     if key.kind == KeyEventKind::Press {
-                        match tutor_list_key(
-                            cursor,
-                            crate::tutor::builtin_modules().len(),
-                            key.code,
-                        ) {
+                        // M48-10：键位作用于过滤后的模块列表。
+                        let visible: Vec<_> = crate::tutor::builtin_modules()
+                            .into_iter()
+                            .filter(|m| {
+                                search.as_ref().is_none_or(|q| {
+                                    let q = q.to_lowercase();
+                                    m.id.to_lowercase().contains(&q)
+                                        || m.name.to_lowercase().contains(&q)
+                                })
+                            })
+                            .collect();
+                        if *cursor >= visible.len() && !visible.is_empty() {
+                            *cursor = visible.len() - 1;
+                        }
+                        match tutor_list_key(cursor, visible.len(), key.code) {
                             TutorListOutcome::None => {}
                             TutorListOutcome::Close => mode = InputMode::Normal,
+                            TutorListOutcome::Search => {
+                                mode = InputMode::TutorListSearch {
+                                    input: search.clone().unwrap_or_default(),
+                                    cursor: *cursor,
+                                };
+                            }
+                            TutorListOutcome::Reset(i) => {
+                                // M48-10：d 执行对应模块 reset 并刷新进度显示。
+                                let id = visible[i].id.clone();
+                                let progress =
+                                    crate::tutor::reset_module(crate::tutor::load_progress(), &id);
+                                state.tutor_progress = progress.clone();
+                                if let Err(e) = crate::tutor::save_progress_to(
+                                    &crate::tutor::tutor_progress_path(),
+                                    &progress,
+                                ) {
+                                    msg = Some(format!("tutor reset 保存失败: {e}"));
+                                } else {
+                                    msg = Some(format!("tutor: 已重置 {id}"));
+                                }
+                            }
                             TutorListOutcome::Enter(i) => {
-                                // M42-2：有错题本记录时进入复习模式。
-                                let base = crate::tutor::builtin_modules()[i].clone();
+                                // M42-2/M48-10：有记录模块只显示错题条目。
+                                let base = visible[i].clone();
                                 let progress = crate::tutor::load_progress();
-                                let (module, review) = match crate::tutor::review_order(
+                                let (module, review) = match crate::tutor::wrong_items_only(
                                     &progress,
                                     &base.id,
                                     &base.items,

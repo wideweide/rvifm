@@ -1104,7 +1104,7 @@
 - [x] M48-7 大归档首次 `w` 快速展示成员（外部列目录可用时），超限/缺工具回退内置提示；无必需外部依赖。（2026-11-25：m487_archive_listing_tool_mapping_and_guard 通过）
 - [x] M48-8 `:archive` 无参直接执行、`-i` 打开对话框；任意字段回车执行、`Tab` 高亮当前字段、弹窗不遮罩全屏。（2026-11-25：m488 + 既有 m254/m253 用例同步；目标名自动补格式扩展名避免与源文件冲突）
 - [x] M48-9 Normal 模式下即使无 FocusGained 也周期性切英文，不覆盖保存状态、不与文本输入模式竞争。（2026-11-25：m489_ime_periodic_probe_respects_editable_modes 通过）
-- [ ] M48-10 tutor 列表 `/` 搜索跳转、`d` reset 并刷新、有记录模块只显示错题、模块结束 `Ctrl+N` 回到列表；13 模块 100 项可解析。
+- [x] M48-10 tutor 列表 `/` 搜索跳转、`d` reset 并刷新、有记录模块只显示错题、模块结束 `Ctrl+N` 回到列表；13 模块 100 项可解析。（2026-11-25：m4810 + tutor_meta 条目同步通过）
 - [ ] M48-11 删除确认框内底部状态栏 + 框内右侧滚动条，交互键不变。
 - [ ] M48-12 `:help` 新窗口真实打开并激活；`rv help` 以可搜索/高亮的查看器形态呈现，覆盖层不透明可搜索。
 - [ ] M48-13 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步；harness_check 通过；未触发版本 bump/tag/GitHub Release。

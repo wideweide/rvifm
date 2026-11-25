@@ -697,7 +697,7 @@
 - [x] M48-7 归档快速预览（可选外部列目录 + 大包可展开）（见 SPEC M48-7；2026-11-25 完成：archive_external_listing 配置 + 固定工具映射 + 4MB 输出护栏 + 内置回退，m487 测试）
 - [x] M48-8 `:archive` 无参直执行 / `-i` 交互 + 对话框细节（见 SPEC M48-8；2026-11-25 完成：默认 zip 直执行 + 目标名规范化 + 字段高亮 + 只清弹窗矩形，m488 测试）
 - [x] M48-9 IME 切回自动切英文稳健化（Normal 周期探测）（见 SPEC M48-9；2026-11-25 完成：Normal 1s 周期 force_english + Esc/FocusGained 重置计时，m489 测试）
-- [ ] M48-10 tutor 列表 `/` 搜索 / `d` reset / 仅错题 / Ctrl+N 重选（见 SPEC M48-10）
+- [x] M48-10 tutor 列表 `/` 搜索 / `d` reset / 仅错题 / Ctrl+N 重选（见 SPEC M48-10；2026-11-25 完成：TutorList search 态 + reset 分派 + wrong_items_only + done 时 Ctrl+N 回列表，m4810 测试）
 - [ ] M48-11 删除确认 yazi 真窗口化（状态栏/滚动条在框内）（见 SPEC M48-11）
 - [ ] M48-12 `:help` 新窗口修复 + `rv help` 改 view 查看器（见 SPEC M48-12）
 - [ ] M48-13 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M48-13）

@@ -321,6 +321,24 @@ pub fn review_order(
     Some(ordered)
 }
 
+/// M48-10：有记录模块进入时只展示错题（skipped）条目。无记录/无错题返回 None。
+pub fn wrong_items_only(
+    progress: &TutorProgress,
+    module_id: &str,
+    items: &[TutorItem],
+) -> Option<Vec<TutorItem>> {
+    let entry = progress.get(module_id)?;
+    if entry.skipped.is_empty() {
+        return None;
+    }
+    let wrong: Vec<TutorItem> = items
+        .iter()
+        .filter(|it| entry.skipped.iter().any(|id| id == &it.id))
+        .cloned()
+        .collect();
+    (!wrong.is_empty()).then_some(wrong)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
