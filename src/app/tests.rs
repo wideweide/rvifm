@@ -2500,6 +2500,77 @@ fn m489_ime_periodic_probe_respects_editable_modes() {
 }
 
 #[test]
+fn m491_frecency_preview_fixed_on_right() {
+    // M49-1：默认固定右侧——标题/列表在左，预览在右；Tab 只切预览焦点。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("alpha.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: tmp.path().join("alpha.txt").to_string_lossy().into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 0.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+    });
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row = |y: u16, x0: u16, x1: u16| -> String {
+        (x0..x1).map(|x| buf[(x, y)].symbol().to_owned()).collect()
+    };
+    assert!(
+        row(1, 0, 40).contains("Frecency"),
+        "标题在左: {}",
+        row(1, 0, 40)
+    );
+    assert!(
+        !row(1, 41, 80).contains("Frecency"),
+        "标题不在右: {}",
+        row(1, 41, 80)
+    );
+
+    let mut input = crate::app::InputState::default();
+    let outcome = press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(matches!(outcome, Outcome::Continue));
+    assert!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .preview_focus
+    );
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Left,
+        "焦点不切 pane"
+    );
+    press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(
+        !state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .preview_focus
+    );
+}
+
+#[test]
 fn m488_archive_noargs_direct_and_interactive_flag() {
     // M48-8：无参直接执行（zip + 默认校验 + 预填名），`-i` 才开对话框。
     let tmp = TempDir::new().unwrap();
@@ -3155,6 +3226,8 @@ fn m34_4_view_renders_in_opposite_pane() {
         s
     };
 
+    // M49-3：该用例验证旧动态对侧布局，显式关闭固定右侧（默认 true）。
+    state.config.preview.fixed_side = false;
     // 焦点右 + view：查看器（bb.txt 内容）在左 pane；右 pane 保持列表。
 
     {
@@ -3228,6 +3301,10 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
         cursor: 1,
         normal: false,
         g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -3273,6 +3350,10 @@ fn m475_frecency_pane_is_borderless_and_click_matches_list() {
         cursor: 0,
         normal: true,
         g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
     });
     let area = ratatui::layout::Rect::new(0, 0, 80, 12);
     let backend = ratatui::backend::TestBackend::new(80, 12);
@@ -3283,7 +3364,7 @@ fn m475_frecency_pane_is_borderless_and_click_matches_list() {
     let buf = terminal.backend().buffer().clone();
     assert_ne!(buf[(0, 2)].symbol(), "│", "列表区首列不得是边框");
     assert_eq!(
-        crate::app::render::frecency_click_index(area, crate::tab::Focus::Left, 0, 0, 2),
+        crate::app::render::frecency_click_index(area, crate::tab::Focus::Left, true, 0, 0, 2),
         Some(0),
         "首列点击应命中第一条"
     );
@@ -9745,10 +9826,12 @@ fn fix8_frecency_query_highlights_all_matching_terms() {
 
 #[test]
 fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
+    // M49-3：此例验证旧动态对侧布局（焦点右 → 搜索区在右），显式关固定右侧。
     let tmp = TempDir::new().unwrap();
     let target = tmp.path().join("target");
     fs::create_dir(&target).unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.preview.fixed_side = false;
     state.active_tab_mut().focus = crate::tab::Focus::Right;
     state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
         entries: vec![crate::frecency::ScoredEntry {
@@ -9763,6 +9846,10 @@ fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
         cursor: 0,
         normal: false,
         g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
     });
     let area = ratatui::layout::Rect::new(0, 0, 100, 30);
     let [_, _, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
@@ -9805,6 +9892,10 @@ fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
             cursor: 0,
             normal: false,
             g_pending: false,
+            preview_focus: false,
+            preview_scroll: 0,
+            preview_query: None,
+            preview_match: 0,
         });
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -9843,6 +9934,7 @@ fn fix8_frecency_click_targets_focused_pane_list() {
         crate::app::render::frecency_click_index(
             area,
             crate::tab::Focus::Right,
+            false,
             0,
             inner.x + 1,
             inner.y + 1,
@@ -9850,7 +9942,7 @@ fn fix8_frecency_click_targets_focused_pane_list() {
         Some(1)
     );
     assert_eq!(
-        crate::app::render::frecency_click_index(area, crate::tab::Focus::Right, 0, 1, 1,),
+        crate::app::render::frecency_click_index(area, crate::tab::Focus::Right, false, 0, 1, 1,),
         None
     );
 }

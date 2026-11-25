@@ -701,3 +701,24 @@
 - [x] M48-11 删除确认 yazi 真窗口化（状态栏/滚动条在框内）（见 SPEC M48-11；2026-11-25 完成：footer 独立 widget + 窗口内缘滚动条列 + 高度调整，既有 m453c/m4610 回归通过）
 - [x] M48-12 `:help` 新窗口修复 + `rv help` 改 view 查看器（见 SPEC M48-12；2026-11-25 完成：run_with_initial_mode + run_help_viewer + 标题高亮 + 无 TTY 回退，CLI 13 集成通过）
 - [x] M48-13 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M48-13；2026-11-25 完成：四文档 + help.txt + tutor_meta 同步，harness_check 通过，未发版）
+
+## M49 — 用户实测批次 5（2026-11-26 蒸馏；预览固定右侧 + 命令/间距/预览效率/frecency 键位，见 SPEC M49 节）
+
+> 用户 2026-11-26 指令（LAYOUT-1..4）+ 反馈 124–141，按 AGENTS §8 蒸馏；LAYOUT-n → M49-1..4，其余按原序。沿用「不 bump / 不 tag / 不 Release」口径。
+
+- [x] M49-1 LAYOUT-1 frecency 搜索左/预览右固定布局（见 SPEC M49-1；2026-11-26 完成：共享 preview_layout_areas + FrecencyPane 预览焦点态 + m491 测试）
+- [x] M49-2 LAYOUT-2 `:view` 预览固定右侧（见 SPEC M49-2；2026-11-26 完成：render/render_right_pane/preview_path_with 统一固定右侧，动态对侧用例改 fixed_side=false）
+- [x] M49-3 LAYOUT-3 `[preview] fixed_side` 配置（默认 true，新会话生效）（见 SPEC M49-3；2026-11-26 完成：PreviewConfig + config.default.toml，渲染/点击同源读取）
+- [ ] M49-4 LAYOUT-4 布局文档（GUIDE/SPEC/NOTES/ACCEPTANCE）（见 SPEC M49-4）
+- [ ] M49-5 `:gitui` → `:gi`（保留 `:gitui` 兼容别名）（见 SPEC M49-5）
+- [ ] M49-6 列表左侧留白收窄至约图标半宽（1 空格）（见 SPEC M49-6）
+- [ ] M49-7 可视模式 `D` 永久删除选中项（见 SPEC M49-7）
+- [ ] M49-8 `:extract` 显式目录条目只建空目录修复（见 SPEC M49-8）
+- [ ] M49-9 快速切换轻量预览（图片/PDF 元数据 + 文本 200–300 字）（见 SPEC M49-9）
+- [ ] M49-10 预览获焦后全量加载（见 SPEC M49-10）
+- [ ] M49-11 `:archive`/`:extract` 焦点化复核与残留命令（见 SPEC M49-11）
+- [ ] M49-12 frecency 标题动态 `${mode}`/`[filter]`（见 SPEC M49-12）
+- [ ] M49-13 SEARCH 提示 + `Ctrl+J/K`（见 SPEC M49-13）
+- [ ] M49-14 SEARCH Esc 保留过滤（见 SPEC M49-14）
+- [ ] M49-15 NORMAL `dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`（见 SPEC M49-15）
+- [ ] M49-16 文档收尾（GUIDE/help/CHANGELOG/tutor/ACCEPTANCE）（见 SPEC M49-16）

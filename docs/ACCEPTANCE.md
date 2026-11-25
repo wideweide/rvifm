@@ -1108,3 +1108,22 @@
 - [x] M48-11 删除确认框内底部状态栏 + 框内右侧滚动条，交互键不变。（2026-11-25：confirm_dialog 返回独立 footer + render_confirm 分栏布局；m453c/m4610 通过）
 - [x] M48-12 `:help` 新窗口真实打开并激活（M48-1 去 `-d` + `-c` 焦点路径）；`rv help` 以可搜索/高亮的查看器形态呈现，覆盖层不透明可搜索。（2026-11-25：run_help_viewer + 无 TTY 回退，CLI 冒烟通过）
 - [x] M48-13 README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor 同步；harness_check 通过；未触发版本 bump/tag/GitHub Release。（2026-11-25：文档与 tutor_meta/help.txt 同步通过）
+
+## 54. M49 — 用户实测批次 5（见 SPEC M49 节）
+
+- [x] M49-1 `o`/`:j`/`:J` 搜索列表固定左、预览固定右；Tab 进右预览（j/k 滚动、/ 与 n/N 搜索），再 Tab 回左；预览位置不随焦点移动。（2026-11-26：m491_frecency_preview_fixed_on_right 通过）
+- [x] M49-2 `w`/`:view` 预览固定右、左侧保持目录列表；Tab 进/出预览；再按 w 恢复双栏目录列表；与 M49-1 预览区位置一致。（2026-11-26：m34_4 用例显式 fixed_side=false，固定侧由 m491 覆盖）
+- [x] M49-3 `[preview] fixed_side` 默认 true；false 恢复动态对侧；仅新打开会话生效。（2026-11-26：PreviewConfig 默认值 + 旧动态用例改显式 false）
+- [ ] M49-4 GUIDE/SPEC/NOTES/ACCEPTANCE 布局描述一致。
+- [ ] M49-5 `:gi` 可用，`:gitui` 兼容别名仍可用；文档同步。
+- [ ] M49-6 列表左侧留白约图标半宽且不超过图标宽，高亮覆盖留白。
+- [ ] M49-7 `v` 多选 `D` 永久删除选中项（强确认、不可恢复），既有 `DD` 不回归。
+- [ ] M49-8 含显式目录条目的归档 `:extract` 解压出真实文件（非空目录），护栏与 u 不回归。
+- [ ] M49-9 快速切换时图片/PDF 仅元数据、文本 200–300 字预览；不阻塞。
+- [ ] M49-10 预览获焦后加载完整文本/图片内容；退出焦点回轻量态。
+- [ ] M49-11 `:archive`/`:extract` 源=焦点栏、目标对侧复核通过；残留左栏命令补齐。
+- [ ] M49-12 frecency 标题为 `Frecency - 高频目录/文件搜索 - ${mode} 模式[filter xxx]`，mode 大写、filter 高亮样式与 :view 一致。
+- [ ] M49-13 SEARCH 状态栏提示方向键上下；`Ctrl+J/K` 上下移动可用。
+- [ ] M49-14 SEARCH Esc 返回 NORMAL 但保留过滤。
+- [ ] M49-15 NORMAL `dd` 删记录、`u` 恢复、`yf`/`yn`/`yc` 不跳转复制、`gi` 打开焦点条目的 git 仓库交互工具。
+- [ ] M49-16 文档收尾一致；harness_check 通过；未发版。

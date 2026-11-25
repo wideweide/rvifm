@@ -67,6 +67,22 @@ pub(crate) fn pane_layout(
     [tab_bar, left, right, status]
 }
 
+/// M49-1/2：frecency 与 `:view` 共用的「预览区位置」语义。默认 `fixed_side=true`
+/// 时预览恒在右栏；`false` 保留旧动态对侧（焦点栏搜索、对侧预览）。返回
+/// (列表区, 预览区)，几何与 `pane_layout(Dual)` 同源。
+pub(crate) fn preview_layout_areas(
+    area: ratatui::layout::Rect,
+    focus: crate::tab::Focus,
+    fixed_side: bool,
+) -> (ratatui::layout::Rect, ratatui::layout::Rect) {
+    let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
+    if fixed_side || focus == crate::tab::Focus::Left {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
 /// M39-6 / M46-1：view 模式查看器占位（Single = 全宽主区 / PreviewBottom =
 /// 主区下半；Dual/PreviewRight 经 pane 分派，返回 None）。参数 `main` 必须是
 /// `pane_layout` 产出的主区（左右 pane 的并集），与列表区同源——避免再用
@@ -777,16 +793,13 @@ pub(crate) fn frecency_list_offset(cursor: usize, height: usize) -> usize {
 pub(crate) fn frecency_click_index(
     area: ratatui::layout::Rect,
     focus: crate::tab::Focus,
+    fixed_side: bool,
     cursor: usize,
     col: u16,
     row: u16,
 ) -> Option<usize> {
-    let [_, left, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
-    let focused = if focus == crate::tab::Focus::Left {
-        left
-    } else {
-        right
-    };
+    let (focused, _) = preview_layout_areas(area, focus, fixed_side);
+    let _ = (focus, fixed_side);
     // M47-5：frecency 面板与焦点栏目录区同几何（无边框，顶部 1 行路径/标题）。
     let list = left_list_area(false, focused);
     if col < list.x
@@ -856,24 +869,14 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         Some(p) => p,
         None => return,
     };
-    // M39-6：frecency 模式忽略布局选项（保持 M23-6/M34-4 对侧预览几何）。
-    let [tab_bar_area, left_area, right_area, status_area] =
+    // M49-1：预览固定右侧（默认）；动态对侧仅在 fixed_side=false 时保留。
+    let [tab_bar_area, _left, _right, status_area] =
         pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
+    let (frec_area, preview_area) =
+        preview_layout_areas(frame.area(), tab.focus, state.config.preview.fixed_side);
     // 标签栏照常渲染（M39-6 共享 spans：命名标签 + 溢出滚动）。
     let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
-
-    let focused_is_left = tab.focus == crate::tab::Focus::Left;
-    let frec_area = if focused_is_left {
-        left_area
-    } else {
-        right_area
-    };
-    let other_area = if focused_is_left {
-        right_area
-    } else {
-        left_area
-    };
 
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
@@ -928,10 +931,20 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         &mut list_state,
     );
 
-    // 对侧：光标条目复用 :view 路径渲染（图像协议、语法高亮与类型分流）。
+    // M49-1：预览固定右侧；焦点进入预览时复用 viewer 状态（滚动/搜索/高亮）。
     if let Some(entry) = visible.get(pane.cursor) {
         let path = std::path::PathBuf::from(&entry.path);
-        crate::app::preview::render_view_path(frame, state, &path, other_area, None);
+        let viewer = pane.preview_focus.then(|| crate::tab::ViewerState {
+            scroll: pane.preview_scroll,
+            line_count: 0,
+            total_lines: 0,
+            query: pane.preview_query.clone(),
+            match_line: pane.preview_match,
+            hex: false,
+            page: 0,
+            path: Some(path.clone()),
+        });
+        crate::app::preview::render_view_path(frame, state, &path, preview_area, viewer.as_ref());
     }
     // M34-5：搜索模式底部实时回显当前 query（键入即时更新、清空同步）；
     // Normal 显示操作提示。计数自标题移至两处提示行。
@@ -1005,6 +1018,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // （查看器下半由 viewer_rect 渲染）。
     let view_in_left = viewing
         && layout == crate::config::LayoutMode::Dual
+        && !state.config.preview.fixed_side
         && tab.focus == crate::tab::Focus::Right;
     let single_viewer = viewing && layout == crate::config::LayoutMode::Single;
     // M39-6：PreviewBottom——查看器占主区下半（全宽）。
@@ -2000,6 +2014,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             }
         }
         InputMode::Filter { input } => Line::from(format!("={input}")),
+        InputMode::FrecencyPreviewSearch { input } => Line::from(format!("预览搜索 /{input}")),
         InputMode::HelpView { .. } => Line::from(String::new()), // 帮助覆盖层提前 return
         InputMode::HelpSearch { input, .. } => Line::from(format!("/{input}")), // 同上，保持语义一致
         InputMode::JumpSelect { .. } => Line::from(String::new()), // 选择器覆盖层提前 return，不可达

@@ -92,6 +92,8 @@ pub struct PreviewConfig {
     /// zip→`unzip -Z1`、tar→`tar -tf`、7z/rar→`7z l -ba`、deb→`bsdtar -tf`。
     /// 仅用于加速大归档的成员列表预览，不写归档、不经 shell。
     pub archive_external_listing: bool,
+    /// M49-3：true（默认）= frecency/`:view` 预览固定右侧；false = 动态对侧。
+    pub fixed_side: bool,
 }
 
 impl Default for PreviewConfig {
@@ -100,6 +102,7 @@ impl Default for PreviewConfig {
             pdf_image_pages: 1,
             pdf_prefer_image: false,
             archive_external_listing: true,
+            fixed_side: true,
         }
     }
 }

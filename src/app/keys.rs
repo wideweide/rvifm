@@ -475,12 +475,34 @@ pub(crate) const SORT_FIELDS: [(KeyCode, KeyCode, &str, crate::tab::SortField); 
 /// 搜索态：输入即搜（Char 入 query），方向键移动，Esc 清 query。
 /// Normal 态：j/k/gg/G 移动，l/Enter 跳转，y/n/f/c 复制，e 编辑，w view，
 /// Esc 退出 pane 模式，Tab 切换焦点。
+/// M49-1：预览搜索命中的行号（复用 PreviewRenderer 的纯文本行）。
+fn frecency_preview_match_lines(pane: &crate::tab::FrecencyPane) -> Vec<usize> {
+    let Some(query) = pane.preview_query.as_ref() else {
+        return Vec::new();
+    };
+    let Some(entry) = filter_jump(&pane.entries, &pane.query)
+        .get(pane.cursor)
+        .cloned()
+    else {
+        return Vec::new();
+    };
+    let path = std::path::PathBuf::from(&entry.path);
+    let needle = query.to_lowercase();
+    crate::preview::preview_lines(&path, 10_000)
+        .iter()
+        .enumerate()
+        .filter(|(_, span)| span.content.to_lowercase().contains(&needle))
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
 pub(crate) fn frec_pane_key(
     state: &mut AppState,
     input: &mut InputState,
     msg: &mut Option<String>,
     key: KeyEvent,
 ) -> Outcome {
+    let fixed_side = state.config.preview.fixed_side;
     let Some(pane) = state.active_tab_mut().pane_frecency.as_mut() else {
         return Outcome::Continue;
     };
@@ -489,6 +511,42 @@ pub(crate) fn frec_pane_key(
     }
     let visible_len = filter_jump(&pane.entries, &pane.query).len();
     let bottom = visible_len.saturating_sub(1);
+    // M49-1：Tab 进入右侧预览后，j/k 滚动预览、/ 搜索、n/N 跳转；
+    // 左侧列表保持可见但不响应 j/k。
+    if pane.preview_focus {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Tab | KeyCode::Char(' ') | KeyCode::Esc => pane.preview_focus = false,
+            KeyCode::Char('j') | KeyCode::Down if !ctrl => {
+                pane.preview_scroll = pane.preview_scroll.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up if !ctrl => {
+                pane.preview_scroll = pane.preview_scroll.saturating_sub(1);
+            }
+            KeyCode::Char('J') | KeyCode::Char('K') if ctrl => {
+                if ctrl && key.code == KeyCode::Char('J') {
+                    pane.preview_scroll = pane.preview_scroll.saturating_add(1);
+                } else {
+                    pane.preview_scroll = pane.preview_scroll.saturating_sub(1);
+                }
+            }
+            KeyCode::Char('/') => return Outcome::EnterFrecencyPreviewSearch,
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                let forward = key.code == KeyCode::Char('n');
+                let matches = frecency_preview_match_lines(pane);
+                if matches.is_empty() {
+                    *msg = Some("预览中无匹配".to_owned());
+                } else {
+                    let step = if forward { 1 } else { matches.len() - 1 };
+                    pane.preview_match = (pane.preview_match + step) % matches.len();
+                    pane.preview_scroll = matches[pane.preview_match];
+                }
+            }
+            KeyCode::Char('w') | KeyCode::Char('q') => pane.preview_focus = false,
+            _ => {}
+        }
+        return Outcome::Continue;
+    }
     // M23-7（修订）：Normal 态键位与 Normal 一致（作用于光标结果条目）。
     if pane.normal {
         match key.code {
@@ -530,12 +588,16 @@ pub(crate) fn frec_pane_key(
                 pane.g_pending = false;
             }
             KeyCode::Tab => {
-                // Tab 切换焦点 pane（frecency 保持激活）。
-                let tab = state.active_tab_mut();
-                tab.focus = match tab.focus {
-                    crate::tab::Focus::Left => crate::tab::Focus::Right,
-                    crate::tab::Focus::Right => crate::tab::Focus::Left,
-                };
+                // M49-1：默认固定右侧布局下 Tab 进出预览焦点；动态布局仍切 pane。
+                if fixed_side {
+                    pane.preview_focus = !pane.preview_focus;
+                } else {
+                    let tab = state.active_tab_mut();
+                    tab.focus = match tab.focus {
+                        crate::tab::Focus::Left => crate::tab::Focus::Right,
+                        crate::tab::Focus::Right => crate::tab::Focus::Left,
+                    };
+                }
             }
             KeyCode::Char('y') => {
                 // y 前缀：y-n 名称 / y-f 路径 / y-c 内容（作用于光标结果）。
@@ -578,11 +640,13 @@ pub(crate) fn frec_pane_key(
             KeyCode::Char('w') => {
                 // w：对侧进入 View 模式（预览/查看光标条目）。
                 state.active_tab_mut().view_mode = !state.active_tab_mut().view_mode;
-                let tab = state.active_tab_mut();
-                tab.focus = match tab.focus {
-                    crate::tab::Focus::Left => crate::tab::Focus::Right,
-                    crate::tab::Focus::Right => crate::tab::Focus::Left,
-                };
+                if !fixed_side {
+                    let tab = state.active_tab_mut();
+                    tab.focus = match tab.focus {
+                        crate::tab::Focus::Left => crate::tab::Focus::Right,
+                        crate::tab::Focus::Right => crate::tab::Focus::Left,
+                    };
+                }
             }
             KeyCode::Char(c) => {
                 // 可打印字符回搜索态（携带字符重新筛选）。
@@ -628,11 +692,15 @@ pub(crate) fn frec_pane_key(
             pane.cursor = pane.cursor.saturating_sub(1);
         }
         KeyCode::Tab => {
-            let tab = state.active_tab_mut();
-            tab.focus = match tab.focus {
-                crate::tab::Focus::Left => crate::tab::Focus::Right,
-                crate::tab::Focus::Right => crate::tab::Focus::Left,
-            };
+            if fixed_side {
+                pane.preview_focus = !pane.preview_focus;
+            } else {
+                let tab = state.active_tab_mut();
+                tab.focus = match tab.focus {
+                    crate::tab::Focus::Left => crate::tab::Focus::Right,
+                    crate::tab::Focus::Right => crate::tab::Focus::Left,
+                };
+            }
         }
         KeyCode::Char(c) => {
             pane.query.push(c);
@@ -1878,6 +1946,7 @@ pub(crate) fn handle_mouse(
             if let Some(index) = crate::app::render::frecency_click_index(
                 area,
                 focus,
+                state.config.preview.fixed_side,
                 cursor,
                 mouse.column,
                 mouse.row,

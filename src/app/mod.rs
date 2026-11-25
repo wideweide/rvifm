@@ -147,6 +147,8 @@ pub(crate) enum Outcome {
     ConfirmTagDelete,
     /// M48-5：粘贴目标冲突，请求进入阻塞确认弹窗。
     ConfirmPaste,
+    /// M49-1：进入 frecency 右侧预览搜索输入。
+    EnterFrecencyPreviewSearch,
     /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
@@ -205,6 +207,8 @@ pub(crate) enum InputMode {
     Search { input: String, origin: usize },
     /// 过滤输入模式：正在输入 `=` 后的内容（M4-2）。
     Filter { input: String },
+    /// M49-1：frecency 右侧预览搜索输入态。
+    FrecencyPreviewSearch { input: String },
     /// 删除确认模式：`y` 执行，其余取消（M2-2；M13-3 起 permanent 标志
     /// 区分 dd 暂存删除与 DD 永久删除，渲染与执行分支不同）。
     Confirm {
@@ -338,6 +342,7 @@ fn ime_editable_mode(mode: &InputMode) -> bool {
             | InputMode::ArchiveDialog { .. }
             | InputMode::Rename { .. }
             | InputMode::RemotePass { .. }
+            | InputMode::FrecencyPreviewSearch { .. }
     )
 }
 
@@ -1065,6 +1070,10 @@ fn run_with_initial_mode(
                                             cursor: 0,
                                             normal: false,
                                             g_pending: false,
+                                            preview_focus: false,
+                                            preview_scroll: 0,
+                                            preview_query: None,
+                                            preview_match: 0,
                                         });
                                     mode = InputMode::Normal;
                                 }
@@ -1221,6 +1230,22 @@ fn run_with_initial_mode(
                         let line = std::mem::take(input);
                         mode = InputMode::Normal;
                         submit_search(&mut state, &line, &mut msg);
+                    }
+                },
+                InputMode::FrecencyPreviewSearch { input } => match command_input(input, key) {
+                    CmdInput::Continue => {}
+                    CmdInput::Cancel => {
+                        mode = InputMode::Normal;
+                        msg = None;
+                    }
+                    CmdInput::Submit => {
+                        let q = std::mem::take(input);
+                        if let Some(pane) = state.active_tab_mut().pane_frecency.as_mut() {
+                            pane.preview_query = (!q.is_empty()).then_some(q);
+                            pane.preview_match = 0;
+                            pane.preview_scroll = 0;
+                        }
+                        mode = InputMode::Normal;
                     }
                 },
                 InputMode::Filter { input } => match command_input(input, key) {
@@ -1640,6 +1665,11 @@ fn run_with_initial_mode(
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };
                         }
+                        Outcome::EnterFrecencyPreviewSearch => {
+                            mode = InputMode::FrecencyPreviewSearch {
+                                input: String::new(),
+                            };
+                        }
                         Outcome::ConfirmPaste => {
                             // M48-5：粘贴冲突 → 阻塞确认弹窗（与删除确认同风格）。
                             mode = InputMode::ConfirmPaste {
@@ -1674,6 +1704,10 @@ fn run_with_initial_mode(
                                 cursor: 0,
                                 normal: false,
                                 g_pending: false,
+                                preview_focus: false,
+                                preview_scroll: 0,
+                                preview_query: None,
+                                preview_match: 0,
                             });
                         }
                         Outcome::EditFile { path } => {

@@ -681,6 +681,12 @@ pub struct FrecencyPane {
     pub normal: bool,
     /// gg 待决。
     pub g_pending: bool,
+    /// M49-1：预览区是否获得焦点（Tab 切换，列表始终可见）。
+    pub preview_focus: bool,
+    /// M49-1：预览滚动与搜索态（复用 ViewerState 渲染链）。
+    pub preview_scroll: usize,
+    pub preview_query: Option<String>,
+    pub preview_match: usize,
 }
 
 /// M18-1：运行时排序字段。
@@ -1850,18 +1856,26 @@ impl Tab {
     /// 物理视图取 base.join(name)；归档视图 None（预览未接入）；
     /// 远端视图 None（预览经 RemoteFs read 的链路在 M20 后接入）。
     pub fn preview_path(&self) -> Option<PathBuf> {
+        self.preview_path_with(false)
+    }
+
+    /// M49-2：`fixed_side=true` 时预览目标恒为左栏（列表固定左侧），
+    /// `false` 保留焦点栏语义（M34-4）。
+    pub fn preview_path_with(&self, fixed_side: bool) -> Option<PathBuf> {
         if let Some(r) = &self.results {
             return r.items.get(self.cursor).map(|i| i.path.clone());
         }
-        // M34-4：预览目标 = 焦点 pane 光标文件（修复焦点在右时 :view 预览
-        // 错位到左 pane 文件的缺陷）。
-        let (base, entries, cursor) = match self.focus {
-            Focus::Right => (
-                &self.right.location,
-                &self.right.entries,
-                &self.right.cursor,
-            ),
-            Focus::Left => (&self.location, &self.entries, &self.cursor),
+        let (base, entries, cursor) = if fixed_side {
+            (&self.location, &self.entries, &self.cursor)
+        } else {
+            match self.focus {
+                Focus::Right => (
+                    &self.right.location,
+                    &self.right.entries,
+                    &self.right.cursor,
+                ),
+                Focus::Left => (&self.location, &self.entries, &self.cursor),
+            }
         };
         match base {
             Location::Physical(p) => entries.get(*cursor).map(|i| p.join(&i.name)),
