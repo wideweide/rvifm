@@ -1761,6 +1761,10 @@ pub(crate) fn handle_key(
             // FIX-2：PutCopy/PutMove——消费 yank 缓冲区（复制/移动到当前目录）。
             input.count = None;
             paste_yanked(state, key.code == KeyCode::Char('P'), msg);
+            // M48-5：同名冲突改阻塞式确认（原仅状态栏提示后放弃）。
+            if !state.pending_paste_conflicts.is_empty() {
+                return Outcome::ConfirmPaste;
+            }
         }
         KeyCode::Char('s') => {
             // M18-3：挂起 TUI 进入 shell（vifm 既有习惯；M18-4 接入

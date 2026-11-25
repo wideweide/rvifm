@@ -1248,6 +1248,25 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             );
             return;
         }
+        InputMode::ConfirmPaste { cursor, scroll } => {
+            // M48-5：复用删除确认窗口渲染冲突目标列表（覆盖标题为覆盖确认）。
+            let paths = state.pending_paste_conflicts.clone();
+            let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 2);
+            let (_, lines) = confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
+            frame.render_widget(ratatui::widgets::Clear, rect);
+            let centered = Line::from("⚠ 是否覆盖同名文件")
+                .style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD))
+                .centered();
+            frame.render_widget(
+                Paragraph::new(lines).block(
+                    ratatui::widgets::Block::bordered()
+                        .title(centered)
+                        .border_style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                ),
+                rect,
+            );
+            return;
+        }
         InputMode::ConfirmTagDelete { cursor, scroll } => {
             // 标记是名字集合——按焦点 pane 的 base_dir 还原为完整路径并排序。
             let base = if tab.focus == crate::tab::Focus::Right {
@@ -1920,7 +1939,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::Jobs { .. } => Line::from(String::new()), // 作业菜单覆盖层提前 return，不可达
         InputMode::TrashMenu { .. } => Line::from(String::new()), // 暂存区覆盖层提前 return，不可达
         InputMode::FileInfo { .. } => Line::from(String::new()), // 详情覆盖层提前 return，不可达
-        InputMode::Confirm { .. } | InputMode::ConfirmTagDelete { .. } => {
+        InputMode::Confirm { .. }
+        | InputMode::ConfirmTagDelete { .. }
+        | InputMode::ConfirmPaste { .. } => {
             Line::from(String::new()) // M46-10：居中弹窗提前 return，不可达
         }
         InputMode::AskPass { input, op } => {

@@ -145,6 +145,8 @@ pub(crate) enum Outcome {
     ConfirmDelete(PathBuf, bool, Option<String>),
     /// M45-3d：可视模式 v+d/x 已把选中项加 tag，请求进入批量删除确认覆盖层。
     ConfirmTagDelete,
+    /// M48-5：粘贴目标冲突，请求进入阻塞确认弹窗。
+    ConfirmPaste,
     /// 打开文件详情对话框（M13-5：Ctrl-G，文本已构造好）。
     FileInfo { path: PathBuf, text: String },
     /// 批量重命名（M13-6：cw——名单待 $EDITOR 编辑）。
@@ -215,6 +217,8 @@ pub(crate) enum InputMode {
     },
     /// 标记批量删除确认模式（`:tag delete`，M3-3；M46-10：带列表导航状态）。
     ConfirmTagDelete { cursor: usize, scroll: usize },
+    /// M48-5：粘贴同名冲突的阻塞确认（复用删除确认视觉）。
+    ConfirmPaste { cursor: usize, scroll: usize },
     /// 全屏帮助视图（FEAT-4，`:help`）：独立滚动状态（与目录列表无关），
     /// j/k 滚动、/ 搜索（n/N 循环跳转）、q/Esc 关闭返回。
     HelpView {
@@ -1445,6 +1449,32 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                     }
                 }
+                InputMode::ConfirmPaste { cursor, scroll } => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                *cursor = cursor.saturating_add(1);
+                                if *cursor >= *scroll + crate::app::render::CONFIRM_LIST_HEIGHT {
+                                    *scroll = *cursor - crate::app::render::CONFIRM_LIST_HEIGHT + 1;
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                *cursor = cursor.saturating_sub(1);
+                                if *cursor < *scroll {
+                                    *scroll = *cursor;
+                                }
+                            }
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                mode = InputMode::Normal;
+                                confirm_paste_conflicts(&mut state, &mut msg);
+                            }
+                            _ => {
+                                mode = InputMode::Normal;
+                                cancel_paste_conflicts(&mut state, &mut msg);
+                            }
+                        }
+                    }
+                }
                 InputMode::Normal => {
                     // M47-6：Normal 模式 Esc 防御性切英文（比依赖模式边界可靠）。
                     // 仅捕获"按键前已是 Normal"的场景，文本输入模式按 Esc 返回
@@ -1532,6 +1562,13 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                         }
                         Outcome::FileInfo { path, text } => {
                             mode = InputMode::FileInfo { path, text };
+                        }
+                        Outcome::ConfirmPaste => {
+                            // M48-5：粘贴冲突 → 阻塞确认弹窗（与删除确认同风格）。
+                            mode = InputMode::ConfirmPaste {
+                                cursor: 0,
+                                scroll: 0,
+                            };
                         }
                         Outcome::RunUserCommand { cmd } => {
                             // M23-11：挂起 TUI，外部命令运行后恢复。

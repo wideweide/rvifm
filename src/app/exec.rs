@@ -4301,6 +4301,29 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
     // Skip/RenameAuto/KeepNewer/Overwrite 在条目级消解）。
     let policy = crate::state::ConflictPolicy::parse(&state.config.transfer.conflict_policy)
         .unwrap_or_default();
+    // M48-5：Ask 策略下先预扫所有冲突目标，改为阻塞式确认弹窗——取消后
+    // 不复制任何条目，状态与操作前一致（原仅状态栏提示后直接放弃）。
+    if policy == crate::state::ConflictPolicy::Ask {
+        let conflicts: Vec<PathBuf> = buffer
+            .paths
+            .iter()
+            .filter_map(|p| {
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let dest = base.join(&name);
+                dest.exists().then_some(dest)
+            })
+            .collect();
+        if !conflicts.is_empty() {
+            let n = conflicts.len();
+            state.pending_paste_conflicts = conflicts;
+            state.pending_paste_move = do_move;
+            *msg = Some(format!("{n} 个目标已存在：按 y 确认覆盖 / Esc 取消"));
+            return;
+        }
+    }
     let mut done = 0usize;
     let mut first_err: Option<String> = None;
     for path in &buffer.paths {
@@ -4369,6 +4392,25 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
         }
         _ => *msg = Some(format!("{verb} {done} item(s) to {}", base.display())),
     }
+}
+
+/// M48-5：确认粘贴冲突——以临时 overwrite 策略重跑一次粘贴；确认后清空请求。
+pub(crate) fn confirm_paste_conflicts(state: &mut AppState, msg: &mut Option<String>) {
+    if state.pending_paste_conflicts.is_empty() {
+        return;
+    }
+    state.pending_paste_conflicts.clear();
+    let move_mode = state.pending_paste_move;
+    let saved = state.config.transfer.conflict_policy.clone();
+    state.config.transfer.conflict_policy = "overwrite".to_owned();
+    paste_yanked(state, move_mode, msg);
+    state.config.transfer.conflict_policy = saved;
+}
+
+/// M48-5：取消粘贴冲突——丢弃请求，不改动任何文件。
+pub(crate) fn cancel_paste_conflicts(state: &mut AppState, msg: &mut Option<String>) {
+    state.pending_paste_conflicts.clear();
+    *msg = Some("已取消粘贴".to_owned());
 }
 
 /// M20-1：远端视图粘贴——yank 路径读出内容 → 后端 write 到当前远端目录；

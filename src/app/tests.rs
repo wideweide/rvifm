@@ -3711,8 +3711,9 @@ fn fix2_paste_reports_errors_without_panic() {
         KeyModifiers::NONE,
     );
     let m = msg.as_deref().unwrap();
-    assert!(m.contains("0/1"), "msg: {m:?}");
+    // M48-5：同名冲突改为阻塞确认请求（原状态栏 "0/1 项: 目标已存在"）。
     assert!(m.contains("已存在"), "msg: {m:?}");
+    assert!(!state.pending_paste_conflicts.is_empty(), "应进入确认队列");
     assert!(tmp.path().join("a.txt").exists(), "原文件未受影响");
 }
 
@@ -7691,6 +7692,60 @@ fn m453b_executable_enter_shows_hint_only() {
 }
 
 #[cfg(unix)]
+#[test]
+fn m485_paste_conflict_uses_blocking_confirmation() {
+    // M48-5：同名冲突不再只写状态栏，进入阻塞确认；取消不改文件。
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    fs::write(src.path().join("same.txt"), "NEW").unwrap();
+    fs::write(dst.path().join("same.txt"), "OLD").unwrap();
+    let mut state = AppState::new(Tab::from_physical(src.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(dst.path(), Config::default()).unwrap();
+    let mut input = crate::app::InputState::default();
+    // 直接设 yank，聚焦冲突确认本身（避免 yy 待决序列干扰）。
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![src.path().join("same.txt")],
+        cut: false,
+        source: crate::state::YankSource::Local,
+    });
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let outcome = press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('p'),
+        KeyModifiers::NONE,
+    );
+    assert!(matches!(outcome, Outcome::ConfirmPaste));
+    assert_eq!(state.pending_paste_conflicts.len(), 1);
+    assert_eq!(
+        fs::read_to_string(dst.path().join("same.txt")).unwrap(),
+        "OLD"
+    );
+
+    let mut msg = None;
+    cancel_paste_conflicts(&mut state, &mut msg);
+    assert!(state.pending_paste_conflicts.is_empty());
+    assert_eq!(
+        fs::read_to_string(dst.path().join("same.txt")).unwrap(),
+        "OLD"
+    );
+
+    state.yank = Some(crate::state::YankBuffer {
+        paths: vec![src.path().join("same.txt")],
+        cut: false,
+        source: crate::state::YankSource::Local,
+    });
+    state
+        .pending_paste_conflicts
+        .push(dst.path().join("same.txt"));
+    confirm_paste_conflicts(&mut state, &mut msg);
+    assert_eq!(
+        fs::read_to_string(dst.path().join("same.txt")).unwrap(),
+        "NEW"
+    );
+}
+
 #[test]
 fn m484_visual_yank_fills_buffer_for_paste() {
     // M48-4：v 多选 + y 写 yank 缓冲，对侧 p/P 均可粘贴（原仅写剪贴板）。
