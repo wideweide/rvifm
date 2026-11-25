@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-25
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：M48 用户实测批次 4 已登记（13 任务）；M48-1～M48-12 已完成，下一任务 M48-13（文档收尾）。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前任务**：无待执行任务（M48-1～M48-13 全部勾选）。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,12 +20,13 @@
 
 ## 下一步
 
-1. M47 全部任务完成；仅提交并推送代码到当前分支，不 bump 版本、不推送 tag、不触发 GitHub Release（用户 2026-11-25 指令）。
+1. M48 全部任务完成；仅提交并推送代码到当前分支，不 bump 版本、不推送 tag、不触发 GitHub Release（沿用用户 2026-11-25 指令）。
 2. 用户可在真实终端补验 M11-6/C6 大图不越界、M46-8 firefox tarball 预览提速、M46-9 rar 工具环境与 FIX-9-M1 IME 会话。
 3. crates.io 不发布（用户 2026-11-23 决策，仍停 1.0.0）。
 
 ## 批次关闭记录
 
+- M48（2026-11-25，用户实测批次 4；13/13 全部落地，未发版）：外窗前台激活+焦点目录（tmux 去 `-d`/`-c`、screen cd+next）、文本 opener 新窗优先与 `.md5`/`.sh` 识别、右栏文件共享 opener、`v` 多选 y 写 yank、粘贴冲突阻塞确认、归档成员前缀剥离/递归/多选解压、外部列目录加速预览（可配置回退）、`:archive` 无参直执行/`-i` 交互与对话框细节、IME 1s 周期兜底、tutor 列表增强、删除确认真窗口化、`rv help` 查看器。590 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**不触发版本 bump/tag/GitHub Release**，代码提交并推送当前分支。
 - M47（2026-11-25，用户实测批次 3；10/10 全部落地，未发版）：过滤/归档/解压焦点化（Pane.filter/visual/tags/sort + focused_* 访问器 + opposite_physical_base）、frecency 面板无边框融合与新标题、目录预览图标分层缩进、右栏 `..` 单高亮、左右栏独立多选、列表前导留白与整行高亮、IME 启动/Esc/FocusGained 防御性切英文（force_english 不覆盖 saved + 250ms 节流）。579 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**用户指令不触发版本 bump/tag/GitHub Release**，代码提交并推送当前分支。
 - REL-6（2026-11-25，1.4.0 发布）：版本 bump 1.4.0（Cargo.toml + Cargo.lock rvifm 项 + CHANGELOG/README/AGENTS/PLAN/STATE/TASKS/NOTES）；main bump run 45448879782 全绿 → tag v1.4.0 → tag run 45452618998 九 job 全绿（三平台 test + fuzz + supply-chain + 3 release 腿 + release-checksums）；GitHub Release v1.4.0 三 musl 归档 + SHA256SUMS 3 行，下载实测 `sha256sum -c` 全通过、aarch64 静态 ELF、x64-musl `--version = rvifm 1.4.0`。crates.io 不发布。
 - M46（2026-11-25，用户实测批次 2）：12/12 全部落地——图片越界真修复（plan_image 顶部裁剪替代 3 屏虚拟图形 + viewer_rect 同源）、搜索高亮仅焦点 pane、右栏整行背景一致、h→l 光标还原不覆盖 `..`、extract 双侧刷新、首次启动生成带注释默认配置 + 示例、help 三修（不透明/新窗口/rvifm help）、归档预览缓存 + 大小护栏、deb/rar 只读 VFS、yazi 删除确认、help/GUIDE/CHANGELOG/tutor 同步。567 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿。原生协议真实终端大图、用户机 firefox tarball 提速与 rar 工具环境验证 deferred；未触发版本发布（待 CI）。

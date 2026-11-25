@@ -1455,4 +1455,9 @@ rvifm record  → 静默记录访问
   - M48-8 `:archive` 无参直接按默认方式执行，交互入口改 `-i`（原无参开对话框行为作废）；对话框字段结构不变，仅改触发与视觉。
   - M48-9 终端 FocusGained 在多数终端不可达，故以 Normal 模式**周期探测**（1s 量级）兜底，触发仍走 `ImeWorker::force_english`（不覆盖 saved）；不新增桌面级监听。
   - M48-2 可执行文件默认特例保留，只对 `.sh`/`.txt`/`.md` 等文本类按文本优先识别；编辑器类 opener 走新终端窗口优先，避免遮住 rvifm。
+- **批次收尾（2026-11-25）**：13/13 全部勾选，590 单测 + 13 集成、fmt/clippy/build/`--version`/harness_check 全绿；README/GUIDE/help/CHANGELOG/tutor 与验收同步。**不触发版本 bump / tag / GitHub Release**（沿用用户 M47 指令；不改变后续批次默认发布流程）。
+- **M48-1/12 外窗裁决细节**：tmux `new-window` 去掉 `-d`（默认选中新窗口即激活），追加 `select-window -t :` 兜底；`-c <focused dir>` 指定起始目录；screen 用 `cd <dir> && cmd` 包裹并 `screen -X next` 激活。该路由覆盖 `s`/`:!`/`gi`/自定义命令/`:help`。
+- **M48-7 外部预览裁决**：不调用 `vim`/`view` 本身（会覆盖 TUI 且无法与预览窗格同源），只借 vifm `fileviewer` 的「调外部只读列表命令」思路；`unzip -Z1`/`tar -tf`/`7z l -ba` 固定参数、`Stdio::null()` stderr、4MB stdout 上限；`[preview] archive_external_listing` 默认 true，缺失/失败/超限静默回退内置 VFS；不引入新 crate。
+- **M48-8 行为变更**：`:archive` 无参从「打开对话框」改为「按默认直接执行」（zip + 文件名去扩展名 + `.zip` 后缀），交互入口改 `-i`；`archive_plan` 统一按格式补扩展名，避免预填名与源文件名冲突导致回车失败（这正是用户实测「任意字段回车不执行」的根因之一）。
+- **M48-6 根因**：归档后端 `list()` 返回的 `ArchiveEntry.path` 已是完整归档内路径，`extract_members` 再拼 `inner/` 造成 `a/a/c.json` 读取失败（目录只建空壳）；yy 固化 `base_inner` 前缀又使单文件落盘成 `a/c.json`。修法：目录分支直接用 `entry.path`；粘贴时取所有选中路径的最长公共 inner 前缀剥离。
 - **排序**：1→13，缺陷/交互先行，文档殿后。

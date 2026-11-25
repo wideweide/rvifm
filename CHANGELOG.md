@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### M48 用户实测批次 4（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 外窗：`s`/`:!`/`gi`/`:help` 新窗口前台激活，起始目录取焦点 pane（tmux 去 `-d` + `-c`；screen cd + next）。文本编辑类 opener 优先新窗口，`.md5` MIME 补齐，`.sh` 执行位文本优先。
+- 浏览：右栏文件 `l`/Enter/再击走共享 opener；`v` 多选 `y` 写 yank 缓冲；粘贴冲突改阻塞式确认弹窗。
+- 归档：成员粘贴剥离公共 inner 前缀（不重建上级目录）、目录递归解压、多选混合正确；`w` 预览可选外部 `unzip -Z1`/`tar -tf`/`7z l -ba` 快速列目录（4MB 输出护栏，缺工具回退内置）。
+- 命令：`:archive` 无参直接执行（zip + `.zip` 名）、`-i` 交互；对话框任意字段回车执行、`Tab` 高亮当前字段、只清弹窗矩形。
+- IME：Normal 模式 1s 周期切英文兜底；tutor 列表 `/` 搜索 / `d` 重置 / 仅错题 / 结束 Ctrl+N 回列表；删除确认真窗口化；`rvifm help` 改为可搜索/高亮查看器（无 TTY 回退纯文本）。
+
+
 ### M47 用户实测批次 3（10 任务；仅提交代码，不触发版本 bump / GitHub Release）
 
 - 焦点化收尾：`=` glob 过滤作用于焦点 pane，状态从状态栏移入该栏顶部路径行、Esc 清除；`:archive` 源取焦点栏文件、产物落在对侧栏；`:extract` 源归档取焦点栏、缺省解压到对侧；批量选集、变量替换 `%d/%f/%F`、`:file`、marks、`:sort`、`:select`/`:unselect` 均按焦点栏分派。

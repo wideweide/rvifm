@@ -700,4 +700,4 @@
 - [x] M48-10 tutor 列表 `/` 搜索 / `d` reset / 仅错题 / Ctrl+N 重选（见 SPEC M48-10；2026-11-25 完成：TutorList search 态 + reset 分派 + wrong_items_only + done 时 Ctrl+N 回列表，m4810 测试）
 - [x] M48-11 删除确认 yazi 真窗口化（状态栏/滚动条在框内）（见 SPEC M48-11；2026-11-25 完成：footer 独立 widget + 窗口内缘滚动条列 + 高度调整，既有 m453c/m4610 回归通过）
 - [x] M48-12 `:help` 新窗口修复 + `rv help` 改 view 查看器（见 SPEC M48-12；2026-11-25 完成：run_with_initial_mode + run_help_viewer + 标题高亮 + 无 TTY 回退，CLI 13 集成通过）
-- [ ] M48-13 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M48-13）
+- [x] M48-13 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M48-13；2026-11-25 完成：四文档 + help.txt + tutor_meta 同步，harness_check 通过，未发版）
