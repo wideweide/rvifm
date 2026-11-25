@@ -11,7 +11,7 @@ description = "掌握高频目录跳转、marks 标记与书签"
 [[items]]
 id = "jump_selector"
 prompt = "访问 2-3 个目录后（l 进入），按 `o` 在焦点 pane 打开 frecency 搜索区。"
-expected = "列出高频目录/文件混合条目（图标全路径行、✦keyword 标注、底部 /query 回显）；输入即筛选、回车跳转。"
+expected = "面板无边框、融合焦点栏样式，标题「Frecency - 高频目录/文件搜索 - Normal 模式」；列出高频目录/文件混合条目（图标全路径行、✦keyword 标注、底部 /query 回显）；输入即筛选、回车跳转。"
 
 [[items]]
 id = "jump_kind"

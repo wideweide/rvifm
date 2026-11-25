@@ -682,4 +682,4 @@
 - [x] M47-7 右栏顶部 `..` 行只高亮该行（见 SPEC M47-7；2026-11-25 完成：row_reversed 守卫替代无条件 idx==cursor，m477 测试）
 - [x] M47-8 左右栏 `v` 多选状态各自独立（见 SPEC M47-8；2026-11-25 完成：Pane.visual/tags + 投影 + 渲染各读自己栏，m478 测试）
 - [x] M47-9 双栏左侧留白 + 整行高亮覆盖间隙（见 SPEC M47-9；2026-11-25 完成：LIST_LEADING_BLANK + 列宽预算同步 + 双侧/frecency 列表，m479 测试）
-- [ ] M47-10 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M47-10）
+- [x] M47-10 文档收尾（README/GUIDE/help/CHANGELOG/ACCEPTANCE/tutor；见 SPEC M47-10；2026-11-25 完成：README/GUIDE/help/CHANGELOG/tutor 四模块提示同步，13 模块 100 项可解析，harness_check 通过）

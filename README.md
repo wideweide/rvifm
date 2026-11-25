@@ -2,7 +2,7 @@
 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
-**当前状态：v1.4.0 发布（M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 全部完成；GitHub Release 仅 musl 归档——linux-x64-musl / linux-aarch64-musl（静态）/ windows-x64，crates.io 停在 1.0.0；见 CHANGELOG）。** M46 用户实测批次 2（12 子任务）已全部落地：图片预览不越界、搜索高亮仅焦点 pane、右栏整行背景一致、`h`→`l` 光标还原、extract 后刷新对侧、启动生成默认配置、`:help` 三修、归档预览提速、deb/rar VFS、yazi 删除确认（详见 CHANGELOG `[1.4.0]`）。M45 用户实测批次（28 子任务）已全部落地：HOME 路径缩写、标签栏点击、可配置分隔线、类型图标、删除确认弹窗、预览越界修复、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示等（详见 CHANGELOG `[1.3.0]`）。 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双栏快捷键与目录/文件命令作用于焦点 pane，两侧均可显示并进入 `..` 父目录行（根目录隐藏）。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
+**当前状态：v1.4.0 发布（M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 全部完成；GitHub Release 仅 musl 归档——linux-x64-musl / linux-aarch64-musl（静态）/ windows-x64，crates.io 停在 1.0.0；见 CHANGELOG）。** M46 用户实测批次 2（12 子任务）已全部落地：图片预览不越界、搜索高亮仅焦点 pane、右栏整行背景一致、`h`→`l` 光标还原、extract 后刷新对侧、启动生成默认配置、`:help` 三修、归档预览提速、deb/rar VFS、yazi 删除确认（详见 CHANGELOG `[1.4.0]`）。M45 用户实测批次（28 子任务）已全部落地：HOME 路径缩写、标签栏点击、可配置分隔线、类型图标、删除确认弹窗、预览越界修复、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示等（详见 CHANGELOG `[1.3.0]`）。 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双栏快捷键与目录/文件命令作用于焦点 pane，两侧均可显示并进入 `..` 父目录行（根目录隐藏）。M47 用户实测批次 3（10 任务）已落地：`=` 过滤与 `:archive`/`:extract` 焦点化、frecency 面板无边框融合、`=` 状态移入栏顶路径、目录预览图标分层缩进、右栏 `..` 单高亮、左右栏独立多选、列表左侧留白与整行高亮、切回窗口/Normal `Esc` 防御性切英文（本批次仅提交代码，未触发版本 bump/Release）。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
 
@@ -82,7 +82,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 - **导师模式**：`:tutor` 交互式教程+自验清单——**13 模块 100 项覆盖全部键位与命令**（透明放行边学边练：Ctrl+Y 掌握 / Ctrl+N 记错题本下次优先复习 / Ctrl+Q 退出；环境依赖条目标注可跳过；进度本地持久化、`:tutor reset <模块>` 重置），新手上手与发布前自验两用
 - **多标签**：`:tabnew` / `:tabclose` / `gt` / `gT` / `N gt` / `:tabmove`，每个 tab 独立状态
-- **vim 风格浏览**：`j/k/h/l`、`gg/G`、`Ctrl-u/Ctrl-d`、`/` 搜索（smart-case）、`n/N`、`=` glob 过滤
+- **vim 风格浏览**：`j/k/h/l`、`gg/G`、`Ctrl-u/Ctrl-d`、`/` 搜索（smart-case）、`n/N`、`=` glob 过滤（作用于焦点 pane，状态显示在该栏顶部路径，Esc 清除）
 - **文件操作与撤销**：复制、移动、删除（应用内暂存可恢复）、重命名、新建、符号链接创建（`:link`，Windows 目录联接回退）、结构化批量重命名（`:rename s/<pat>/<repl>/[i]` / `prefix=` / `suffix=` / `seq=`，预览确认），`u` 逆序撤销（含跨 tab）
 - **后台作业**：`:jobs` 列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情——进度/速率/时长）
 - **目录对比**：`:compare`（按名+大小 / `bycontents` SHA-256 内容判定）；结果视图 `dp` 取回另一侧 / `do` 删除当前侧（可恢复）
@@ -215,8 +215,9 @@ ibus_english_engine = "xkb:us::eng" # 仅 IBus 英文引擎回退使用
 Linux 下进入 Normal（包括启动和从文本输入模式按 Esc 返回）时，rvifm 会保存当前
 输入法状态并切到英文；进入命令、搜索、过滤、重命名等文本输入模式时恢复先前状态。
 Fcitx/Fcitx5 优先停用当前输入法状态并保留所选引擎；IBus 使用配置的英文 engine
-回退。实现只调用系统已有命令，不增加 Cargo 或 C 库依赖；未安装或命令不可用时
-保持原行为。设置 `[ime] enabled = false` 可关闭；`ibus_english_engine` 可配置
+回退。从其它窗口切回 rvifm（终端 FocusGained）或 Normal 模式按 `Esc` 时也会防御性切到英文
+（不覆盖已进入文本输入模式时保存的状态，250ms 内重复触发节流）。实现只调用系统已有命令，
+不增加 Cargo 或 C 库依赖；未安装或命令不可用时保持原行为。设置 `[ime] enabled = false` 可关闭；`ibus_english_engine` 可配置
 为桌面已安装的英文键盘 engine 标识。
 
 ## 开发路线
@@ -265,6 +266,7 @@ Fcitx/Fcitx5 优先停用当前输入法状态并保留所选引擎；IBus 使�
 | FIX / REL-4 | 维护期修复（SHA256SUMS 完整性 / tutor 不透明 / 会话恢复）+ 发布产物 musl-only（aarch64 静态 musl） | 已完成（1.2.0） |
 | M45 | 用户实测批次 28 子任务（路径/图标/确认弹窗/预览/焦点/解压/tutor/archive） | 已完成（1.3.0） |
 | M46 | 用户实测批次 2（12 子任务：预览越界/焦点高亮/右栏整行/光标还原/extract 刷新/默认配置/help 三修/归档提速/deb·rar VFS/yazi 删除确认） | 已完成（1.4.0） |
+| M47 | 用户实测批次 3（10 任务：过滤/归档/解压焦点化、frecency 面板融合、IME 防御性激活、右栏 `..` 高亮、独立多选、栏间距与高亮、预览缩进） | 已完成（不单独发版；本批次只提交代码） |
 
 **优先保证 M0–M2 闭环**，尤其是 `u` 撤销的可逆语义。M0–M6 构成 v0.1.0 核心版本；M7–M11 是在核心可用之后逐步叠加的增强，不阻塞 v0.1.0 发布。
 

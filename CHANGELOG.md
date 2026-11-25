@@ -3,6 +3,16 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### M47 用户实测批次 3（10 任务；仅提交代码，不触发版本 bump / GitHub Release）
+
+- 焦点化收尾：`=` glob 过滤作用于焦点 pane，状态从状态栏移入该栏顶部路径行、Esc 清除；`:archive` 源取焦点栏文件、产物落在对侧栏；`:extract` 源归档取焦点栏、缺省解压到对侧；批量选集、变量替换 `%d/%f/%F`、`:file`、marks、`:sort`、`:select`/`:unselect` 均按焦点栏分派。
+- Frecency：`o`/`:j`/`:J` 面板去掉边框、背景/几何融合焦点栏，标题为「Frecency - 高频目录/文件搜索 - Normal 模式」，点击命中与渲染同源。
+- 视觉：目录/归档成员预览图标按层级缩进；左右列表增加前导留白且整行高亮覆盖留白；右栏 `gg` 到顶部只高亮 `..` 行；左右栏 `v` 多选状态各自独立。
+- IME：Linux 下切回终端窗口（FocusGained）与 Normal 模式按 `Esc` 防御性切英文，不覆盖已保存输入法状态、250ms 内重复触发节流；既有模式边界切换/恢复语义保留。
+- 文档：README / GUIDE / 内置 help / tutor 条目同步；本批次不发布版本、不推送 tag。
+
 ## [1.4.0] — 2026-11-25
 
 M46 用户实测批次 2（12 项，含 5 项"未真正修复"的回退真修复 + 配置/归档增强）：

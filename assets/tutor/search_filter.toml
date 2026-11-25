@@ -25,7 +25,7 @@ expected = "搜索只作用于右 pane 列表与高亮（焦点感知）；切�
 [[items]]
 id = "filter_glob"
 prompt = "按 `=` 输入通配符（如 `*.txt`）。"
-expected = "列表只剩匹配项，状态栏出现 [filter: …]；Esc 清除过滤恢复全列表。"
+expected = "焦点 pane 列表只剩匹配项，该栏顶部路径出现 [filter: …]；Esc 清除过滤恢复全列表。"
 
 [[items]]
 id = "filter_substring"

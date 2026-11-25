@@ -1444,4 +1444,5 @@ rvifm record  → 静默记录访问
   - 保留既有边界：右键上下文菜单固定左栏（M41-3 裁决，鼠标右键命中同源）；`history_menu_nav` 依赖 Tab 级历史（右 pane 无历史栈，保持）；归档只读、远端白名单、输入模态语义不变。
   - 排序比较器抽为 `sort_entries_specs` 纯函数，左/右 pane 共用；右 pane 增 `sort` 字段并在刷新后重应用。
 - **提交粒度说明**：M47-3 与 M47-4 共享 `focused_entries`/`focused_cursor` 等焦点访问器与同一批文件，合并为一次提交便于切换模型续跑，任务勾选仍逐项独立。
+- **批次收尾（2026-11-25）**：10/10 全部勾选，579 单测 + 13 集成、fmt/clippy/build/`--version`/harness_check 全绿；文档（README/GUIDE/help/CHANGELOG/tutor）已同步，tutor 保持 13 模块 100 项。按用户指令**不执行版本 bump / tag / GitHub Release**，覆盖 AGENTS §3 的「全部任务完成后自动发布」规则——此为一次性用户裁决，不改变后续批次的默认发布流程。
 - **排序**：1→10，缺陷/焦点化先行，文档殿后；人工终端类验证沿用既有 deferred 口径。

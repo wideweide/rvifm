@@ -20,7 +20,7 @@ expected = "n 跳下一个匹配，N 跳上一个（环绕列表首尾）。"
 [[items]]
 id = "filter"
 prompt = "按 `=` 输入通配符（如 `*.txt`）。"
-expected = "列表只剩匹配项，状态栏出现 [filter: …]；Esc 清除过滤。"
+expected = "焦点 pane 列表只剩匹配项，该栏顶部路径出现 [filter: …]；Esc 清除过滤。"
 
 [[items]]
 id = "jump_selector"
