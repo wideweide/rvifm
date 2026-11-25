@@ -7692,6 +7692,46 @@ fn m453b_executable_enter_shows_hint_only() {
 
 #[cfg(unix)]
 #[test]
+fn m483_right_pane_file_enter_uses_shared_opener() {
+    // M48-3：右栏文件 l/Enter 与左栏一致走 opener（不再 no-op）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("note.md"), "N").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(tmp.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.config.ui.terminal_in_new_window = false; // AUDIT-14 测试隔离
+    state.config.opener.insert(
+        "edit".to_owned(),
+        crate::opener::OpenerDef {
+            run: "echo %s".to_owned(),
+            block: true,
+            desc: None,
+        },
+    );
+    state.config.open.prepend_rules = vec![crate::opener::OpenRule {
+        mime: None,
+        name: Some("*.md".to_owned()),
+        use_rules: vec!["edit".to_owned()],
+    }];
+    let mut input = crate::app::InputState::default();
+    let mut msg: Option<String> = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    );
+    let cmd = state
+        .pending_external
+        .take()
+        .expect("右栏文件应触发 opener");
+    assert!(cmd.contains("note.md"), "路径取焦点栏: {cmd}");
+    assert!(msg.is_none());
+}
+
+#[test]
 fn m482_executable_text_file_enters_text_opener() {
     // M48-2：带执行位的 .sh 仍按文本打开，不再落入「可执行文件仅提示」。
     use std::os::unix::fs::PermissionsExt;

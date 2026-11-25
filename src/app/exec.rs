@@ -4093,10 +4093,10 @@ pub(crate) fn live_search_jump(
 /// `l`/Enter 与鼠标再击共用的打开逻辑（FEAT-1）：目录/归档 → enter_selected
 /// 导航（FIX-3：归档文件优先于 opener）；普通文件 → 系统 opener（M11-7）。
 pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
-    // FEAT-2：焦点在 `..` 行 → 等价 `h`（返回上级；归档根回物理目录）。
-    if state.active_tab().on_parent_row {
+    // FEAT-2/M48-3：焦点在 `..` 行 → 等价 `h`（返回上级；归档根回物理目录）。
+    if state.active_tab().focused_on_parent_row() {
         let cfg = state.config.clone();
-        if let Err(e) = state.active_tab_mut().return_parent(cfg) {
+        if let Err(e) = state.active_tab_mut().focused_return_parent(cfg) {
             *msg = Some(format!("返回失败: {e}"));
             return;
         }
@@ -4107,28 +4107,29 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
     }
     let cfg = state.config.clone();
     let tab = state.active_tab();
+    // M48-3：左右栏共用本打开链路，所有读取/写入均按焦点栏投影。
     let is_file = tab
-        .entries
-        .get(tab.cursor)
+        .focused_entries()
+        .get(tab.focused_cursor())
         .map(|item| !item.is_dir)
         .unwrap_or(false);
-    let is_physical = matches!(tab.location, crate::tab::Location::Physical(_));
+    let is_physical = matches!(tab.focused_location(), crate::tab::Location::Physical(_));
     if is_file && is_physical {
-        let name = tab.entries[tab.cursor].name.clone();
+        let name = tab.focused_entries()[tab.focused_cursor()].name.clone();
         // FIX-3：归档文件（zip/tar/tar.gz…）走 enter_selected 进入
         // 只读虚拟目录（M7-4），不被系统 opener 抢占；不支持格式
         // （.7z/.rar，M7-9）经同一路径给出解压提示。
         if crate::archive::is_archive_file(&name) || crate::archive::is_unsupported_archive(&name) {
-            if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+            if let Err(e) = state.active_tab_mut().focused_enter_selected(cfg) {
                 *msg = Some(format!("进入失败: {e}"));
             }
             return;
         }
-        let path = tab.location.base_dir().join(&name);
+        let path = tab.focus_base().join(&name);
         // M45-3b（裁决）：可执行文件 Enter 不走系统 opener、也不直接执行，
         // 仅在状态栏提示（AGENTS §5.5 例外）。用户显式用 `[open]` 规则绑定
         // 到 `run` 动作（OpenerDef）时仍按其绑定执行——这是唯一的绕过口。
-        let is_exec = tab.entries[tab.cursor].is_exec;
+        let is_exec = tab.focused_entries()[tab.focused_cursor()].is_exec;
         let has_run_binding =
             crate::opener::resolve_open_actions(&state.config.open, &state.config.opener, &path)
                 .iter()
@@ -4173,7 +4174,7 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         }
         return;
     }
-    if let Err(e) = state.active_tab_mut().enter_selected(cfg) {
+    if let Err(e) = state.active_tab_mut().focused_enter_selected(cfg) {
         *msg = Some(format!("进入失败: {e}"));
         return;
     }

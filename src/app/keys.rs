@@ -377,17 +377,28 @@ pub(crate) fn handle_right_key(
         // 此处不再有直跳顶部的单键 `g`（与左 pane gg 序列语义统一）。
         KeyCode::Char('G') if !ctrl => tab.right.cursor_bottom(),
         KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right if !ctrl => {
-            let result = if tab.right.on_parent_row {
-                tab.right.return_parent(cfg)
+            // M48-3：文件与左栏共用 opener 链路（open_selected 已焦点感知）；
+            // 目录/`..` 行仍走右 pane 自己的导航实现（保留 'R' 访问记录）。
+            let is_file = !tab.right.on_parent_row
+                && tab
+                    .right
+                    .entries
+                    .get(tab.right.cursor)
+                    .is_some_and(|i| !i.is_dir);
+            if is_file {
+                open_selected(state, msg);
             } else {
-                tab.right.enter_selected(cfg)
-            };
-            if let Err(e) = result {
-                *msg = Some(format!("进入失败: {e}"));
-            } else {
-                // M21-F9：右 pane 进入成功同样实时记录（侧别 'R'）。
-                let tab_id = state.active;
-                record_live_visit(state, tab_id, 'R');
+                let result = if tab.right.on_parent_row {
+                    tab.right.return_parent(cfg)
+                } else {
+                    tab.right.enter_selected(cfg)
+                };
+                if let Err(e) = result {
+                    *msg = Some(format!("进入失败: {e}"));
+                } else {
+                    let tab_id = state.active;
+                    record_live_visit(state, tab_id, 'R');
+                }
             }
         }
         KeyCode::Char('h') | KeyCode::Left if !ctrl => {
@@ -1970,17 +1981,28 @@ pub(crate) fn handle_mouse(
                 tab.focus == crate::tab::Focus::Right && idx == tab.right.cursor
             };
             if was_focused_row {
-                let cfg = state.config.clone();
-                {
-                    let tab = state.active_tab_mut();
-                    tab.focus = crate::tab::Focus::Right;
-                    if let Err(e) = tab.right.enter_selected(cfg) {
-                        *msg = Some(format!("进入失败: {e}"));
+                // M48-3：文件再击打开也走共享 opener；目录仍走右 pane 导航。
+                let is_file = state
+                    .active_tab()
+                    .right
+                    .entries
+                    .get(idx)
+                    .is_some_and(|i| !i.is_dir);
+                if is_file {
+                    state.active_tab_mut().focus = crate::tab::Focus::Right;
+                    open_selected(state, msg);
+                } else {
+                    let cfg = state.config.clone();
+                    {
+                        let tab = state.active_tab_mut();
+                        tab.focus = crate::tab::Focus::Right;
+                        if let Err(e) = tab.right.enter_selected(cfg) {
+                            *msg = Some(format!("进入失败: {e}"));
+                        }
                     }
+                    let tab_id = state.active;
+                    record_live_visit(state, tab_id, 'R');
                 }
-                // M21-F9：进入成功实时记录（与右 pane Enter 臂同款）。
-                let tab_id = state.active;
-                record_live_visit(state, tab_id, 'R');
             } else {
                 let tab = state.active_tab_mut();
                 tab.focus = crate::tab::Focus::Right;

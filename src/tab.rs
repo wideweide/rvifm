@@ -1213,6 +1213,23 @@ impl Tab {
         }
     }
 
+    /// M48-3：焦点栏的进入/返回上级——右栏走 Pane 自身实现（无 Tab 历史栈）。
+    pub fn focused_enter_selected(&mut self, config: Config) -> std::io::Result<()> {
+        if self.focus == Focus::Right {
+            self.right.enter_selected(config)
+        } else {
+            self.enter_selected(config)
+        }
+    }
+
+    pub fn focused_return_parent(&mut self, config: Config) -> std::io::Result<()> {
+        if self.focus == Focus::Right {
+            self.right.return_parent(config)
+        } else {
+            self.return_parent(config)
+        }
+    }
+
     pub fn focused_tags(&self) -> &HashSet<String> {
         if self.focus == Focus::Right {
             &self.right.tags
