@@ -4401,7 +4401,7 @@ fn m453d_visual_delete_requires_confirmation() {
 fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
     // M46-10：yazi 风格——标题居中带 ⚠、无标题下提示、文件列表 + 滚动条。
     let paths = vec![std::path::PathBuf::from("/tmp/x/secret.txt")];
-    let (title, lines) = crate::app::render::confirm_dialog(true, &paths, None, 0, 0, 72);
+    let (title, footer, lines) = crate::app::render::confirm_dialog(true, &paths, None, 0, 0, 72);
     assert!(
         title.contains('⚠') && title.contains("是否") && title.contains("1 个文件"),
         "title={title}"
@@ -4418,10 +4418,10 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
     );
     assert_eq!(
         lines.len(),
-        crate::app::render::CONFIRM_LIST_HEIGHT + 1,
-        "固定高度 + 按键行（无 remote）"
+        crate::app::render::CONFIRM_LIST_HEIGHT,
+        "固定高度（M48-11 按键行改为独立底栏 footer）"
     );
-    let key_line = lines.last().expect("按键行");
+    let key_line = &footer; // M48-11：按键行改为独立底栏
     let yes = key_line.spans.first().expect("y span");
     assert!(
         yes.content.contains('y')
@@ -4455,7 +4455,7 @@ fn m453c_confirm_dialog_centered_with_icon_and_highlight() {
     assert!(!compact.contains("[y/N]"), "不再用状态栏行内提示");
     let rect = crate::app::render::confirm_rect(
         ratatui::layout::Rect::new(0, 0, 80, 24),
-        crate::app::render::CONFIRM_LIST_HEIGHT + 2,
+        crate::app::render::CONFIRM_LIST_HEIGHT + 3,
     );
     assert_eq!(buf[(rect.x, rect.y)].symbol(), "┌", "居中弹窗边框");
     assert!(!rows[23].contains("是否删除"), "状态行不再承担确认");
@@ -4467,7 +4467,7 @@ fn m4610_confirm_dialog_scrollbar_and_navigation() {
     let paths: Vec<std::path::PathBuf> = (0..12)
         .map(|i| std::path::PathBuf::from(format!("/tmp/f{i:02}.txt")))
         .collect();
-    let (_, lines) = crate::app::render::confirm_dialog(false, &paths, None, 7, 4, 72);
+    let (_, _footer, lines) = crate::app::render::confirm_dialog(false, &paths, None, 7, 4, 72);
     let rendered: String = lines
         .iter()
         .map(|l| l.to_string())

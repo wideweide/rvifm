@@ -604,7 +604,7 @@ pub(crate) fn confirm_dialog(
     cursor: usize,
     scroll: usize,
     width: u16,
-) -> (String, Vec<Line<'static>>) {
+) -> (String, Line<'static>, Vec<Line<'static>>) {
     let n = paths.len().max(1);
     let title = if permanent {
         format!("⚠ 是否永久删除选定的 {n} 个文件")
@@ -614,7 +614,8 @@ pub(crate) fn confirm_dialog(
     let mut lines: Vec<Line<'static>> = Vec::new();
     let start = scroll.min(n.saturating_sub(CONFIRM_LIST_HEIGHT));
     let thumb = (start * CONFIRM_LIST_HEIGHT / n).min(CONFIRM_LIST_HEIGHT - 1);
-    let name_width = (width as usize).saturating_sub(5).max(8);
+    // M48-11：滚动条列与文件名列分离，严格落在窗口右侧内缘。
+    let name_width = (width as usize).saturating_sub(6).max(8);
     for row in 0..CONFIRM_LIST_HEIGHT {
         let idx = start + row;
         let mut spans: Vec<Span<'static>> = Vec::new();
@@ -654,6 +655,7 @@ pub(crate) fn confirm_dialog(
     if let Some(r) = remote {
         lines.push(Line::from(format!("远端: {r}")));
     }
+    // M48-11：状态栏是窗口自己的底栏（独立 widget，不是列表最后一行）。
     let key_yes = Span::styled(
         " y ",
         Style::new()
@@ -662,13 +664,14 @@ pub(crate) fn confirm_dialog(
             .add_modifier(Modifier::BOLD),
     );
     let key_no = Span::styled(" n / Esc ", Style::new().add_modifier(Modifier::REVERSED));
-    lines.push(Line::from(vec![
+    let footer = Line::from(vec![
         key_yes,
         Span::from(" 确认   "),
         key_no,
         Span::from(" 取消   j/k 浏览"),
-    ]));
-    (title, lines)
+    ])
+    .style(Style::new().bg(Color::DarkGray).fg(Color::White));
+    (title, footer, lines)
 }
 
 fn render_confirm(
@@ -679,20 +682,26 @@ fn render_confirm(
     cursor: usize,
     scroll: usize,
 ) {
-    let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 2);
-    let (title, lines) = confirm_dialog(permanent, paths, remote, cursor, scroll, rect.width);
+    let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 3);
+    let (title, footer, lines) =
+        confirm_dialog(permanent, paths, remote, cursor, scroll, rect.width);
     frame.render_widget(ratatui::widgets::Clear, rect);
     let border = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
     // ratatui 0.30：Title 结构体退役，标题居中用 Line::centered()。
     let centered = ratatui::text::Line::from(title).style(border).centered();
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            ratatui::widgets::Block::bordered()
-                .title(centered)
-                .border_style(border),
-        ),
-        rect,
-    );
+    let block = ratatui::widgets::Block::bordered()
+        .title(centered)
+        .border_style(border);
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    // M48-11：底部状态栏与右侧滚动条都落在窗口内缘，形成完整窗口观感。
+    let [body, foot] = ratatui::layout::Layout::vertical([
+        ratatui::layout::Constraint::Min(1),
+        ratatui::layout::Constraint::Length(1),
+    ])
+    .areas(inner);
+    frame.render_widget(Paragraph::new(lines), body);
+    frame.render_widget(Paragraph::new(footer), foot);
 }
 
 /// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
@@ -1252,7 +1261,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             // M48-5：复用删除确认窗口渲染冲突目标列表（覆盖标题为覆盖确认）。
             let paths = state.pending_paste_conflicts.clone();
             let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 2);
-            let (_, lines) = confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
+            let (_, _, lines) = confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
             frame.render_widget(ratatui::widgets::Clear, rect);
             let centered = Line::from("⚠ 是否覆盖同名文件")
                 .style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD))
