@@ -3073,25 +3073,26 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 ops::Checksum::parse(&state.config.archive.checksum).unwrap_or(ops::Checksum::Md5);
             match args.as_slice() {
                 [] => {
-                    // M25-4 + M45-9c：无参 → 对话框。单文件预填原名；多选
-                    // （tags/v 连续选区）预填当前目录名（父目录名）。
-                    let tab = state.active_tab();
-                    let multi = tab.focused_tags().len() > 1
-                        || tab
-                            .focused_visual_range()
-                            .map(|(lo, hi)| hi > lo)
-                            .unwrap_or(false);
-                    let input = if multi {
-                        tab.focus_base()
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default()
-                    } else {
-                        tab.focused_entries()
-                            .get(tab.focused_cursor())
-                            .map(|i| i.name.clone())
-                            .unwrap_or_default()
-                    };
+                    // M48-8：无参按默认方式直接执行（zip + 配置校验 + 预填名），
+                    // 不再打开对话框；交互入口改 `-i`。
+                    let name = format!("{}.zip", archive_default_name(state));
+                    let (op, names, target, base) = archive_plan(
+                        state,
+                        ops::ArchiveFormat::Zip,
+                        &name,
+                        default_checksum,
+                    )?;
+                    Ok(ExecOutcome::SpawnJob {
+                        op,
+                        names,
+                        target,
+                        base,
+                    })
+                }
+                ["-i"] => {
+                    // M25-4 + M45-9c + M48-8：`-i` 打开对话框。单文件预填原名；
+                    // 多选（tags/v 连续选区）预填当前目录名（父目录名）。
+                    let input = archive_default_name(state);
                     Ok(ExecOutcome::ShowArchiveDialog { input })
                 }
                 // M45-9②：`[名, checksum=…]`——格式名参推断（缺格式名时
@@ -5164,6 +5165,27 @@ pub(crate) fn handle_archive_dialog_key(
 /// 校验类型（`archive:<fmt>:<cs>`），`target` = base/原始名（扩展名补齐、
 /// 同名不覆盖检查在作业线程的 `create_archive` 内）。物理视图限定。
 /// 同步部分只做校验与收集，压缩本身在后台线程（M26-1）。
+/// M48-8：`:archive` 默认名称——多选取焦点目录名，单选取光标文件名去扩展名。
+pub(crate) fn archive_default_name(state: &AppState) -> String {
+    let tab = state.active_tab();
+    let multi = tab.focused_tags().len() > 1
+        || tab
+            .focused_visual_range()
+            .map(|(lo, hi)| hi > lo)
+            .unwrap_or(false);
+    if multi {
+        tab.focus_base()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    } else {
+        tab.focused_entries()
+            .get(tab.focused_cursor())
+            .map(|i| crate::app::render::strip_archive_ext(&i.name).to_owned())
+            .unwrap_or_default()
+    }
+}
+
 pub(crate) fn archive_plan(
     state: &AppState,
     format: ops::ArchiveFormat,
@@ -5173,16 +5195,31 @@ pub(crate) fn archive_plan(
     if name.trim().is_empty() {
         return Err("archive: 名称不能为空".to_owned());
     }
+    // M48-8：产物名去旧扩展名再按格式补真实扩展名——对话框预填的光标文件名
+    // （如 `doc.md`）不再与源文件冲突，任意字段回车都能真正执行。
+    let fmt_name = match format {
+        ops::ArchiveFormat::Zip => "zip",
+        ops::ArchiveFormat::Tar => "tar",
+        ops::ArchiveFormat::TarGz => "tar.gz",
+        ops::ArchiveFormat::SevenZ => "7z",
+        ops::ArchiveFormat::Rar => "rar",
+        ops::ArchiveFormat::Cab => "cab",
+        ops::ArchiveFormat::Lzh => "lzh",
+        ops::ArchiveFormat::TarXz => "tar.xz",
+        ops::ArchiveFormat::TarBz2 => "tar.bz2",
+        ops::ArchiveFormat::TarZst => "tar.zst",
+    };
+    let clean_name = crate::app::render::strip_archive_ext(name);
+    let target_name = format!("{clean_name}.{fmt_name}");
     // M47-3：源 = 焦点 pane 的物理目录与条目；产物 = 对侧 pane 目录。
     let base = physical_base(state)?;
     let dest_base = opposite_physical_base(state);
-    // 目标已存在 → 同步预检（快速反馈；create_archive 内的同名不覆盖
-    // 仍兜底——扩展名补齐后的真实产物路径以线程内检查为准）。
-    if dest_base.join(name).exists() {
+    // 目标已存在 → 同步预检（快速反馈；create_archive 内的同名不覆盖仍兜底）。
+    if dest_base.join(&target_name).exists() {
         return Err(format!(
             "archive: 目标已存在: {}（不覆盖）",
             dest_base
-                .join(name)
+                .join(&target_name)
                 .display()
                 .to_string()
                 .replace('\\', "/")
@@ -5215,25 +5252,13 @@ pub(crate) fn archive_plan(
     if names.is_empty() {
         return Err("archive: 无选中条目".to_owned());
     }
-    let fmt_name = match format {
-        ops::ArchiveFormat::Zip => "zip",
-        ops::ArchiveFormat::Tar => "tar",
-        ops::ArchiveFormat::TarGz => "tar.gz",
-        ops::ArchiveFormat::SevenZ => "7z",
-        ops::ArchiveFormat::Rar => "rar",
-        ops::ArchiveFormat::Cab => "cab",
-        ops::ArchiveFormat::Lzh => "lzh",
-        ops::ArchiveFormat::TarXz => "tar.xz",
-        ops::ArchiveFormat::TarBz2 => "tar.bz2",
-        ops::ArchiveFormat::TarZst => "tar.zst",
-    };
     let cs_str = match checksum {
         ops::Checksum::Md5 => "md5",
         ops::Checksum::Sha256 => "sha256",
         ops::Checksum::None => "none",
     };
     let op = format!("archive:{fmt_name}:{cs_str}");
-    let target = dest_base.join(name);
+    let target = dest_base.join(&target_name);
     Ok((op, names, target, base))
 }
 

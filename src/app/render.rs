@@ -1563,15 +1563,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         checksum_idx,
     } = mode
     {
-        // M25-4：归档创建对话框（居中遮罩，M18-1 SortDialog 同款）。
+        // M48-8：只清空/绘制对话框自身矩形，不再遮罩整个界面。
         let area = frame.area();
-        frame.render_widget(ratatui::widgets::Clear, area);
-        frame.render_widget(
-            ratatui::widgets::Block::new().style(Style::new().bg(Color::Black)),
-            area,
-        );
-        // M45-9c：对话框加宽（不再复用 34 列右键菜单矩形）。
         let popup = crate::app::render::archive_dialog_rect(area);
+        frame.render_widget(ratatui::widgets::Clear, popup);
         // M45-9c：格式/校验仅高亮选中项——用 spans 逐项着色，不再整行 REVERSED。
         let fmt_spans: Vec<Span> = ARCHIVE_FORMATS
             .iter()
@@ -1623,12 +1618,22 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         } else {
             Line::from(format!("名称: {shown_name}"))
         };
+        // M48-8：当前字段整行背景高亮（Tab 切换后可辨），选中值仍反显。
+        let field_style = Style::new().bg(Color::DarkGray).fg(Color::White);
         let mut fmt_line = vec![Span::from("格式: ")];
         fmt_line.extend(fmt_spans);
-        let line_fmt = Line::from(fmt_line);
+        let line_fmt = if *field == 1 {
+            Line::from(fmt_line).style(field_style)
+        } else {
+            Line::from(fmt_line)
+        };
         let mut cks_line = vec![Span::from("校验: ")];
         cks_line.extend(cks_spans);
-        let line_cks = Line::from(cks_line);
+        let line_cks = if *field == 2 {
+            Line::from(cks_line).style(field_style)
+        } else {
+            Line::from(cks_line)
+        };
         let lines = vec![
             line_name,
             line_fmt,

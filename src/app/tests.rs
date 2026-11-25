@@ -1978,9 +1978,13 @@ fn m253_archive_guards() {
     ));
     // 1 参数但扩展名不可推断。
     assert!(exec_command_impl(&mut state, "archive out.abc").is_err());
-    // 无参 → M25-4 对话框（Ok）；3 参非 checksum / 4+ 参 → Err。
+    // M48-8：无参 → 默认直接执行；`-i` → 对话框；3 参非 checksum / 4+ 参 → Err。
     assert!(matches!(
         exec_command_impl(&mut state, "archive"),
+        Ok(ExecOutcome::SpawnJob { .. })
+    ));
+    assert!(matches!(
+        exec_command_impl(&mut state, "archive -i"),
         Ok(ExecOutcome::ShowArchiveDialog { .. })
     ));
     assert!(exec_command_impl(&mut state, "archive zip a b").is_err());
@@ -2394,21 +2398,54 @@ fn m254_dialog_keys_flow() {
 
 #[test]
 fn m254_exec_noargs_opens_dialog_prefilled() {
+    // M48-8：无参按默认直接执行；交互入口改 `-i`（预填名保持原逻辑）。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().cursor = 0;
-    match exec_command_impl(&mut state, "archive") {
+    match exec_command_impl(&mut state, "archive -i") {
         Ok(ExecOutcome::ShowArchiveDialog { input }) => assert_eq!(input, "a.txt"),
         other => panic!("expected ShowArchiveDialog, got {other:?}"),
     }
-    // 无条目 → 空名称。
+    let outcome = exec_command_impl(&mut state, "archive").unwrap();
+    assert!(
+        matches!(outcome, ExecOutcome::SpawnJob { .. }),
+        "{outcome:?}"
+    );
+    // 无条目 → `-i` 仍给空名称（执行会因空名报错，可读）。
     let tmp2 = TempDir::new().unwrap();
     let mut s2 = AppState::new(Tab::from_physical(tmp2.path(), Config::default()).unwrap());
-    match exec_command_impl(&mut s2, "archive") {
+    match exec_command_impl(&mut s2, "archive -i") {
         Ok(ExecOutcome::ShowArchiveDialog { input }) => assert_eq!(input, ""),
         other => panic!("expected ShowArchiveDialog, got {other:?}"),
     }
+}
+
+#[test]
+fn m488_archive_noargs_direct_and_interactive_flag() {
+    // M48-8：无参直接执行（zip + 默认校验 + 预填名），`-i` 才开对话框。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("doc.md"), "D").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let outcome = exec_command_impl(&mut state, "archive").unwrap();
+    match outcome {
+        ExecOutcome::SpawnJob {
+            op, names, target, ..
+        } => {
+            assert!(op.starts_with("archive:zip:"), "{op}");
+            assert_eq!(names, vec!["doc.md"]);
+            assert!(
+                target
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .contains("doc")
+            );
+        }
+        other => panic!("无参应直接执行: {other:?}"),
+    }
+    let outcome = exec_command_impl(&mut state, "archive -i").unwrap();
+    assert!(matches!(outcome, ExecOutcome::ShowArchiveDialog { .. }));
 }
 
 #[test]
