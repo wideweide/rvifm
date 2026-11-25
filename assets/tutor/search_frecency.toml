@@ -20,7 +20,7 @@ expected = "n 跳下一个匹配，N 跳上一个（环绕列表首尾）。"
 [[items]]
 id = "filter"
 prompt = "按 `=` 输入通配符（如 `*.txt`）。"
-expected = "焦点 pane 列表只剩匹配项，该栏顶部路径出现 [filter: …]；Esc 清除过滤。"
+expected = "焦点 pane 列表只剩匹配项，该栏顶部路径出现 [filter: …]；frecency 搜索态 Esc 返回 NORMAL 但保留过滤（Ctrl+U 清空）。"
 
 [[items]]
 id = "jump_selector"
@@ -39,5 +39,5 @@ expected = "打开\"近期\"视角：条目按最后访问时间倒序；选定�
 
 [[items]]
 id = "selector_readonly"
-prompt = "在搜索区按 Esc 回到 Normal，再按 Esc 关闭。"
+prompt = "在搜索区按 Esc 回到 Normal（保留过滤），再按 Esc 关闭面板。"
 expected = "回到原列表；搜索区全程只读，不写入访问记录。"

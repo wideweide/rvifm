@@ -721,4 +721,4 @@
 - [x] M49-13 SEARCH 提示 + `Ctrl+J/K`（见 SPEC M49-13）；2026-11-26 完成：SEARCH 提示方向键 + Ctrl+J/K + Ctrl+U 清空
 - [x] M49-14 SEARCH Esc 保留过滤（见 SPEC M49-14）；2026-11-26 完成：Esc 返回 NORMAL 保留 query（m4912 测试）
 - [x] M49-15 NORMAL `dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`（见 SPEC M49-15）；2026-11-26 完成：dd 删记录 / u 经 pending 恢复 / yf·yn·yc / gi（m4915 测试）
-- [ ] M49-16 文档收尾（GUIDE/help/CHANGELOG/tutor/ACCEPTANCE）（见 SPEC M49-16）
+- [x] M49-16 文档收尾（GUIDE/help/CHANGELOG/tutor/ACCEPTANCE）（见 SPEC M49-16；2026-11-26 完成：四文档 + help/tutor 同步，harness_check 通过，未发版）

@@ -1126,4 +1126,4 @@
 - [x] M49-13 SEARCH 状态栏提示方向键上下；`Ctrl+J/K` 上下移动可用。
 - [x] M49-14 SEARCH Esc 返回 NORMAL 但保留过滤。
 - [x] M49-15 NORMAL `dd` 删记录、`u` 恢复、`yf`/`yn`/`yc` 不跳转复制、`gi` 打开焦点条目的 git 仓库交互工具。
-- [ ] M49-16 文档收尾一致；harness_check 通过；未发版。
+- [x] M49-16 文档收尾一致；harness_check 通过；未发版。（2026-11-26：GUIDE/help/CHANGELOG/tutor 同步通过）

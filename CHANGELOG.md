@@ -9,6 +9,13 @@
 
 - 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
 
+### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。
+- 命令/编辑：`:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目解压出真实文件；列表左侧留白收窄为 1 空格。
+- 预览：快速切换时图片/PDF 仅元数据、文本仅前 300 字；`Tab` 进入预览后全量加载。
+- frecency：标题动态 `NORMAL/SEARCH` + `[filter]` 黄底高亮；SEARCH 提示方向键并支持 `Ctrl+J/K`；Esc 保留过滤；`dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`。
+
 - 外窗：`s`/`:!`/`gi`/`:help` 新窗口前台激活，起始目录取焦点 pane（tmux 去 `-d` + `-c`；screen cd + next）。文本编辑类 opener 优先新窗口，`.md5` MIME 补齐，`.sh` 执行位文本优先。
 - 浏览：右栏文件 `l`/Enter/再击走共享 opener；`v` 多选 `y` 写 yank 缓冲；粘贴冲突改阻塞式确认弹窗。
 - 归档：成员粘贴剥离公共 inner 前缀（不重建上级目录）、目录递归解压、多选混合正确；`w` 预览可选外部 `unzip -Z1`/`tar -tf`/`7z l -ba` 快速列目录（4MB 输出护栏，缺工具回退内置）。

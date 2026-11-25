@@ -25,8 +25,8 @@ expected = "全部条目按最后访问时间倒序（含会话内合并）；�
 
 [[items]]
 id = "selector_delete"
-prompt = "在 `o` 搜索区按 Esc 切到 Normal，把光标移到不需要的条目按 `d`，再按 `u`。"
-expected = "条目被删除（记录移除）；`u` 撤销恢复。"
+prompt = "在 `o` 搜索区按 Esc 切到 Normal，把光标移到不需要的条目按 `dd`，再按 `u`。"
+expected = "`dd` 删除该 frecency 记录（不是文件）；`u` 恢复记录。单键 `d` 不再删除。`yf/yn/yc` 可复制路径/名称/内容而不跳转，`gi` 打开该条目所在 git 仓库的交互工具。"
 
 [[items]]
 id = "mark_set_jump"
