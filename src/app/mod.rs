@@ -311,6 +311,15 @@ pub(crate) enum InputMode {
 
 /// 是否需要保留用户输入法以输入自然语言。其它模式（包括 Normal、确认框和菜单）
 /// 使用英文快捷键；JumpSelect 进入其 Vim 操作态后也属于 Normal 操作。
+/// M48-9：Normal 模式周期切英文的到期判定（纯函数便于测试）。
+pub(crate) fn ime_periodic_due(
+    now: std::time::Instant,
+    next: std::time::Instant,
+    editable: bool,
+) -> bool {
+    !editable && now >= next
+}
+
 fn ime_editable_mode(mode: &InputMode) -> bool {
     matches!(
         mode,
@@ -664,6 +673,11 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     let ime_worker = crate::ime::ImeWorker::start(state.config.ime.clone());
     // Worker 启动时即处理初始 Normal 状态；后续转换由事件循环边界驱动。
     let mut ime_was_editable = ime_editable_mode(&mode);
+    // M48-9：终端不发 FocusGained 时仍周期探测切英文（1s 量级；事件循环每
+    // 100ms 醒来一次，故无需额外线程）。仅在 Normal 模式生效，不覆盖已保存态。
+    const IME_PERIODIC_MS: u64 = 1_000;
+    let mut next_ime_force =
+        std::time::Instant::now() + std::time::Duration::from_millis(IME_PERIODIC_MS);
     // AUDIT-6：多键序列可配置超时（`[keymap] seq_timeout_ms`，缺省 500）。
     // 待决 seq 的截止时刻：seq 变化时重置，空时清除；超时清空 seq
     // （不吞后续按键）。`seq_len` 变化检测用于区分"同一段待决"与"新键"。
@@ -811,6 +825,19 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
         // 故 Normal 模式 Esc 也触发（见下方 Normal 分支）。
         if matches!(key_ev, Some(Event::FocusGained)) && !ime_editable_mode(&mode) {
             ime_worker.force_english();
+            next_ime_force =
+                std::time::Instant::now() + std::time::Duration::from_millis(IME_PERIODIC_MS);
+        }
+        // M48-9：周期兜底——Normal 模式每 1s 重探测一次输入法状态；force_english
+        // 只在非英文时发切换命令且不影响 FIX-9 保存的恢复状态。
+        if ime_periodic_due(
+            std::time::Instant::now(),
+            next_ime_force,
+            ime_editable_mode(&mode),
+        ) {
+            ime_worker.force_english();
+            next_ime_force =
+                std::time::Instant::now() + std::time::Duration::from_millis(IME_PERIODIC_MS);
         }
         if let Some(Event::Key(key)) = key_ev {
             // M43-1：tutor 标记键前置拦截（透明放行——练习键不拦，标记在
@@ -1481,6 +1508,8 @@ pub fn run(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
                     // 仍由下方模式边界统一恢复输入法，不在此重复触发。
                     if key.code == KeyCode::Esc {
                         ime_worker.force_english();
+                        next_ime_force = std::time::Instant::now()
+                            + std::time::Duration::from_millis(IME_PERIODIC_MS);
                     }
                     match handle_key(&mut state, &mut input, &mut msg, key, viewport_h) {
                         Outcome::Continue => {}

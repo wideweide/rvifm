@@ -2422,6 +2422,27 @@ fn m254_exec_noargs_opens_dialog_prefilled() {
 }
 
 #[test]
+fn m489_ime_periodic_probe_respects_editable_modes() {
+    // M48-9：仅 Normal 且到期的周期探测生效；文本输入模式不竞争。
+    let now = std::time::Instant::now();
+    assert!(ime_periodic_due(
+        now + std::time::Duration::from_secs(2),
+        now,
+        false
+    ));
+    assert!(!ime_periodic_due(
+        now,
+        now + std::time::Duration::from_secs(1),
+        false
+    ));
+    assert!(!ime_periodic_due(
+        now + std::time::Duration::from_secs(2),
+        now,
+        true
+    ));
+}
+
+#[test]
 fn m488_archive_noargs_direct_and_interactive_flag() {
     // M48-8：无参直接执行（zip + 默认校验 + 预填名），`-i` 才开对话框。
     let tmp = TempDir::new().unwrap();
