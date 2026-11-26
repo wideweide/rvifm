@@ -120,6 +120,25 @@ fn skip_protocol_query(tmux: Option<&std::ffi::OsStr>, sty: Option<&std::ffi::Os
     tmux.is_some() || sty.is_some()
 }
 
+/// M53-6：是否做 stdio 协议查询的纯判定。tmux passthrough 开启或显式
+/// `RVIFM_IMAGE_PROTOCOL_QUERY=1` 时允许查询（foot 原生协议可恢复）。
+fn should_query_protocol(
+    tmux: Option<&std::ffi::OsStr>,
+    sty: Option<&std::ffi::OsStr>,
+    force: bool,
+    passthrough: bool,
+) -> bool {
+    force || !skip_protocol_query(tmux, sty) || (tmux.is_some() && passthrough)
+}
+
+fn tmux_passthrough_on() -> bool {
+    std::process::Command::new("tmux")
+        .args(["show-options", "-gv", "allow-passthrough"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim() == "on")
+        .unwrap_or(false)
+}
+
 impl std::fmt::Debug for ImageEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImageEngine")
@@ -141,10 +160,15 @@ impl ImageEngine {
         // tmux/screen 会包裹转义查询（DCS passthrough），多数配置不回传响应——
         // `from_query_stdio()` 会在此阻塞等待，拖慢整个 TUI 启动。复用器内
         // 直接用固定字体尺寸构造（halfblocks 仍无条件可用），不做 stdio 查询。
-        if skip_protocol_query(
-            std::env::var_os("TMUX").as_deref(),
-            std::env::var_os("STY").as_deref(),
-        ) {
+        let tmux = std::env::var_os("TMUX");
+        let sty = std::env::var_os("STY");
+        let allow_query = should_query_protocol(
+            tmux.as_deref(),
+            sty.as_deref(),
+            std::env::var_os("RVIFM_IMAGE_PROTOCOL_QUERY").is_some(),
+            tmux_passthrough_on(),
+        );
+        if !allow_query {
             // halfblocks 无条件可用；passthrough 未开启时原生查询拿不到响应。
             return Self::halfblocks();
         }
@@ -263,6 +287,24 @@ mod tests {
         ));
         assert!(skip_protocol_query(None, Some(OsStr::new("123.pts"))));
         assert!(!skip_protocol_query(None, None));
+        assert!(should_query_protocol(
+            Some(OsStr::new("tmux")),
+            None,
+            false,
+            true
+        ));
+        assert!(!should_query_protocol(
+            Some(OsStr::new("tmux")),
+            None,
+            false,
+            false
+        ));
+        assert!(should_query_protocol(
+            Some(OsStr::new("tmux")),
+            None,
+            true,
+            false
+        ));
     }
 
     fn halfblocks_engine_reports_protocol_and_renders_png() {

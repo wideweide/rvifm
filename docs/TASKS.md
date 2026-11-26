@@ -757,7 +757,7 @@
 - [x] M53-3 归档成员 `w` 预览 + `l`/Enter 临时只读副本交系统 opener（见 SPEC M53-3）；2026-11-26 完成：extract_member_to_temp + 预览缓存 + open_selected 归档臂，m533 通过
 - [x] M53-4 frecency NORMAL 完整键位提示 + `r` 删记录（见 SPEC M53-4）；2026-11-26 完成：提示补全 dd/u/r/yf·yn·yc/gi 等，m534 通过
 - [x] M53-5 文本 36 行预览 + 小文件卡顿排查（见 SPEC M53-5）；2026-11-26 完成：按行截取 ≥36 行 + 文本行缓存（path+mtime+size）+ 快速态标题标记，m535/m4910 通过
-- [ ] M53-6 foot/tmux 原生图片协议恢复（见 SPEC M53-6）
+- [x] M53-6 foot/tmux 原生图片协议恢复（见 SPEC M53-6）；2026-11-26 完成：should_query_protocol + tmux allow-passthrough 探测 + env 覆盖，测试保留
 - [ ] M53-7 `.deb` 等大归档去除「归档较大」误提示（见 SPEC M53-7）
 - [ ] M53-8 真异步/防抖预览（快速切换跳过中间预览）（见 SPEC M53-8）
 - [ ] M53-9 文档收尾 + 质量门禁（见 SPEC M53-9）
