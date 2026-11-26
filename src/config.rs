@@ -163,6 +163,8 @@ pub struct FrecencyConfig {
 #[serde(default)]
 pub struct UiConfig {
     pub terminal_in_new_window: bool,
+    /// M54 ZKEY-4：视口定位 zt/zb 的上下留白（默认 0）。
+    pub scrolloff: usize,
     pub attrs_column: bool,
     pub session_restore: bool,
     pub git_column: bool,
@@ -220,6 +222,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             terminal_in_new_window: true,
+            scrolloff: 0,
             attrs_column: true,
             session_restore: true,
             git_column: true,

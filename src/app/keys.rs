@@ -1003,7 +1003,7 @@ pub(crate) fn handle_key(
         msg: &mut Option<String>,
         action: Option<crate::keymap::Action>,
         count: Option<usize>,
-        _viewport_h: u16,
+        viewport_h: u16,
     ) -> Option<Outcome> {
         match action {
             Some(Action::ToTop) => {
@@ -1267,6 +1267,25 @@ pub(crate) fn handle_key(
                     tab.refresh(cfg).ok();
                 }
                 *msg = Some("filter: 已清空（隐藏开关不变）".to_owned());
+                return Some(Outcome::Continue);
+            }
+            Some(Action::ViewportTop | Action::ViewportCenter | Action::ViewportBottom) => {
+                // M54 ZKEY-4：只移动视口，光标索引不变；尊重 scrolloff。
+                let h = viewport_h as usize;
+                let so = state.config.ui.scrolloff.min(h.saturating_sub(1));
+                let tab = state.active_tab();
+                let cursor = tab.focused_cursor();
+                let target = match action {
+                    Some(Action::ViewportTop) => cursor.saturating_sub(so),
+                    Some(Action::ViewportCenter) => cursor.saturating_sub(h / 2),
+                    _ => (cursor + 1 + so).saturating_sub(h),
+                };
+                let tab = state.active_tab_mut();
+                if tab.focus == crate::tab::Focus::Right {
+                    tab.right.scroll = target;
+                } else {
+                    tab.scroll = target;
+                }
                 return Some(Outcome::Continue);
             }
             Some(Action::GitUi) => {

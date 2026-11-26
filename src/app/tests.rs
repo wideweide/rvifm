@@ -2593,6 +2593,36 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn zkey4_viewport_positioning_keeps_cursor() {
+    // ZKEY-4：zt/zz/zb 只改视口、不改光标索引，尊重 scrolloff。
+    let tmp = TempDir::new().unwrap();
+    for i in 0..100 {
+        fs::write(tmp.path().join(format!("f{i:03}")), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.ui.scrolloff = 2;
+    state.active_tab_mut().cursor = 50;
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    let seq = |code: KeyCode,
+               state: &mut AppState,
+               input: &mut crate::app::InputState,
+               msg: &mut Option<String>| {
+        press_msg(state, input, msg, KeyCode::Char('z'), KeyModifiers::NONE);
+        press_msg(state, input, msg, code, KeyModifiers::NONE);
+    };
+    seq(KeyCode::Char('t'), &mut state, &mut input, &mut msg);
+    assert_eq!(state.active_tab().scroll, 48, "zt 顶部留 scrolloff");
+    assert_eq!(state.active_tab().cursor, 50);
+    seq(KeyCode::Char('z'), &mut state, &mut input, &mut msg);
+    assert_eq!(state.active_tab().scroll, 45, "zz 中央");
+    assert_eq!(state.active_tab().cursor, 50);
+    seq(KeyCode::Char('b'), &mut state, &mut input, &mut msg);
+    assert_eq!(state.active_tab().scroll, 43, "zb 底部留 scrolloff");
+    assert_eq!(state.active_tab().cursor, 50);
+}
+
+#[test]
 fn zkey3_filter_snapshot_reset_restore_clear() {
     // ZKEY-3：zR 临时全显 + 快照，zM 恢复，zO 清焦点栏过滤器。
     let tmp = TempDir::new().unwrap();
