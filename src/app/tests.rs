@@ -241,6 +241,54 @@ fn m596_committed_preview_path_avoids_binary_flash() {
 }
 
 #[test]
+fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
+    // M59-8：默认 fixed_side=false 下 Tab 也进预览，Shift+Tab 才切左右栏。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert!(!state.config.preview.fixed_side);
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: Vec::new(),
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    });
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Tab,
+        KeyModifiers::NONE,
+    );
+    assert!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .preview_focus
+    );
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::BackTab,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
+}
+
+#[test]
 fn m595_quick_preview_line_count_covers_viewport() {
     // M59-5：小视口至少 36 行；大视口按可见行 +10。
     assert_eq!(quick_preview_line_count(10), 36);

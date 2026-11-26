@@ -99,6 +99,9 @@ SEARCH 态标题改用焦点边框色 + 加粗，底部为**带边框输入框 +
 预览获焦后加载完整内容。独立 `rvifm pick` 固定左侧搜索、右侧预览。
 数据持久化在 frecency 存储（redb），跨会话累积。
 
+frecency 面板内 `Tab` **固定进/出预览**（与 `[preview] fixed_side` 无关，M59-8）；
+`Shift+Tab` 才切换左右栏。frecency SEARCH 态 `j/k` 仍是输入字符，进入预览后 `j/k` 滚动。
+
 `O` 实时递归查找（M55）：Normal 模式在本地目录按 `O` 进入全屏查找界面。后台线程复用 `:find`
 的 ignore 遍历（gitignore/.ignore、隐藏文件按 `show_hidden`），深度 20 / 条目 5 万护栏；
 结果显示 `scanning N` 与最终总数。输入框同样有边框/光标，`j/k` 是输入字符，`↑↓`/`Ctrl+J/K`

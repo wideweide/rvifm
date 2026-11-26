@@ -636,6 +636,15 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('w') | KeyCode::Char('q') => pane.preview_focus = false,
+            KeyCode::BackTab => {
+                // M59-8：预览中 Shift+Tab 退出预览并切到另一侧栏。
+                pane.preview_focus = false;
+                let tab = state.active_tab_mut();
+                tab.focus = match tab.focus {
+                    crate::tab::Focus::Left => crate::tab::Focus::Right,
+                    crate::tab::Focus::Right => crate::tab::Focus::Left,
+                };
+            }
             _ => {}
         }
         return Outcome::Continue;
@@ -681,16 +690,16 @@ pub(crate) fn frec_pane_key(
                 pane.g_pending = false;
             }
             KeyCode::Tab => {
-                // M49-1：默认固定右侧布局下 Tab 进出预览焦点；动态布局仍切 pane。
-                if fixed_side {
-                    pane.preview_focus = !pane.preview_focus;
-                } else {
-                    let tab = state.active_tab_mut();
-                    tab.focus = match tab.focus {
-                        crate::tab::Focus::Left => crate::tab::Focus::Right,
-                        crate::tab::Focus::Right => crate::tab::Focus::Left,
-                    };
-                }
+                // M59-8：Tab 固定进/出预览焦点（与布局开关无关）。
+                pane.preview_focus = !pane.preview_focus;
+            }
+            KeyCode::BackTab => {
+                // M59-8：Shift+Tab 切换左右栏（原 Tab 的切 pane 语义）。
+                let tab = state.active_tab_mut();
+                tab.focus = match tab.focus {
+                    crate::tab::Focus::Left => crate::tab::Focus::Right,
+                    crate::tab::Focus::Right => crate::tab::Focus::Left,
+                };
             }
             KeyCode::Char('y') => {
                 // M49-15：y-f/y-n/y-c 前缀（不跳转、不关面板）；面板态绕过
@@ -887,15 +896,15 @@ pub(crate) fn frec_pane_key(
             pane.cursor = pane.cursor.saturating_sub(1);
         }
         KeyCode::Tab => {
-            if fixed_side {
-                pane.preview_focus = !pane.preview_focus;
-            } else {
-                let tab = state.active_tab_mut();
-                tab.focus = match tab.focus {
-                    crate::tab::Focus::Left => crate::tab::Focus::Right,
-                    crate::tab::Focus::Right => crate::tab::Focus::Left,
-                };
-            }
+            // M59-8：Search 态同样固定进/出预览。
+            pane.preview_focus = !pane.preview_focus;
+        }
+        KeyCode::BackTab => {
+            let tab = state.active_tab_mut();
+            tab.focus = match tab.focus {
+                crate::tab::Focus::Left => crate::tab::Focus::Right,
+                crate::tab::Focus::Right => crate::tab::Focus::Left,
+            };
         }
         KeyCode::Char(c) => {
             pane.query.push(c);
