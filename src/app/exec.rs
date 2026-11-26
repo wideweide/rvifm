@@ -2228,6 +2228,40 @@ pub(crate) fn extract_dest(state: &AppState, arg: Option<&str>) -> Result<PathBu
     }
 }
 
+/// M53-3：把归档成员解到临时**只读副本**（不写归档内）；登记到 temp_opens
+/// 由退出清理。供 `w` 预览与 `l`/Enter 系统 opener 共用。
+pub(crate) fn extract_member_to_temp(
+    state: &mut AppState,
+    host: &std::path::Path,
+    inner: &str,
+) -> Result<std::path::PathBuf, String> {
+    const MAX: u64 = 64 * 1024 * 1024;
+    let mut archive = crate::archive::open_dispatch(host).map_err(|e| e.to_string())?;
+    let data = archive.read(inner).map_err(|e| e.to_string())?;
+    if data.len() as u64 > MAX {
+        return Err("成员超过 64MB，未生成临时副本".to_owned());
+    }
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (host.to_string_lossy().into_owned(), inner.to_owned()).hash(&mut hasher);
+    let leaf = inner.rsplit('/').next().unwrap_or("member");
+    let safe_leaf: String = leaf
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let path =
+        std::env::temp_dir().join(format!("rvifm-arc-{:016x}-{}", hasher.finish(), safe_leaf));
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    state.temp_opens.push(path.clone());
+    Ok(path)
+}
+
 /// M45-7b：把归档成员（roots 为归档内路径；空串 = 全量）解压到 dest_dir。
 /// `:extract` 与归档 `yy`→`p` 共用：zip-slip 防护、64MB 护栏、逐成员入
 /// 撤销栈（u 可逆）。返回成功数，失败汇总。
@@ -4352,6 +4386,28 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         .map(|item| !item.is_dir)
         .unwrap_or(false);
     let is_physical = matches!(tab.focused_location(), crate::tab::Location::Physical(_));
+    // M53-3：归档虚拟目录内文件 → 解临时只读副本交系统 opener（用户确认）。
+    if is_file && let crate::tab::Location::Archive { host, inner } = tab.focused_location().clone()
+    {
+        let name = tab
+            .focused_entries()
+            .get(tab.focused_cursor())
+            .map(|i| i.name.clone())
+            .unwrap_or_default();
+        let full_inner = if inner.as_os_str().is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", inner.to_string_lossy().replace('\\', "/"), name)
+        };
+        match extract_member_to_temp(state, &host, &full_inner) {
+            Ok(tmp) => match crate::opener::system_open(&tmp) {
+                Ok(()) => *msg = Some(format!("已用系统程序打开只读副本: {}", tmp.display())),
+                Err(e) => *msg = Some(format!("打开归档成员失败: {e}")),
+            },
+            Err(e) => *msg = Some(e),
+        }
+        return;
+    }
     if is_file && is_physical {
         let name = tab.focused_entries()[tab.focused_cursor()].name.clone();
         // FIX-3：归档文件（zip/tar/tar.gz…）走 enter_selected 进入

@@ -783,6 +783,40 @@ fn run_with_initial_mode(
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
         // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。
         state.active_tab_mut().refresh_viewer_follow();
+        // M53-3：归档成员预览——光标变化时解出临时只读副本（按 key 缓存）。
+        {
+            let tab = state.active_tab();
+            if let crate::tab::Location::Archive { host, inner } = tab.focused_location() {
+                let member = tab
+                    .focused_entries()
+                    .get(tab.focused_cursor())
+                    .map(|i| i.name.clone());
+                if let Some(name) = member {
+                    let full = if inner.as_os_str().is_empty() {
+                        name
+                    } else {
+                        format!("{}/{}", inner.to_string_lossy().replace('\\', "/"), name)
+                    };
+                    let key = format!("{}:{}", host.display(), full);
+                    let stale =
+                        state.active_tab().archive_preview_key.as_deref() != Some(key.as_str());
+                    if stale {
+                        let h = host.clone();
+                        if let Ok(tmp) =
+                            crate::app::exec::extract_member_to_temp(&mut state, &h, &full)
+                        {
+                            let tab = state.active_tab_mut();
+                            tab.archive_preview_key = Some(key);
+                            tab.archive_preview_tmp = Some(tmp);
+                        }
+                    }
+                }
+            } else if state.active_tab().archive_preview_key.is_some() {
+                let tab = state.active_tab_mut();
+                tab.archive_preview_key = None;
+                tab.archive_preview_tmp = None;
+            }
+        }
         terminal.draw(|frame| render(frame, &state, &mode, msg.as_deref()))?;
         // 列表区高度 = 终端高度 - 状态栏 1 行。
         let viewport_h = terminal.size()?.height.saturating_sub(1);

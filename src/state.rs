@@ -667,6 +667,8 @@ mod tests {
             char_search: None,
             view_mode: false,
             preview_focus: false,
+            archive_preview_key: None,
+            archive_preview_tmp: None,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),
@@ -698,6 +700,8 @@ mod tests {
             char_search: None,
             view_mode: false,
             preview_focus: false,
+            archive_preview_key: None,
+            archive_preview_tmp: None,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),

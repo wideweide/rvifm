@@ -101,6 +101,8 @@ fn tab_at(path: &str) -> Tab {
         focus: Default::default(),
         view_mode: false,
         preview_focus: false,
+        archive_preview_key: None,
+        archive_preview_tmp: None,
         on_parent_row: false,
         name: None,
         cursor_memory: std::collections::HashMap::new(),
@@ -2581,6 +2583,42 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
     assert!(compact.contains("确认"), "{compact}");
     assert!(compact.contains("取消"), "{compact}");
     assert!(compact.contains("j/k"), "{compact}");
+}
+
+#[test]
+fn m533_archive_member_preview_and_readonly_open() {
+    // M53-3：归档成员解临时副本（预览与系统 opener 共用，不写归档内）。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("b.zip");
+    crate::archive::make_test_zip(&zip);
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let _ = state.active_tab_mut().navigate_to(
+        crate::tab::Location::Archive {
+            host: zip.clone(),
+            inner: PathBuf::new(),
+        },
+        Config::default(),
+    );
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "readme.md")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    let before = fs::read(&zip).unwrap();
+    let copy = extract_member_to_temp(&mut state, &zip, "readme.md").unwrap();
+    assert_eq!(fs::read_to_string(&copy).unwrap(), "hi");
+    assert!(state.temp_opens.contains(&copy));
+
+    // `l`/Enter 走 open_selected → 临时副本交系统 opener（cfg(test) 不真启动 GUI）。
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert!(
+        msg.as_deref().is_some_and(|m| m.contains("只读副本")),
+        "{msg:?}"
+    );
+    assert_eq!(fs::read(&zip).unwrap(), before, "归档未被修改");
 }
 
 #[test]

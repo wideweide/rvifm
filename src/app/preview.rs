@@ -11,7 +11,11 @@ pub(crate) fn render_view_content(
 ) {
     let tab = state.active_tab();
     // M52-1：`:view` 恒对侧预览，目标取焦点栏光标文件（M34-4 焦点感知语义）。
-    let Some(path) = tab.preview_path() else {
+    // M53-3：归档成员走临时只读副本（由事件循环按光标解出）。
+    let Some(path) = tab
+        .preview_path()
+        .or_else(|| tab.archive_preview_tmp.clone())
+    else {
         let pane = ratatui::widgets::Block::bordered()
             .title("view · 预览")
             .border_style(pane_border_style(true));

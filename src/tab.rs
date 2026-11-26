@@ -634,6 +634,9 @@ pub struct Tab {
     /// pane，j/k 移动光标、对侧预览跟随）；`Tab` 显式进入预览窗格后为
     /// true，此时按键路由给查看器（滚动/搜索），`Tab` 返回原 pane。
     pub preview_focus: bool,
+    /// M53-3：归档成员预览的临时只读副本（key = host:member）。
+    pub archive_preview_key: Option<String>,
+    pub archive_preview_tmp: Option<PathBuf>,
     /// 右 pane（M14-1）：独立目录列表（独立 Location/光标/滚动）。
     pub right: Pane,
     /// 焦点 pane（M14-1）：Tab 键切换；导航与文件操作作用于焦点 pane。
@@ -834,6 +837,8 @@ impl Tab {
             tree: None,
             view_mode: false,
             preview_focus: false,
+            archive_preview_key: None,
+            archive_preview_tmp: None,
             // M14-1：右 pane 默认同目录（vifm 启动行为），独立导航。
             right: Pane::from_physical(dir, config)?,
             focus: Focus::Left,
@@ -2952,6 +2957,8 @@ mod tests {
             tree: None,
             view_mode: false,
             preview_focus: false,
+            archive_preview_key: None,
+            archive_preview_tmp: None,
             right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
@@ -3067,6 +3074,8 @@ mod tests {
             tree: None,
             view_mode: false,
             preview_focus: false,
+            archive_preview_key: None,
+            archive_preview_tmp: None,
             right: Pane::from_physical(Path::new("."), Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
