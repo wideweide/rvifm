@@ -21,6 +21,47 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
 }
 
 #[test]
+fn m566_wrong_only_keeps_original_item_numbering() {
+    // M56-6：有记录模块只显示错题，但编号仍是原模块编号（不重排为 1/N）。
+    let base = crate::tutor::module_by_id("core_nav").unwrap();
+    let wrong_id = base.items[2].id.clone();
+    let mut progress = crate::tutor::TutorProgress::new();
+    let mut mp = crate::tutor::ModuleProgress::default();
+    mp.skipped.push(wrong_id.clone());
+    progress.insert(base.id.clone(), mp);
+    let subset = crate::tutor::wrong_items_only(&progress, &base.id, &base.items).unwrap();
+    assert_eq!(subset.len(), 1);
+    assert_eq!(subset[0].id, wrong_id);
+    let (_tmp, mut state) = make_state(2);
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: crate::tutor::TutorModule {
+            items: subset,
+            ..base.clone()
+        },
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: true,
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let all: String = (0..20)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    let compact: String = all.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        compact.contains(&format!("(3/{})", base.items.len())),
+        "应保持原编号: {compact}"
+    );
+}
+
+#[test]
 fn m565_tutor_search_filters_while_typing() {
     // M56-5：输入态渲染即按当前输入过滤；清空后显示全部模块。
     let (_tmp, state) = make_state(2);

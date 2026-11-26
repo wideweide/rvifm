@@ -1231,20 +1231,22 @@ fn run_with_initial_mode(
                                     match crate::tutor::module_by_id(&module_id) {
                                         Some(base) => {
                                             let progress = crate::tutor::load_progress();
-                                            let (module, review) = match crate::tutor::review_order(
-                                                &progress,
-                                                &base.id,
-                                                &base.items,
-                                            ) {
-                                                Some(items) => (
-                                                    crate::tutor::TutorModule {
-                                                        items,
-                                                        ..base.clone()
-                                                    },
-                                                    true,
-                                                ),
-                                                None => (base, false),
-                                            };
+                                            // M56-6：与列表 l/Enter 同源——有记录模块只显示错题。
+                                            let (module, review) =
+                                                match crate::tutor::wrong_items_only(
+                                                    &progress,
+                                                    &base.id,
+                                                    &base.items,
+                                                ) {
+                                                    Some(items) => (
+                                                        crate::tutor::TutorModule {
+                                                            items,
+                                                            ..base.clone()
+                                                        },
+                                                        true,
+                                                    ),
+                                                    None => (base, false),
+                                                };
                                             state.tutor = Some(crate::tutor::TutorSession {
                                                 module,
                                                 idx: 0,

@@ -2125,11 +2125,23 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         let total = module.items.len();
         let mastered = marks.iter().filter(|(_, ok)| *ok).count();
         let skipped = marks.len() - mastered;
+        // M56-6：错题过滤后仍显示**原模块编号**——按稳定 item id 回查完整模块。
+        let base = crate::tutor::module_by_id(&module.id);
+        let display_total = base.as_ref().map(|b| b.items.len()).unwrap_or(total);
+        let display_idx = module
+            .items
+            .get(*idx)
+            .and_then(|item| {
+                base.as_ref()
+                    .and_then(|b| b.items.iter().position(|i| i.id == item.id))
+            })
+            .map(|p| p + 1)
+            .unwrap_or_else(|| (*idx + 1).min(display_total));
         let title = format!(
             "🎓 向导模式: {}{review} ({}/{})",
             module.name,
-            (*idx + 1).min(total),
-            total,
+            display_idx,
+            display_total,
             review = if *review { "（复习）" } else { "" }
         );
         let block = ratatui::widgets::Block::bordered().title(title);
