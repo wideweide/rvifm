@@ -1483,3 +1483,8 @@ rvifm record  → 静默记录访问
 - **隐私边界**：完整命令行仅作内存补全候选；只有**命令名**进入 frecency `cmd` topic（持久化），文档需写明「当前仍打开的 shell 会话尚未落盘的命令可能缺失」。
 - **排序**：M50-1 → M50-6；沿用不 bump / tag / Release。
 - **M50 执行后修复（用户实测反馈）**：`cargo test` 期间残留大量 `cosmic-edit /tmp/.tmp*/a.txt` 进程——根因是单测通过无 opener 规则的文本条目走到 `system_open` 真实启动了 GUI。修法：`system_open` 在 `#[cfg(test)]` 下只模拟结果、不启动外部程序（AUDIT-14 测试隔离同源）。另把补全用的 `cmd_scores()` 改为 `open_store_readonly()`，避免与并发测试争 redb 写锁导致 `Database already open` 抖动。
+- **M50 启动性能修复（用户实测：debug 二进制 460M、启动极慢）**：
+  - 二进制：`[profile.dev.package."*"] debug = false` 关闭依赖 DWARF（russh/syntect 等占大头），rvifm 自身保留源码级调试；461M → **152M**。
+  - 启动慢根因①：`Picker::from_query_stdio()` 在 tmux/screen 里发送被包裹的转义查询且等不到响应 → 阻塞；改为复用器内直接 halfblocks（无条件可用）。
+  - 启动慢根因②：M50 shell 历史导入每次启动逐条 `append_event`（2000 行历史 = 2000 个写事务，并把库膨胀到 3MB 触发每次 compaction）。修法：`Store::append_events_batch()` 单事务批量写；只导入尚未入库的命令名、上限 500；`shell_history.json` 记录每文件字节偏移实现真正增量。修复后首次启动 0.26s、常规启动 0.18s（实测 pty）。
+  - 诊断开关：`RVIFM_STARTUP_TRACE=1 rvifm` 打印各启动阶段耗时（默认关闭）。

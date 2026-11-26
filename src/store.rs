@@ -197,6 +197,57 @@ impl Store {
         Ok(new_seq)
     }
 
+    /// M50 性能修复：单写事务批量追加事件（cold-start 历史导入用）。
+    /// 语义与逐条 `append_event` 一致：全局 tick 与类型时钟各自递增。
+    pub fn append_events_batch(&self, records: &[EntryRecord]) -> std::io::Result<usize> {
+        if records.is_empty() {
+            return Ok(0);
+        }
+        let tx = self.begin_write("批量事件写事务失败")?;
+        let mut seq = {
+            let meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
+            meta.get(META_GLOBAL_TICK)
+                .map_err(io_err("meta 读取失败"))?
+                .map(|v| v.value())
+                .unwrap_or(0)
+        };
+        let mut clocks = [
+            (META_DIR_TICK, seq),
+            (META_FILE_TICK, seq),
+            (META_CMD_TICK, seq),
+        ];
+        {
+            let mut meta = tx.open_table(META).map_err(io_err("meta 表打开失败"))?;
+            for (key, value) in &mut clocks {
+                if let Some(v) = meta.get(*key).map_err(io_err("meta 读取失败"))? {
+                    *value = v.value();
+                }
+            }
+            let mut events = tx.open_table(EVENTS).map_err(io_err("events 表打开失败"))?;
+            for record in records {
+                seq += 1;
+                let slot = match record.topic.as_str() {
+                    "dir" => 0,
+                    "cmd" => 2,
+                    _ => 1,
+                };
+                clocks[slot].1 += 1;
+                meta.insert(clocks[slot].0, clocks[slot].1)
+                    .map_err(io_err("meta 写入失败"))?;
+                let mut rec = record.clone();
+                rec.clock = clocks[slot].1;
+                let json = serde_json::to_vec(&rec).map_err(io_err("事件序列化失败"))?;
+                events
+                    .insert(seq, json.as_slice())
+                    .map_err(io_err("events 写入失败"))?;
+            }
+            meta.insert(META_GLOBAL_TICK, seq)
+                .map_err(io_err("meta 写入失败"))?;
+        }
+        tx.commit().map_err(io_err("批量事件提交失败"))?;
+        Ok(records.len())
+    }
+
     /// 读取 `seq > since` 的全部事件（按全局序号升序；重放评分用）。
     pub fn events_since(&self, since: u64) -> std::io::Result<Vec<(u64, EntryRecord)>> {
         let rx = self.begin_read("events 读事务失败")?;
@@ -409,6 +460,23 @@ mod tests {
     }
 
     #[test]
+    fn m50_append_events_batch_matches_incremental_semantics() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Store::open(&tmp.path().join("f.redb")).unwrap();
+        assert_eq!(
+            store
+                .append_events_batch(&[rec("/a", 1), rec("/b", 2)])
+                .unwrap(),
+            2
+        );
+        assert_eq!(store.global_tick().unwrap(), 2);
+        let events = store.events_since(0).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, 1);
+        assert_eq!(events[1].0, 2);
+        assert_eq!(store.append_event(&rec("/c", 3)).unwrap(), 3);
+    }
+
     fn append_events_increments_tick_monotonically() {
         // M8-2 tick 语义：每次 append global_tick 单调 +1，事件 key = 该 tick。
         let tmp = TempDir::new().unwrap();

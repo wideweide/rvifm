@@ -436,12 +436,21 @@ impl std::fmt::Debug for AppState {
 impl AppState {
     /// 以一个初始标签启动。
     pub fn new(initial: Tab) -> Self {
+        let t0 = std::time::Instant::now();
+        let image_engine = crate::image::ImageEngine::detect();
+        if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+            eprintln!("appstate image_engine: {:?}", t0.elapsed());
+        }
+        let tutor_progress = crate::tutor::load_progress();
+        if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+            eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
+        }
         Self {
             tabs: vec![initial],
             active: 0,
             undo_stack: UndoStack::default(),
             config: Config::default(),
-            image_engine: crate::image::ImageEngine::detect(),
+            image_engine,
             jobs: Vec::new(),
             yank: None,
             pending_paste_conflicts: Vec::new(),
@@ -464,7 +473,7 @@ impl AppState {
             tutor: None,
             // M45-8d：导师进度缓存（启动时读一次；作答后即时刷新）——列表
             // 左侧进度展示不必每帧读盘。
-            tutor_progress: crate::tutor::load_progress(),
+            tutor_progress,
             archive_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         }
     }

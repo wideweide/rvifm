@@ -15,6 +15,7 @@
 - shell 历史读取默认开、增量记账；完整命令行仅内存候选，只有命令名进 frecency；不扫描 PATH、不做 execve 守护、不补参数。
 - 新增 `open_external_command_line` Action（无默认键位，用户自定义）；`[command] quote_expansion` 开关让 `%d/%f/%F/%D` 自动加双引号。
 - 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
+- 启动性能：debug 二进制 461M→152M（关闭依赖 debuginfo）；tmux/screen 内跳过阻塞的终端协议查询；shell 历史改单事务批量导入 + 字节偏移增量（首次 0.26s / 常规 0.18s）。诊断开关 `RVIFM_STARTUP_TRACE=1`。
 
 ### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
 

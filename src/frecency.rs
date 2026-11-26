@@ -916,6 +916,75 @@ pub fn record_command_line_now(line: &str, ignore_patterns: &[String]) {
     let _ = record_command_line(&db_path, &pending, line, ignore_patterns);
 }
 
+/// M50 性能修复：批量记录命令名（shell 历史增量导入用）。单次打开 store、
+/// 单次 merge_pending、单次容量清理；失败整批降级 pending，避免 N 次事务。
+pub fn record_command_names_bulk(names: &[String], ignore_patterns: &[String]) -> usize {
+    let db_path = crate::config::frecency_db_path();
+    let pending = db_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("events.pending");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let records: Vec<EntryRecord> = names
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !ignored(line, ignore_patterns))
+        .map(|line| EntryRecord {
+            path: line.to_owned(),
+            topic: "cmd".to_owned(),
+            kind: EntryKind::Command,
+            clock: 0,
+            keyword: String::new(),
+            ts: now,
+        })
+        .collect();
+    if records.is_empty() {
+        return 0;
+    }
+    if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+        eprintln!("history bulk: opening store, {} records", records.len());
+    }
+    let Ok(store) = Store::open(&db_path) else {
+        let mut written = 0;
+        for record in &records {
+            if degraded_write_at(&pending, record, "数据库打开失败").is_ok() {
+                written += 1;
+            }
+        }
+        return written;
+    };
+    if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+        eprintln!("history bulk: store opened, merging pending");
+    }
+    if merge_pending(&store, &pending).is_err() {
+        return 0;
+    }
+    if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+        eprintln!("history bulk: appending events");
+    }
+    let mut written = 0;
+    for _ in 0..WRITE_RETRIES {
+        match store.append_events_batch(&records) {
+            Ok(n) => {
+                written = n;
+                break;
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(WRITE_BACKOFF_MS)),
+        }
+    }
+    if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+        eprintln!("history bulk: appended, cleanup capacity");
+    }
+    let _ = cleanup_capacity(&store, "cmd");
+    if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+        eprintln!("history bulk: done");
+    }
+    written
+}
+
 /// M16 NAV-1：设置/清除书签 keyword（可注入路径，测试用）。
 /// `keyword` 为空 = 清除书签（保留累积分数正常衰减，SPEC §4.6）。
 pub fn set_keyword_at(

@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 struct FileSig {
     len: u64,
     mtime: u64,
+    /// 已处理到的字节偏移（只解析新增行）。
+    offset: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -76,8 +78,9 @@ pub fn parse_zsh(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 读取全部候选（完整命令行，内存态）。
+/// 读取全部候选（完整命令行，内存态；上限 5000 行防止异常大文件拖慢启动）。
 pub fn read_all_commands() -> Vec<String> {
+    const MAX_CANDIDATES: usize = 5000;
     let mut out = Vec::new();
     for path in history_paths() {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -93,11 +96,15 @@ pub fn read_all_commands() -> Vec<String> {
             parse_bash(&text)
         };
         out.extend(lines);
+        if out.len() >= MAX_CANDIDATES {
+            out.truncate(MAX_CANDIDATES);
+            break;
+        }
     }
     out
 }
 
-fn sig(path: &Path) -> Option<FileSig> {
+fn sig(path: &Path, offset: u64) -> Option<FileSig> {
     let meta = std::fs::metadata(path).ok()?;
     Some(FileSig {
         len: meta.len(),
@@ -107,7 +114,32 @@ fn sig(path: &Path) -> Option<FileSig> {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
+        offset,
     })
+}
+
+/// 从 `offset` 读取到 EOF，只返回完整行（不含尾部半行）及其新的偏移。
+fn read_new_lines(path: &Path, offset: u64) -> Option<(Vec<String>, u64)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    file.seek(SeekFrom::Start(offset)).ok()?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    let complete = buf
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let text = String::from_utf8_lossy(&buf[..complete]);
+    let names: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            (!line.is_empty() && !line.starts_with('#') && !is_zsh_meta(line))
+                .then(|| line.to_owned())
+        })
+        .collect();
+    Some((names, offset + complete as u64))
 }
 
 fn state_path() -> PathBuf {
@@ -125,36 +157,62 @@ pub fn record_new_commands(enabled: bool, ignore_patterns: &[String]) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     let mut changed = false;
+    let mut names: Vec<String> = Vec::new();
     for path in history_paths() {
-        let Some(current) = sig(&path) else {
-            continue;
-        };
+        if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+            eprintln!("history file: {}", path.display());
+        }
         let key = path.to_string_lossy().into_owned();
         let previous = state.files.get(&key);
-        let is_new = previous.is_none_or(|old| {
-            current.len < old.len || current.len != old.len || current.mtime != old.mtime
-        });
-        if !is_new {
+        let start = previous
+            .filter(|old| {
+                // 文件被截断/轮转或同大小原地重写 → 从头再来。
+                std::fs::metadata(&path)
+                    .map(|m| m.len() >= old.offset && mtime(&path) == Some(old.mtime))
+                    .unwrap_or(false)
+            })
+            .map(|old| old.offset)
+            .unwrap_or(0);
+        let Some((new_lines, next_offset)) = read_new_lines(&path, start) else {
+            continue;
+        };
+        if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+            eprintln!(
+                "history new lines: {} offset={}",
+                new_lines.len(),
+                next_offset
+            );
+        }
+        if next_offset == start && previous.is_some() {
             continue;
         }
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            let lines = if key.contains("zsh") {
-                parse_zsh(&text)
-            } else {
-                parse_bash(&text)
-            };
-            for line in lines {
-                let Some(name) = line.split_whitespace().next() else {
-                    continue;
-                };
-                if name.starts_with('#') || name.starts_with(':') {
-                    continue;
-                }
-                crate::frecency::record_command_line_now(name, ignore_patterns);
+        for line in new_lines {
+            if let Some(name) = line.split_whitespace().next() {
+                names.push(name.to_owned());
             }
         }
-        state.files.insert(key, current);
-        changed = true;
+        if let Some(current) = sig(&path, next_offset) {
+            state.files.insert(key, current);
+            changed = true;
+        }
+    }
+    // 只为「尚未入库的命令名」补冷启动数据，且设上限——避免每次启动把
+    // 全部历史重复写入 frecency（原逐条写库/无去重是启动慢的主因）。
+    if !names.is_empty() {
+        let existing = crate::frecency::cmd_scores();
+        names.retain(|name| !existing.contains_key(name));
+        names.sort();
+        names.dedup();
+        names.truncate(500);
+    }
+    // M50 性能修复：一次事务批量写入（原逐条写库，2000 行历史拖慢启动）。
+    let t0 = std::time::Instant::now();
+    if !names.is_empty() {
+        let n = names.len();
+        crate::frecency::record_command_names_bulk(&names, ignore_patterns);
+        if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+            eprintln!("history bulk {n} names: {:?}", t0.elapsed());
+        }
     }
     if changed {
         let _ = std::fs::create_dir_all(state_path().parent().unwrap_or(Path::new(".")));
@@ -162,6 +220,16 @@ pub fn record_new_commands(enabled: bool, ignore_patterns: &[String]) {
             let _ = std::fs::write(state_path(), json);
         }
     }
+}
+
+fn mtime(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
 }
 
 #[cfg(test)]

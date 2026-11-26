@@ -664,6 +664,15 @@ fn run_with_initial_mode(
     mut terminal: ratatui::DefaultTerminal,
     initial_mode: InputMode,
 ) -> std::io::Result<()> {
+    // 启动耗时诊断：`RVIFM_STARTUP_TRACE=1 rvifm` 打印各阶段耗时（默认关闭）。
+    let trace_start = std::time::Instant::now();
+    macro_rules! startup_step {
+        ($name:expr) => {
+            if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
+                eprintln!("startup {}: {:?}", $name, trace_start.elapsed());
+            }
+        };
+    }
     // FEAT-1：启用鼠标捕获（单击聚焦/滚轮滚动）；禁用在 main 的 restore 后统一执行。
     let _ = ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture);
     // M47-6：终端焦点事件用于从其它窗口切回时防御性切英文（不支持的终端
@@ -672,6 +681,7 @@ fn run_with_initial_mode(
     // M46-6：首次启动生成带注释的默认 config.toml 与键位/opener 示例；
     // 已存在文件不覆盖，失败静默降级（不与下面的加载错误提示冲突）。
     config::ensure_default_config();
+    startup_step!("default_config");
     // M5-1：启动加载用户配置；缺失用默认值，语法错误在状态栏提示（不退出）。
     let mut msg: Option<String> = None;
     let config = match config::load() {
@@ -695,9 +705,11 @@ fn run_with_initial_mode(
     crate::frecency::init_settings(&config.frecency);
     // AUDIT-1：TUI 启动合并上次降级的 pending（合并只发生在 record/TUI 启动）。
     crate::frecency::merge_pending_startup();
+    startup_step!("merge_pending");
     // AUDIT-4：TUI 启动惰性 compaction（events 超阈值 → snapshot + 截断；
     // pick 不触发——只读红线）。
     crate::frecency::lazy_compact_on_startup();
+    startup_step!("lazy_compact");
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
     let mut state = AppState::new(Tab::from_physical(
@@ -708,10 +720,13 @@ fn run_with_initial_mode(
     // M50-3：shell 历史补全候选 + 增量记账（默认开，失败静默降级）。
     if state.config.command.scan_shell_history {
         state.history_commands = crate::shell_history::read_all_commands();
+        startup_step!("history_read");
         crate::shell_history::record_new_commands(true, &state.config.frecency.ignore_patterns);
+        startup_step!("history_record");
     }
     // M25-1：会话恢复（关闭/缺失/损坏 → 保持初始 CWD tab）。
     // M32-3：恢复跳过的 tab 汇入状态栏提示（远端重连失败/归档缺失）。
+    startup_step!("appstate_new");
     let hints = crate::session::restore_session_with_hints(&mut state);
     if let Some(h) = hints.first() {
         msg = Some(h.clone());
@@ -720,7 +735,9 @@ fn run_with_initial_mode(
     let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
     let mut input = InputState::with_mode_maps(keymap, &config::keymap_layers());
     let mut mode = initial_mode;
+    startup_step!("session_restore");
     let ime_worker = crate::ime::ImeWorker::start(state.config.ime.clone());
+    startup_step!("ime_worker");
     // Worker 启动时即处理初始 Normal 状态；后续转换由事件循环边界驱动。
     let mut ime_was_editable = ime_editable_mode(&mode);
     // M48-9：终端不发 FocusGained 时仍周期探测切英文（1s 量级；事件循环每

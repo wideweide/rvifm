@@ -94,3 +94,8 @@ optional = true
 # release 不得设为 abort（AGENTS §5.5 硬约束，显式固化防回归）。
 [profile.release]
 panic = "unwind"
+
+# 本地调试二进制体积：依赖（russh/syntect/opaline…）的完整 DWARF 占大头，
+# 关闭依赖的 debuginfo，保留 rvifm 自身源码级调试（backtrace 仍有行号）。
+[profile.dev.package."*"]
+debug = false
