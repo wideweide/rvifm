@@ -851,3 +851,10 @@
 - [x] M63-3 JSON/Markdown 结构化预览（见 SPEC M63-3）；2026-11-26 完成：structured_preview + m633
 - [x] M63-4 二进制 hex 语义注释 deferred（见 SPEC M63-4）；2026-11-26 完成：已有 hex dump，语义注释低优先登记 deferred
 - [x] M63-5 文档/验收/门禁（见 SPEC M63-5）；2026-11-26 完成：CHANGELOG/GUIDE/help/STATE/PLAN/NOTES 同步 + 全门禁
+
+## M64 — 向导修仙境界分级（2026-11-27 蒸馏，见 SPEC M64 节）
+
+- [x] M64-1 修仙境界纯函数 11 级 + 四小阶段（见 SPEC M64-1）；2026-11-27 完成：tutor_rank + TUTOR_RANKS + TutorRank::label，筑基绑定 core_nav、真仙需零错题，m641 通过
+- [x] M64-2 学习进度栏显示境界符号+中文（见 SPEC M64-2）；2026-11-27 完成：进度栏标题 `学习进度 · 符号 境界[阶段] · pct%`
+- [x] M64-3 tutor_meta 模块置顶（见 SPEC M64-3）；2026-11-27 完成：内嵌模块表首位，m43_1 测试更新
+- [x] M64-4 文档/验收/门禁（见 SPEC M64-4）；2026-11-27 完成：GUIDE/help/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁

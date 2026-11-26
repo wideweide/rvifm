@@ -334,6 +334,57 @@ fn m596_committed_preview_path_avoids_binary_flash() {
     assert!(!all.contains("BBB-pending"), "{all}");
 }
 
+fn rank_progress(
+    mastered_items: usize,
+    core_complete: bool,
+    wrong: bool,
+) -> crate::tutor::TutorProgress {
+    let mut progress = crate::tutor::TutorProgress::new();
+    let mut left = mastered_items;
+    for module in crate::tutor::builtin_modules() {
+        let mut entry = crate::tutor::ModuleProgress::default();
+        for item in &module.items {
+            if left > 0 {
+                entry.mastered.push(item.id.clone());
+                left -= 1;
+            }
+        }
+        if core_complete && module.id == "core_nav" {
+            for item in &module.items {
+                if !entry.mastered.contains(&item.id) {
+                    entry.mastered.push(item.id.clone());
+                }
+            }
+        }
+        if wrong && !entry.mastered.is_empty() {
+            entry.skipped.push("legacy_wrong".to_owned());
+        }
+        progress.insert(module.id.clone(), entry);
+    }
+    progress
+}
+
+#[test]
+fn m641_tutor_cultivation_ranks() {
+    use crate::app::render::tutor_rank;
+    assert_eq!(tutor_rank(&rank_progress(0, false, false)).name, "凡人");
+    assert_eq!(tutor_rank(&rank_progress(1, false, false)).name, "炼气");
+    // 筑基严格绑定 core_nav 完成，即使掌握率很低。
+    let base = tutor_rank(&rank_progress(1, true, false));
+    assert_eq!(base.name, "筑基");
+    assert_eq!(base.symbol, "▤");
+    let total: usize = crate::tutor::builtin_modules()
+        .iter()
+        .map(|m| m.items.len())
+        .sum();
+    assert_eq!(tutor_rank(&rank_progress(total, true, false)).name, "真仙");
+    assert_eq!(tutor_rank(&rank_progress(total, true, true)).name, "渡劫");
+    // 小阶段：16/102 = 15% 进入金丹初期。
+    let jin = tutor_rank(&rank_progress(16, false, false));
+    assert_eq!(jin.name, "金丹");
+    assert_eq!(jin.stage, "初期");
+}
+
 #[test]
 fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
     // M59-8：默认 fixed_side=false 下 Tab 也进预览，Shift+Tab 才切左右栏。
@@ -14583,7 +14634,8 @@ fn m43_1_tutor_list_scroll_render() {
     // ratatui ListState 视口跟随固化；当前 3 模块单屏内验证渲染形态）。
     let (_tmp, state) = make_state(2);
     let mode = InputMode::TutorList {
-        cursor: 2,
+        // M64-3：tutor_meta 置顶，search_frecency 现在是第 4 项。
+        cursor: 3,
         search: None,
     };
     // M56-3：向导改为 80% 对话框——用较大终端保证 14 模块仍可同屏断言。
@@ -14601,7 +14653,8 @@ fn m43_1_tutor_list_scroll_render() {
     let pos = compact.find("search_frecency").expect("末模块应在列表");
     let prefix = &compact[pos.saturating_sub(8)..pos];
     assert!(prefix.contains('▶'), "末模块选中高亮: {all}");
-    assert!(compact.contains("core_nav"), "首模块行: {all}");
+    assert!(compact.contains("tutor_meta"), "首模块应为向导用法: {all}");
+    assert!(compact.contains("core_nav"), "核心模块仍在列表: {all}");
     assert!(
         compact.contains("Enter/l=进入"),
         "键提示（边框底行）: {all}"

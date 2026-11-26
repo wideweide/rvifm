@@ -80,6 +80,11 @@ impl<'de> Deserialize<'de> for TutorItem {
 /// 内嵌模块表（编译期 include_str!；M42-3 三模块——core_nav/file_ops/
 /// search_frecency；新增模块在此登记）。
 const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
+    // M64-3：首次使用先学向导本身（列表首位，默认光标 0 即进入它）。
+    (
+        "tutor_meta",
+        include_str!("../assets/tutor/tutor_meta.toml"),
+    ),
     ("core_nav", include_str!("../assets/tutor/core_nav.toml")),
     ("file_ops", include_str!("../assets/tutor/file_ops.toml")),
     (
@@ -125,10 +130,6 @@ const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
     (
         "remote_sftp",
         include_str!("../assets/tutor/remote_sftp.toml"),
-    ),
-    (
-        "tutor_meta",
-        include_str!("../assets/tutor/tutor_meta.toml"),
     ),
 ];
 

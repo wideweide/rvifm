@@ -655,6 +655,93 @@ pub(crate) fn tutor_overall_progress(
     )
 }
 
+/// M64-1：修仙境界（符号 + 中文 + 小阶段）。纯函数，不落盘。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TutorRank {
+    pub symbol: &'static str,
+    pub name: &'static str,
+    pub stage: &'static str,
+}
+
+impl TutorRank {
+    pub fn label(&self) -> String {
+        if self.stage.is_empty() {
+            format!("{} {}", self.symbol, self.name)
+        } else {
+            format!("{} {}{}", self.symbol, self.name, self.stage)
+        }
+    }
+}
+
+/// 境界表：(符号, 中文, 最低掌握率%)。真仙的阈值 101 表示只能由「100% 且零错题」达成。
+const TUTOR_RANKS: &[(&str, &str, usize)] = &[
+    ("○", "凡人", 0),
+    ("⚗", "炼气", 1),
+    ("▤", "筑基", 5),
+    ("●", "金丹", 15),
+    ("◉", "元婴", 30),
+    ("✧", "化神", 45),
+    ("◇", "炼虚", 60),
+    ("◆", "合体", 75),
+    ("✦", "大乘", 90),
+    ("⚡", "渡劫", 100),
+    ("★", "真仙", 101),
+];
+
+/// M64-1：按掌握率推算境界；筑基严格绑定 `core_nav` 全部掌握；
+/// 100% 且有错题记录封顶渡劫，100% 且零错题才为真仙。
+pub(crate) fn tutor_rank(progress: &crate::tutor::TutorProgress) -> TutorRank {
+    let (_, _, mastered, total, pct) = tutor_overall_progress(progress);
+    if total == 0 || mastered == 0 {
+        return TutorRank {
+            symbol: TUTOR_RANKS[0].0,
+            name: TUTOR_RANKS[0].1,
+            stage: "",
+        };
+    }
+    let mut idx = 0;
+    for (i, (_, _, min)) in TUTOR_RANKS.iter().enumerate() {
+        if pct >= *min {
+            idx = i;
+        }
+    }
+    // 筑基门槛：核心导航模块必须全部掌握（即使用户从其它模块凑够百分比）。
+    let core_done = crate::tutor::module_by_id("core_nav").is_some_and(|module| {
+        progress.get("core_nav").is_some_and(|entry| {
+            !module.items.is_empty()
+                && module
+                    .items
+                    .iter()
+                    .all(|i| entry.mastered.iter().any(|id| id == &i.id))
+        })
+    });
+    // 首项掌握即入炼气（102 项时 1/102 的整数百分比仍是 0）。
+    if mastered > 0 && idx < 1 {
+        idx = 1;
+    }
+    if core_done && idx < 2 {
+        idx = 2;
+    }
+    let any_wrong = progress.values().any(|entry| !entry.skipped.is_empty());
+    if pct >= 100 {
+        idx = if any_wrong { 9 } else { 10 };
+    }
+    // 四小阶段：在当前境界百分比区间内取四分位。
+    let stage = if (1..=8).contains(&idx) {
+        let lo = TUTOR_RANKS[idx].2;
+        let hi = TUTOR_RANKS[idx + 1].2;
+        let step = ((pct.saturating_sub(lo)) * 4 / hi.saturating_sub(lo).max(1)).min(3);
+        ["初期", "中期", "后期", "圆满"][step]
+    } else {
+        ""
+    };
+    TutorRank {
+        symbol: TUTOR_RANKS[idx].0,
+        name: TUTOR_RANKS[idx].1,
+        stage,
+    }
+}
+
 /// M56-11：成就徽章——完成首模块 🏅 / 全模块 100% 🏆 / 零错题通过 ⭐。
 /// 纯函数：按稳定 item id 判定，与进度文件版本无关。
 pub(crate) fn tutor_badges(progress: &crate::tutor::TutorProgress) -> String {
@@ -1301,16 +1388,17 @@ fn render_tutor_list(
             )),
             Line::from(bar),
         ];
+        // M64-2：境界只在学习进度栏显示（符号 + 中文 + 小阶段）。
+        let rank = tutor_rank(&state.tutor_progress);
+        let badges = tutor_badges(&state.tutor_progress);
         frame.render_widget(
             Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title(format!(
-                "学习进度{}",
-                {
-                    let b = tutor_badges(&state.tutor_progress);
-                    if b.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {b}")
-                    }
+                "学习进度 · {} · {pct}%{}",
+                rank.label(),
+                if badges.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {badges}")
                 }
             ))),
             status_area,
