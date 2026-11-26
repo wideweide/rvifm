@@ -485,7 +485,8 @@ impl LiveFindState {
     }
 
     /// 大小写不敏感子串匹配（多词 AND；不做模糊评分/正则）。
-    fn matches(item: &crate::search::ResultItem, query: &str) -> bool {
+    /// 只匹配**相对扫描根的路径**，避免根目录名（如临时目录的随机名）干扰命中。
+    fn matches(item: &crate::search::ResultItem, query: &str, root: &std::path::Path) -> bool {
         let terms: Vec<String> = query
             .split_whitespace()
             .map(|t| t.to_lowercase())
@@ -494,7 +495,8 @@ impl LiveFindState {
         if terms.is_empty() {
             return true;
         }
-        let hay = item.path.to_string_lossy().to_lowercase();
+        let rel = item.path.strip_prefix(root).unwrap_or(&item.path);
+        let hay = rel.to_string_lossy().to_lowercase();
         terms.iter().all(|t| hay.contains(t))
     }
 
@@ -504,7 +506,7 @@ impl LiveFindState {
             .all
             .iter()
             .enumerate()
-            .filter_map(|(i, item)| Self::matches(item, &self.query).then_some(i))
+            .filter_map(|(i, item)| Self::matches(item, &self.query, &self.root).then_some(i))
             .collect();
         self.cursor = self.cursor.min(self.filtered.len().saturating_sub(1));
     }
@@ -515,7 +517,7 @@ impl LiveFindState {
         while got < limit {
             match self.rx.try_recv() {
                 Ok(crate::search::LiveFindUpdate::Entry(item)) => {
-                    let hit = Self::matches(&item, &self.query);
+                    let hit = Self::matches(&item, &self.query, &self.root);
                     self.all.push(item);
                     if hit {
                         self.filtered.push(self.all.len() - 1);

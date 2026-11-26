@@ -1505,6 +1505,7 @@ rvifm record  → 静默记录访问
 - `O` 是**独立实时模式**（`InputMode::LiveFind` + `AppState.live_find`），不复用 `:find` 的静态结果虚拟目录；`:find`/`:grep` 语义保持不变。
 - 扫描后端复用 `ignore` walker（与 `:find` 同源：gitignore/.ignore + 隐藏文件按 `show_hidden`），后台线程逐条 `mpsc::send`，深度 20 / 条目 5 万护栏；只收文件，不写 redb、不更新 `global_tick`。
 - 过滤只做大小写不敏感子串（多词 AND），不做模糊评分；query 变更全量重建命中下标，新条目到达只追加命中项（增量）。
+- 子串匹配针对**相对扫描根的路径**（`strip_prefix(root)`），避免根目录名（如 tempfile 的随机 `.tmpXXXX`）命中 query 造成误匹配/测试偶发失败。
 - `j/k` 在实时模式是**输入字符**（与 frecency Search 态一致），移动用 ↑↓/Ctrl+J/K——UI 通过边框输入框 + `j/k 为输入` 提示避免误用。
 - Enter 复用 `jump_to`（定位父目录并选中文件）+ `record_live_visit` 走 record 唯一写入入口；Esc/退出置 `stop` 标志并丢弃 receiver，线程自然停止。
 - M55-2（后端）与 M55-3（交互）共享同一状态机且相互编译依赖，为保持树可编译在同一提交落地；TASKS/ACCEPTANCE 仍分别勾选。
