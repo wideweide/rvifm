@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M61 大文本视口虚拟化（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 新增 `memmap2` 视口读取器与 `[preview] virtual_text_threshold`（默认 1MiB）；超阈值本地文件不再整文件读取/内存驻留，只渲染视口行，聚焦不再触发全量加载。
+- 高亮状态按路径跨帧复用（尽力而为，流畅优先）；远端 Location 不产生本地预览路径，保持仅元数据。
+
 ### M60 真异步预览架构（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 引入预览后台 worker + generation token：快速 j/k 的中间目标被丢弃，文本读取/hex 判定、图片解码、Office/归档/PDF 文本行解析均不在 UI 线程完成。

@@ -308,50 +308,61 @@ pub(crate) fn render_view_path(
         meta.as_ref().map(|m| m.len()).unwrap_or(0),
     );
     let quick_n = quick_preview_line_count(height);
-    // M59-6：命中缓存只克隆当前需要的行（旧实现克隆最多 10 万行，小文件也会卡）。
-    let needed = if quick {
-        quick_n
+    // M61-3：大文件从一开始就是视口读取——没有"快速截断→聚焦全量"两步。
+    let (all_lines, skip, base_line): (Vec<String>, usize, usize) = if let Some(view) = state
+        .viewport_text
+        .as_ref()
+        .filter(|v| v.path() == path.as_path())
+    {
+        (
+            view.lines(viewer.scroll, height.saturating_add(1), width),
+            0,
+            viewer.scroll,
+        )
     } else {
-        viewer.scroll.saturating_add(height)
-    };
-    let cached: Option<Vec<String>> =
-        state
-            .text_preview_cache
-            .try_borrow()
-            .ok()
-            .and_then(|cache| {
-                cache
-                    .get(&key)
-                    .map(|lines| lines.iter().take(needed).cloned().collect())
-            });
-    let all_lines: Vec<String> = if let Some(hit) = cached {
-        hit
-    } else {
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
-            return;
+        // M59-6：命中缓存只克隆当前需要的行（旧实现克隆最多 10 万行，小文件也会卡）。
+        let needed = if quick {
+            quick_n
+        } else {
+            viewer.scroll.saturating_add(height)
         };
-        // NUL 即判二进制（M45-4b）。
-        if text.contains('\0') {
-            frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
-            return;
-        }
-        let parsed: Vec<String> = text
-            .lines()
-            .take(VIEWER_MAX_LINES)
-            .map(str::to_owned)
-            .collect();
-        if let Ok(mut cache) = state.text_preview_cache.try_borrow_mut() {
-            if cache.len() >= 16 {
-                cache.clear();
+        let cached: Option<Vec<String>> =
+            state
+                .text_preview_cache
+                .try_borrow()
+                .ok()
+                .and_then(|cache| {
+                    cache
+                        .get(&key)
+                        .map(|lines| lines.iter().take(needed).cloned().collect())
+                });
+        let parsed = if let Some(hit) = cached {
+            hit
+        } else {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+                return;
+            };
+            if text.contains('\0') {
+                frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+                return;
             }
-            cache.insert(key, parsed.clone());
-        }
-        parsed
+            let parsed: Vec<String> = text
+                .lines()
+                .take(VIEWER_MAX_LINES)
+                .map(str::to_owned)
+                .collect();
+            if let Ok(mut cache) = state.text_preview_cache.try_borrow_mut() {
+                if cache.len() >= 16 {
+                    cache.clear();
+                }
+                cache.insert(key, parsed.clone());
+            }
+            parsed
+        };
+        (parsed, viewer.scroll, 0)
     };
-    // M53-5：快速态截取至少 36 行且充满预览区（替代 M49-9 的 300 字）。
-    // M59-5：至少 36 行，且按视口实际高度 +10 行扩展，保证充满预览区。
-    let lines: Vec<String> = if quick && all_lines.len() > quick_n {
+    let lines: Vec<String> = if quick && skip > 0 && all_lines.len() > quick_n {
         let n = quick_n;
         let mut short: Vec<String> = all_lines.iter().take(n).cloned().collect();
         short.push("…（快速预览仅前若干行，Tab 进入预览加载完整内容）".to_owned());
@@ -362,19 +373,24 @@ pub(crate) fn render_view_path(
     // M21-E3：语法高亮——扩展名/shebang 推断，未命中或搜索模式下
     // 降级纯文本（查询黄底叠加与语法着色互斥，SIMPLIFIED）。
     let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
+    // M61-4：同一路径跨帧复用状态机（视口推进）；换文件/进入搜索态时重建。
+    let mut hl_cache = state.highlighter_cache.borrow_mut();
     let mut highlighter = if viewer.query.is_none() {
-        crate::highlight::Highlighter::for_path(
-            &path,
-            lines.first().map(String::as_str).unwrap_or(""),
-            dark,
-        )
+        let reuse = hl_cache.as_ref().is_some_and(|(p, _)| p == &path);
+        if !reuse {
+            let first = lines.first().map(String::as_str).unwrap_or("");
+            *hl_cache = crate::highlight::Highlighter::for_path(&path, first, dark)
+                .map(|h| (path.clone(), h));
+        }
+        hl_cache.as_mut().map(|(_, h)| h)
     } else {
+        *hl_cache = None;
         None
     };
     let mut out: Vec<Line> = Vec::new();
-    for (i, line) in lines.iter().skip(viewer.scroll).take(height).enumerate() {
-        let lineno = viewer.scroll + i + 1;
-        let is_current = viewer.query.is_some() && viewer.scroll + i == viewer.match_line;
+    for (i, line) in lines.iter().skip(skip).take(height).enumerate() {
+        let lineno = base_line + i + 1;
+        let is_current = viewer.query.is_some() && base_line + i == viewer.match_line;
         let gutter = if is_current {
             format!("{lineno:>4} ▶ ")
         } else {

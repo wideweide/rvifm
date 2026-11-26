@@ -1500,6 +1500,13 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-26 — M61 大文件视口虚拟化取舍
+
+- 用户确认阈值 1MiB（非链接建议的 10MB），自建 `memmap2` 视口读取器而不引 `vix-large-file`/`qem`：后两者采用度极低（82 / 282 下载），自建可控且与现有 generation worker 同构。
+- mmap 只映射页面、稀疏检查点每 1024 行记录一次字节偏移，定位视口最多扫描一个 stride；不写文件、不写 redb。
+- 高亮跨帧复用 syntect 状态；快速跳转时未经过的行不推进状态，可能颜色偏差——按用户确认「流畅性优先」接受。
+- 远端 Location 的 `preview_path()` 本就返回 None，因此远端大文件天然只走元数据，不下载、不写回。
+
 ### 2026-11-26 — M60 异步预览取舍
 
 - viewer 目标稳定后由 `AppState::refresh_viewer_async` 投递后台线程，载荷为 `ViewerPayload`（文本行 / hex 判定 / 完整行数）；事件循环 `drain_preview_results` 只接受 `preview_generation` 匹配的结果，快速 j/k 的中间目标不会安装到 viewer。

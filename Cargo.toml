@@ -30,6 +30,8 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 # M21-F1：底部详情/属性列的时间格式化（本地时区；已在依赖树中，零新增传递依赖）。
 jiff = "0.2.43"
 lzma-rs = "0.3.0"
+# M61：大文件视口读取（mmap 映射 + 稀疏行检查点，零拷贝按需读页）。
+memmap2 = "0.9"
 office_oxide = "~0.1.16"
 opaline = "0.4.2"
 pdf-inspector = "=1.25.2"

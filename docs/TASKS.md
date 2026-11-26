@@ -829,3 +829,25 @@
 - [x] M60-4 归档/Office/PDF 缓存未命中 off-thread（见 SPEC M60-4）；2026-11-26 完成：load_special_preview_lines + ensure_special_preview + special_preview 缓存，Office/归档/PDF 文本走后台；**PDF 视觉页仍需 Frame 留在 UI 线程**（NOTES）
 - [x] M60-5 性能验收 + 文档 + 门禁（见 SPEC M60-5）；2026-11-26 完成：CHANGELOG/GUIDE/help/STATE/PLAN/NOTES 同步，642 单测 + 14 集成 + 全门禁绿，未发版
 - [x] M60-6 图片协议默认查询（用户确认项 4 补落地）（见 SPEC M59 确认项）；2026-11-26 完成：detect 默认查询（tmux/screen 也查）、`RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off` 显式 opt-out，m60 测试更新
+
+## M61 — 大文本视口虚拟化（2026-11-26 蒸馏，见 SPEC M61 节）
+
+- [x] M61-1 memmap2 视口读取器 + 1MiB 阈值配置（见 SPEC M61-1）；2026-11-26 完成：src/viewport.rs（稀疏检查点 + 视口行）+ `virtual_text_threshold=1MiB`，viewport 测试通过
+- [x] M61-2 worker 超阈值文件不全量读（见 SPEC M61-2）；2026-11-26 完成：load_viewer_payload_at + AppState.viewport_text
+- [x] M61-3 渲染层视口行，取消两阶段（见 SPEC M61-3）；2026-11-26 完成：文本分支按视口读取、skip/base_line 解耦
+- [x] M61-4 Highlighter 跨视口状态（见 SPEC M61-4）；2026-11-26 完成：highlighter_cache 按路径复用 syntect 状态
+- [x] M61-5 远端大文件仅元数据（见 SPEC M61-5）；2026-11-26 完成：Remote Location 无本地 preview_path（m615）
+- [x] M61-6 文档/验收/门禁（见 SPEC M61-6）；2026-11-26 完成：CHANGELOG/GUIDE/help/STATE/PLAN/NOTES 同步 + 全门禁
+
+## M62 — 图片缩放与编码流水线（2026-11-26 蒸馏，见 SPEC M62 节）
+
+- [ ] M62-1 fast_image_resize + worker 预缩放（见 SPEC M62-1）
+- [ ] M62-2 编码结果缓存 + 文档门禁（见 SPEC M62-2）
+
+## M63 — 其它预览增强（2026-11-26 蒸馏，见 SPEC M63 节）
+
+- [ ] M63-1 目录树预览缓存（见 SPEC M63-1）
+- [ ] M63-2 可选 pdf-rust feature + karet-pdf（见 SPEC M63-2）
+- [ ] M63-3 JSON/Markdown 结构化预览（见 SPEC M63-3）
+- [ ] M63-4 二进制 hex 语义注释 deferred（见 SPEC M63-4）
+- [ ] M63-5 文档/验收/门禁（见 SPEC M63-5）

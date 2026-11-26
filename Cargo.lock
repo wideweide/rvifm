@@ -4130,6 +4130,7 @@ dependencies = [
  "jiff",
  "lzma-rs",
  "md-5",
+ "memmap2",
  "notify",
  "office_oxide",
  "opaline",

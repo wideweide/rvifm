@@ -180,6 +180,22 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m615_remote_large_file_has_no_local_preview_path() {
+    // M61-5：远端 Location 不产生本地 preview_path → 不会整文件读取，仅元数据。
+    let tmp = TempDir::new().unwrap();
+    let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+    tab.location = Location::Remote {
+        remote: "demo".to_owned(),
+        path: PathBuf::from("/logs/huge.log"),
+    };
+    assert!(tab.preview_path().is_none());
+    assert!(
+        std::fs::metadata(tmp.path()).is_ok(),
+        "本地目录仍可读（对照组）"
+    );
+}
+
+#[test]
 fn m604_archive_preview_lines_load_in_worker() {
     // M60-4：归档成员列表的解析在后台完成，UI 侧只持有行结果。
     let tmp = TempDir::new().unwrap();

@@ -391,6 +391,10 @@ pub struct AppState {
     pub preview_tx: std::sync::mpsc::Sender<crate::state::PreviewJobResult>,
     pub preview_rx: std::sync::mpsc::Receiver<crate::state::PreviewJobResult>,
     pub preview_generation: u64,
+    /// M61：当前大文件的只读 mmap 视口读取器（路径变化时重建）。
+    pub viewport_text: Option<crate::viewport::ViewportText>,
+    /// M61-4：同一路径跨帧复用 syntect 状态（视口推进，尽力而为）。
+    pub highlighter_cache: std::cell::RefCell<Option<(PathBuf, crate::highlight::Highlighter)>>,
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
     pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
     pub image_pending: Option<PathBuf>,
@@ -584,8 +588,9 @@ impl AppState {
         self.preview_generation = self.preview_generation.wrapping_add(1);
         let generation = self.preview_generation;
         let tx = self.preview_tx.clone();
+        let threshold = self.config.preview.virtual_text_threshold;
         std::thread::spawn(move || {
-            let payload = crate::preview::load_viewer_payload(&target);
+            let payload = crate::preview::load_viewer_payload_at(&target, threshold);
             let _ = tx.send(PreviewJobResult {
                 generation,
                 kind: PreviewJobKind::Viewer,
@@ -735,6 +740,8 @@ impl AppState {
             preview_tx: preview_channel.0,
             preview_rx: preview_channel.1,
             preview_generation: 0,
+            viewport_text: None,
+            highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,
             image_pending: None,
             special_preview: None,

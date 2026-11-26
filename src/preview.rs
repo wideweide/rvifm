@@ -15,6 +15,22 @@ use std::path::{Path, PathBuf};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+/// M61-2：带阈值的 viewer 载荷——超阈值本地文件不整文件读取，只估算行数。
+pub fn load_viewer_payload_at(path: &Path, threshold: u64) -> ViewerPayload {
+    if crate::viewport::use_for(path, threshold) {
+        let hex = crate::tab::looks_binary(path);
+        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        return ViewerPayload {
+            path: path.to_path_buf(),
+            lines: Vec::new(),
+            // 估算值（约 80 字节/行），仅用于滚动条/钳制；真实行由视口读取器给出。
+            total: (size / 80) as usize,
+            hex,
+        };
+    }
+    load_viewer_payload(path)
+}
+
 /// M60-1：后台 viewer 载荷（路径 + 行 + 完整行数 + hex 判定）。
 #[derive(Debug, Clone)]
 pub struct ViewerPayload {

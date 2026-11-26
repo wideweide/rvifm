@@ -810,6 +810,14 @@ fn run_with_initial_mode(
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
         // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。
         state.refresh_viewer_async();
+        // M61：大文件映射视口读取器（mmap 是 O(1)，不读内容）。
+        let virtual_threshold = state.config.preview.virtual_text_threshold;
+        if let Some(path) = state.active_tab().preview_target()
+            && crate::viewport::use_for(&path, virtual_threshold)
+            && state.viewport_text.as_ref().map(|v| v.path()) != Some(path.as_path())
+        {
+            state.viewport_text = crate::viewport::ViewportText::open(&path).ok();
+        }
         // M60-3：获焦图片预览后台解码（UI 线程只做协议编码）。
         let focus = state.active_tab().preview_focus
             || state

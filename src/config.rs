@@ -118,6 +118,8 @@ pub struct PreviewConfig {
     pub archive_external_listing: bool,
     /// M49-3：true（默认）= frecency/`:view` 预览固定右侧；false = 动态对侧。
     pub fixed_side: bool,
+    /// M61：超过该字节数的本地文本文件改用 mmap 视口读取（默认 1 MiB）。
+    pub virtual_text_threshold: u64,
 }
 
 impl Default for PreviewConfig {
@@ -127,6 +129,7 @@ impl Default for PreviewConfig {
             pdf_prefer_image: false,
             archive_external_listing: true,
             fixed_side: false,
+            virtual_text_threshold: 1024 * 1024,
         }
     }
 }
