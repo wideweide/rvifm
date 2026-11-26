@@ -643,9 +643,24 @@ fn spawn_job_from_plan(
     None
 }
 
+/// M56-2：首次启动（未读取到任何配置文件）进入向导模式；否则正常浏览。
+/// 纯函数便于测试隔离宿主环境变量（HOME/XDG_CONFIG_HOME/APPDATA）。
+fn initial_mode_for_startup(config_exists: bool) -> InputMode {
+    if config_exists {
+        InputMode::default()
+    } else {
+        InputMode::TutorList {
+            cursor: 0,
+            search: None,
+        }
+    }
+}
+
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
-    run_with_initial_mode(terminal, InputMode::default())
+    // 必须在 `ensure_default_config()` 生成默认配置之前判断。
+    let first_run = !crate::config::config_path().exists();
+    run_with_initial_mode(terminal, initial_mode_for_startup(!first_run))
 }
 
 fn run_with_initial_mode(

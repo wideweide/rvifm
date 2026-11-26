@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn m562_first_run_enters_guide_mode() {
+    // M56-2：无配置 → 向导；有配置 → Normal（纯函数，不依赖宿主 HOME）。
+    assert!(matches!(
+        initial_mode_for_startup(false),
+        InputMode::TutorList { .. }
+    ));
+    assert_eq!(initial_mode_for_startup(true), InputMode::Normal);
+}
+
+#[test]
 fn fix9_text_entry_modes_control_ime_transitions() {
     assert!(!ime_editable_mode(&InputMode::Normal));
     assert!(ime_editable_mode(&InputMode::Search {
