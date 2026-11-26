@@ -773,3 +773,10 @@
 ## M57 — `rv help` 外部入口收敛（2026-11-26 蒸馏，见 SPEC M57 节）
 
 - [x] M57-1 移除 `rvifm help` 子命令与文档/测试中的外部入口描述（见 SPEC M57）；2026-11-26 完成：main.rs 去分派与 usage、app/mod.rs 去 help_text/run_help_viewer、exec.rs `:help` 恒应用内、cli 测试改为断言不可用、GUIDE/help/CHANGELOG/config 同步
+
+## M55 — frecency 搜索态区分与实时递归模式（2026-11-26 蒸馏，见 SPEC M55 节）
+
+- [x] M55-1 搜索态视觉区分（输入行边框+光标+标题 query，列表无边框）（见 SPEC M55-1）；2026-11-26 完成：Search 标题焦点边框色+加粗、状态栏 LEFT/RIGHT 边框输入框 + ▋ 光标 + j/k 输入提示，列表维持无边框，m551 通过
+- [ ] M55-2 实时递归扫描后端（O 触发、复用 :find、后台流式、深度/条目护栏）（见 SPEC M55-2）
+- [ ] M55-3 实时递归交互（增量子串过滤 + scanning 状态栏 + Enter 跳转 + Esc）（见 SPEC M55-3）
+- [ ] M55-4 文档与验收同步（GUIDE/help/ACCEPTANCE/NOTES + 质量门禁）（见 SPEC M55-4）

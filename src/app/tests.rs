@@ -2784,6 +2784,61 @@ fn zkey2_hidden_file_toggle_actions() {
 }
 
 #[test]
+fn m551_search_input_line_has_border_and_caret() {
+    // M55-1：Search 态有边框输入框 + 可见光标 + 明确 j/k 为输入；Normal 态无文本框。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let pane = |normal: bool, query: &str| crate::tab::FrecencyPane {
+        entries: Vec::new(),
+        query: query.to_owned(),
+        cursor: 0,
+        normal,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    };
+    let row = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>, y: u16| -> String {
+        let buf = terminal.backend().buffer().clone();
+        (0..80u16)
+            .map(|x| buf[(x, y)].symbol().to_owned())
+            .collect::<String>()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    };
+    state.active_tab_mut().pane_frecency = Some(pane(false, "abc"));
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    assert!(
+        row(&terminal, 1).contains("SEARCH"),
+        "{:?}",
+        row(&terminal, 1)
+    );
+    let status = row(&terminal, 11);
+    assert!(status.contains('│'), "输入框应有边框: {status}");
+    assert!(status.contains('▋'), "输入框应有可见光标: {status}");
+    assert!(status.contains("/abc"), "输入框应回显 query: {status}");
+    assert!(status.contains("j/k为输入"), "应提示 j/k 是输入: {status}");
+
+    state.active_tab_mut().pane_frecency = Some(pane(true, "abc"));
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    assert!(row(&terminal, 1).contains("NORMAL"));
+    let status = row(&terminal, 11);
+    assert!(!status.contains('▋'), "Normal 态不应有输入框光标: {status}");
+    assert!(status.contains("NORMAL模式"), "{status}");
+}
+
+#[test]
 fn m538_preview_debounce_skips_rapid_targets() {
     // M53-8：快速切换期间的中间目标不应立即重建预览。
     assert!(!crate::tab::preview_debounce_due(std::time::Instant::now()));

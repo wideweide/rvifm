@@ -908,8 +908,15 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             &pane.query,
         ));
     }
+    // M55-1：Normal / Search 标题样式区分——Search 用焦点边框色 + 加粗，
+    // 配合状态栏边框输入框，避免用户在 Search 态误按 j/k 导航。
+    let title_style = if pane.normal {
+        vifm_style("TopLineSel")
+    } else {
+        pane_border_style(true).add_modifier(Modifier::BOLD)
+    };
     frame.render_widget(
-        Paragraph::new(Line::from(title_spans)).style(vifm_style("TopLineSel")),
+        Paragraph::new(Line::from(title_spans)).style(title_style),
         topline,
     );
     let frec_items: Vec<ListItem> = visible
@@ -968,21 +975,53 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         });
         crate::app::preview::render_view_path(frame, state, &path, preview_area, viewer.as_ref());
     }
-    // M34-5：搜索模式底部实时回显当前 query（键入即时更新、清空同步）；
-    // Normal 显示操作提示。计数自标题移至两处提示行。
-    let hint = if pane.normal {
-        format!(
-            "j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=删标记 yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
+    // M55-1：Search 态绘制带边框的输入行 + 可见光标；Normal 态仍为纯提示行。
+    // j/k 在 Search 态是输入字符，提示中明确 ↑↓ 才是移动键。
+    frame.render_widget(ratatui::widgets::Clear, status_area);
+    if pane.normal {
+        let hint = format!(
+            "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=删标记 yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
             visible.len()
-        )
-    } else {
-        format!(
-            "/{}  ↑↓/Ctrl+J/K=移动 输入=筛选 Enter=跳转 Esc=Normal（{} 项）",
-            pane.query,
+        );
+        frame.render_widget(Paragraph::new(hint), status_area);
+    } else if status_area.width >= 12 {
+        let hint = format!(
+            " ↑↓/Ctrl+J/K=移动（j/k 为输入） Enter=跳转 Esc=Normal（{} 项）",
             visible.len()
-        )
-    };
-    frame.render_widget(Paragraph::new(hint), status_area);
+        );
+        let hint_w = (hint.chars().count() as u16).min(status_area.width / 2);
+        let input_w = status_area.width.saturating_sub(hint_w).max(12);
+        let input_area = ratatui::layout::Rect {
+            x: status_area.x,
+            y: status_area.y,
+            width: input_w.min(status_area.width),
+            height: status_area.height,
+        };
+        let hint_area = ratatui::layout::Rect {
+            x: status_area.x.saturating_add(input_area.width),
+            y: status_area.y,
+            width: status_area.width.saturating_sub(input_area.width),
+            height: status_area.height,
+        };
+        let block = ratatui::widgets::Block::new()
+            .borders(ratatui::widgets::Borders::LEFT | ratatui::widgets::Borders::RIGHT)
+            .border_style(pane_border_style(true));
+        let caret = Span::styled(
+            "▋",
+            Style::new()
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        let spans = vec![
+            Span::styled("/", Style::new().fg(Color::LightYellow)),
+            Span::from(pane.query.clone()),
+            caret,
+        ];
+        frame.render_widget(Paragraph::new(Line::from(spans)).block(block), input_area);
+        if hint_area.width > 0 {
+            frame.render_widget(Paragraph::new(hint), hint_area);
+        }
+    }
 }
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {

@@ -1174,3 +1174,10 @@
 ## 60. M57 — `rv help` 外部入口收敛（见 SPEC M57 节）
 
 - [x] M57-1 `rvifm help` 外部子命令已移除（未知参数）；`:help` 仅在应用内以覆盖层打开（Esc/q 返回），GUIDE/help/CHANGELOG 同步，`--version`/`--help` 冒烟不变。（2026-11-26：cli 测试断言不可用）
+
+## 61. M55 — frecency 搜索态区分与实时递归模式（见 SPEC M55 节）
+
+- [x] M55-1 Search 态输入行有边框与光标、标题含 query；Normal 态无输入行装饰且列表仍无边框；j/k 导航语义不变。（2026-11-26：m551 渲染测试 + 标题样式区分）
+- [ ] M55-2 `O` 触发后台流式递归扫描（复用 :find ignore 规则、深度 20/条目 5 万护栏）；扫描不写 redb、不更新 global_tick。
+- [ ] M55-3 输入实时子串过滤已扫描条目；状态栏显示 scanning 计数与最终总数；Enter 选中跳转走 record、Esc 退出；`:find` 语义不变。
+- [ ] M55-4 GUIDE/help/ACCEPTANCE/NOTES 同步，质量门禁全绿，未发版。
