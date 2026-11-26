@@ -583,7 +583,7 @@ pub(crate) fn strip_archive_ext(name: &str) -> &str {
     name
 }
 
-/// M45-8d：导师模块列表左侧进度标签——`掌握数/总数` 百分比。纯函数便于
+/// M45-8d：向导模块列表左侧进度标签——`掌握数/总数` 百分比。纯函数便于
 /// 测试（不读宿主进度文件）。
 pub(crate) fn tutor_progress_label(total: usize, mastered: usize) -> String {
     match mastered.min(total).saturating_mul(100).checked_div(total) {
@@ -1559,7 +1559,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         return;
     }
     if let InputMode::TutorList { cursor, search } = mode {
-        // M42-1/M43-1：导师模式模块列表——List 组件渲染（M43 起模块数超屏，
+        // M42-1/M43-1：向导模式模块列表——List 组件渲染（M43 起模块数超屏，
         // 视口随选中项滚动）。键提示并入边框底部行。
         // FIX-5-1：全屏覆盖层先清除下层 TUI——否则目录列表/状态栏文字从
         // 列表空白行透出（与其它覆盖层的 Clear 模式一致）。
@@ -1595,7 +1595,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         let list = ratatui::widgets::List::new(items)
             .block(
                 ratatui::widgets::Block::bordered()
-                    .title("🎓 导师模式 (:tutor)")
+                    .title("🎓 向导模式 (:tutor)")
                     .title_bottom(
                         ratatui::text::Line::from(
                             " j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 ",
@@ -1631,7 +1631,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         frame.render_widget(ratatui::widgets::Clear, frame.area());
         frame.render_widget(
             Paragraph::new(format!("/{input}▏"))
-                .block(ratatui::widgets::Block::bordered().title("导师模块搜索")),
+                .block(ratatui::widgets::Block::bordered().title("向导模块搜索")),
             ratatui::layout::Rect {
                 x: frame.area().x,
                 y: frame.area().y,
@@ -2047,7 +2047,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         let mastered = marks.iter().filter(|(_, ok)| *ok).count();
         let skipped = marks.len() - mastered;
         let title = format!(
-            "🎓 导师模式: {}{review} ({}/{})",
+            "🎓 向导模式: {}{review} ({}/{})",
             module.name,
             (*idx + 1).min(total),
             total,

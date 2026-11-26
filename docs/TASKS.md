@@ -779,4 +779,19 @@
 - [x] M55-1 搜索态视觉区分（输入行边框+光标+标题 query，列表无边框）（见 SPEC M55-1）；2026-11-26 完成：Search 标题焦点边框色+加粗、状态栏 LEFT/RIGHT 边框输入框 + ▋ 光标 + j/k 输入提示，列表维持无边框，m551 通过
 - [x] M55-2 实时递归扫描后端（O 触发、复用 :find、后台流式、深度/条目护栏）（见 SPEC M55-2）；2026-11-26 完成：spawn_live_find + LiveFindState + InputMode::LiveFind + O 触发 + 每帧限量 drain，m552 通过（深度 20 护栏）
 - [x] M55-3 实时递归交互（增量子串过滤 + scanning 状态栏 + Enter 跳转 + Esc）（见 SPEC M55-3）；2026-11-26 完成：查询子串过滤 + ↑↓/Ctrl+J/K 移动 + scanning 标题/边框输入框 + Enter 走 jump_to/record + Esc 停线程，m553 通过
-- [x] M55-4 文档与验收同步（GUIDE/help/ACCEPTANCE/NOTES + 质量门禁）（见 SPEC M55-4）；2026-11-26 完成：GUIDE/help/CHANGELOG 同步 O 与搜索态、ACCEPTANCE/NOTES 勾选，619 单测 + 13 集成 + fmt/clippy/build + harness_check 绿，未发版
+- [x] M55-4 文档与验收同步（GUIDE/help/ACCEPTANCE/NOTES + 质量门禁）（见 SPEC M55-4）；2026-11-26 完成：GUIDE/help/CHANGELOG 同步 O 与搜索态、619 单测 + 13 集成 + fmt/clippy/build + harness_check 绿，未发版
+
+## M56 — 向导模式（tutor 重构，2026-11-26 蒸馏，见 SPEC M56 节）
+
+- [x] M56-1 术语统一为「向导模式」（见 SPEC M56-1）；2026-11-26 完成：标题/搜索框/Panel/命令注释/GUIDE/help 统一，模块项计数同步 14/102，原断言改为向导模式
+- [ ] M56-2 首次无配置自动进入向导（见 SPEC M56-2）
+- [ ] M56-3 对话框几何 80% + 极小终端全屏降级（见 SPEC M56-3）
+- [ ] M56-4 底部进度状态栏 + 带边框进度条（见 SPEC M56-4）
+- [ ] M56-5 `/` 搜索实时更新（见 SPEC M56-5）
+- [ ] M56-6 有记录模块仅显示错题且编号保持（见 SPEC M56-6）
+- [ ] M56-7 模块完成 Enter=继续学习其它模块（见 SPEC M56-7）
+- [ ] M56-8 100% 模块重入确认重置（见 SPEC M56-8）
+- [ ] M56-9 进度跨版本兼容 + 稳定 ID（见 SPEC M56-9）
+- [ ] M56-10 向导条目 ↔ ACCEPTANCE 映射同步规则（见 SPEC M56-10）
+- [ ] M56-11 成就徽章（见 SPEC M56-11）
+- [ ] M56-12 文档/验收同步 + 质量门禁（见 SPEC M56-12）

@@ -13769,7 +13769,7 @@ fn m42_1_tutor_render_list_and_panel() {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 14)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
     let all = compact(terminal.backend(), 70, 14);
-    assert!(all.contains("导师模式"), "标题: {all}");
+    assert!(all.contains("向导模式"), "标题: {all}");
     assert!(all.contains("core_nav"), "模块行: {all}");
     assert!(all.contains("Enter/l=进入"), "键提示: {all}");
 

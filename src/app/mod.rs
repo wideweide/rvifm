@@ -281,7 +281,7 @@ pub(crate) enum InputMode {
     JobDetail { index: usize },
     /// 传输队列覆盖层（M36-7）：j/k 选择、x 取消条目、Esc 关闭。
     Queue { cursor: usize },
-    /// 导师模式模块列表覆盖层（M42-1：`:tutor` 无参）：j/k 选择、Enter/l
+    /// 向导模式模块列表覆盖层（M42-1：`:tutor` 无参）：j/k 选择、Enter/l
     /// 进入、Esc/q 关闭。
     TutorList {
         cursor: usize,
@@ -407,7 +407,7 @@ pub(crate) enum ExecOutcome {
     EnterQueue {
         cursor: usize,
     },
-    /// 打开导师模式模块列表覆盖层（M42-1：`:tutor` 无参）。
+    /// 打开向导模式模块列表覆盖层（M42-1：`:tutor` 无参）。
     EnterTutorList,
     /// 进入导师模式会话（M42-1：`:tutor <module_id>`；exec 已校验存在）。
     EnterTutorSession {
@@ -450,7 +450,7 @@ pub(crate) enum ExecOutcome {
     },
 }
 
-/// M42-1：导师模式模块列表按键结果。
+/// M42-1：向导模式模块列表按键结果。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TutorListOutcome {
     /// 未消费（仅 j/k 移动等）。
@@ -1977,7 +1977,7 @@ fn run_with_initial_mode(
                     }
                 }
                 InputMode::TutorList { cursor, search } => {
-                    // M42-1：导师模式模块列表——j/k 选择、Enter/l 进入、
+                    // M42-1：向导模式模块列表——j/k 选择、Enter/l 进入、
                     // Esc/q 关闭（覆盖层独立于当前目录/位置）。
                     if key.kind == KeyEventKind::Press {
                         // M48-10：键位作用于过滤后的模块列表。
