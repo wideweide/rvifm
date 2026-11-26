@@ -1473,3 +1473,12 @@ rvifm record  → 静默记录访问
 - **共享实现**：抽出 `render::preview_layout_areas()` 作为两模式共用的位置语义；`FrecencyPane` 增 `preview_focus/preview_scroll/preview_query/preview_match`，Tab 在原布局只切焦点归属、不切 pane，预览焦点复用 viewer 渲染链（滚动/搜索/高亮）。`Tab::preview_path_with(fixed_side)` 在固定模式恒取左栏光标文件。
 - **热切换**：配置只影响新打开的会话（用户明确授权「热切换成本高则按新会话交付」）；已打开的 frecency/`:view` 不重排。
 - **不发布**：沿用用户 2026-11-25 口径，本批次只提交并推送，不 bump / tag / Release。
+
+### 2026-11-26 — M50 命令补全增强（DeepSeek 分享稿蒸馏，用户已确认）
+
+- **来源**：用户提供 DeepSeek 分享链接（4 轮 Q&A，主题「rvifm 命令模式自动补全增强」）。蒸馏后仅汇报、未执行；用户确认 5 项决策后才登记 M50。
+- **用户确认的决策**：① 登记并执行；② UI 复用现有 frecency overlay、高度 ≤40% 终端（不照搬 Tridactyl 半屏）；③ 采纳 shell 历史解析、**默认开**、优先**增量读取**；④ 新增 `OpenExternalCommandLine` Action 但**不设默认键位**（用户自定义 keymap 触发）；⑤ 变量先落地裸 `%f/%F/%d/%D` + `[command] quote_expansion` 开关，`%"f` 引号变体本批次不做。
+- **WHY（数据源）**：fzf Ctrl+R 读的是已落盘 shell 历史文件（不是实时监控），且 fzf 本身不扫描 PATH——所以外部补全候选取「历史完整命令行」，不做 PATH 发现；评分按命令名聚合、展示完整行。
+- **WHY（不做 B）**：`execve` 守护进程监控引入常驻进程、Linux 特有、隐私敏感，性价比低，明确 OUT_OF_SCOPE。
+- **隐私边界**：完整命令行仅作内存补全候选；只有**命令名**进入 frecency `cmd` topic（持久化），文档需写明「当前仍打开的 shell 会话尚未落盘的命令可能缺失」。
+- **排序**：M50-1 → M50-6；沿用不 bump / tag / Release。

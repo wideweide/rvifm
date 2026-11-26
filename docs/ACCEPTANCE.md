@@ -1127,3 +1127,12 @@
 - [x] M49-14 SEARCH Esc 返回 NORMAL 但保留过滤。
 - [x] M49-15 NORMAL `dd` 删记录、`u` 恢复、`yf`/`yn`/`yc` 不跳转复制、`gi` 打开焦点条目的 git 仓库交互工具。
 - [x] M49-16 文档收尾一致；harness_check 通过；未发版。（2026-11-26：GUIDE/help/CHANGELOG/tutor 同步通过）
+
+## 55. M50 — 命令补全增强（见 SPEC M50 节）
+
+- [x] M50-1 `:` 键入时显示内部命令候选（名+描述），前缀→frecency→字母序；overlay 底部满宽 ≤40% 高、两列；Enter 执行、Tab 仅补全前缀。
+- [x] M50-2 `:` 仅内部命令、`:!` 仅历史完整命令行（带参数）；同一 overlay，首字符决定候选池；`:!` 执行语义不变。
+- [x] M50-3 `[command] scan_shell_history` 默认 true；bash/zsh 历史增量读取；完整行仅内存候选、仅命令名进 frecency；缺文件静默降级。
+- [x] M50-4 `open_external_command_line` Action 可绑定并预填 `!`，无默认键位；GUIDE/config 示例存在。
+- [x] M50-5 `[command] quote_expansion` 默认 false；开启时 `%d/%f/%F/%D` 展开值自动加双引号；vifm 裸变量语义不破坏。
+- [x] M50-6 文档收尾一致；明确不做 PATH 扫描/execve 守护/参数补全/完整命令行入库；未发版。

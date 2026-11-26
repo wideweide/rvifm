@@ -392,12 +392,23 @@ pub(crate) fn substitute_vars(template: &str, state: &AppState) -> Result<String
     let g = git_root_of(&focus_dir)
         .map(|p| p.to_string_lossy().replace(sep, "/"))
         .unwrap_or_default();
+    // M50-5：配置开启时变量展开值自动加双引号（默认关闭，对齐 vifm 裸变量）。
+    let quote = |s: &str| -> String {
+        if state.config.command.quote_expansion {
+            format!("\"{}\"", s.replace('"', "\\\""))
+        } else {
+            s.to_owned()
+        }
+    };
     let out = template
-        .replace("%d", &focus_dir.to_string_lossy().replace(sep, "/"))
-        .replace("%f", cursor_name)
-        .replace("%F", &cursor_path.to_string_lossy().replace(sep, "/"))
-        .replace("%D", &other_dir.to_string_lossy().replace(sep, "/"))
-        .replace("%g", &g);
+        .replace("%d", &quote(&focus_dir.to_string_lossy().replace(sep, "/")))
+        .replace("%f", &quote(cursor_name))
+        .replace(
+            "%F",
+            &quote(&cursor_path.to_string_lossy().replace(sep, "/")),
+        )
+        .replace("%D", &quote(&other_dir.to_string_lossy().replace(sep, "/")))
+        .replace("%g", &quote(&g));
     if template.contains("%g") && g.is_empty() {
         return Err("不是 git 仓库".to_owned());
     }
@@ -571,6 +582,76 @@ pub(crate) fn run_compare(state: &mut AppState, by_contents: bool) -> Result<Str
 /// 有 frecency 分数（dir/file Navigate/Open 事件，只读快照）的条目
 /// 分数降序在前，无记录条目字典序兜底；store 缺失/空 → 全量字典序
 /// （零成本路径，与 M24-7 行为一致）。
+/// M50-1/2：命令补全候选（值 + 右侧描述）。`:` 用内部命令表，`:!` 用
+/// shell 历史完整命令行；排序 = 前缀 → frecency 分数 → 字母序。
+pub(crate) fn command_completion_candidates(
+    input: &str,
+    state: &AppState,
+) -> (Vec<String>, Vec<String>) {
+    let external = input.starts_with('!');
+    let token = input
+        .trim_start_matches('!')
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    let scores = crate::frecency::cmd_scores();
+    if external {
+        // tab_complete 按整词前缀匹配（含前置 `!`），候选需带同一前缀。
+        let bang_token = format!("!{token}");
+        let mut lines: Vec<String> = state
+            .history_commands
+            .iter()
+            .filter_map(|l| {
+                let l = l.trim_start();
+                let candidate = format!("!{l}");
+                candidate.starts_with(&bang_token).then_some(candidate)
+            })
+            .collect();
+        lines.sort_by(|a, b| {
+            let sa = scores
+                .get(a.split_whitespace().next().unwrap_or(""))
+                .copied()
+                .unwrap_or(0.0);
+            let sb = scores
+                .get(b.split_whitespace().next().unwrap_or(""))
+                .copied()
+                .unwrap_or(0.0);
+            sb.total_cmp(&sa).then_with(|| a.cmp(b))
+        });
+        lines.truncate(100);
+        let descs = lines
+            .iter()
+            .map(|l| {
+                let n = l
+                    .trim_start_matches('!')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
+                match scores.get(n) {
+                    Some(_) => "已记录".to_owned(),
+                    None => "外部命令".to_owned(),
+                }
+            })
+            .collect();
+        (lines, descs)
+    } else {
+        let mut infos: Vec<(String, String)> = command_infos()
+            .into_iter()
+            .filter(|(name, _)| name.starts_with(&token))
+            .collect();
+        infos.sort_by(|a, b| {
+            let sa = scores.get(&a.0).copied().unwrap_or(0.0);
+            let sb = scores.get(&b.0).copied().unwrap_or(0.0);
+            sb.total_cmp(&sa).then_with(|| a.0.cmp(&b.0))
+        });
+        (
+            infos.iter().map(|(n, _)| n.clone()).collect(),
+            infos.into_iter().map(|(_, d)| d).collect(),
+        )
+    }
+}
+
 pub(crate) fn completion_candidates(
     base: &Path,
     items: &[crate::tab::FileItem],
@@ -1998,6 +2079,36 @@ fn named_find_op(state: &mut AppState, op: &str, name: &str) -> Result<ExecOutco
 /// 执行最小 `:` 命令（M1-5/M2-6）。
 /// M45-5c：`:` 命令行已知命令名（Tab 命令名补全用）。当前 exec 分派无
 /// 集中注册表，此表按 match 臂手工维护；新增命令须同步（SIMPLIFIED）。
+/// M50-1：命令名 + 描述（从内嵌 help.txt 解析，避免描述重复维护）。
+/// 返回按 COMMAND_NAMES 顺序排列的 `(name, description)`；missing 用空串。
+pub(crate) fn command_infos() -> Vec<(String, String)> {
+    static INFOS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    INFOS
+        .get_or_init(|| {
+            COMMAND_NAMES
+                .iter()
+                .map(|name| {
+                    let needle = format!(":{name}");
+                    let desc = crate::app::render::HELP_TEXT
+                        .lines()
+                        .find_map(|line| {
+                            let t = line.trim();
+                            if t.starts_with(&needle) {
+                                // 至少两个空格后才是描述（帮助文本固定格式）。
+                                t.split_once("  ").map(|(_, d)| d.trim())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or("")
+                        .to_owned();
+                    ((*name).to_owned(), desc)
+                })
+                .collect()
+        })
+        .clone()
+}
+
 pub(crate) const COMMAND_NAMES: &[&str] = &[
     "archive",
     "asc",

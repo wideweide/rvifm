@@ -1696,6 +1696,35 @@ append_rules = [
 - 预览区位置不随焦点切换移动（默认模式）；动态对侧仅显式配置开启。
 - 不实现 Vim 脚本/插件/FUSE；不自动执行用户文件；不 bump 版本 / tag / GitHub Release。
 
+## M50 — 命令补全增强（2026-11-26 蒸馏 DeepSeek 分享稿；用户已确认，见 NOTES 同日条目）
+
+> 来源：用户提供的 DeepSeek 分享对话（4 轮 Q&A）蒸馏，用户 2026-11-26 确认 5 项决策：
+> ① 登记执行；② UI 复用现有 frecency overlay、高度 ≤40% 终端，不做 Tridactyl 半屏；
+> ③ 采纳 shell 历史解析、默认开、优先增量读取；④ 新增 Action 但**不设默认绑定**；
+> ⑤ 变量先落地裸 `%f/%F/%d/%D` + `[command] quote_expansion` 配置开关，`%"f` 引号变体本批次不做。
+> 沿用「不 bump / 不 tag / 不 GitHub Release」口径。
+
+**MUST**
+- **M50-1 内部命令补全**：`:` 命令模式键入时提供补全候选：内部命令表（名称 + 功能描述）+ 使用频率（frecency `cmd` topic）。排序 = 前缀匹配优先 → frecency 分数降序 → 字母序。UI 复用现有 frecency overlay 骨架，底部满宽、高度 ≤40% 终端（候选 <5 时约 5 行，最多 12–15 行），左列命令名、右列描述，选中项用主题 `selected` token；`Enter` 执行、`Tab` 仅补全前缀不执行。内部命令元数据从内嵌 help 文本（`include_str!`）或轻量表生成，避免描述重复维护。
+- **M50-2 `!` 前缀来源分离**：`:` 开头仅补全内部命令；`:!` 开头仅补全 shell 历史中的**完整命令行（带参数）**。两者共用同一 overlay 与评分/过滤逻辑，候选池按首字符决定；不改变 vim/vifm 的 `:!` 执行语义。外部候选右侧显示：已记录次数 / 「外部命令」占位（不做 PATH 主动扫描）。
+- **M50-3 shell 历史解析**：新增 shell 历史读取（至少 bash `~/.bash_history`、zsh `~/.zsh_history`），配置 `[command] scan_shell_history = true`（**默认开**）；支持**增量读取**（记录文件 size/mtime/offset，只解析新增行）。完整命令行仅作内存补全候选；**只有命令名进入 frecency `cmd` topic**（隐私边界）。读取失败/文件缺失静默降级；不读参数/路径入库。
+- **M50-4 新 Action（无默认键位）**：新增 `Action::OpenExternalCommandLine`（字符串名 `open_external_command_line`），进入命令模式并预填 `!`；**不设置任何默认绑定**，仅在 config.toml / GUIDE 给出 `[normal] append_keymap` 示例由用户自选按键。
+- **M50-5 变量引号配置**：新增 `[command] quote_expansion = true|false`（默认 `false`，与 vifm 裸变量对齐）；现有 `%d`/`%f`/`%F`/`%D` 在该开关开启时展开值自动加双引号；引号变体 `%"f` 等本批次**不做**。
+- **M50-6 文档收尾**：GUIDE / SPEC / NOTES / ACCEPTANCE / 内嵌 help / config 默认模板同步；记录「不做 PATH 扫描 / 不做 execve 守护 / 不做参数补全」边界。
+
+**SIMPLIFIED**
+- M50-1 命令表从内嵌帮助文本解析（编译时 `include_str!`，运行期一次性构建），不引入新 crate。
+- M50-2 外部补全候选来自历史文件（完整行）而非 PATH 扫描；评分按命令名聚合、展示完整行。
+- M50-3 shell 历史文件可能有「当前仍打开的 shell 会话尚未落盘」的已知边界，写入文档说明。
+- M50-4 用户自定义键位沿用既有 Action 驱动 TOML 分层；不新增模式。
+- M50-5 只做配置开关 + 裸变量引号；`%"f` 变体列为后续增强，不在本批次。
+- 所有改动复用既有 overlay / 双栏渲染 / 键位系统，不引入 fzf、SQLite、PATH 扫描守护进程或新必需依赖。
+
+**OUT_OF_SCOPE**
+- 不扫描 PATH 发现外部命令、不实现 `execve` 守护进程监控、不补全参数/子命令（如 `git commit` 的 `commit`）。
+- 不内置 `!` 快捷键；不为补全单独写一套浮层；不持久化完整命令行到 frecency（仅命令名）。
+- 不 bump 版本、不推送 tag、不触发 GitHub Release。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

@@ -9,6 +9,12 @@
 
 - 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
 
+### M50 命令补全增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `:` 键入补全内部命令（名+描述，按 frecency 频率排序），`:!` 补全 shell 历史完整命令行；底部两列浮层 ≤40% 终端高，Tab 循环、Enter 执行。
+- shell 历史读取默认开、增量记账；完整命令行仅内存候选，只有命令名进 frecency；不扫描 PATH、不做 execve 守护、不补参数。
+- 新增 `open_external_command_line` Action（无默认键位，用户自定义）；`[command] quote_expansion` 开关让 `%d/%f/%F/%D` 自动加双引号。
+
 ### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。

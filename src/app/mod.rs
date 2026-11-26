@@ -140,6 +140,8 @@ pub(crate) enum Outcome {
     EnterSortDialog,
     /// 请求挂起 TUI 进入 shell（M18-3：`s`；vifm 既有习惯）。
     EnterShell,
+    /// M50-4：进入命令模式并预填 `!`（由用户自定义键位触发）。
+    EnterExternalCommandLine,
     /// 请求确认删除（`dd`/`DD`，M2-2/M13-3）：携带待删完整路径；
     /// permanent = 跳过暂存的不可逆删除（DD）。
     ConfirmDelete(PathBuf, bool, Option<String>),
@@ -361,6 +363,8 @@ pub(crate) struct CmdComp {
     head: String,
     candidates: Vec<String>,
     index: usize,
+    /// M50-1：与 candidates 一一对应的右侧描述（内部命令说明 / 外部命令提示）。
+    descs: Vec<String>,
 }
 
 /// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
@@ -701,6 +705,11 @@ fn run_with_initial_mode(
         config.clone(),
     )?);
     state.config = config;
+    // M50-3：shell 历史补全候选 + 增量记账（默认开，失败静默降级）。
+    if state.config.command.scan_shell_history {
+        state.history_commands = crate::shell_history::read_all_commands();
+        crate::shell_history::record_new_commands(true, &state.config.frecency.ignore_patterns);
+    }
     // M25-1：会话恢复（关闭/缺失/损坏 → 保持初始 CWD tab）。
     // M32-3：恢复跳过的 tab 汇入状态栏提示（远端重连失败/归档缺失）。
     let hints = crate::session::restore_session_with_hints(&mut state);
@@ -965,35 +974,40 @@ fn run_with_initial_mode(
                                 Some(CmdInput::Continue)
                             }
                             KeyCode::Tab => {
-                                // M45-5c：首词位置补全命令名（`:ar` → `:archive`），
-                                // 有空白后仍按焦点 pane 文件路径补全（M30-3）。
-                                let names: Vec<String> =
-                                    if crate::app::exec::command_name_position(input) {
-                                        crate::app::exec::COMMAND_NAMES
-                                            .iter()
-                                            .map(|n| (*n).to_owned())
-                                            .collect()
-                                    } else {
-                                        // M30-3：候选加权排序（frecency 分数优先、
-                                        // 字典序兜底；只读快照，store 缺失零成本降级）。
-                                        let tab = state.active_tab();
-                                        let base = tab.focus_base().to_path_buf();
-                                        let items: Vec<crate::tab::FileItem> =
-                                            if tab.focus == crate::tab::Focus::Right {
-                                                tab.right.entries.clone()
-                                            } else {
-                                                tab.entries.clone()
-                                            };
-                                        let scores = crate::frecency::path_scores();
-                                        completion_candidates(&base, &items, &scores)
-                                    };
+                                // M50-1/2：`:` 用内部命令表，`:!` 用 shell 历史
+                                // 完整命令行；有空白后（非 `!`）仍补文件路径。
+                                let (names, descs) = if input.starts_with('!')
+                                    || crate::app::exec::command_name_position(input)
+                                {
+                                    crate::app::exec::command_completion_candidates(input, &state)
+                                } else {
+                                    let tab = state.active_tab();
+                                    let base = tab.focus_base().to_path_buf();
+                                    let items: Vec<crate::tab::FileItem> =
+                                        if tab.focus == crate::tab::Focus::Right {
+                                            tab.right.entries.clone()
+                                        } else {
+                                            tab.entries.clone()
+                                        };
+                                    let scores = crate::frecency::path_scores();
+                                    (completion_candidates(&base, &items, &scores), Vec::new())
+                                };
                                 let n = tab_complete(input, comp, &names);
+                                if let Some(c) = comp.as_mut() {
+                                    c.descs = descs;
+                                }
                                 if n > 10 {
                                     msg = Some(format!("补全候选 {n} 个（Tab 循环切换）"));
                                 }
                                 Some(CmdInput::Continue)
                             }
-                            _ => None,
+                            _ => {
+                                // M50-1：键入新字符后候选失效，避免浮层显示旧列表。
+                                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace) {
+                                    *comp = None;
+                                }
+                                None
+                            }
                         }
                     } else {
                         None
@@ -1603,6 +1617,20 @@ fn run_with_initial_mode(
                         Outcome::EnterCommand => {
                             mode = InputMode::Command {
                                 input: String::new(),
+                                hist_pos: None,
+                                draft: String::new(),
+                                comp: None,
+                                ranked: crate::frecency::cmd_history_ranked(
+                                    &state.cmd_history,
+                                    CMD_RANKED_LIMIT,
+                                ),
+                                cmd_mark_pending: false,
+                            };
+                        }
+                        Outcome::EnterExternalCommandLine => {
+                            // M50-4：预填 `!`，用户可直接输入外部命令（无默认键位）。
+                            mode = InputMode::Command {
+                                input: "!".to_owned(),
                                 hist_pos: None,
                                 draft: String::new(),
                                 comp: None,

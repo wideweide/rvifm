@@ -78,6 +78,8 @@ pub enum Action {
     PrevTab,
     // 模式与命令
     EnterCommand,
+    /// M50-4：打开外部命令输入模式（预填 `!`）；不设默认绑定。
+    OpenExternalCommandLine,
     /// 打开合一跳转选择器（M8-12：o，全局统一时钟视角）。
     OpenJump,
     /// 打开 git TUI（M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit）。
@@ -124,6 +126,7 @@ impl Action {
             "next_tab" | "tab_next" => NextTab,
             "prev_tab" | "tab_prev" => PrevTab,
             "enter_command" | "command" => EnterCommand,
+            "open_external_command_line" => OpenExternalCommandLine,
             "open_jump" | "jump" => OpenJump,
             "quit" => Quit,
             "histprev" | "hist_prev" => HistPrev,

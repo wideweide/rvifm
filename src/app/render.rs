@@ -730,6 +730,21 @@ fn render_confirm(
     frame.render_widget(Paragraph::new(footer), foot);
 }
 
+/// M50-1：命令补全浮层——满宽、底部对齐，高度 ≤ 终端 40%（5–15 行）。
+pub(crate) fn command_completion_rect(
+    area: ratatui::layout::Rect,
+    count: usize,
+) -> ratatui::layout::Rect {
+    let max_h = (area.height as usize * 40 / 100).max(5);
+    let h = count.clamp(5, 15).min(max_h).min(area.height as usize);
+    ratatui::layout::Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(h as u16),
+        width: area.width,
+        height: h as u16,
+    }
+}
+
 /// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
 /// 小终端保底 30×8（不足时取终端本身），在区域内水平垂直居中。
 pub(crate) fn centered_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
@@ -2177,4 +2192,39 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         Paragraph::new(status).style(vifm_style("StatusLine"))
     };
     frame.render_widget(status_para, status_area);
+    // M50-1：命令补全浮层（复用 frecency overlay 的 List/选中样式语义）。
+    if let InputMode::Command {
+        comp: Some(comp), ..
+    } = mode
+        && !comp.candidates.is_empty()
+    {
+        let rect = command_completion_rect(frame.area(), comp.candidates.len());
+        frame.render_widget(ratatui::widgets::Clear, rect);
+        let lines: Vec<Line> = comp
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let desc = comp.descs.get(i).map(String::as_str).unwrap_or("");
+                let style = if i == comp.index {
+                    vifm_style("Selected")
+                } else {
+                    Style::new()
+                };
+                Line::from(vec![
+                    Span::from(format!(" {:<20}", name)),
+                    Span::from(desc.to_owned()),
+                ])
+                .style(style)
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered()
+                    .title("命令补全（Tab 循环 / Enter 执行）")
+                    .border_style(vifm_style("Border")),
+            ),
+            rect,
+        );
+    }
 }

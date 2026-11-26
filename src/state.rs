@@ -381,6 +381,8 @@ pub struct AppState {
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
     /// M36-7：传输队列（粘贴入队；`:queue` 覆盖层消费/取消）。
     pub transfer_queue: Vec<TransferQueueEntry>,
+    /// M50-3：shell 历史完整命令行（仅内存补全候选，不入库）。
+    pub history_commands: Vec<String>,
     /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
@@ -447,6 +449,7 @@ impl AppState {
             pending_permanent_delete: false,
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
+            history_commands: Vec::new(),
             watcher: None,
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),

@@ -230,7 +230,7 @@ PDF 查看器：`[`/`]` 逐页翻页（任意页按需渲染；`[preview] pdf_im
 
 | 文件 | 作用 |
 |---|---|
-| `config.toml` | 键位分层（`[normal]`/`[visual]`/`[view]` 的 prepend/append/replace）、opener 规则、`[ui]`（theme/pane_borders/help_in_new_window…）、`[preview]`、`[frecency]`、`[keymap]`、Linux `[ime]` |
+| `config.toml` | 键位分层（`[normal]`/`[visual]`/`[view]` 的 prepend/append/replace）、opener 规则、`[ui]`（theme/pane_borders/help_in_new_window…）、`[preview]`、`[frecency]`、`[keymap]`、`[command]`（scan_shell_history / quote_expansion）、Linux `[ime]` |
 | `keymap.example.toml` / `opener.example.toml` | 首次启动生成的键位/打开规则示例（复制片段到 `config.toml` 即可生效） |
 | `themes/<名>.toml` | 用户主题（opaline TOML） |
 | `remotes.toml` | SFTP 远端覆盖（在**数据目录**：Linux/macOS `~/.local/share/rvifm/`、Windows `%LOCALAPPDATA%\rvifm\`） |
@@ -281,6 +281,23 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 > 归档 `w` 预览优先系统 `unzip`/`tar`/`7z` 列目录（`[preview] archive_external_listing`，缺工具回退内置）；
 > `:archive` 无参直接执行、`-i` 交互；Normal 模式每 1s 周期切英文；`:tutor` 列表 `/` 搜索 / `d` 重置 /
 > 有记录模块只显示错题 / 模块结束 `Ctrl+N` 回列表；删除确认框内状态栏与滚动条；`rv help` 为可搜索查看器。
+
+## 11.5 命令补全（M50）
+
+命令模式下键入即显示底部补全浮层（满宽、高度 ≤40% 终端、两列：命令 | 说明）：
+
+- `:` 开头：仅补全**内部命令**（名 + 描述，按使用频率 frecency 排序 → 前缀 → 字母序）。
+- `:!` 开头：仅补全 **shell 历史中的完整命令行**（带参数）；fzf Ctrl+R 同款，读已落盘历史，当前仍打开的 shell 会话中新命令可能缺失。
+- `Tab` 循环候选、只补全不执行；`Enter` 执行。不做 PATH 扫描、不做 `execve` 守护、不做参数补全。
+- `[command] scan_shell_history = true`（默认开，增量读取）：完整命令行仅内存候选，**只有命令名**写入 frecency `cmd` topic；可在配置中关闭。
+- 无内置 `!` 快捷键；需要快捷入口时自定义：
+  ```toml
+  [normal]
+  append_keymap = [
+    { on = "!", run = "open_external_command_line", desc = "打开 :! 命令行" }
+  ]
+  ```
+- `[command] quote_expansion = true` 时，自定义命令里的 `%d`/`%f`/`%F`/`%D` 展开值自动加双引号（默认 false，对齐 vifm 裸变量）。
 
 ## 12. 键位速查表
 

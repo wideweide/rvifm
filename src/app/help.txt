@@ -163,7 +163,12 @@ rvifm 帮助（vim 风格文件管理器）
   Esc             关闭当前覆盖层/退出可视选择
   ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
                   本会话未入库命令并入；Enter 执行，Esc 取消）
-  Tab（命令行内） 补全当前词为条目名（前缀匹配循环；~ 展开 HOME）
+  Tab（命令行内） 补全：`:` 仅内部命令（名+描述+使用频率排序），`:!` 仅 shell 历史
+                   完整命令行；有空白时仍补文件路径。底部浮层 ≤40% 高、两列，
+                   Tab 循环、Enter 执行；[command] scan_shell_history 默认开。
+  ! 快捷入口      无默认键位；用户可在 [normal] append_keymap 绑定
+                   open_external_command_line（预填 ! 进入命令行）。
+  %d/%f/%F/%D     自定义命令变量；[command] quote_expansion=true 时自动加双引号
   :frecency stats 导出/管理 frecency 数据库（export <file> JSON；
                   purge confirm 全清；prune --before <日期> 按时间裁剪）
   :cmdmark <tag>  命令书签（写入 frecency cmd topic；命令行内 ' 展开标签）
@@ -210,6 +215,11 @@ M49 实测批次 5（预览固定右侧 + 命令/预览效率/frecency 键位）
   快速切换时图片/PDF 仅元数据、文本仅前 300 字，Tab 进入预览后全量加载；
   `:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目修复；
   frecency：标题含 NORMAL/SEARCH 与 [filter]、Esc 保留过滤、dd 删记录/u 恢复、yf/yn/yc、gi。
+
+M50 命令补全增强（DeepSeek 分享稿）：
+  `:` 键入补全内部命令（名+描述，按 frecency 频率排序）、`:!` 补全 shell 历史完整命令行；
+  不扫描 PATH、不做 execve 守护、不补参数；完整命令行仅内存候选，仅命令名入库 frecency。
+  新增 open_external_command_line Action（无默认键位，用户自定义）；[command] quote_expansion 开关。
 
 M48 实测批次 4（外窗/打开/复制解压/归档预览/tutor/弹窗）：
   `s`/`:!`/`gi`/`:help` 新窗口前台激活且起始目录取焦点 pane（tmux 去 -d、加 -c）；

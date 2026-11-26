@@ -43,6 +43,9 @@ pub struct Config {
     /// FIX-9：Normal 模式自动切换输入法。
     #[serde(default)]
     pub ime: ImeConfig,
+    /// M50：命令补全/变量展开选项（[command] 表）。
+    #[serde(default)]
+    pub command: CommandConfig,
 }
 
 /// FIX-9：[ime] 输入法切换选项；默认仅 Linux 开启自动检测。
@@ -83,6 +86,27 @@ impl Default for ArchiveConfig {
 /// `pdf_prefer_image`：true = 文本提取先行后仍优先展示图像（展示优先级，
 /// 探测顺序不跳过文本提取——AGENTS §5.5）；false = 仅文本层不足
 /// （NeedsVisual）时走图像。
+/// M50：[command] 表——命令补全数据源与变量引号策略。
+/// 注意：`[command]` 同时是键位模式表（prepend/append/keymap），本表只用新键名，
+/// 解析器会忽略未知键，二者互不冲突。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CommandConfig {
+    /// 开启时 `%d/%f/%F/%D` 展开值自动加双引号（默认 false，对齐 vifm 裸变量）。
+    pub quote_expansion: bool,
+    /// 是否读取 shell 历史文件补全外部命令（默认开）。
+    pub scan_shell_history: bool,
+}
+
+impl Default for CommandConfig {
+    fn default() -> Self {
+        Self {
+            quote_expansion: false,
+            scan_shell_history: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PreviewConfig {
@@ -259,6 +283,7 @@ impl Default for Config {
             open: crate::opener::OpenLayers::default(),
             keymap: KeymapConfig::default(),
             ime: ImeConfig::default(),
+            command: CommandConfig::default(),
         }
     }
 }
@@ -648,6 +673,23 @@ mod tests {
         assert!(!cfg.ime.enabled);
         assert_eq!(cfg.ime.ibus_english_engine, "xkb:gb::eng");
         assert_eq!(ImeConfig::default().ibus_english_engine, "xkb:us::eng");
+    }
+
+    #[test]
+    fn m503_command_config_parses_with_defaults() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[command]\nquote_expansion = true\nscan_shell_history = false\n",
+        )
+        .unwrap();
+        let cfg = load_from(&path).unwrap();
+        assert!(cfg.command.quote_expansion);
+        assert!(!cfg.command.scan_shell_history);
+        let default = Config::default().command;
+        assert!(!default.quote_expansion, "默认裸变量");
+        assert!(default.scan_shell_history, "默认读取 shell 历史");
     }
 
     #[test]

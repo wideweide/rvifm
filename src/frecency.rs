@@ -830,6 +830,37 @@ pub fn path_scores_at(db_path: &Path) -> std::collections::HashMap<(String, Stri
 /// 末尾）——`↑`（hist_prev 首跳 `len-1`）先命中最常用条目（M25-7
 /// "常用命令置顶"口径）；store 缺失/为空时仅会话列表（行为退化同
 /// M24-6 FIFO）。无 pending 合并（AUDIT-1：合并只在 record/TUI 启动）。
+/// M50-1：内部命令补全用的只读分数表（cmd topic，key = 命令名）。
+pub fn cmd_scores() -> std::collections::HashMap<String, f64> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(store) = Store::open(&crate::config::frecency_db_path()) else {
+        return out;
+    };
+    let snapshot = store.snapshot_all().unwrap_or_default();
+    let events = store
+        .last_compaction()
+        .and_then(|s| store.events_since(s))
+        .unwrap_or_default();
+    let replayed = replay(
+        &snapshot,
+        &events,
+        store.type_tick("dir").unwrap_or(0),
+        store.type_tick("file").unwrap_or(0),
+        store.type_tick("cmd").unwrap_or(0),
+    );
+    for entry in replayed.into_iter().filter(|e| e.topic == "cmd") {
+        // 补全排序只取命令名（首 token），参数变化不稀释分数。
+        let name = entry
+            .path
+            .split_whitespace()
+            .next()
+            .unwrap_or(&entry.path)
+            .to_owned();
+        out.insert(name, entry.score);
+    }
+    out
+}
+
 pub fn cmd_history_ranked(session: &[String], limit: usize) -> Vec<String> {
     cmd_history_ranked_at(&crate::config::frecency_db_path(), session, limit)
 }

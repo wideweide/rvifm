@@ -21,6 +21,7 @@ pub mod ops;
 pub mod pdf;
 pub mod preview;
 pub mod privilege;
+pub mod shell_history;
 pub mod shell_init;
 // M19-2/M19-3b 接入导航与后端；本阶段仅 trait 层（测试使用）。
 pub mod remote;

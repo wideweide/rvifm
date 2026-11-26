@@ -722,3 +722,14 @@
 - [x] M49-14 SEARCH Esc 保留过滤（见 SPEC M49-14）；2026-11-26 完成：Esc 返回 NORMAL 保留 query（m4912 测试）
 - [x] M49-15 NORMAL `dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`（见 SPEC M49-15）；2026-11-26 完成：dd 删记录 / u 经 pending 恢复 / yf·yn·yc / gi（m4915 测试）
 - [x] M49-16 文档收尾（GUIDE/help/CHANGELOG/tutor/ACCEPTANCE）（见 SPEC M49-16；2026-11-26 完成：四文档 + help/tutor 同步，harness_check 通过，未发版）
+
+## M50 — 命令补全增强（2026-11-26 蒸馏 DeepSeek 分享稿，已确认，见 SPEC M50 节）
+
+> 用户确认 5 项决策：登记执行 / 复用 frecency overlay 且 ≤40% 高 / shell 历史默认开+增量 / 新 Action 无默认键位 / 变量先落地裸变量+quote_expansion 开关。沿用不发布口径。
+
+- [x] M50-1 内部命令补全（命令表+frecency 排序+复用 overlay 两列）（见 SPEC M50-1）；2026-11-26 完成：命令表从 help.txt 解析 + cmd_scores + 两列浮层（m501）
+- [x] M50-2 `!` 前缀来源分离（`:` 内部 / `:!` 历史完整命令行）（见 SPEC M50-2）；2026-11-26 完成：`!` 前缀分池 + 历史完整命令行候选（m502）
+- [x] M50-3 shell 历史解析（默认开+增量读取+仅命令名入库）（见 SPEC M50-3）；2026-11-26 完成：shell_history 模块（bash/zsh + 增量签名 + 仅命令名入库）
+- [x] M50-4 `Action::OpenExternalCommandLine`（无默认绑定）+ 配置示例（见 SPEC M50-4）；2026-11-26 完成：Action open_external_command_line + Outcome，无默认绑定（m504）
+- [x] M50-5 `[command] quote_expansion` + 裸 `%f/%F/%d/%D` 引号（见 SPEC M50-5）；2026-11-26 完成：[command] quote_expansion + 裸变量引号（m505/m503）
+- [x] M50-6 文档收尾（GUIDE/SPEC/NOTES/ACCEPTANCE/help/config 模板）（见 SPEC M50-6）；2026-11-26 完成：GUIDE/help/CHANGELOG/config 模板同步，harness_check 通过

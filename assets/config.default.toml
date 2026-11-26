@@ -67,6 +67,13 @@ conflict_policy = "ask"
 queue = false
 
 # ── 键位解析 ────────────────────────────────────────────────────────────
+# ── 命令补全与变量 ──────────────────────────────────────────────────────
+[command]
+# M50：读取 bash/zsh 历史补全外部命令（默认开，增量读取；仅命令名入库 frecency）
+scan_shell_history = true
+# M50：%d/%f/%F/%D 展开值自动加双引号（默认 false，对齐 vifm 裸变量）
+quote_expansion = false
+
 [keymap]
 # 多键序列（yy、gg、gt …）待决超时，毫秒
 seq_timeout_ms = 500

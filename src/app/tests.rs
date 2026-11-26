@@ -2500,6 +2500,62 @@ fn m489_ime_periodic_probe_respects_editable_modes() {
 }
 
 #[test]
+fn m501_command_completion_internal_pool_and_overlay() {
+    // M50-1：内部命令补全候选按前缀过滤、带描述；浮层高度 ≤40%。
+    let tmp = TempDir::new().unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let (names, descs) = command_completion_candidates("arch", &state);
+    assert!(names.iter().any(|n| n == "archive"), "{names:?}");
+    assert!(names.iter().all(|n| n.starts_with("arch")));
+    assert_eq!(descs.len(), names.len());
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let rect = crate::app::render::command_completion_rect(area, 30);
+    assert_eq!(rect.width, 80, "满宽");
+    assert_eq!(rect.y + rect.height, area.y + area.height, "底部对齐");
+    assert!(rect.height <= area.height * 40 / 100 || rect.height == 5);
+}
+
+#[test]
+fn m502_bang_completion_uses_shell_history_pool() {
+    // M50-2：`:!git` 候选来自 shell 历史完整命令行，不带内部命令。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.history_commands = vec!["git status".to_owned(), "ls -la".to_owned()];
+    let (names, descs) = command_completion_candidates("!git", &state);
+    assert_eq!(names, vec!["!git status"]);
+    assert_eq!(descs.len(), 1);
+    let (names, _) = command_completion_candidates("ls", &state);
+    assert!(names.iter().all(|n| !n.contains('!')), "`:` 池不含外部命令");
+}
+
+#[test]
+fn m504_external_command_line_action_has_no_default_binding() {
+    // M50-4：Action 可由字符串名解析，但默认键位不绑定。
+    assert_eq!(
+        crate::keymap::Action::from_name("open_external_command_line"),
+        Some(crate::keymap::Action::OpenExternalCommandLine)
+    );
+    let map = crate::keymap::Keymap::with_layers(Vec::new(), Vec::new(), None);
+    assert!(
+        map.lookup(&[crate::keymap::Key::plain(KeyCode::Char('!'))])
+            .is_none(),
+        "默认不绑定 !"
+    );
+}
+
+#[test]
+fn m505_quote_expansion_config_applies_to_variables() {
+    // M50-5：默认裸变量；开关开启后自动双引号。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let out = substitute_vars("%f", &state).unwrap();
+    assert!(!out.starts_with('"'));
+    state.config.command.quote_expansion = true;
+    let out = substitute_vars("%f", &state).unwrap();
+    assert!(out.starts_with('"') && out.ends_with('"'), "{out}");
+}
+
+#[test]
 fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
     // M49-12/14：标题含 SEARCH + [filter]；Esc 返回 NORMAL 但保留过滤。
     let tmp = TempDir::new().unwrap();

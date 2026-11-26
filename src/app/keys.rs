@@ -150,6 +150,7 @@ pub(crate) fn tab_complete(
             head,
             candidates,
             index: 0,
+            descs: Vec::new(),
         });
     }
     // AUDIT-8：去 expect——comp 缺失（不可达）时安全返回 0（无候选补全）。
@@ -1160,6 +1161,9 @@ pub(crate) fn handle_key(
             }
             Some(Action::RunCommand(index)) => {
                 return Some(run_user_command(state, index as usize, msg));
+            }
+            Some(Action::OpenExternalCommandLine) => {
+                return Some(Outcome::EnterExternalCommandLine);
             }
             Some(Action::GitUi) => {
                 // M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit；复用
