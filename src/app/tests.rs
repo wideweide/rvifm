@@ -21,6 +21,37 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
 }
 
 #[test]
+fn m570_tutor_badges_from_progress() {
+    // M56-11：首模块 🏅、全模块 🏆、零错题 ⭐（按稳定 item id 判定）。
+    let mut progress = crate::tutor::TutorProgress::new();
+    let core = crate::tutor::module_by_id("core_nav").unwrap();
+    let mut mp = crate::tutor::ModuleProgress::default();
+    for item in &core.items {
+        mp.mastered.push(item.id.clone());
+    }
+    progress.insert(core.id.clone(), mp);
+    let badges = tutor_badges(&progress);
+    assert!(badges.contains('🏅'), "{badges}");
+    assert!(badges.contains('⭐'), "{badges}");
+    assert!(!badges.contains('🏆'), "{badges}");
+    // 全部模块 100%（其中一个有错题 → 无 ⭐）
+    let mut all = crate::tutor::TutorProgress::new();
+    for (idx, module) in crate::tutor::builtin_modules().iter().enumerate() {
+        let mut p = crate::tutor::ModuleProgress::default();
+        for item in &module.items {
+            p.mastered.push(item.id.clone());
+        }
+        let _ = idx;
+        // 每个模块都有错题记录 → 不发「完美通关」。
+        p.skipped.push(format!("wrong_for_{}", module.id));
+        all.insert(module.id.clone(), p);
+    }
+    let badges = tutor_badges(&all);
+    assert!(badges.contains('🏆'), "{badges}");
+    assert!(!badges.contains('⭐'), "{badges}");
+}
+
+#[test]
 fn m568_complete_module_reset_confirmation() {
     // M56-8：100% 模块判定 + 重入重置确认提示。
     let base = crate::tutor::module_by_id("core_nav").unwrap();

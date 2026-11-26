@@ -793,5 +793,5 @@
 - [x] M56-8 100% 模块重入确认重置（见 SPEC M56-8）；2026-11-26 完成：tutor_module_is_complete + TutorResetConfirm 覆盖层 + y/Enter 重置、n/Esc 取消，m568 通过
 - [x] M56-9 进度跨版本兼容 + 稳定 ID（见 SPEC M56-9）；2026-11-26 完成：load_progress_from 读入即 prune_unknown_ids（按 item id 过滤、保留其它模块），m569 通过
 - [x] M56-10 向导条目 ↔ ACCEPTANCE 映射同步规则（见 SPEC M56-10）；2026-11-26 完成：NOTES 标记块映射表 14 模块 + 同步流程，harness_check 新增规则 8 校验覆盖/章节，八条规则绿
-- [ ] M56-11 成就徽章（见 SPEC M56-11）
-- [ ] M56-12 文档/验收同步 + 质量门禁（见 SPEC M56-12）
+- [x] M56-11 成就徽章（见 SPEC M56-11）；2026-11-26 完成：tutor_badges（🏅首模块/🏆全模块/⭐零错题）+ 学习进度状态栏标题角落，m570 通过
+- [x] M56-12 文档/验收同步 + 质量门禁（见 SPEC M56-12）；2026-11-26 完成：GUIDE/help/CHANGELOG/STATE/PLAN/ACCEPTANCE 同步，627 单测 + 13 集成 + fmt/clippy/build + 八条 harness 绿，未发版

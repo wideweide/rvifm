@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M56 向导模式（tutor 重构；仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- tutor 统一更名为「向导模式」；首次无配置文件时自动进入；欢迎对话框占屏 80%（≤40×10 降级全屏），底部带边框进度状态栏显示模块/功能点/百分比。
+- `/` 输入实时过滤、有记录模块仅显示错题且保持原编号、模块完成 `Enter` 回列表、100% 模块重入重置确认。
+- 进度按稳定 ID 忽略未知/改名条目；NOTES 建立向导↔ACCEPTANCE 映射表并由 harness_check 规则 8 守护；🏅/🏆/⭐ 成就徽章在状态栏角落显示。
+
 ### M55 frecency 搜索态区分与实时递归查找（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - frecency SEARCH 态标题改为焦点边框色+加粗，底部绘制带边框输入框 + 可见光标；列表保持无边框，NORMAL/SEARCH 明确区分。

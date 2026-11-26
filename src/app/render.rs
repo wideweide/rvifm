@@ -655,6 +655,39 @@ pub(crate) fn tutor_overall_progress(
     )
 }
 
+/// M56-11：成就徽章——完成首模块 🏅 / 全模块 100% 🏆 / 零错题通过 ⭐。
+/// 纯函数：按稳定 item id 判定，与进度文件版本无关。
+pub(crate) fn tutor_badges(progress: &crate::tutor::TutorProgress) -> String {
+    let modules = crate::tutor::builtin_modules();
+    let mut done = 0usize;
+    let mut perfect = false;
+    for module in &modules {
+        let Some(entry) = progress.get(&module.id) else {
+            continue;
+        };
+        let mastered_all = !module.items.is_empty()
+            && module
+                .items
+                .iter()
+                .all(|i| entry.mastered.iter().any(|id| id == &i.id));
+        if mastered_all {
+            done += 1;
+            perfect |= entry.skipped.is_empty();
+        }
+    }
+    let mut badges = String::new();
+    if done > 0 {
+        badges.push('🏅');
+    }
+    if done > 0 && done == modules.len() {
+        badges.push('🏆');
+    }
+    if perfect {
+        badges.push('⭐');
+    }
+    badges
+}
+
 /// M56-4：带边框的单条文本进度条（█/░，不引入新绘图引擎）。
 pub(crate) fn tutor_progress_bar(pct: usize, width: u16) -> String {
     let w = width.max(4) as usize;
@@ -1253,7 +1286,17 @@ fn render_tutor_list(
             Line::from(bar),
         ];
         frame.render_widget(
-            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("学习进度")),
+            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title(format!(
+                "学习进度{}",
+                {
+                    let b = tutor_badges(&state.tutor_progress);
+                    if b.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {b}")
+                    }
+                }
+            ))),
             status_area,
         );
     }

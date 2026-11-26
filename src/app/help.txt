@@ -130,7 +130,9 @@ rvifm 帮助（vim 风格文件管理器）
   :tutor [模块|reset <模块>]
                   向导模式（交互教程+自验，14 模块 102 项覆盖全部键位/命令；
                   透明放行边学边练：Ctrl+Y 掌握 Ctrl+N 记错题本 Ctrl+Q 退出；
-                  进度存数据目录 tutor_progress.toml；无参列出模块）
+                  进度存数据目录 tutor_progress.toml（按稳定 ID 跨版本兼容）；
+                  首次无配置自动进入；80% 欢迎对话框 + 进度条 + 🏅/🏆/⭐；
+                  有记录模块只显示错题且编号不变，完成 Enter 回列表）
 
 == 远端（SFTP） ==
   :remote <名>    进入远端（~/.ssh/config 别名 + remotes.toml 覆盖）
