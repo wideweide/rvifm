@@ -2593,6 +2593,89 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn zkey3_filter_snapshot_reset_restore_clear() {
+    // ZKEY-3：zR 临时全显 + 快照，zM 恢复，zO 清焦点栏过滤器。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "").unwrap();
+    fs::write(tmp.path().join("b.md"), "").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().filter = Some("*.txt".to_owned());
+    state.active_tab_mut().right.filter = Some("*.md".to_owned());
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    // zM 无快照
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('M'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(msg.as_deref(), Some("无保存的过滤器状态"));
+    // zR
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('R'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.config.show_hidden);
+    assert!(state.active_tab().filter.is_none());
+    assert!(state.active_tab().right.filter.is_none());
+    let snap = state.filter_snapshot.clone().unwrap();
+    assert_eq!(snap.left[0].as_deref(), Some("*.txt"));
+    // zM 恢复
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('M'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(state.active_tab().filter.as_deref(), Some("*.txt"));
+    assert_eq!(state.active_tab().right.filter.as_deref(), Some("*.md"));
+    // zO 清焦点栏（左）过滤，隐藏开关不变
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('O'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().filter.is_none());
+    assert_eq!(state.active_tab().right.filter.as_deref(), Some("*.md"));
+}
+
+#[test]
 fn zkey2_hidden_file_toggle_actions() {
     // ZKEY-2：za 切换 / zo 显示 / zm 隐藏，与 show_hidden 同源。
     let tmp = TempDir::new().unwrap();

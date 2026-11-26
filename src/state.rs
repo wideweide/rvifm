@@ -383,6 +383,8 @@ pub struct AppState {
     pub transfer_queue: Vec<TransferQueueEntry>,
     /// M50-3：shell 历史完整命令行（仅内存补全候选，不入库）。
     pub history_commands: Vec<String>,
+    /// M54 ZKEY-3：zR 保存的会话内过滤器快照（不写配置、退出不保留）。
+    pub filter_snapshot: Option<crate::state::FilterSnapshot>,
     /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
     pub text_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
@@ -436,6 +438,14 @@ impl std::fmt::Debug for AppState {
     }
 }
 
+/// M54 ZKEY-3：zR 过滤器临时快照（隐藏开关 + 各 tab 左右过滤模式）。
+#[derive(Debug, Clone)]
+pub struct FilterSnapshot {
+    pub show_hidden: bool,
+    pub left: Vec<Option<String>>,
+    pub right: Vec<Option<String>>,
+}
+
 impl AppState {
     /// 以一个初始标签启动。
     pub fn new(initial: Tab) -> Self {
@@ -462,6 +472,7 @@ impl AppState {
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
             history_commands: Vec::new(),
+            filter_snapshot: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,

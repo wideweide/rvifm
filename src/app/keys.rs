@@ -1223,6 +1223,52 @@ pub(crate) fn handle_key(
                 ));
                 return Some(Outcome::Continue);
             }
+            Some(Action::ResetFiltersTemp) => {
+                // M54 ZKEY-3：快照当前过滤器（不写盘），临时全部可见。
+                state.filter_snapshot = Some(crate::state::FilterSnapshot {
+                    show_hidden: state.config.show_hidden,
+                    left: state.tabs.iter().map(|t| t.filter.clone()).collect(),
+                    right: state.tabs.iter().map(|t| t.right.filter.clone()).collect(),
+                });
+                state.config.show_hidden = true;
+                for tab in &mut state.tabs {
+                    tab.filter = None;
+                    tab.right.filter = None;
+                }
+                refresh_tab_panes(state, state.active);
+                *msg = Some("filters: 临时重置（zM 恢复）".to_owned());
+                return Some(Outcome::Continue);
+            }
+            Some(Action::RestoreFiltersTemp) => {
+                let Some(snapshot) = state.filter_snapshot.take() else {
+                    *msg = Some("无保存的过滤器状态".to_owned());
+                    return Some(Outcome::Continue);
+                };
+                state.config.show_hidden = snapshot.show_hidden;
+                for (tab, left) in state.tabs.iter_mut().zip(snapshot.left) {
+                    tab.filter = left;
+                }
+                for (tab, right) in state.tabs.iter_mut().zip(snapshot.right) {
+                    tab.right.filter = right;
+                }
+                refresh_tab_panes(state, state.active);
+                *msg = Some("filters: 已恢复".to_owned());
+                return Some(Outcome::Continue);
+            }
+            Some(Action::ClearPermanentFilter) => {
+                let cfg = state.config.clone();
+                let focus = state.active_tab().focus;
+                let tab = state.active_tab_mut();
+                if focus == crate::tab::Focus::Right {
+                    tab.right.filter = None;
+                    tab.right.refresh(cfg).ok();
+                } else {
+                    tab.filter = None;
+                    tab.refresh(cfg).ok();
+                }
+                *msg = Some("filter: 已清空（隐藏开关不变）".to_owned());
+                return Some(Outcome::Continue);
+            }
             Some(Action::GitUi) => {
                 // M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit；复用
                 // M18-4 分流（terminal_in_new_window 语义与 :! / 自定义命令一致）。
