@@ -372,6 +372,8 @@ pub(crate) struct CmdComp {
     index: usize,
     /// M50-1：与 candidates 一一对应的右侧描述（内部命令说明 / 外部命令提示）。
     descs: Vec<String>,
+    /// M58-4：当前视口首行偏移（Tab 循环时自动滚动使选中项可见）。
+    offset: usize,
 }
 
 /// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
@@ -1086,40 +1088,66 @@ fn run_with_initial_mode(
                                 hist_next(ranked, hist_pos, input, draft);
                                 Some(CmdInput::Continue)
                             }
-                            KeyCode::Tab => {
-                                // M50-1/2：`:` 用内部命令表，`:!` 用 shell 历史
-                                // 完整命令行；有空白后（非 `!`）仍补文件路径。
-                                let (names, descs) = if input.starts_with('!')
-                                    || crate::app::exec::command_name_position(input)
-                                {
-                                    crate::app::exec::command_completion_candidates(input, &state)
-                                } else {
-                                    let tab = state.active_tab();
-                                    let base = tab.focus_base().to_path_buf();
-                                    let items: Vec<crate::tab::FileItem> =
-                                        if tab.focus == crate::tab::Focus::Right {
-                                            tab.right.entries.clone()
-                                        } else {
-                                            tab.entries.clone()
-                                        };
-                                    let scores = crate::frecency::path_scores();
-                                    (completion_candidates(&base, &items, &scores), Vec::new())
-                                };
-                                let n = tab_complete(input, comp, &names);
-                                if let Some(c) = comp.as_mut() {
-                                    c.descs = descs;
+                            KeyCode::Char(' ') if comp.is_some() => {
+                                // M58-3：Space=选定当前候选到输入栏（可继续编辑参数）。
+                                let selected = comp
+                                    .as_ref()
+                                    .and_then(|c| c.candidates.get(c.index).cloned())
+                                    .unwrap_or_default();
+                                if !selected.is_empty() {
+                                    if let Some(next) = comp
+                                        .as_ref()
+                                        .and_then(|c| crate::app::keys::completion_accept(input, c))
+                                    {
+                                        *input = next;
+                                    }
                                 }
-                                if n > 10 {
-                                    msg = Some(format!("补全候选 {n} 个（Tab 循环切换）"));
+                                *comp = None;
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Tab => {
+                                // M58-4：仅在候选池尚未建立时重建；循环时沿用同一池，
+                                // 否则 descs 会来自更窄的新前缀、与 index 脱节。
+                                let names = if comp.is_none() {
+                                    let (names, descs) =
+                                        crate::app::exec::command_completion_pool(&state, input);
+                                    let n = tab_complete(input, comp, &names);
+                                    if let Some(c) = comp.as_mut() {
+                                        c.descs = descs;
+                                        c.offset = 0;
+                                    }
+                                    n
+                                } else {
+                                    let names = comp
+                                        .as_ref()
+                                        .map(|c| c.candidates.clone())
+                                        .unwrap_or_default();
+                                    tab_complete(input, comp, &names)
+                                };
+                                if names > 0 {
+                                    comp.as_mut().expect("comp 已建立").offset = 0;
                                 }
                                 Some(CmdInput::Continue)
                             }
                             _ => {
-                                // M50-1：键入新字符后候选失效，避免浮层显示旧列表。
-                                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace) {
-                                    *comp = None;
+                                // M58-1：键入时按新输入实时重建候选（描述同源）。
+                                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                                    && comp.is_some()
+                                {
+                                    let result = command_input(input, key);
+                                    let (names, descs) =
+                                        crate::app::exec::command_completion_pool(&state, input);
+                                    let n = tab_complete(input, comp, &names);
+                                    if n == 0 {
+                                        *comp = None;
+                                    } else if let Some(c) = comp.as_mut() {
+                                        c.descs = descs;
+                                        c.offset = 0;
+                                    }
+                                    Some(result)
+                                } else {
+                                    None
                                 }
-                                None
                             }
                         }
                     } else {

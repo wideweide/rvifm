@@ -662,6 +662,26 @@ pub(crate) fn command_completion_candidates(
     }
 }
 
+/// M58-1：命令行补全候选池（名称 + 同源描述），供首次 Tab 与键入实时过滤共用。
+/// 描述与候选在**同一次快照**中生成，避免索引与描述漂移（M58-4）。
+pub(crate) fn command_completion_pool(
+    state: &crate::app::AppState,
+    input: &str,
+) -> (Vec<String>, Vec<String>) {
+    if input.starts_with('!') || command_name_position(input) {
+        return command_completion_candidates(input, state);
+    }
+    let tab = state.active_tab();
+    let base = tab.focus_base().to_path_buf();
+    let items = if tab.focus == crate::tab::Focus::Right {
+        tab.right.entries.clone()
+    } else {
+        tab.entries.clone()
+    };
+    let scores = crate::frecency::path_scores();
+    (completion_candidates(&base, &items, &scores), Vec::new())
+}
+
 pub(crate) fn completion_candidates(
     base: &Path,
     items: &[crate::tab::FileItem],

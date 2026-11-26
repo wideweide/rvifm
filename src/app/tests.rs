@@ -2698,6 +2698,46 @@ fn m489_ime_periodic_probe_respects_editable_modes() {
 }
 
 #[test]
+fn m581_completion_pool_and_live_desc_sync() {
+    // M58-1：候选与描述同源（等长）；`:!` 候选是完整命令行（含参数）。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let (names, descs) = crate::app::exec::command_completion_pool(&state, "arch");
+    assert_eq!(names.len(), descs.len());
+    assert!(names.iter().any(|n| n == "archive"));
+    state.history_commands = vec!["git status --short".to_owned()];
+    let (names, _) = crate::app::exec::command_completion_pool(&state, "!git");
+    assert!(names.iter().any(|n| n.contains("--short")), "{names:?}");
+}
+
+#[test]
+fn m583_space_accept_keeps_command_head() {
+    // M58-3：Space 选定只替换最后一个词，保留头部参数。
+    let comp = CmdComp {
+        head: "ls ".to_owned(),
+        candidates: vec!["a.txt".to_owned(), "b.txt".to_owned()],
+        index: 1,
+        descs: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(
+        crate::app::keys::completion_accept("ls b", &comp).as_deref(),
+        Some("ls b.txt")
+    );
+}
+
+#[test]
+fn m584_completion_offset_follows_selection() {
+    // M58-4：循环到不可见项时视口滚动使其可见；索引与描述同源不漂移。
+    assert_eq!(completion_offset(2, 10, 5), 0);
+    assert_eq!(completion_offset(6, 10, 5), 2);
+    assert_eq!(completion_offset(9, 10, 5), 5);
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let rect = crate::app::render::command_completion_rect(area, 12);
+    assert_eq!(rect.height, 14, "12 项 + 2 边框应全部可见");
+}
+
+#[test]
 fn m501_command_completion_internal_pool_and_overlay() {
     // M50-1：内部命令补全候选按前缀过滤、带描述；浮层高度 ≤40%。
     let tmp = TempDir::new().unwrap();
@@ -2710,7 +2750,11 @@ fn m501_command_completion_internal_pool_and_overlay() {
     let rect = crate::app::render::command_completion_rect(area, 30);
     assert_eq!(rect.width, 80, "满宽");
     assert_eq!(rect.y + rect.height, area.y + area.height, "底部对齐");
-    assert!(rect.height <= area.height * 40 / 100 || rect.height == 5);
+    // M58-4：在可用空间内尽量显示全部候选（30 项 → 铺满除去命令行/状态行的空间）。
+    assert!(rect.height <= area.height.saturating_sub(3), "{rect:?}");
+    assert!(rect.height >= 5, "{rect:?}");
+    let small = crate::app::render::command_completion_rect(area, 3);
+    assert_eq!(small.height, 5, "少候选时保持最小可读高度");
 }
 
 #[test]

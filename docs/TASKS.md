@@ -795,3 +795,15 @@
 - [x] M56-10 向导条目 ↔ ACCEPTANCE 映射同步规则（见 SPEC M56-10）；2026-11-26 完成：NOTES 标记块映射表 14 模块 + 同步流程，harness_check 新增规则 8 校验覆盖/章节，八条规则绿
 - [x] M56-11 成就徽章（见 SPEC M56-11）；2026-11-26 完成：tutor_badges（🏅首模块/🏆全模块/⭐零错题）+ 学习进度状态栏标题角落，m570 通过
 - [x] M56-12 文档/验收同步 + 质量门禁（见 SPEC M56-12）；2026-11-26 完成：GUIDE/help/CHANGELOG/STATE/PLAN/ACCEPTANCE 同步，627 单测 + 13 集成 + fmt/clippy/build + 八条 harness 绿，未发版
+
+## M58 — 命令补全增强（2026-11-26 蒸馏，见 SPEC M58 节）
+
+- [x] M58-1 补全浮层：标题提示 + 描述常显 + 实时过滤（见 SPEC M58-1）；2026-11-26 完成：command_completion_pool 同源候选/描述 + 键入实时重建 + Space 标题提示，m581 通过
+- [x] M58-2 命令行光标闪烁（见 SPEC M58-2）；2026-11-26 完成：SystemTime 500ms 翻转 ▋，无额外线程
+- [x] M58-3 Space 选定补全到输入栏（见 SPEC M58-3）；2026-11-26 完成：completion_accept 保留头部参数，m583 通过
+- [x] M58-4 Tab 循环三 bug 修复（见 SPEC M58-4）；2026-11-26 完成：浮层尽量全显+滚动条、completion_offset 自动滚动、索引/描述同源，m584 + m501 更新
+- [ ] M58-5 外部命令读取完整命令行（推翻 M50 边界）（见 SPEC M58-5）
+- [ ] M58-6 多行外部命令预览（见 SPEC M58-6）
+- [ ] M58-7 外部命令返回码提示（见 SPEC M58-7）
+- [ ] M58-8 `rvifm cmd` 外部入口（见 SPEC M58-8）
+- [ ] M58-9 文档/验收同步 + 质量门禁（见 SPEC M58-9）

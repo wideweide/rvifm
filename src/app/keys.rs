@@ -160,6 +160,7 @@ pub(crate) fn tab_complete(
             candidates,
             index: 0,
             descs: Vec::new(),
+            offset: 0,
         });
     }
     // AUDIT-8：去 expect——comp 缺失（不可达）时安全返回 0（无候选补全）。
@@ -168,6 +169,13 @@ pub(crate) fn tab_complete(
     };
     *input = format!("{}{}", c.head, c.candidates[c.index]);
     c.candidates.len()
+}
+
+/// M58-3：Space 选定——把当前候选写回输入（替换最后一个词），保留头部参数。
+pub(crate) fn completion_accept(input: &str, comp: &CmdComp) -> Option<String> {
+    let candidate = comp.candidates.get(comp.index)?;
+    let (head, _) = split_last_word(input);
+    Some(format!("{head}{candidate}"))
 }
 
 /// M24-7：`~` 展开为 HOME（裸 `~` → HOME，`~/…` → HOME/…；其余原样）。

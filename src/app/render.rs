@@ -830,19 +830,30 @@ fn render_confirm(
     frame.render_widget(Paragraph::new(footer), foot);
 }
 
-/// M50-1：命令补全浮层——满宽、底部对齐，高度 ≤ 终端 40%（5–15 行）。
+/// M50-1/M58-4：命令补全浮层——满宽、底部对齐；在可用空间内尽量显示全部候选，
+/// 超出部分由滚动条指示（不再固定 ≤40% / 15 行）。
 pub(crate) fn command_completion_rect(
     area: ratatui::layout::Rect,
     count: usize,
 ) -> ratatui::layout::Rect {
-    let max_h = (area.height as usize * 40 / 100).max(5);
-    let h = count.clamp(5, 15).min(max_h).min(area.height as usize);
+    let max_h = area.height.saturating_sub(3) as usize;
+    let h = count
+        .saturating_add(2)
+        .clamp(5, max_h.max(5))
+        .min(area.height as usize);
     ratatui::layout::Rect {
         x: area.x,
         y: area.y + area.height.saturating_sub(h as u16),
         width: area.width,
         height: h as u16,
     }
+}
+
+/// M58-4：选中索引对应的视口首行（自动滚动使其可见）。纯函数便于测试。
+pub(crate) fn completion_offset(index: usize, total: usize, visible: usize) -> usize {
+    index
+        .saturating_sub(visible.saturating_sub(1))
+        .min(total.saturating_sub(visible))
 }
 
 /// FIX-4：居中浮窗矩形——按终端自适应（60% 宽 / 50% 高），上限 80×20，
@@ -2313,7 +2324,17 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::SortDialog { .. } => Line::from(String::new()), // 排序对话框提前 return，不可达
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
-        InputMode::Command { input, .. } => Line::from(format!(":{input}")),
+        InputMode::Command { input, .. } => {
+            // M58-2：500ms 翻转的可见光标（复用事件循环 tick，无额外线程）。
+            let blink = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                / 500)
+                % 2
+                == 0;
+            Line::from(format!(":{input}{}", if blink { "▋" } else { " " }))
+        }
         InputMode::Search { input, .. } => {
             // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
             let query = input.trim();
@@ -2485,20 +2506,42 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     {
         let rect = command_completion_rect(frame.area(), comp.candidates.len());
         frame.render_widget(ratatui::widgets::Clear, rect);
+        let visible = rect.height.saturating_sub(2) as usize;
+        let total = comp.candidates.len();
+        // M58-4：选中项始终滚入可见区（与索引同源推导，不在多处保存状态）。
+        let offset = completion_offset(comp.index, total, visible);
+        let thumb_lo = offset.saturating_mul(visible) / total.max(1);
+        let thumb_hi =
+            ((offset + visible).saturating_mul(visible) / total.max(1)).max(thumb_lo + 1);
         let lines: Vec<Line> = comp
             .candidates
             .iter()
             .enumerate()
-            .map(|(i, name)| {
-                let desc = comp.descs.get(i).map(String::as_str).unwrap_or("");
+            .skip(offset)
+            .take(visible)
+            .enumerate()
+            .map(|(row, (i, name))| {
+                // M58-1：描述常显（路径候选无专有说明时给通用描述）。
+                let desc = comp
+                    .descs
+                    .get(i)
+                    .filter(|d| !d.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| "文件/路径".to_owned());
                 let style = if i == comp.index {
                     vifm_style("Selected")
                 } else {
                     Style::new()
                 };
+                let marker = if row >= thumb_lo && row <= thumb_hi {
+                    "█"
+                } else {
+                    "░"
+                };
                 Line::from(vec![
                     Span::from(format!(" {:<20}", name)),
-                    Span::from(desc.to_owned()),
+                    Span::from(desc),
+                    Span::from(format!(" {marker}")),
                 ])
                 .style(style)
             })
@@ -2506,7 +2549,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         frame.render_widget(
             Paragraph::new(lines).block(
                 ratatui::widgets::Block::bordered()
-                    .title("命令补全（Tab 循环 / Enter 执行）")
+                    .title("命令补全（Tab 循环 / Space 选定到输入栏 / Enter 执行）")
                     .border_style(vifm_style("Border")),
             ),
             rect,
