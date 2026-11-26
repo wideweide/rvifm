@@ -673,6 +673,8 @@ mod tests {
             preview_focus: false,
             archive_preview_key: None,
             archive_preview_tmp: None,
+            viewer_pending: None,
+            archive_preview_pending: None,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),
@@ -706,6 +708,8 @@ mod tests {
             preview_focus: false,
             archive_preview_key: None,
             archive_preview_tmp: None,
+            viewer_pending: None,
+            archive_preview_pending: None,
             tree: None,
             right: crate::tab::Pane::from_physical(std::path::Path::new("."), Config::default())
                 .unwrap(),

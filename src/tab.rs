@@ -634,6 +634,9 @@ pub struct Tab {
     /// pane，j/k 移动光标、对侧预览跟随）；`Tab` 显式进入预览窗格后为
     /// true，此时按键路由给查看器（滚动/搜索），`Tab` 返回原 pane。
     pub preview_focus: bool,
+    /// M53-8：待稳定的预览目标（防抖；快速 j/k 不重建中间预览）。
+    pub viewer_pending: Option<(PathBuf, std::time::Instant)>,
+    pub archive_preview_pending: Option<(String, std::time::Instant)>,
     /// M53-3：归档成员预览的临时只读副本（key = host:member）。
     pub archive_preview_key: Option<String>,
     pub archive_preview_tmp: Option<PathBuf>,
@@ -800,6 +803,11 @@ fn sort_entries_specs(entries: &mut [FileItem], specs: &[SortSpec], config: &Con
     });
 }
 
+/// M53-8：预览防抖到期判定（纯函数；150ms 内快速切换不重建）。
+pub(crate) fn preview_debounce_due(since: std::time::Instant) -> bool {
+    since.elapsed() >= std::time::Duration::from_millis(150)
+}
+
 impl Tab {
     /// M45-3e：离开当前位置前记忆光标。
     fn remember_cursor(&mut self) {
@@ -839,6 +847,8 @@ impl Tab {
             preview_focus: false,
             archive_preview_key: None,
             archive_preview_tmp: None,
+            viewer_pending: None,
+            archive_preview_pending: None,
             // M14-1：右 pane 默认同目录（vifm 启动行为），独立导航。
             right: Pane::from_physical(dir, config)?,
             focus: Focus::Left,
@@ -1498,7 +1508,7 @@ impl Tab {
 
     /// M42：按当前焦点 pane 的光标文件初始化/重建查看器（toggle 开启与
     /// 光标换文件时共用）。
-    fn activate_viewer(&mut self) {
+    pub(crate) fn activate_viewer(&mut self) {
         let target = self.preview_path();
         // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
         // M39-1：二进制文件（前 8KB 含 NUL）→ hex 模式（16 字节/行，
@@ -1543,12 +1553,14 @@ impl Tab {
 
     /// M42：预览跟随——焦点留在原 pane 时，光标移动/目录切换后把对侧预览
     /// 切到当前光标文件；同一文件只钳制滚动位置（保留滚动）。
+    /// M53-8：目标稳定 150ms 才重建（快速 j/k 不生成中间预览）。
     pub fn refresh_viewer_follow(&mut self) {
         if !self.view_mode || self.preview_focus {
             return;
         }
         let target = self.preview_path();
         if self.viewer.as_ref().and_then(|v| v.path.clone()) == target {
+            self.viewer_pending = None;
             let max = self
                 .viewer
                 .as_ref()
@@ -1557,8 +1569,20 @@ impl Tab {
             if let Some(v) = self.viewer.as_mut() {
                 v.scroll = v.scroll.min(max);
             }
-        } else {
+            return;
+        }
+        let Some(target) = target else {
+            return;
+        };
+        let stable = self
+            .viewer_pending
+            .as_ref()
+            .is_some_and(|(p, since)| p == &target && preview_debounce_due(*since));
+        if stable {
+            self.viewer_pending = None;
             self.activate_viewer();
+        } else if self.viewer_pending.as_ref().map(|(p, _)| p) != Some(&target) {
+            self.viewer_pending = Some((target, std::time::Instant::now()));
         }
     }
 
@@ -2959,6 +2983,8 @@ mod tests {
             preview_focus: false,
             archive_preview_key: None,
             archive_preview_tmp: None,
+            viewer_pending: None,
+            archive_preview_pending: None,
             right: Pane::from_physical(&root, Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,
@@ -3076,6 +3102,8 @@ mod tests {
             preview_focus: false,
             archive_preview_key: None,
             archive_preview_tmp: None,
+            viewer_pending: None,
+            archive_preview_pending: None,
             right: Pane::from_physical(Path::new("."), Config::default()).unwrap(),
             focus: Focus::Left,
             on_parent_row: false,

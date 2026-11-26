@@ -65,6 +65,11 @@ fn press_follow(
 ) -> Outcome {
     let out = press_msg(state, input, msg, code, mods);
     state.active_tab_mut().refresh_viewer_follow();
+    // M53-8：测试模拟「用户停顿后」——强制刷新目标（生产由 150ms 防抖完成）。
+    if state.active_tab().view_mode && !state.active_tab().preview_focus {
+        state.active_tab_mut().activate_viewer();
+        state.active_tab_mut().viewer_pending = None;
+    }
     out
 }
 
@@ -103,6 +108,8 @@ fn tab_at(path: &str) -> Tab {
         preview_focus: false,
         archive_preview_key: None,
         archive_preview_tmp: None,
+        viewer_pending: None,
+        archive_preview_pending: None,
         on_parent_row: false,
         name: None,
         cursor_memory: std::collections::HashMap::new(),
@@ -2583,6 +2590,14 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
     assert!(compact.contains("确认"), "{compact}");
     assert!(compact.contains("取消"), "{compact}");
     assert!(compact.contains("j/k"), "{compact}");
+}
+
+#[test]
+fn m538_preview_debounce_skips_rapid_targets() {
+    // M53-8：快速切换期间的中间目标不应立即重建预览。
+    assert!(!crate::tab::preview_debounce_due(std::time::Instant::now()));
+    let old = std::time::Instant::now() - std::time::Duration::from_millis(200);
+    assert!(crate::tab::preview_debounce_due(old));
 }
 
 #[test]

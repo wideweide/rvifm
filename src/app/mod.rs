@@ -801,14 +801,36 @@ fn run_with_initial_mode(
                     let stale =
                         state.active_tab().archive_preview_key.as_deref() != Some(key.as_str());
                     if stale {
-                        let h = host.clone();
-                        if let Ok(tmp) =
-                            crate::app::exec::extract_member_to_temp(&mut state, &h, &full)
-                        {
-                            let tab = state.active_tab_mut();
-                            tab.archive_preview_key = Some(key);
-                            tab.archive_preview_tmp = Some(tmp);
+                        // M53-8：目标稳定后再解临时副本（快速 j/k 不生成中间预览）。
+                        let due = state
+                            .active_tab()
+                            .archive_preview_pending
+                            .as_ref()
+                            .is_some_and(|(k, since)| {
+                                k == &key && crate::tab::preview_debounce_due(*since)
+                            });
+                        let registered = state
+                            .active_tab()
+                            .archive_preview_pending
+                            .as_ref()
+                            .map(|(k, _)| k == &key)
+                            .unwrap_or(false);
+                        if due {
+                            let h = host.clone();
+                            if let Ok(tmp) =
+                                crate::app::exec::extract_member_to_temp(&mut state, &h, &full)
+                            {
+                                let tab = state.active_tab_mut();
+                                tab.archive_preview_key = Some(key);
+                                tab.archive_preview_tmp = Some(tmp);
+                                tab.archive_preview_pending = None;
+                            }
+                        } else if !registered {
+                            state.active_tab_mut().archive_preview_pending =
+                                Some((key, std::time::Instant::now()));
                         }
+                    } else {
+                        state.active_tab_mut().archive_preview_pending = None;
                     }
                 }
             } else if state.active_tab().archive_preview_key.is_some() {
