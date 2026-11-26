@@ -2593,6 +2593,84 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn zkey2_hidden_file_toggle_actions() {
+    // ZKEY-2：za 切换 / zo 显示 / zm 隐藏，与 show_hidden 同源。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join(".hidden"), "h").unwrap();
+    fs::write(tmp.path().join("visible"), "v").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    // za → 显示隐藏文件
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('a'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.config.show_hidden);
+    assert!(
+        state
+            .active_tab()
+            .entries
+            .iter()
+            .any(|i| i.name == ".hidden")
+    );
+    assert_eq!(msg.as_deref(), Some("hidden: on"));
+    // zm → 隐藏
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('z'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('m'),
+        KeyModifiers::NONE,
+    );
+    assert!(!state.config.show_hidden);
+    assert!(
+        state
+            .active_tab()
+            .entries
+            .iter()
+            .all(|i| i.name != ".hidden")
+    );
+    assert_eq!(msg.as_deref(), Some("hidden: off"));
+    // zo → 显示；再 zo 无变化
+    for _ in 0..2 {
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('z'),
+            KeyModifiers::NONE,
+        );
+        press_msg(
+            &mut state,
+            &mut input,
+            &mut msg,
+            KeyCode::Char('o'),
+            KeyModifiers::NONE,
+        );
+    }
+    assert!(state.config.show_hidden);
+    assert_eq!(msg.as_deref(), Some("hidden: on"));
+}
+
+#[test]
 fn m538_preview_debounce_skips_rapid_targets() {
     // M53-8：快速切换期间的中间目标不应立即重建预览。
     assert!(!crate::tab::preview_debounce_due(std::time::Instant::now()));

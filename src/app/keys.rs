@@ -1,5 +1,14 @@
 use super::*;
 
+/// M54 ZKEY-2：按焦点栏写回光标（隐藏文件切换后保持位置）。
+fn set_focused_cursor(tab: &mut crate::tab::Tab, idx: usize) {
+    if tab.focus == crate::tab::Focus::Right {
+        tab.right.cursor = idx.min(tab.right.entries.len().saturating_sub(1));
+    } else {
+        tab.cursor = idx.min(tab.entries.len().saturating_sub(1));
+    }
+}
+
 /// AUDIT-6：待决序列截止时刻推导——seq 清空 → 无截止；seq 长度变化
 /// （新键入/前缀推进）→ 重置截止；同一段待决 → 保持原截止（避免
 /// 每帧顺延导致永不超时）。
@@ -1180,6 +1189,40 @@ pub(crate) fn handle_key(
             Some(Action::OpenExternalCommandLine) => {
                 return Some(Outcome::EnterExternalCommandLine);
             }
+            Some(Action::ToggleHiddenFiles | Action::ShowHiddenFiles | Action::HideHiddenFiles) => {
+                // M54 ZKEY-2：与 show_hidden 同源；切换后保持光标在原文件/最近邻居。
+                let old_cursor = state.active_tab().focused_cursor();
+                let keep = state
+                    .active_tab()
+                    .focused_entries()
+                    .get(old_cursor)
+                    .map(|i| i.name.clone());
+                let current = state.config.show_hidden;
+                state.config.show_hidden = match action {
+                    Some(Action::ShowHiddenFiles) => true,
+                    Some(Action::HideHiddenFiles) => false,
+                    _ => !current,
+                };
+                refresh_tab_panes(state, state.active);
+                if let Some(name) = keep {
+                    let tab = state.active_tab_mut();
+                    let idx = tab.focused_entries().iter().position(|i| i.name == name);
+                    let target = match idx {
+                        Some(i) => i,
+                        None => old_cursor.min(tab.focused_entries().len().saturating_sub(1)),
+                    };
+                    set_focused_cursor(tab, target);
+                }
+                *msg = Some(format!(
+                    "hidden: {}",
+                    if state.config.show_hidden {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+                return Some(Outcome::Continue);
+            }
             Some(Action::GitUi) => {
                 // M25-6：gi——PATH 优先级探测 gitui→ziggity→lazygit；复用
                 // M18-4 分流（terminal_in_new_window 语义与 :! / 自定义命令一致）。
@@ -1901,7 +1944,8 @@ pub(crate) fn handle_key(
         | KeyCode::Char('d')
         | KeyCode::Char('D')
         | KeyCode::Char('c')
-        | KeyCode::Char('y') => {
+        | KeyCode::Char('y')
+        | KeyCode::Char('z') => {
             let k = crate::keymap::Key::plain(key.code);
             if input.keymap.has_prefix(&[k]) {
                 input.seq.push(k);

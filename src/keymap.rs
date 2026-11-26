@@ -32,6 +32,18 @@ pub enum Action {
     SearchNext,
     SearchPrev,
     StartFilter,
+    /// M54 ZKEY-2：隐藏文件显示切换（za/zo/zm，与 show_hidden 同源）。
+    ToggleHiddenFiles,
+    ShowHiddenFiles,
+    HideHiddenFiles,
+    /// M54 ZKEY-3：过滤器临时快照/恢复/清空永久过滤器。
+    ResetFiltersTemp,
+    RestoreFiltersTemp,
+    ClearPermanentFilter,
+    /// M54 ZKEY-4：视口定位（zt/zz/zb，不动光标索引）。
+    ViewportTop,
+    ViewportCenter,
+    ViewportBottom,
     // 选择与标记
     ToggleVisual,
     ToggleTag,
@@ -104,6 +116,15 @@ impl Action {
             "search_next" | "next_match" => SearchNext,
             "search_prev" | "prev_match" => SearchPrev,
             "start_filter" | "filter" => StartFilter,
+            "toggle_hidden" | "toggle_hidden_files" => ToggleHiddenFiles,
+            "show_hidden_files" => ShowHiddenFiles,
+            "hide_hidden_files" => HideHiddenFiles,
+            "reset_filters_temp" => ResetFiltersTemp,
+            "restore_filters_temp" => RestoreFiltersTemp,
+            "clear_permanent_filter" => ClearPermanentFilter,
+            "viewport_top" => ViewportTop,
+            "viewport_center" => ViewportCenter,
+            "viewport_bottom" => ViewportBottom,
             "toggle_visual" | "visual" => ToggleVisual,
             "toggle_tag" | "tag" => ToggleTag,
             "delete_selected" | "delete" => DeleteSelected,
@@ -283,6 +304,16 @@ impl Keymap {
             (vec![k(Char('g')), k(Char('T'))], PrevTab),
             (vec![k(Char(':'))], EnterCommand),
             (vec![k(Char('o'))], OpenJump),
+            // M54 ZKEY-2..4：z 系列两键序列（兄弟目录跳转不内置）。
+            (vec![k(Char('z')), k(Char('a'))], ToggleHiddenFiles),
+            (vec![k(Char('z')), k(Char('o'))], ShowHiddenFiles),
+            (vec![k(Char('z')), k(Char('m'))], HideHiddenFiles),
+            (vec![k(Char('z')), k(Char('R'))], ResetFiltersTemp),
+            (vec![k(Char('z')), k(Char('M'))], RestoreFiltersTemp),
+            (vec![k(Char('z')), k(Char('O'))], ClearPermanentFilter),
+            (vec![k(Char('z')), k(Char('t'))], ViewportTop),
+            (vec![k(Char('z')), k(Char('z'))], ViewportCenter),
+            (vec![k(Char('z')), k(Char('b'))], ViewportBottom),
         ];
         Self {
             bindings: pairs,
