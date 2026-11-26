@@ -1504,6 +1504,7 @@ rvifm record  → 静默记录访问
 
 - viewer 目标稳定后由 `AppState::refresh_viewer_async` 投递后台线程，载荷为 `ViewerPayload`（文本行 / hex 判定 / 完整行数）；事件循环 `drain_preview_results` 只接受 `preview_generation` 匹配的结果，快速 j/k 的中间目标不会安装到 viewer。
 - 文本读取与 hex 判定已移入 worker；**每帧 syntax 着色仍留在 UI 线程**（SIMPLIFIED：Highlighter 需逐帧按视口起点推进，跨行状态复杂），缓存命中已在 M59-6 改为按需克隆，小文件卡顿的主要来源已消除。
+- 用户确认项 4：默认做一次原生协议查询（tmux/screen 下也查），由 ratatui-image 内置 2s 超时控制，失败回退 halfblocks；`RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off` 显式跳过。协议探测本身仍在启动时同步执行（未放入 worker），图片**解码**已后台化。
 - 图片解码（M60-3）与归档/Office/PDF**文本**预览行（M60-4）均走同一 generation worker；PDF **视觉页**渲染因 `ratatui-image` 协议编码需要 `Frame`，仍留在 UI 线程（SIMPLIFIED，已在 ACCEPTANCE 标注）。
 
 ### 2026-11-26 — M59-9 r/u 语义与写入红线

@@ -1229,3 +1229,4 @@
 - [x] M60-3 图片解码 off-thread，快速切换不渲染中间图片。（2026-11-26：m603 + generation）
 - [x] M60-4 归档/Office/PDF 未命中 off-thread。（2026-11-26：m604；PDF 视觉页因 Frame 依赖留 UI 线程）
 - [x] M60-5 性能验收 + 文档 + 门禁，未发版。（2026-11-26：642 单测 + 14 集成 + 八条 harness）
+- [x] M60-6 默认做一次带超时协议查询（tmux/screen 也查），失败回退 halfblocks；可显式 opt-out。（2026-11-26：m60 测试更新）

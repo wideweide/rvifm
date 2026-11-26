@@ -123,20 +123,16 @@ pub struct ImageEngine {
     picker: Picker,
 }
 
-/// M50 性能修复：复用器（tmux/screen）内跳过 stdio 协议查询的判定（纯函数）。
-fn skip_protocol_query(tmux: Option<&std::ffi::OsStr>, sty: Option<&std::ffi::OsStr>) -> bool {
-    tmux.is_some() || sty.is_some()
-}
-
-/// M53-6：是否做 stdio 协议查询的纯判定。tmux passthrough 开启或显式
-/// `RVIFM_IMAGE_PROTOCOL_QUERY=1` 时允许查询（foot 原生协议可恢复）。
+/// M60/M59 用户确认：默认做一次带超时的原生协议查询（tmux/screen 下也查），
+/// 失败由 ratatui-image 回退 halfblocks。仅 `RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off`
+/// 显式禁用（避免复用器中无响应时的启动等待）。纯函数便于测试。
 fn should_query_protocol(
-    tmux: Option<&std::ffi::OsStr>,
-    sty: Option<&std::ffi::OsStr>,
-    force: bool,
-    passthrough: bool,
+    _tmux: Option<&std::ffi::OsStr>,
+    _sty: Option<&std::ffi::OsStr>,
+    allow: bool,
+    _passthrough: bool,
 ) -> bool {
-    force || !skip_protocol_query(tmux, sty) || (tmux.is_some() && passthrough)
+    allow
 }
 
 fn tmux_passthrough_on() -> bool {
@@ -165,15 +161,22 @@ impl ImageEngine {
         if !std::io::stdout().is_tty() {
             return Self::halfblocks();
         }
-        // tmux/screen 会包裹转义查询（DCS passthrough），多数配置不回传响应——
-        // `from_query_stdio()` 会在此阻塞等待，拖慢整个 TUI 启动。复用器内
-        // 直接用固定字体尺寸构造（halfblocks 仍无条件可用），不做 stdio 查询。
+        // 默认做一次协议查询（ratatui-image 内置 2s 超时），tmux/screen 下也查；
+        // 若终端不回传响应则回退 halfblocks。可用
+        // `RVIFM_IMAGE_PROTOCOL_QUERY=0` 显式跳过查询（避免启动等待）。
         let tmux = std::env::var_os("TMUX");
         let sty = std::env::var_os("STY");
+        let allow = match std::env::var_os("RVIFM_IMAGE_PROTOCOL_QUERY") {
+            Some(v) => {
+                let v = v.to_string_lossy().to_ascii_lowercase();
+                !matches!(v.as_str(), "0" | "false" | "off")
+            }
+            None => true,
+        };
         let allow_query = should_query_protocol(
             tmux.as_deref(),
             sty.as_deref(),
-            std::env::var_os("RVIFM_IMAGE_PROTOCOL_QUERY").is_some(),
+            allow,
             tmux_passthrough_on(),
         );
         if !allow_query {
@@ -284,31 +287,22 @@ mod tests {
     }
 
     #[test]
-    fn m50_skip_protocol_query_inside_multiplexer() {
+    fn m60_default_protocol_query_even_in_multiplexer() {
         use std::ffi::OsStr;
-        assert!(skip_protocol_query(
-            Some(OsStr::new("/tmp/tmux.sock")),
-            None
-        ));
-        assert!(skip_protocol_query(None, Some(OsStr::new("123.pts"))));
-        assert!(!skip_protocol_query(None, None));
-        assert!(should_query_protocol(
-            Some(OsStr::new("tmux")),
-            None,
-            false,
-            true
-        ));
-        assert!(!should_query_protocol(
-            Some(OsStr::new("tmux")),
-            None,
-            false,
-            false
-        ));
+        // 用户确认：默认在 tmux/screen 下也做一次带超时的协议查询。
         assert!(should_query_protocol(
             Some(OsStr::new("tmux")),
             None,
             true,
             false
+        ));
+        assert!(should_query_protocol(None, None, true, false));
+        // 仅显式 opt-out 关闭。
+        assert!(!should_query_protocol(
+            Some(OsStr::new("tmux")),
+            None,
+            false,
+            true
         ));
     }
 
