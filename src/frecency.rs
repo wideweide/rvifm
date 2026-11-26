@@ -1762,8 +1762,20 @@ fn draw_pick_ui(
         }
         return;
     }
-    let preview = crate::preview::render_preview(p, inner.height.max(1) as usize);
-    frame.render_widget(preview.into_paragraph(), inner);
+    // M59-1：文本预览与 TUI 查看器共用 `highlight::styled_lines`（同源高亮）。
+    let text = crate::preview::read_text_preview(p, inner.height.max(1) as usize);
+    let lines: Vec<String> = text
+        .lines()
+        .take(inner.height.max(1) as usize)
+        .map(str::to_owned)
+        .collect();
+    let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
+    if let Some(styled) = crate::highlight::styled_lines(p, &lines, dark) {
+        frame.render_widget(ratatui::widgets::Paragraph::new(styled), inner);
+    } else {
+        let preview = crate::preview::render_preview(p, inner.height.max(1) as usize);
+        frame.render_widget(preview.into_paragraph(), inner);
+    }
 }
 
 #[cfg(test)]

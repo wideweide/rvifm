@@ -470,7 +470,7 @@ fn text_preview(body: &str) -> Preview {
 }
 
 /// 读取文件为预览文本：二进制探测 / 大文件截断 / 错误提示。
-fn read_text_preview(path: &Path, max_lines: usize) -> String {
+pub(crate) fn read_text_preview(path: &Path, max_lines: usize) -> String {
     let meta = match fs::metadata(path) {
         Ok(m) => m,
         Err(e) => return format!("读取失败: {e}"),

@@ -99,6 +99,30 @@ impl Highlighter {
     }
 }
 
+/// 共享文本高亮入口：路径推断语法 → 逐行着色，供 TUI 查看器与 `rvifm pick`
+/// 预览共用（避免 pick 出现"有预览但无语法高亮"的分叉）。无语法返回 None。
+pub fn styled_lines(
+    path: &Path,
+    lines: &[String],
+    dark: bool,
+) -> Option<Vec<ratatui::text::Line<'static>>> {
+    let first = lines.first().map(String::as_str).unwrap_or("");
+    let mut highlighter = Highlighter::for_path(path, first, dark)?;
+    Some(
+        lines
+            .iter()
+            .map(|line| {
+                let spans: Vec<_> = highlighter
+                    .highlight_line(line)
+                    .into_iter()
+                    .map(|(text, style)| ratatui::text::Span::styled(text, style))
+                    .collect();
+                ratatui::text::Line::from(spans)
+            })
+            .collect(),
+    )
+}
+
 /// syntect Style → ratatui Style（fg 着色 + 粗体/斜体）。
 fn to_rt_style(style: syntect::highlighting::Style) -> RtStyle {
     let c = style.foreground;
@@ -141,6 +165,16 @@ mod tests {
         // 拼接还原原文（无换行残留）。
         let joined: String = spans.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(joined, "fn main() { let x = 1; }");
+    }
+
+    #[test]
+    fn m591_shared_styled_lines_for_pick_and_tui() {
+        // M59-1：pick 与 TUI 共享的着色入口返回 ratatui 行（非纯文本）。
+        let lines = vec!["fn main() {".to_owned(), "}".to_owned()];
+        let styled = styled_lines(Path::new("demo.rs"), &lines, true).expect("rust 语法应命中");
+        assert_eq!(styled.len(), 2);
+        let text: String = styled[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "fn main() {");
     }
 
     #[test]
