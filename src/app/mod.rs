@@ -1090,17 +1090,11 @@ fn run_with_initial_mode(
                             }
                             KeyCode::Char(' ') if comp.is_some() => {
                                 // M58-3：Space=选定当前候选到输入栏（可继续编辑参数）。
-                                let selected = comp
+                                if let Some(next) = comp
                                     .as_ref()
-                                    .and_then(|c| c.candidates.get(c.index).cloned())
-                                    .unwrap_or_default();
-                                if !selected.is_empty() {
-                                    if let Some(next) = comp
-                                        .as_ref()
-                                        .and_then(|c| crate::app::keys::completion_accept(input, c))
-                                    {
-                                        *input = next;
-                                    }
+                                    .and_then(|c| crate::app::keys::completion_accept(input, c))
+                                {
+                                    *input = next;
                                 }
                                 *comp = None;
                                 Some(CmdInput::Continue)

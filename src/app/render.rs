@@ -2331,8 +2331,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 .unwrap_or_default()
                 .as_millis()
                 / 500)
-                % 2
-                == 0;
+                .is_multiple_of(2);
             Line::from(format!(":{input}{}", if blink { "▋" } else { " " }))
         }
         InputMode::Search { input, .. } => {
