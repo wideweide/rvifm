@@ -787,7 +787,7 @@
 - [x] M56-2 首次无配置自动进入向导（见 SPEC M56-2）；2026-11-26 完成：run() 在 ensure_default_config 前检测 config_path().exists()，纯函数 initial_mode_for_startup + m562 测试
 - [x] M56-3 对话框几何 80% + 极小终端全屏降级（见 SPEC M56-3）；2026-11-26 完成：tutor_dialog_rect（≤40/≤10 全屏）+ 列表移入对话框，m563 通过
 - [x] M56-4 底部进度状态栏 + 带边框进度条（见 SPEC M56-4）；2026-11-26 完成：tutor_overall_progress + tutor_progress_bar + 对话框内「学习进度」状态栏（欢迎提示/模块/功能点/百分比）
-- [ ] M56-5 `/` 搜索实时更新（见 SPEC M56-5）
+- [x] M56-5 `/` 搜索实时更新（见 SPEC M56-5）；2026-11-26 完成：TutorListSearch 复用列表渲染并带光标，键入即过滤/清空全显示，m565 通过
 - [ ] M56-6 有记录模块仅显示错题且编号保持（见 SPEC M56-6）
 - [ ] M56-7 模块完成 Enter=继续学习其它模块（见 SPEC M56-7）
 - [ ] M56-8 100% 模块重入确认重置（见 SPEC M56-8）

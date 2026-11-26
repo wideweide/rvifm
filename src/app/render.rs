@@ -1173,6 +1173,92 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     }
 }
 
+/// M56-3/4/5：向导模块列表 + 80% 欢迎对话框 + 进度状态栏。
+/// `editing=true` 表示 `/` 输入态：列表按实时输入过滤，顶行显示光标。
+fn render_tutor_list(
+    frame: &mut Frame,
+    state: &AppState,
+    cursor: usize,
+    search: Option<&str>,
+    editing: bool,
+) {
+    // FIX-5-1：覆盖层先清除下层 TUI，避免目录文字从列表空白行透出。
+    frame.render_widget(ratatui::widgets::Clear, frame.area());
+    let modules = crate::tutor::builtin_modules();
+    let filtered: Vec<_> = modules
+        .iter()
+        .filter(|m| {
+            search.is_none_or(|q| {
+                let q = q.to_lowercase();
+                m.id.to_lowercase().contains(&q) || m.name.to_lowercase().contains(&q)
+            })
+        })
+        .collect();
+    let items: Vec<Line> = filtered
+        .iter()
+        .map(|m| {
+            let total = m.items.len();
+            let mastered = state
+                .tutor_progress
+                .get(&m.id)
+                .map(|p| p.mastered.len())
+                .unwrap_or(0);
+            let label = tutor_progress_label(total, mastered);
+            Line::from(format!(
+                "{label} {:<14} {} — {}",
+                m.id, m.name, m.description
+            ))
+        })
+        .collect();
+    let dialog = tutor_dialog_rect(frame.area());
+    let block = ratatui::widgets::Block::bordered()
+        .title("🎓 向导模式 (:tutor)")
+        .title_bottom(
+            ratatui::text::Line::from(if editing {
+                " ↑↓=选择 Enter=应用 Esc=清除 "
+            } else {
+                " j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 "
+            })
+            .centered(),
+        );
+    let inner = block.inner(dialog);
+    frame.render_widget(block, dialog);
+    let status_h = 5u16.min(inner.height.saturating_sub(2));
+    let [mut list_area, status_area] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(status_h)]).areas(inner);
+    if let Some(q) = search {
+        let [top, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
+        let label = if editing {
+            format!("/{q}▋  Enter=应用 Esc=清除")
+        } else {
+            format!("/{q}  Esc=清除")
+        };
+        frame.render_widget(Paragraph::new(label), top);
+        list_area = rest;
+    }
+    let list = ratatui::widgets::List::new(items)
+        .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+        .highlight_symbol("▶ ");
+    let mut list_state = ListState::default().with_selected(Some(cursor));
+    frame.render_stateful_widget(list, list_area, &mut list_state);
+    if status_area.height >= 2 {
+        let (done, mods, mastered, total, pct) = tutor_overall_progress(&state.tutor_progress);
+        let bar = tutor_progress_bar(pct, status_area.width.saturating_sub(2).min(24));
+        let lines = vec![
+            Line::from("欢迎使用 rvifm！可通过本向导学习全部功能；随时输入 :tutor 再次进入。"),
+            Line::from(format!(
+                "模块 {done}/{mods}  功能点 {mastered}/{total}  已掌握本系统 {pct}% 的功能"
+            )),
+            Line::from(bar),
+        ];
+        frame.render_widget(
+            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("学习进度")),
+            status_area,
+        );
+    }
+}
+
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     // M55-2：`O` 实时递归查找覆盖整屏（与目录列表共用几何/图标/主题）。
     if matches!(mode, InputMode::LiveFind) && state.live_find.is_some() {
@@ -1627,93 +1713,12 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         return;
     }
     if let InputMode::TutorList { cursor, search } = mode {
-        // M42-1/M43-1：向导模式模块列表——List 组件渲染（M43 起模块数超屏，
-        // 视口随选中项滚动）。键提示并入边框底部行。
-        // FIX-5-1：全屏覆盖层先清除下层 TUI——否则目录列表/状态栏文字从
-        // 列表空白行透出（与其它覆盖层的 Clear 模式一致）。
-        frame.render_widget(ratatui::widgets::Clear, frame.area());
-        let modules = crate::tutor::builtin_modules();
-        // M48-10：`/` 搜索按模块 id/name 过滤（大小写不敏感）。
-        let filtered: Vec<_> = modules
-            .iter()
-            .filter(|m| {
-                search.as_ref().is_none_or(|q| {
-                    let q = q.to_lowercase();
-                    m.id.to_lowercase().contains(&q) || m.name.to_lowercase().contains(&q)
-                })
-            })
-            .collect();
-        let items: Vec<Line> = filtered
-            .iter()
-            .map(|m| {
-                // M45-8d：左侧列显示该模块学习进度（掌握数/总数百分比）。
-                let total = m.items.len();
-                let mastered = state
-                    .tutor_progress
-                    .get(&m.id)
-                    .map(|p| p.mastered.len())
-                    .unwrap_or(0);
-                let label = crate::app::render::tutor_progress_label(total, mastered);
-                Line::from(format!(
-                    "{label} {:<14} {} — {}",
-                    m.id, m.name, m.description
-                ))
-            })
-            .collect();
-        // M56-3：欢迎对话框（80% 居中，极小终端全屏）；M56-4：底部进度状态栏。
-        let dialog = tutor_dialog_rect(frame.area());
-        let block = ratatui::widgets::Block::bordered()
-            .title("🎓 向导模式 (:tutor)")
-            .title_bottom(
-                ratatui::text::Line::from(" j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 ")
-                    .centered(),
-            );
-        let inner = block.inner(dialog);
-        frame.render_widget(block, dialog);
-        let status_h = 5u16.min(inner.height.saturating_sub(2));
-        let [mut list_area, status_area] =
-            Layout::vertical([Constraint::Min(0), Constraint::Length(status_h)]).areas(inner);
-        if let Some(q) = search {
-            let [top, rest] =
-                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
-            frame.render_widget(Paragraph::new(format!("/{q}  (Esc=清除)")), top);
-            list_area = rest;
-        }
-        let list = ratatui::widgets::List::new(items)
-            .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-            .highlight_symbol("▶ ");
-        let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
-        frame.render_stateful_widget(list, list_area, &mut list_state);
-        if status_area.height >= 2 {
-            let (done, mods, mastered, total, pct) = tutor_overall_progress(&state.tutor_progress);
-            let bar = tutor_progress_bar(pct, status_area.width.saturating_sub(2).min(24));
-            let lines = vec![
-                Line::from("欢迎使用 rvifm！可通过本向导学习全部功能；随时输入 :tutor 再次进入。"),
-                Line::from(format!(
-                    "模块 {done}/{mods}  功能点 {mastered}/{total}  已掌握本系统 {pct}% 的功能"
-                )),
-                Line::from(bar),
-            ];
-            frame.render_widget(
-                Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("学习进度")),
-                status_area,
-            );
-        }
+        render_tutor_list(frame, state, *cursor, search.as_deref(), false);
         return;
     }
     if let InputMode::TutorListSearch { input, cursor } = mode {
-        frame.render_widget(ratatui::widgets::Clear, frame.area());
-        frame.render_widget(
-            Paragraph::new(format!("/{input}▏"))
-                .block(ratatui::widgets::Block::bordered().title("向导模块搜索")),
-            ratatui::layout::Rect {
-                x: frame.area().x,
-                y: frame.area().y,
-                width: frame.area().width,
-                height: 3,
-            },
-        );
-        let _ = cursor;
+        // M56-5：键入即实时过滤——复用同一列表渲染，输入行带光标。
+        render_tutor_list(frame, state, *cursor, Some(input.as_str()), true);
         return;
     }
     if let InputMode::JobDetail { index } = mode {

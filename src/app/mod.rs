@@ -1973,21 +1973,48 @@ fn run_with_initial_mode(
                 }
                 InputMode::TutorListSearch { input, cursor } => {
                     if key.kind == KeyEventKind::Press {
-                        match command_input(input, key) {
-                            CmdInput::Submit => {
-                                let q = input.trim().to_owned();
-                                mode = InputMode::TutorList {
-                                    cursor: *cursor,
-                                    search: (!q.is_empty()).then_some(q),
-                                };
+                        if matches!(key.code, KeyCode::Up | KeyCode::Down) {
+                            let len = crate::tutor::builtin_modules()
+                                .iter()
+                                .filter(|m| {
+                                    let q = input.to_lowercase();
+                                    m.id.to_lowercase().contains(&q)
+                                        || m.name.to_lowercase().contains(&q)
+                                })
+                                .count();
+                            *cursor = if key.code == KeyCode::Up {
+                                cursor.saturating_sub(1)
+                            } else {
+                                (*cursor + 1).min(len.saturating_sub(1))
+                            };
+                        } else {
+                            match command_input(input, key) {
+                                CmdInput::Submit => {
+                                    let q = input.trim().to_owned();
+                                    mode = InputMode::TutorList {
+                                        cursor: *cursor,
+                                        search: (!q.is_empty()).then_some(q),
+                                    };
+                                }
+                                CmdInput::Cancel => {
+                                    mode = InputMode::TutorList {
+                                        cursor: *cursor,
+                                        search: None,
+                                    };
+                                }
+                                CmdInput::Continue => {
+                                    // M56-5：键入即过滤；游标随可见项收缩。
+                                    let len = crate::tutor::builtin_modules()
+                                        .iter()
+                                        .filter(|m| {
+                                            let q = input.to_lowercase();
+                                            m.id.to_lowercase().contains(&q)
+                                                || m.name.to_lowercase().contains(&q)
+                                        })
+                                        .count();
+                                    *cursor = (*cursor).min(len.saturating_sub(1));
+                                }
                             }
-                            CmdInput::Cancel => {
-                                mode = InputMode::TutorList {
-                                    cursor: *cursor,
-                                    search: None,
-                                };
-                            }
-                            CmdInput::Continue => {}
                         }
                     }
                 }

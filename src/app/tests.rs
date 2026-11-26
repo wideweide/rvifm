@@ -21,6 +21,38 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
 }
 
 #[test]
+fn m565_tutor_search_filters_while_typing() {
+    // M56-5：输入态渲染即按当前输入过滤；清空后显示全部模块。
+    let (_tmp, state) = make_state(2);
+    let dump = |input: &str| -> String {
+        let mode = InputMode::TutorListSearch {
+            input: input.to_owned(),
+            cursor: 0,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 30)).unwrap();
+        terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+        let all: String = (0..30)
+            .map(|y| {
+                (0..80)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect();
+        all.chars().filter(|c| !c.is_whitespace()).collect()
+    };
+    let filtered = dump("core");
+    assert!(filtered.contains("core_nav"), "{filtered}");
+    assert!(!filtered.contains("file_ops"), "{filtered}");
+    assert!(filtered.contains('▋'), "输入态应有光标: {filtered}");
+    let all = dump("");
+    assert!(
+        all.contains("core_nav") && all.contains("file_ops"),
+        "{all}"
+    );
+}
+
+#[test]
 fn m562_first_run_enters_guide_mode() {
     // M56-2：无配置 → 向导；有配置 → Normal（纯函数，不依赖宿主 HOME）。
     assert!(matches!(
