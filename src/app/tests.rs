@@ -180,6 +180,41 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m601_async_preview_discards_stale_generation() {
+    // M60-1：只接受当前代次的后台结果；快速切换的中间载荷被丢弃。
+    let tmp = TempDir::new().unwrap();
+    let a = tmp.path().join("a.txt");
+    let b = tmp.path().join("b.txt");
+    fs::write(&a, "one\n").unwrap();
+    fs::write(&b, "one\ntwo\n").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().viewer = None;
+    let payload_a = crate::preview::load_viewer_payload(&a);
+    let payload_b = crate::preview::load_viewer_payload(&b);
+    assert_eq!(payload_b.lines.len(), 2);
+    state.preview_generation = 2;
+    state
+        .preview_tx
+        .send(crate::state::PreviewJobResult {
+            generation: 1,
+            payload: payload_a,
+        })
+        .unwrap();
+    state
+        .preview_tx
+        .send(crate::state::PreviewJobResult {
+            generation: 2,
+            payload: payload_b,
+        })
+        .unwrap();
+    state.drain_preview_results();
+    let viewer = state.active_tab().viewer.as_ref().unwrap();
+    assert_eq!(viewer.path.as_deref(), Some(b.as_path()));
+    assert_eq!(viewer.line_count, 2);
+}
+
+#[test]
 fn m597_focused_preview_has_blue_border() {
     // M59-7：Tab 进入预览后用蓝色加粗边框标识焦点区。
     let tmp = TempDir::new().unwrap();

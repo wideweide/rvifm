@@ -1563,9 +1563,10 @@ impl Tab {
     /// M42：预览跟随——焦点留在原 pane 时，光标移动/目录切换后把对侧预览
     /// 切到当前光标文件；同一文件只钳制滚动位置（保留滚动）。
     /// M53-8：目标稳定 150ms 才重建（快速 j/k 不生成中间预览）。
-    pub fn refresh_viewer_follow(&mut self) {
+    /// M60-1：稳定后返回待加载目标（不再同步读盘）；由 AppState 交给后台 worker。
+    pub fn refresh_viewer_follow(&mut self) -> Option<PathBuf> {
         if !self.view_mode || self.preview_focus {
-            return;
+            return None;
         }
         let target = self.preview_target();
         if self.viewer.as_ref().and_then(|v| v.path.clone()) == target {
@@ -1578,20 +1579,21 @@ impl Tab {
             if let Some(v) = self.viewer.as_mut() {
                 v.scroll = v.scroll.min(max);
             }
-            return;
+            return None;
         }
-        let Some(target) = target else {
-            return;
-        };
+        let target = target?;
         let stable = self
             .viewer_pending
             .as_ref()
             .is_some_and(|(p, since)| p == &target && preview_debounce_due(*since));
         if stable {
             self.viewer_pending = None;
-            self.activate_viewer();
-        } else if self.viewer_pending.as_ref().map(|(p, _)| p) != Some(&target) {
-            self.viewer_pending = Some((target, std::time::Instant::now()));
+            Some(target)
+        } else {
+            if self.viewer_pending.as_ref().map(|(p, _)| p) != Some(&target) {
+                self.viewer_pending = Some((target, std::time::Instant::now()));
+            }
+            None
         }
     }
 

@@ -387,6 +387,10 @@ pub struct AppState {
     pub filter_snapshot: Option<crate::state::FilterSnapshot>,
     /// M55-2：`O` 实时递归查找会话（仅内存，退出即丢弃）。
     pub live_find: Option<crate::state::LiveFindState>,
+    /// M60-1：预览后台 worker 回传通道 + 代次（只接受当前代次的结果）。
+    pub preview_tx: std::sync::mpsc::Sender<crate::state::PreviewJobResult>,
+    pub preview_rx: std::sync::mpsc::Receiver<crate::state::PreviewJobResult>,
+    pub preview_generation: u64,
     /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
     pub text_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
@@ -546,7 +550,59 @@ impl LiveFindState {
     }
 }
 
+/// M60-1：后台预览结果（代次不匹配即丢弃，快速导航不渲染中间预览）。
+#[derive(Debug)]
+pub struct PreviewJobResult {
+    pub generation: u64,
+    pub payload: crate::preview::ViewerPayload,
+}
+
 impl AppState {
+    /// M60-1：目标稳定后投递后台预览任务（不阻塞 UI 线程）。
+    pub fn refresh_viewer_async(&mut self) {
+        let Some(tab) = self.tabs.get_mut(self.active) else {
+            return;
+        };
+        let Some(target) = tab.refresh_viewer_follow() else {
+            return;
+        };
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        let tx = self.preview_tx.clone();
+        std::thread::spawn(move || {
+            let payload = crate::preview::load_viewer_payload(&target);
+            let _ = tx.send(PreviewJobResult {
+                generation,
+                payload,
+            });
+        });
+    }
+
+    /// M60-1：收割后台预览结果；只接受当前代次，安装到活动 tab 的 viewer。
+    pub fn drain_preview_results(&mut self) {
+        while let Ok(result) = self.preview_rx.try_recv() {
+            if result.generation != self.preview_generation {
+                continue;
+            }
+            let Some(tab) = self.tabs.get_mut(self.active) else {
+                return;
+            };
+            if !tab.view_mode || tab.preview_focus {
+                continue;
+            }
+            tab.viewer = Some(crate::tab::ViewerState {
+                scroll: 0,
+                line_count: result.payload.lines.len(),
+                total_lines: result.payload.total,
+                query: None,
+                match_line: 0,
+                hex: result.payload.hex,
+                page: 0,
+                path: Some(result.payload.path),
+            });
+        }
+    }
+
     /// 以一个初始标签启动。
     pub fn new(initial: Tab) -> Self {
         let t0 = std::time::Instant::now();
@@ -558,6 +614,7 @@ impl AppState {
         if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
             eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
         }
+        let preview_channel = std::sync::mpsc::channel();
         Self {
             tabs: vec![initial],
             active: 0,
@@ -574,6 +631,9 @@ impl AppState {
             history_commands: Vec::new(),
             filter_snapshot: None,
             live_find: None,
+            preview_tx: preview_channel.0,
+            preview_rx: preview_channel.1,
+            preview_generation: 0,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,

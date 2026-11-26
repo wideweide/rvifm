@@ -15,6 +15,39 @@ use std::path::{Path, PathBuf};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+/// M60-1：后台 viewer 载荷（路径 + 行 + 完整行数 + hex 判定）。
+#[derive(Debug, Clone)]
+pub struct ViewerPayload {
+    pub path: PathBuf,
+    pub lines: Vec<String>,
+    pub total: usize,
+    pub hex: bool,
+}
+
+/// M60-1：在后台线程读取/判定文件内容（纯函数，不触碰 AppState/redb）。
+pub fn load_viewer_payload(path: &Path) -> ViewerPayload {
+    let hex = crate::tab::looks_binary(path);
+    if hex {
+        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let total = size.div_ceil(16) as usize;
+        return ViewerPayload {
+            path: path.to_path_buf(),
+            lines: Vec::new(),
+            total,
+            hex: true,
+        };
+    }
+    let text = fs::read_to_string(path).unwrap_or_default();
+    let total = text.lines().count();
+    let lines = text.lines().take(100_000).map(str::to_owned).collect();
+    ViewerPayload {
+        path: path.to_path_buf(),
+        lines,
+        total,
+        hex: false,
+    }
+}
+
 /// 预览内容的最大读取字节数（防止大文件撑爆内存/渲染）。
 const MAX_PREVIEW_BYTES: u64 = 512 * 1024;
 

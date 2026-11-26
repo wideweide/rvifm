@@ -809,7 +809,7 @@ fn run_with_initial_mode(
         }
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
         // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。
-        state.active_tab_mut().refresh_viewer_follow();
+        state.refresh_viewer_async();
         // M53-3：归档成员预览——光标变化时解出临时只读副本（按 key 缓存）。
         {
             let tab = state.active_tab();
@@ -922,6 +922,8 @@ fn run_with_initial_mode(
             state.git_cache.insert(dir, res.ok());
         }
         crate::git::sync_status_trigger(&mut state);
+        // M60-1：收割后台预览载荷（只接受当前代次；快速导航不渲染中间预览）。
+        state.drain_preview_results();
         // M55-2：抽干实时递归扫描结果（每帧限量，避免大量条目阻塞绘制）。
         if let Some(lf) = state.live_find.as_mut() {
             lf.drain(256);

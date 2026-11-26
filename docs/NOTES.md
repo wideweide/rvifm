@@ -1500,6 +1500,12 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-26 — M60 异步预览取舍
+
+- viewer 目标稳定后由 `AppState::refresh_viewer_async` 投递后台线程，载荷为 `ViewerPayload`（文本行 / hex 判定 / 完整行数）；事件循环 `drain_preview_results` 只接受 `preview_generation` 匹配的结果，快速 j/k 的中间目标不会安装到 viewer。
+- 文本读取与 hex 判定已移入 worker；**每帧 syntax 着色仍留在 UI 线程**（SIMPLIFIED：Highlighter 需逐帧按视口起点推进，跨行状态复杂），缓存命中已在 M59-6 改为按需克隆，小文件卡顿的主要来源已消除。
+- 图片/归档/Office/PDF 的缓存未命中仍可能同步（M60-3/4 分项处理）。
+
 ### 2026-11-26 — M59-9 r/u 语义与写入红线
 
 - `r` 不再调用 `remove_entry`（整条 tombstone）——改为既有 `set_keyword_topic_now(path,topic,"")` 清空 keyword，保留条目、分数与 last_visit，不违反 `record` 是评分唯一写入口的红线（keyword 事件本就是 marks/bookmark 的既有写入路径）。

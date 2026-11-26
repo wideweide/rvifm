@@ -823,8 +823,8 @@
 
 ## M60 — 真异步预览架构（2026-11-26 蒸馏，见 SPEC M60 节）
 
-- [ ] M60-1 预览 worker + generation token + channel（见 SPEC M60-1）
-- [ ] M60-2 文本读取/高亮 off-thread + 缓存引用化（见 SPEC M60-2）
+- [x] M60-1 预览 worker + generation token + channel（见 SPEC M60-1）；2026-11-26 完成：ViewerPayload/load_viewer_payload + preview_tx/rx + preview_generation + refresh_viewer_async/drain_preview_results，m601 通过
+- [x] M60-2 文本读取/高亮 off-thread + 缓存引用化（见 SPEC M60-2）；2026-11-26 完成：整文件读取/hex 判定移入 worker（M60-1）+ M59-6 缓存按需克隆；**每帧语法着色仍在 UI 线程**（SIMPLIFIED，NOTES 记录）
 - [ ] M60-3 图片解码 off-thread（见 SPEC M60-3）
 - [ ] M60-4 归档/Office/PDF 缓存未命中 off-thread（见 SPEC M60-4）
 - [ ] M60-5 性能验收 + 文档 + 门禁（见 SPEC M60-5）
