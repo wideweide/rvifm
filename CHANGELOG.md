@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M63 其它预览增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 目录树预览按目录 mtime 缓存，不再每帧重扫；JSON 缩进 / Markdown 弱化标记的轻量结构化预览。
+- 新增非默认 `pdf-rust` feature（`karet-pdf` 纯 Rust 栅格化）：文本提取仍先行，视觉路径优先纯 Rust；默认构建不含该依赖。二进制已有 hex dump，语义注释延后。
+
 ### M62 图片缩放与编码流水线（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 后台 worker 用 `fast_image_resize`（SIMD/Nearest，默认最快）把解码图预缩到 2048px 以内；UI 线程复用已编码协议缓存，不再每帧 resize+encode。

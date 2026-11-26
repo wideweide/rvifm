@@ -101,6 +101,10 @@ SEARCH 态标题改用焦点边框色 + 加粗，底部为**带边框输入框 +
 
 预览采用后台 worker + generation（M60）：快速 `j/k` 的中间目标不会渲染，文本读取/图片解码/
 归档列目录均在后台完成，停下后加载最终目标；获焦预览有蓝色边框。
+超过 `[preview] virtual_text_threshold`（默认 1MiB）的本地文本改用 mmap 视口读取（M61），
+只渲染可见行、聚焦不再全量加载；远端大文件仅元数据。图片在后台用 SIMD 预缩放并缓存已编码
+协议（M62）。目录树预览按 mtime 缓存，JSON/Markdown 有轻量结构化预览（M63）。
+启用 `pdf-rust` feature 时 PDF 视觉路径使用纯 Rust 栅格化（文本提取仍先行）。
 frecency 面板内 `Tab` **固定进/出预览**（与 `[preview] fixed_side` 无关，M59-8）；
 `Shift+Tab` 才切换左右栏。frecency SEARCH 态 `j/k` 仍是输入字符，进入预览后 `j/k` 滚动。
 

@@ -393,6 +393,9 @@ pub struct AppState {
     pub preview_generation: u64,
     /// M61：当前大文件的只读 mmap 视口读取器（路径变化时重建）。
     pub viewport_text: Option<crate::viewport::ViewportText>,
+    /// M63-1：目录树预览快照缓存（按目录 mtime 失效，避免每帧重扫）。
+    pub directory_preview_cache:
+        std::cell::RefCell<std::collections::HashMap<(PathBuf, u64), Vec<crate::tab::FileItem>>>,
     /// M61-4：同一路径跨帧复用 syntect 状态（视口推进，尽力而为）。
     pub highlighter_cache: std::cell::RefCell<Option<(PathBuf, crate::highlight::Highlighter)>>,
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
@@ -750,6 +753,7 @@ impl AppState {
             preview_rx: preview_channel.1,
             preview_generation: 0,
             viewport_text: None,
+            directory_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,
             image_pending: None,

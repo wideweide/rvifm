@@ -275,6 +275,47 @@ pub fn preview_kind(path: &Path) -> PreviewKind {
 /// - 普通文件 → 文本内容（截断保护）；二进制/读取失败 → 友好提示；
 /// - 图像文件 → 友好提示行（真实渲染走 `ImageEngine`；此分支服务
 ///   解码失败降级与无图形能力的调用方）。
+///
+/// M63-3：JSON / Markdown 的轻量结构化预览（纯文本渲染，不引新依赖）。
+fn structured_preview(path: &Path, max_lines: usize, ext: &str) -> Option<Preview> {
+    let text = fs::read_to_string(path).ok()?;
+    if text.contains('\0') {
+        return None;
+    }
+    if ext == "json" {
+        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let pretty = serde_json::to_string_pretty(&value).ok()?;
+        let body: String = pretty
+            .lines()
+            .take(max_lines)
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Some(text_preview(&body));
+    }
+    if matches!(ext, "md" | "markdown") {
+        let body: String = text
+            .lines()
+            .take(max_lines)
+            .map(|line| {
+                let trimmed = line.trim_start();
+                let depth = trimmed.chars().take_while(|c| *c == '#').count();
+                let mut out = if depth > 0 && depth <= 6 {
+                    format!("{} {}", "  ".repeat(depth - 1), &trimmed[depth..])
+                } else {
+                    line.to_owned()
+                };
+                for marker in ["**", "__", "`"] {
+                    out = out.replace(marker, "");
+                }
+                out
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Some(text_preview(&body));
+    }
+    None
+}
+
 pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
     if path.is_dir() {
         return directory_preview(path, max_lines);
@@ -287,6 +328,10 @@ pub fn render_preview(path: &Path, max_lines: usize) -> Preview {
         .unwrap_or_default();
     if matches!(ext_lower.as_str(), "csv" | "tsv") {
         return csv_preview(path, max_lines, &ext_lower);
+    }
+    // M63-3：JSON 缩进 / Markdown 弱化标记的轻量结构化预览。
+    if let Some(preview) = structured_preview(path, max_lines, &ext_lower) {
+        return preview;
     }
     if crate::office::is_office_file(path) {
         return match crate::office::extract_preview_text(path, max_lines) {
@@ -1163,6 +1208,20 @@ mod tests {
     }
 
     /// M46-8：超过大小护栏的归档只给快速提示，不做成员索引。
+    #[test]
+    fn m633_structured_json_and_markdown_preview() {
+        let tmp = TempDir::new().unwrap();
+        let json = tmp.path().join("data.json");
+        fs::write(&json, "{\"a\":1,\"b\":[2,3]}").unwrap();
+        let lines = render_preview(&json, 20).line_texts().join("\n");
+        assert!(lines.contains("\"a\": 1"), "{lines}");
+        let md = tmp.path().join("readme.md");
+        fs::write(&md, "# Title\n\n**bold** and `code`\n").unwrap();
+        let lines = render_preview(&md, 20).line_texts().join("\n");
+        assert!(lines.contains("Title"), "{lines}");
+        assert!(lines.contains("bold and code"), "{lines}");
+    }
+
     #[test]
     fn m468_archive_preview_size_guard_hint() {
         let tmp = TempDir::new().unwrap();

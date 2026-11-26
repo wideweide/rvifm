@@ -18,6 +18,8 @@ tokio = { version = "1.54.1", features = ["full"] }
 bzip2-rs = "0.1.2"
 devicons = "0.6.13"
 fast_image_resize = "6.2"
+# M63-2：纯 Rust PDF 视觉栅格化（仅 pdf-rust feature，非默认）。
+karet-pdf = { version = "0.8", optional = true }
 flate2 = "1.1.11"
 # M22-2：known_hosts hashed hostname 校验（HMAC-SHA1；三者均已在依赖树，零新增 crate）。
 hmac = "0.13"
@@ -52,6 +54,7 @@ sevenz-rust2 = { version = "0.25.0", default-features = false, features = ["bzip
 
 [features]
 pdf-visual = ["dep:exprim"]
+pdf-rust = ["dep:karet-pdf"]
 
 # MISC-1：`rv` 短别名——与 `rvifm` 同一 `src/main.rs`，行为完全一致；
 # 项目名/crate 名/主二进制名仍为 `rvifm`（AGENTS §5.1）。

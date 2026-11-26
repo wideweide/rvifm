@@ -145,12 +145,32 @@ pub(crate) fn render_view_path(
             .border_style(pane_border_style(true));
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
-        let items = match crate::tab::Tab::build_tree_entries(&path, 2) {
-            Ok(items) => items,
-            Err(e) => {
-                frame.render_widget(Paragraph::new(format!("目录读取失败: {e}")), inner);
-                return;
-            }
+        // M63-1：按 (目录, mtime) 缓存浅层树，超大目录不再每帧重扫。
+        let stamp = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let key = (path.clone(), stamp);
+        let cached = state.directory_preview_cache.borrow().get(&key).cloned();
+        let items = match cached {
+            Some(items) => items,
+            None => match crate::tab::Tab::build_tree_entries(&path, 2) {
+                Ok(items) => {
+                    if let Ok(mut cache) = state.directory_preview_cache.try_borrow_mut() {
+                        if cache.len() >= 16 {
+                            cache.clear();
+                        }
+                        cache.insert(key, items.clone());
+                    }
+                    items
+                }
+                Err(e) => {
+                    frame.render_widget(Paragraph::new(format!("目录读取失败: {e}")), inner);
+                    return;
+                }
+            },
         };
         let height = inner.height as usize;
         let mut lines: Vec<Line> = Vec::with_capacity(height);

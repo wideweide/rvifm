@@ -846,8 +846,8 @@
 
 ## M63 — 其它预览增强（2026-11-26 蒸馏，见 SPEC M63 节）
 
-- [ ] M63-1 目录树预览缓存（见 SPEC M63-1）
-- [ ] M63-2 可选 pdf-rust feature + karet-pdf（见 SPEC M63-2）
-- [ ] M63-3 JSON/Markdown 结构化预览（见 SPEC M63-3）
-- [ ] M63-4 二进制 hex 语义注释 deferred（见 SPEC M63-4）
-- [ ] M63-5 文档/验收/门禁（见 SPEC M63-5）
+- [x] M63-1 目录树预览缓存（见 SPEC M63-1）；2026-11-26 完成：directory_preview_cache（按目录 mtime 失效），不再每帧 build_tree_entries
+- [x] M63-2 可选 pdf-rust feature + karet-pdf（见 SPEC M63-2）；2026-11-26 完成：非默认 feature、文本先行、视觉路径优先纯 Rust 栅格化，默认/feature 双构建绿
+- [x] M63-3 JSON/Markdown 结构化预览（见 SPEC M63-3）；2026-11-26 完成：structured_preview + m633
+- [x] M63-4 二进制 hex 语义注释 deferred（见 SPEC M63-4）；2026-11-26 完成：已有 hex dump，语义注释低优先登记 deferred
+- [x] M63-5 文档/验收/门禁（见 SPEC M63-5）；2026-11-26 完成：CHANGELOG/GUIDE/help/STATE/PLAN/NOTES 同步 + 全门禁

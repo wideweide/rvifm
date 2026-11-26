@@ -265,6 +265,26 @@ pub fn render_first_page_png(path: &Path, out_png: &Path) -> Result<(), String> 
     render_page_png_with(path, 0, out_png, find_external_renderer())
 }
 
+/// M63-2：纯 Rust 栅格化（仅 `pdf-rust` feature）。文本提取仍先行；此路径
+/// 用于 NeedsVisual / `pdf_prefer_image`，避免依赖 Poppler/MuPDF。
+#[cfg(feature = "pdf-rust")]
+fn render_page_png_karet(path: &Path, page: u32, out_png: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let doc = karet_pdf::Document::load(bytes).map_err(|e| format!("{e:?}"))?;
+    let rendered = doc
+        .render_page(page as usize, 1.5)
+        .map_err(|e| format!("{e:?}"))?;
+    let rgba = image::RgbaImage::from_raw(
+        rendered.width(),
+        rendered.height(),
+        rendered.rgba().to_vec(),
+    )
+    .ok_or_else(|| "karet-pdf 像素缓冲尺寸不符".to_owned())?;
+    image::DynamicImage::ImageRgba8(rgba)
+        .save(out_png)
+        .map_err(|e| e.to_string())
+}
+
 /// 注入外部工具形态（测试用）；`ext` 第二元为实际程序路径/名。
 /// `page` 0-based：exprim 直取；pdftoppm/mutool 换算 1-based 页号。
 fn render_page_png_with(
@@ -273,6 +293,11 @@ fn render_page_png_with(
     out_png: &Path,
     ext: Option<(&'static str, &'static str)>,
 ) -> Result<(), String> {
+    // 0. karet-pdf（仅 pdf-rust feature；纯 Rust 且无外部工具，优先）。
+    #[cfg(feature = "pdf-rust")]
+    if render_page_png_karet(path, page, out_png).is_ok() {
+        return Ok(());
+    }
     // 1. exprim（仅 pdf-visual feature；失败不中断，落外部工具）。
     #[cfg(feature = "pdf-visual")]
     if let Ok(pixels) = visual::render_page(path, page) {
@@ -599,6 +624,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "pdf-rust"))]
     fn cached_visual_png_needs_visual_no_tools_none_and_cached() {
         // AUDIT-2：NeedsVisual（空文本层）+ 无外部工具（注入 None）→
         // 全链失败缓存为 None（避免每帧 spawn）；二次调用命中缓存。
@@ -717,6 +743,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "pdf-rust"))]
     fn render_first_page_png_no_tools_err_readable() {
         // AUDIT-2：无 exprim（默认构建）且注入 None → 可读 Err，不 panic。
         let tmp = TempDir::new().unwrap();
