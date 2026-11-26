@@ -823,6 +823,19 @@ fn run_with_initial_mode(
         {
             state.ensure_image_preview(&path);
         }
+        // M60-4：Office/归档/PDF 文本的重型解析走后台（PDF 视觉页仍需 Frame，留在 UI 线程）。
+        if let Some(path) = state.active_tab().preview_target() {
+            let kind = crate::preview::preview_kind(&path);
+            let special = matches!(
+                kind,
+                crate::preview::PreviewKind::Office | crate::preview::PreviewKind::Archive
+            ) || (kind == crate::preview::PreviewKind::Pdf
+                && state.config.preview.pdf_image_pages == 0);
+            if special {
+                let external = state.config.preview.archive_external_listing;
+                state.ensure_special_preview(&path, external);
+            }
+        }
         // M53-3：归档成员预览——光标变化时解出临时只读副本（按 key 缓存）。
         {
             let tab = state.active_tab();

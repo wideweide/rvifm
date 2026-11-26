@@ -204,8 +204,17 @@ pub(crate) fn render_view_path(
                 .border_style(pane_border_style(true));
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
-            let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
-            frame.render_widget(preview.into_paragraph(), inner);
+            if let Some((_, lines)) = state.special_preview.as_ref().filter(|(p, _)| p == &path) {
+                let rendered = lines
+                    .iter()
+                    .take(inner.height.max(1) as usize)
+                    .map(|l| Line::from(l.clone()))
+                    .collect::<Vec<_>>();
+                frame.render_widget(Paragraph::new(rendered), inner);
+            } else {
+                let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
+                frame.render_widget(preview.into_paragraph(), inner);
+            }
             return;
         }
         crate::preview::PreviewKind::Archive => {
@@ -218,13 +227,22 @@ pub(crate) fn render_view_path(
             frame.render_widget(pane, area);
             // M46-8：按 (路径, mtime, size) 缓存成员列表，同一归档预览不再
             // 每帧重复打开/全量解压（firefox tarball 等 xz/bz2 秒出提示）。
-            let preview = crate::preview::archive_preview_cached_with_config(
-                &path,
-                inner.height.max(1) as usize,
-                &state.archive_preview_cache,
-                state.config.preview.archive_external_listing,
-            );
-            frame.render_widget(preview.into_paragraph(), inner);
+            if let Some((_, lines)) = state.special_preview.as_ref().filter(|(p, _)| p == &path) {
+                let rendered = lines
+                    .iter()
+                    .take(inner.height.max(1) as usize)
+                    .map(|l| Line::from(l.clone()))
+                    .collect::<Vec<_>>();
+                frame.render_widget(Paragraph::new(rendered), inner);
+            } else {
+                let preview = crate::preview::archive_preview_cached_with_config(
+                    &path,
+                    inner.height.max(1) as usize,
+                    &state.archive_preview_cache,
+                    state.config.preview.archive_external_listing,
+                );
+                frame.render_widget(preview.into_paragraph(), inner);
+            }
             return;
         }
         crate::preview::PreviewKind::Pdf => {

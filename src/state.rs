@@ -394,6 +394,9 @@ pub struct AppState {
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
     pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
     pub image_pending: Option<PathBuf>,
+    /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
+    pub special_preview: Option<(PathBuf, Vec<String>)>,
+    pub special_pending: Option<PathBuf>,
     /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
     pub text_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
@@ -558,6 +561,7 @@ impl LiveFindState {
 pub enum PreviewJobKind {
     Viewer,
     Image,
+    Special,
 }
 
 #[derive(Debug)]
@@ -624,7 +628,40 @@ impl AppState {
         });
     }
 
-    /// M60-1/3：收割后台结果；只接受当前代次，按类型安装 viewer 或解码图。
+    /// M60-4：Office/归档/PDF 文本预览行后台计算（缓存未命中时）。
+    pub fn ensure_special_preview(&mut self, path: &std::path::Path, external_enabled: bool) {
+        if self
+            .special_preview
+            .as_ref()
+            .is_some_and(|(p, _)| p == path)
+        {
+            return;
+        }
+        if self.special_pending.as_deref() == Some(path) {
+            return;
+        }
+        self.special_pending = Some(path.to_path_buf());
+        let target = path.to_path_buf();
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        let tx = self.preview_tx.clone();
+        std::thread::spawn(move || {
+            let lines = crate::preview::load_special_preview_lines(&target, external_enabled);
+            let _ = tx.send(PreviewJobResult {
+                generation,
+                kind: PreviewJobKind::Special,
+                payload: crate::preview::ViewerPayload {
+                    path: target,
+                    lines,
+                    total: 0,
+                    hex: false,
+                },
+                image: None,
+            });
+        });
+    }
+
+    /// M60-1/3/4：收割后台结果；只接受当前代次，按类型安装 viewer/图/特殊预览。
     pub fn drain_preview_results(&mut self) {
         while let Ok(result) = self.preview_rx.try_recv() {
             if result.generation != self.preview_generation {
@@ -638,6 +675,12 @@ impl AppState {
                     if let Some(img) = result.image {
                         self.decoded_preview = Some((result.payload.path, img));
                     }
+                }
+                PreviewJobKind::Special => {
+                    if self.special_pending.as_deref() == Some(result.payload.path.as_path()) {
+                        self.special_pending = None;
+                    }
+                    self.special_preview = Some((result.payload.path, result.payload.lines));
                 }
                 PreviewJobKind::Viewer => {
                     let Some(tab) = self.tabs.get_mut(self.active) else {
@@ -694,6 +737,8 @@ impl AppState {
             preview_generation: 0,
             decoded_preview: None,
             image_pending: None,
+            special_preview: None,
+            special_pending: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,

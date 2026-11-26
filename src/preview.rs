@@ -48,6 +48,17 @@ pub fn load_viewer_payload(path: &Path) -> ViewerPayload {
     }
 }
 
+/// M60-4：后台计算 Office/归档/PDF 文本的预览行（只读；不碰 Frame/redb）。
+pub fn load_special_preview_lines(path: &Path, external_enabled: bool) -> Vec<String> {
+    match preview_kind(path) {
+        PreviewKind::Archive => {
+            let cache = ArchivePreviewCache::default();
+            archive_preview_cached_with_config(path, 200, &cache, external_enabled).line_texts()
+        }
+        _ => render_preview(path, 200).line_texts(),
+    }
+}
+
 /// 预览内容的最大读取字节数（防止大文件撑爆内存/渲染）。
 const MAX_PREVIEW_BYTES: u64 = 512 * 1024;
 

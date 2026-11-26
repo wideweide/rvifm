@@ -180,6 +180,25 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m604_archive_preview_lines_load_in_worker() {
+    // M60-4：归档成员列表的解析在后台完成，UI 侧只持有行结果。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("bundle.zip");
+    crate::archive::make_test_zip(&zip);
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.ensure_special_preview(&zip, false);
+    assert!(state.special_pending.is_some());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while state.special_preview.is_none() && std::time::Instant::now() < deadline {
+        state.drain_preview_results();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let (path, lines) = state.special_preview.as_ref().expect("后台列目录应完成");
+    assert_eq!(path, &zip);
+    assert!(!lines.is_empty());
+}
+
+#[test]
 fn m603_image_decode_runs_off_ui_thread() {
     // M60-3：后台解码生成 DynamicImage，UI 线程只持有结果。
     let tmp = TempDir::new().unwrap();
