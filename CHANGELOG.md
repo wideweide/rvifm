@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M55 frecency 搜索态区分与实时递归查找（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- frecency SEARCH 态标题改为焦点边框色+加粗，底部绘制带边框输入框 + 可见光标；列表保持无边框，NORMAL/SEARCH 明确区分。
+- 新增 `O` 实时递归查找：后台线程流式扫描（复用 `:find` ignore 规则，深度 20/条目 5 万护栏），输入实时子串过滤、scanning 计数、`Enter` 定位选中（走 record）、`Esc` 退出；不写 redb、不替代 `:find`。
+
 ### M57 帮助外部入口收敛（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 移除 `rvifm help` 外部子命令；`:help` 只在应用内以不透明覆盖层打开（页内 `/` 搜索、Esc/q 返回），不再新开终端窗口。
