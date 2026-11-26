@@ -753,7 +753,7 @@
 ## M53 — 标签栏对齐、归档 VFS 预览与预览性能（2026-11-26 蒸馏，已确认，见 SPEC M53 节）
 
 - [x] M53-1 标签标题 `[N:焦点栏全路径]` 且随焦点更新（见 SPEC M53-1）；2026-11-26 完成：tab_bar_labels_and_visible 取 focused_location 全路径，m531 通过
-- [ ] M53-2 `:tabname` 与右栏活动项会话持久化（见 SPEC M53-2）
+- [x] M53-2 `:tabname` 与右栏活动项会话持久化（见 SPEC M53-2）；2026-11-26 完成：SessionTab 增 name/right_path/right_cursor（serde default），m532 往返 + 旧会话兼容测试
 - [ ] M53-3 归档成员 `w` 预览 + `l`/Enter 临时只读副本交系统 opener（见 SPEC M53-3）
 - [ ] M53-4 frecency NORMAL 完整键位提示 + `r` 删记录（见 SPEC M53-4）
 - [ ] M53-5 文本 36 行预览 + 小文件卡顿排查（见 SPEC M53-5）

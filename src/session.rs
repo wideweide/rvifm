@@ -35,6 +35,16 @@ struct SessionTab {
     /// M32-3：tab 类型（缺省 physical = 旧文件零迁移兼容）。
     #[serde(default)]
     kind: String,
+    /// M53-2：`:tabname` 命名（持久；None = 显示路径）。
+    #[serde(default)]
+    name: Option<String>,
+    /// M53-2：右栏活动项（location + cursor；缺省 None = 旧会话兼容）。
+    #[serde(default)]
+    right_path: Option<String>,
+    #[serde(default)]
+    right_kind: String,
+    #[serde(default)]
+    right_cursor: usize,
 }
 
 /// 会话文件路径（与 config.toml 同目录）。
@@ -43,6 +53,25 @@ pub fn session_path() -> PathBuf {
     match cfg.parent() {
         Some(dir) => dir.join("session.toml"),
         None => PathBuf::from("session.toml"),
+    }
+}
+
+/// Location → (kind, 可序列化路径串)；左右栏共用（M53-2）。
+fn location_parts(loc: &Location) -> (String, String) {
+    match loc {
+        Location::Physical(p) => ("physical".to_owned(), p.to_string_lossy().into_owned()),
+        Location::Archive { host, inner } => (
+            "archive".to_owned(),
+            format!(
+                "{}:{}",
+                host.to_string_lossy().replace('\\', "/"),
+                inner.to_string_lossy().replace('\\', "/")
+            ),
+        ),
+        Location::Remote { remote, path } => (
+            "remote".to_owned(),
+            format!("{}:{}", remote, path.to_string_lossy().replace('\\', "/")),
+        ),
     }
 }
 
@@ -55,21 +84,8 @@ pub fn serialize_session(state: &AppState) -> String {
             .iter()
             .map(|tab| {
                 // M32-3：三种 Location 均入会话（归档/远端恢复失败静默跳过）。
-                let (kind, path) = match &tab.location {
-                    Location::Physical(p) => ("physical", p.to_string_lossy().into_owned()),
-                    Location::Archive { host, inner } => (
-                        "archive",
-                        format!(
-                            "{}:{}",
-                            host.to_string_lossy().replace('\\', "/"),
-                            inner.to_string_lossy().replace('\\', "/")
-                        ),
-                    ),
-                    Location::Remote { remote, path } => (
-                        "remote",
-                        format!("{}:{}", remote, path.to_string_lossy().replace('\\', "/")),
-                    ),
-                };
+                let (kind, path) = location_parts(&tab.location);
+                let (right_kind, right_path) = location_parts(&tab.right.location);
                 SessionTab {
                     path,
                     cursor: tab.cursor,
@@ -78,7 +94,11 @@ pub fn serialize_session(state: &AppState) -> String {
                         crate::tab::Focus::Right => "right".to_owned(),
                         crate::tab::Focus::Left => "left".to_owned(),
                     },
-                    kind: kind.to_owned(),
+                    kind,
+                    name: tab.name.clone(),
+                    right_kind,
+                    right_path: Some(right_path),
+                    right_cursor: tab.right.cursor,
                 }
             })
             .collect(),
@@ -202,6 +222,17 @@ fn apply_session(state: &mut AppState, file: &SessionFile) -> Vec<String> {
         } else {
             crate::tab::Focus::Left
         };
+        // M53-2：`:tabname` 持久化恢复。
+        built.name = tab.name.clone();
+        // M53-2：右栏活动项恢复（物理路径为主；归档/远端失败静默降级）。
+        if tab.right_kind == "physical"
+            && let Some(rpath) = &tab.right_path
+            && let Ok(mut pane) =
+                crate::tab::Pane::from_physical(&PathBuf::from(rpath), cfg.clone())
+        {
+            pane.cursor = tab.right_cursor.min(pane.entries.len().saturating_sub(1));
+            built.right = pane;
+        }
         restored.push(built);
     }
     if restored.is_empty() {
@@ -400,6 +431,10 @@ mod tests {
                     on_parent_row: true,
                     focus: "left".to_owned(),
                     kind: "physical".to_owned(),
+                    name: None,
+                    right_path: None,
+                    right_kind: String::new(),
+                    right_cursor: 0,
                 },
                 SessionTab {
                     path: "/nonexistent-dir-xyz-12345".to_owned(),
@@ -407,6 +442,10 @@ mod tests {
                     on_parent_row: false,
                     focus: "left".to_owned(),
                     kind: "physical".to_owned(),
+                    name: None,
+                    right_path: None,
+                    right_kind: String::new(),
+                    right_cursor: 0,
                 },
             ],
         };
@@ -415,5 +454,39 @@ mod tests {
         assert_eq!(fresh.tabs.len(), 1, "失败目录跳过");
         assert_eq!(fresh.active, 0, "active 钳制到 tab 数内");
         assert_eq!(fresh.tabs[0].cursor, 0, "cursor 钳制到条目数内");
+    }
+
+    #[test]
+    fn m532_tabname_and_right_pane_survive_session_roundtrip() {
+        let left = tempfile::TempDir::new().unwrap();
+        let right = tempfile::TempDir::new().unwrap();
+        fs::write(left.path().join("a"), "").unwrap();
+        fs::write(left.path().join("b"), "").unwrap();
+        fs::write(right.path().join("x"), "").unwrap();
+        fs::write(right.path().join("y"), "").unwrap();
+        let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+        state.active_tab_mut().right =
+            crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+        state.active_tab_mut().name = Some("工作".to_owned());
+        state.active_tab_mut().right.cursor = 1;
+        let text = serialize_session(&state);
+        let file = parse_session(&text).unwrap();
+        let mut restored =
+            AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+        apply_session(&mut restored, &file);
+        assert_eq!(restored.tabs[0].name.as_deref(), Some("工作"));
+        assert_eq!(restored.tabs[0].right.cursor, 1);
+        assert_eq!(
+            restored.tabs[0].right.location.base_dir(),
+            right.path(),
+            "右栏路径恢复"
+        );
+
+        // 旧会话（无新字段）仍可解析（serde default）。
+        let legacy = format!(
+            "active = 0\n[[tabs]]\npath = \"{}\"\ncursor = 0\non_parent_row = false\nfocus = \"left\"\nkind = \"physical\"\n",
+            left.path().display()
+        );
+        assert!(parse_session(&legacy).is_some());
     }
 }
