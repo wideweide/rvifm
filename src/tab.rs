@@ -1508,8 +1508,14 @@ impl Tab {
 
     /// M42：按当前焦点 pane 的光标文件初始化/重建查看器（toggle 开启与
     /// 光标换文件时共用）。
+    /// M59-2：预览目标——归档成员走临时只读副本（与 `render_view_content` 同源）。
+    pub(crate) fn preview_target(&self) -> Option<PathBuf> {
+        self.preview_path()
+            .or_else(|| self.archive_preview_tmp.clone())
+    }
+
     pub(crate) fn activate_viewer(&mut self) {
-        let target = self.preview_path();
+        let target = self.preview_target();
         // M17 VIEW-1：激活查看器；grep 命中定位到命中行（上移 2 行上下文）。
         // M39-1：二进制文件（前 8KB 含 NUL）→ hex 模式（16 字节/行，
         // 总行数 = ceil(size/16)，滚动走同一行机制、内容分块读取）。
@@ -1558,7 +1564,7 @@ impl Tab {
         if !self.view_mode || self.preview_focus {
             return;
         }
-        let target = self.preview_path();
+        let target = self.preview_target();
         if self.viewer.as_ref().and_then(|v| v.path.clone()) == target {
             self.viewer_pending = None;
             let max = self
@@ -1589,7 +1595,7 @@ impl Tab {
     /// M17 VIEW-1：查看器内容行（激活时一次性读取；上限 10 万行）。
     /// 查看器内容行（封顶 100,000 行）与完整行数（M21-E3 截断提示）。
     pub fn viewer_lines(&self) -> Option<(Vec<String>, usize)> {
-        let path = self.preview_path()?;
+        let path = self.preview_target()?;
         let text = std::fs::read_to_string(path).ok()?;
         let total = text.lines().count();
         let lines = text.lines().take(100_000).map(|l| l.to_owned()).collect();

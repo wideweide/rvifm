@@ -180,6 +180,31 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m592_archive_preview_viewer_navigates_and_highlights() {
+    // M59-2/3：归档成员走临时副本路径，viewer 有真实行数且 j/k 可滚动；
+    // 临时文件保留扩展名 → 同源语法高亮可用。
+    let tmp = TempDir::new().unwrap();
+    let member = tmp.path().join("sample.rs");
+    let body = (0..60)
+        .map(|i| format!("fn line_{i}() {{}}\n"))
+        .collect::<String>();
+    fs::write(&member, body).unwrap();
+    let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+    tab.view_mode = true;
+    tab.archive_preview_tmp = Some(member.clone());
+    tab.archive_preview_key = Some("host.zip:dir/sample.rs".to_owned());
+    tab.activate_viewer();
+    let viewer = tab.viewer.as_ref().unwrap();
+    assert_eq!(viewer.path.as_deref(), Some(member.as_path()));
+    assert_eq!(viewer.line_count, 60);
+    assert!(!viewer.hex, "文本成员不应走 hex");
+    tab.viewer_scroll(1, 10);
+    assert_eq!(tab.viewer.as_ref().unwrap().scroll, 1);
+    let lines = vec!["fn main() {}".to_owned()];
+    assert!(crate::highlight::styled_lines(&member, &lines, true).is_some());
+}
+
+#[test]
 fn m562_first_run_enters_guide_mode() {
     // M56-2：无配置 → 向导；有配置 → Normal（纯函数，不依赖宿主 HOME）。
     assert!(matches!(

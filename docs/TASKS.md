@@ -811,8 +811,8 @@
 ## M59 — 预览与归档 VFS 体验修复（2026-11-26 蒸馏，见 SPEC M59 节）
 
 - [x] M59-1 预览同源审计与统一（见 SPEC M59-1）；2026-11-26 完成：highlight::styled_lines 共享入口，pick 文本预览改用同源高亮，m591 通过
-- [ ] M59-2 归档成员预览 j/k/Tab 导航（见 SPEC M59-2）
-- [ ] M59-3 归档成员预览语法高亮（见 SPEC M59-3）
+- [x] M59-2 归档成员预览 j/k/Tab 导航（见 SPEC M59-2）；2026-11-26 完成：Tab::preview_target（preview_path 或 archive 临时副本）供 activate_viewer/refresh/viewer_lines，m592 通过
+- [x] M59-3 归档成员预览语法高亮（见 SPEC M59-3）；2026-11-26 完成：临时副本保留扩展名 + shared styled_lines，m592 断言高亮命中
 - [ ] M59-4 归档 l/Enter 走配置的 opener（见 SPEC M59-4）
 - [ ] M59-5 快速文本行数 = 视口+10（至少 36）（见 SPEC M59-5）
 - [ ] M59-6 卡顿与二进制闪现修复（见 SPEC M59-6）
