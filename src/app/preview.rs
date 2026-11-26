@@ -52,6 +52,17 @@ pub(crate) fn render_view_path(
     let tab = state.active_tab();
     // M49-9/10：快速切换时只做轻量预览；预览获焦（Tab 进入）后才全量加载。
     let quick = !tab.preview_focus && tab.pane_frecency.as_ref().is_none_or(|p| !p.preview_focus);
+    // M59-7：焦点预览加蓝色边框并收缩内容区（与快速态明显区分）。
+    let area = if !quick {
+        let block = ratatui::widgets::Block::bordered()
+            .title("预览（Tab 返回列表）")
+            .border_style(Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        inner
+    } else {
+        area
+    };
     let path = path.to_path_buf();
     // 图片：快速态只显示元数据；获焦后仍走 ImageEngine 全量渲染。
     if matches!(

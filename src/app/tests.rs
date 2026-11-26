@@ -180,6 +180,33 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m597_focused_preview_has_blue_border() {
+    // M59-7：Tab 进入预览后用蓝色加粗边框标识焦点区。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "hello").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().preview_focus = true;
+    state.active_tab_mut().viewer = Some(crate::tab::ViewerState {
+        scroll: 0,
+        line_count: 1,
+        total_lines: 1,
+        query: None,
+        match_line: 0,
+        hex: false,
+        page: 0,
+        path: Some(tmp.path().join("a.txt")),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let blue = (0..80u16).any(|x| (0..20u16).any(|y| buf[(x, y)].fg == Color::Blue));
+    assert!(blue, "获焦预览边框应为蓝色");
+}
+
+#[test]
 fn m596_committed_preview_path_avoids_binary_flash() {
     // M59-6：查看器已提交路径优先于当前光标路径（防抖期间不渲染新文件的旧状态）。
     let tmp = TempDir::new().unwrap();
