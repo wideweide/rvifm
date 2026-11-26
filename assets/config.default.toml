@@ -15,6 +15,8 @@ ignore_case_sort = true
 theme = "gruvbox-dark"
 # 外部命令 / shell 在 tmux/screen 新窗口执行（无复用器时回退当前 pane）
 terminal_in_new_window = true
+# M54 ZKEY-4：zt/zb 视口定位时顶部/底部留白（默认 0）
+scrolloff = 0
 # 文件列表显示大小 / 修改时间列（窄终端自动隐藏）
 attrs_column = true
 # 退出保存标签会话、启动恢复

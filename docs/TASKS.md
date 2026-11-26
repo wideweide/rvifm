@@ -768,4 +768,4 @@
 - [x] ZKEY-2 隐藏文件切换 za/zo/zm（见 SPEC ZKEY-2）；2026-11-26 完成：3 个 Action + z 前缀 seq 接线 + show_hidden 同源 + 光标保持，zkey2 测试通过
 - [x] ZKEY-3 过滤器临时重置 zR/zM/zO（见 SPEC ZKEY-3）；2026-11-26 完成：FilterSnapshot + 3 个 Action + zkey3 测试
 - [x] ZKEY-4 视口定位 zt/zz/zb + `[ui] scrolloff`（见 SPEC ZKEY-4）；2026-11-26 完成：3 个 Action + scrolloff 默认 0 + zkey4 测试（光标不变）
-- [ ] ZKEY-5 键位注册、GUIDE/ACCEPTANCE/NOTES 同步（见 SPEC ZKEY-5）
+- [x] ZKEY-5 键位注册、GUIDE/ACCEPTANCE/NOTES 同步（见 SPEC ZKEY-5）；2026-11-26 完成：9 键默认注册 + z 前缀 Resolver + GUIDE/help/config 默认模板 + 取舍 NOTES，harness_check 通过
