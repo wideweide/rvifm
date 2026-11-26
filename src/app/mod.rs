@@ -195,6 +195,8 @@ pub(crate) enum InputMode {
     Normal,
     /// M55-2：`O` 实时递归查找（输入实时过滤，j/k 为输入字符，↑↓ 移动）。
     LiveFind,
+    /// M56-8：100% 模块重入时的重置确认（from_list 决定取消后回列表还是 Normal）。
+    TutorResetConfirm { module_id: String, from_list: bool },
     /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
     /// 与进入历史前保存的草稿输入（↓ 越过最新条目时恢复）；M24-7 增 Tab
     /// 补全状态（None = 无进行中的补全）。
@@ -489,6 +491,20 @@ pub(crate) fn tutor_list_key(
         KeyCode::Char('d') if *cursor < modules_len => TutorListOutcome::Reset(*cursor),
         _ => TutorListOutcome::None,
     }
+}
+
+/// M56-8：模块是否已全部掌握（按稳定 item id 判定，进度按模块 id 查）。
+pub(crate) fn tutor_module_is_complete(
+    progress: &crate::tutor::TutorProgress,
+    module: &crate::tutor::TutorModule,
+) -> bool {
+    progress.get(&module.id).is_some_and(|p| {
+        !module.items.is_empty()
+            && module
+                .items
+                .iter()
+                .all(|i| p.mastered.iter().any(|id| id == &i.id))
+    })
 }
 
 /// M43-1：tutor 标记键前置拦截结果。
@@ -1237,29 +1253,36 @@ fn run_with_initial_mode(
                                     match crate::tutor::module_by_id(&module_id) {
                                         Some(base) => {
                                             let progress = crate::tutor::load_progress();
-                                            // M56-6：与列表 l/Enter 同源——有记录模块只显示错题。
-                                            let (module, review) =
-                                                match crate::tutor::wrong_items_only(
-                                                    &progress,
-                                                    &base.id,
-                                                    &base.items,
-                                                ) {
-                                                    Some(items) => (
-                                                        crate::tutor::TutorModule {
-                                                            items,
-                                                            ..base.clone()
-                                                        },
-                                                        true,
-                                                    ),
-                                                    None => (base, false),
+                                            if tutor_module_is_complete(&progress, &base) {
+                                                mode = InputMode::TutorResetConfirm {
+                                                    module_id: base.id.clone(),
+                                                    from_list: false,
                                                 };
-                                            state.tutor = Some(crate::tutor::TutorSession {
-                                                module,
-                                                idx: 0,
-                                                marks: Vec::new(),
-                                                done: false,
-                                                review,
-                                            });
+                                            } else {
+                                                // M56-6：与列表 l/Enter 同源——有记录模块只显示错题。
+                                                let (module, review) =
+                                                    match crate::tutor::wrong_items_only(
+                                                        &progress,
+                                                        &base.id,
+                                                        &base.items,
+                                                    ) {
+                                                        Some(items) => (
+                                                            crate::tutor::TutorModule {
+                                                                items,
+                                                                ..base.clone()
+                                                            },
+                                                            true,
+                                                        ),
+                                                        None => (base, false),
+                                                    };
+                                                state.tutor = Some(crate::tutor::TutorSession {
+                                                    module,
+                                                    idx: 0,
+                                                    marks: Vec::new(),
+                                                    done: false,
+                                                    review,
+                                                });
+                                            }
                                         }
                                         None => {
                                             msg = Some(format!("tutor: 未知模块 {module_id}"));
@@ -2026,6 +2049,48 @@ fn run_with_initial_mode(
                         }
                     }
                 }
+                InputMode::TutorResetConfirm {
+                    module_id,
+                    from_list,
+                } => {
+                    if key.kind == KeyEventKind::Press {
+                        if matches!(
+                            key.code,
+                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter
+                        ) {
+                            let id = module_id.clone();
+                            let progress =
+                                crate::tutor::reset_module(crate::tutor::load_progress(), &id);
+                            state.tutor_progress = progress.clone();
+                            if let Err(e) = crate::tutor::save_progress_to(
+                                &crate::tutor::tutor_progress_path(),
+                                &progress,
+                            ) {
+                                msg = Some(format!("tutor 重置保存失败: {e}"));
+                            }
+                            if let Some(module) = crate::tutor::module_by_id(&id) {
+                                state.tutor = Some(crate::tutor::TutorSession {
+                                    module,
+                                    idx: 0,
+                                    marks: Vec::new(),
+                                    done: false,
+                                    review: false,
+                                });
+                            }
+                            mode = InputMode::Normal;
+                        } else {
+                            mode = if *from_list {
+                                InputMode::TutorList {
+                                    cursor: 0,
+                                    search: None,
+                                }
+                            } else {
+                                InputMode::Normal
+                            };
+                            msg = Some("已取消重置（未进入该模块）".to_owned());
+                        }
+                    }
+                }
                 InputMode::TutorList { cursor, search } => {
                     // M42-1：向导模式模块列表——j/k 选择、Enter/l 进入、
                     // Esc/q 关闭（覆盖层独立于当前目录/位置）。
@@ -2072,31 +2137,39 @@ fn run_with_initial_mode(
                                 // M42-2/M48-10：有记录模块只显示错题条目。
                                 let base = visible[i].clone();
                                 let progress = crate::tutor::load_progress();
-                                let (module, review) = match crate::tutor::wrong_items_only(
-                                    &progress,
-                                    &base.id,
-                                    &base.items,
-                                ) {
-                                    Some(items) => (
-                                        crate::tutor::TutorModule {
-                                            items,
-                                            ..base.clone()
-                                        },
-                                        true,
-                                    ),
-                                    None => (base, false),
-                                };
-                                state.tutor = Some(crate::tutor::TutorSession {
-                                    module,
-                                    idx: 0,
-                                    marks: Vec::new(),
-                                    done: false,
-                                    review,
-                                });
-                                // M45-8a：进入会话必须退出列表覆盖层，否则
-                                // render 先匹配 TutorList 全屏渲染，底部 Panel
-                                // 永不可见（用户实测 l/Enter 后列表不消失）。
-                                mode = InputMode::Normal;
+                                if tutor_module_is_complete(&progress, &base) {
+                                    // M56-8：已 100% → 先确认重置，取消则不进入。
+                                    mode = InputMode::TutorResetConfirm {
+                                        module_id: base.id.clone(),
+                                        from_list: true,
+                                    };
+                                } else {
+                                    let (module, review) = match crate::tutor::wrong_items_only(
+                                        &progress,
+                                        &base.id,
+                                        &base.items,
+                                    ) {
+                                        Some(items) => (
+                                            crate::tutor::TutorModule {
+                                                items,
+                                                ..base.clone()
+                                            },
+                                            true,
+                                        ),
+                                        None => (base, false),
+                                    };
+                                    state.tutor = Some(crate::tutor::TutorSession {
+                                        module,
+                                        idx: 0,
+                                        marks: Vec::new(),
+                                        done: false,
+                                        review,
+                                    });
+                                    // M45-8a：进入会话必须退出列表覆盖层，否则
+                                    // render 先匹配 TutorList 全屏渲染，底部 Panel
+                                    // 永不可见（用户实测 l/Enter 后列表不消失）。
+                                    mode = InputMode::Normal;
+                                }
                             }
                         }
                     }

@@ -21,6 +21,40 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
 }
 
 #[test]
+fn m568_complete_module_reset_confirmation() {
+    // M56-8：100% 模块判定 + 重入重置确认提示。
+    let base = crate::tutor::module_by_id("core_nav").unwrap();
+    let mut complete = crate::tutor::TutorProgress::new();
+    let mut mp = crate::tutor::ModuleProgress::default();
+    for item in &base.items {
+        mp.mastered.push(item.id.clone());
+    }
+    complete.insert(base.id.clone(), mp);
+    assert!(tutor_module_is_complete(&complete, &base));
+    let mut partial = crate::tutor::TutorProgress::new();
+    let mut mp2 = crate::tutor::ModuleProgress::default();
+    mp2.mastered.push(base.items[0].id.clone());
+    partial.insert(base.id.clone(), mp2);
+    assert!(!tutor_module_is_complete(&partial, &base));
+    let (_tmp, state) = make_state(2);
+    let mode = InputMode::TutorResetConfirm {
+        module_id: "core_nav".to_owned(),
+        from_list: true,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let all: String = (0..20)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    let compact: String = all.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("重置后将重新显示所有条目"), "{compact}");
+}
+
+#[test]
 fn m567_done_enter_returns_to_guide_list() {
     // M56-7：模块完成后 Enter = 继续学习其它模块；未完成时 Enter 仍放行。
     let base = crate::tutor::module_by_id("core_nav").unwrap();

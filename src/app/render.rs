@@ -1712,6 +1712,21 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
+    if let InputMode::TutorResetConfirm { module_id, .. } = mode {
+        // M56-8：100% 模块重入重置确认。
+        frame.render_widget(ratatui::widgets::Clear, frame.area());
+        let lines = vec![
+            Line::from("本模块已全部掌握，重置后将重新显示所有条目。是否重置？"),
+            Line::from(format!("模块：{module_id}")),
+            Line::from("y/Enter=重置并重新学习   n/Esc=取消"),
+        ];
+        let area = confirm_rect(frame.area(), lines.len());
+        frame.render_widget(
+            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("向导模块重置")),
+            area,
+        );
+        return;
+    }
     if let InputMode::TutorList { cursor, search } = mode {
         render_tutor_list(frame, state, *cursor, search.as_deref(), false);
         return;
@@ -2204,6 +2219,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     let status = match mode {
         InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
+        InputMode::TutorResetConfirm { .. } => {
+            Line::from(String::new()) // 确认框提前 return，不可达（M56-8）
+        }
         InputMode::JobDetail { .. } => {
             Line::from(String::new()) // 详情覆盖层提前 return，不可达（M28-3）
         }

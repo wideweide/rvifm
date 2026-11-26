@@ -790,7 +790,7 @@
 - [x] M56-5 `/` 搜索实时更新（见 SPEC M56-5）；2026-11-26 完成：TutorListSearch 复用列表渲染并带光标，键入即过滤/清空全显示，m565 通过
 - [x] M56-6 有记录模块仅显示错题且编号保持（见 SPEC M56-6）；2026-11-26 完成：`:tutor <id>` 改用 wrong_items_only，Panel 标题按 item id 回查原编号，m566 通过
 - [x] M56-7 模块完成 Enter=继续学习其它模块（见 SPEC M56-7）；2026-11-26 完成：tutor_hotkey 完成态 Enter→ExitToList + Panel 提示，m567 通过
-- [ ] M56-8 100% 模块重入确认重置（见 SPEC M56-8）
+- [x] M56-8 100% 模块重入确认重置（见 SPEC M56-8）；2026-11-26 完成：tutor_module_is_complete + TutorResetConfirm 覆盖层 + y/Enter 重置、n/Esc 取消，m568 通过
 - [ ] M56-9 进度跨版本兼容 + 稳定 ID（见 SPEC M56-9）
 - [ ] M56-10 向导条目 ↔ ACCEPTANCE 映射同步规则（见 SPEC M56-10）
 - [ ] M56-11 成就徽章（见 SPEC M56-11）
