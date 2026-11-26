@@ -228,12 +228,29 @@ pub fn tutor_progress_path() -> std::path::PathBuf {
     crate::config::data_dir().join("tutor_progress.toml")
 }
 
+/// M56-9：按稳定字符串 ID 清理进度——忽略当前版本中已移除/改名的条目，
+/// 保留其余进度；未知模块表保持原样（不丢其它数据），与 rvifm 版本解耦。
+pub fn prune_unknown_ids(progress: &mut TutorProgress) {
+    let modules = builtin_modules();
+    for (module_id, entry) in progress.iter_mut() {
+        let Some(module) = modules.iter().find(|m| &m.id == module_id) else {
+            continue;
+        };
+        let valid = |id: &String| module.items.iter().any(|item| &item.id == id);
+        entry.mastered.retain(valid);
+        entry.skipped.retain(valid);
+    }
+}
+
 /// 读取进度：缺失或损坏 → 全新进度（静默降级，SPEC M42 SIMPLIFIED）。
+/// M56-9：读入后立即按稳定 ID 清理未知/改名条目，避免旧版本进度污染新版本。
 pub fn load_progress_from(path: &std::path::Path) -> TutorProgress {
-    std::fs::read_to_string(path)
+    let mut progress: TutorProgress = std::fs::read_to_string(path)
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    prune_unknown_ids(&mut progress);
+    progress
 }
 
 /// 读取真实进度文件（run 循环用）。
@@ -342,6 +359,28 @@ pub fn wrong_items_only(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn m569_prune_unknown_ids_keeps_known_progress() {
+        // M56-9：未知/改名条目被忽略，其它模块的进度完整保留（与版本解耦）。
+        let mut progress = TutorProgress::new();
+        let core = module_by_id("core_nav").unwrap();
+        let mut mp = ModuleProgress::default();
+        mp.mastered.push(core.items[0].id.clone());
+        mp.mastered.push("renamed_or_removed_item".to_owned());
+        mp.skipped.push(core.items[1].id.clone());
+        progress.insert(core.id.clone(), mp);
+        let other = module_by_id("file_ops").unwrap();
+        let mut om = ModuleProgress::default();
+        om.mastered.push(other.items[0].id.clone());
+        progress.insert(other.id.clone(), om);
+        prune_unknown_ids(&mut progress);
+        let entry = &progress[&core.id];
+        assert_eq!(entry.mastered.len(), 1, "未知条目应被忽略");
+        assert_eq!(entry.mastered[0], core.items[0].id);
+        assert_eq!(entry.skipped.len(), 1);
+        assert_eq!(progress[&other.id].mastered.len(), 1, "其它进度不得丢失");
+    }
 
     /// 内嵌内容必须全部可解析且 id 唯一（内嵌内容为编译期事实，测试固化）。
     #[test]
