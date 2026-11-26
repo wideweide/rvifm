@@ -1500,6 +1500,12 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-26 — M58 命令补全边界翻转与 M59/M60 拆分确认
+
+- 用户确认推翻 M50「只读取命令名、不读参数/路径」的隐私边界：shell 历史**整行**作为补全候选并写入 frecency `cmd` topic；SPEC/GUIDE/help/源码注释已同步改写。
+- 用户确认 `rvifm cmd` 为独立只读入口（fzf Ctrl+R 同款），复用 `pick_interactive`，不写 redb、不推进 tick。
+- 用户确认 M59/M60 拆分登记：`r` 只清 bookmark/mark 保留条目与分数、`u` 连 keyword 恢复；frecency `Tab` 固定进/出预览；图片协议允许默认后台查询。
+
 ### 2026-11-26 — M56-10 向导条目 ↔ ACCEPTANCE 映射与同步规则
 
 > 机制：向导每个模块以稳定 `module_id` 对应一组 ACCEPTANCE 验收条目；条目以稳定 `item_id`

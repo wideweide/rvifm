@@ -806,4 +806,25 @@
 - [x] M58-6 多行外部命令预览（见 SPEC M58-6）；2026-11-26 完成：command_preview_lines + 顶部「外部命令预览」边框框，m586 通过
 - [x] M58-7 外部命令返回码提示（见 SPEC M58-7）；2026-11-26 完成：成功也回显「返回码 0」，m587 + m18_4 更新
 - [x] M58-8 `rvifm cmd` 外部入口（见 SPEC M58-8）；2026-11-26 完成：frecency::cmd_cmd 复用 pick_interactive（只读），main.rs 分派与 usage，cli 测试 14 项通过
-- [ ] M58-9 文档/验收同步 + 质量门禁（见 SPEC M58-9）
+- [x] M58-9 文档/验收同步 + 质量门禁（见 SPEC M58-9）；2026-11-26 完成：GUIDE/help/CHANGELOG/SPEC 隐私边界改写 + M59/M60 拆分登记，632 单测 + 14 集成 + 全门禁绿，未发版
+
+## M59 — 预览与归档 VFS 体验修复（2026-11-26 蒸馏，见 SPEC M59 节）
+
+- [ ] M59-1 预览同源审计与统一（见 SPEC M59-1）
+- [ ] M59-2 归档成员预览 j/k/Tab 导航（见 SPEC M59-2）
+- [ ] M59-3 归档成员预览语法高亮（见 SPEC M59-3）
+- [ ] M59-4 归档 l/Enter 走配置的 opener（见 SPEC M59-4）
+- [ ] M59-5 快速文本行数 = 视口+10（至少 36）（见 SPEC M59-5）
+- [ ] M59-6 卡顿与二进制闪现修复（见 SPEC M59-6）
+- [ ] M59-7 预览焦点蓝色边框高亮（见 SPEC M59-7）
+- [ ] M59-8 frecency Tab 固定进/出预览（见 SPEC M59-8）
+- [ ] M59-9 r/u 仅清/恢复 bookmark 且带确认（见 SPEC M59-9）
+- [ ] M59-10 文档/验收同步 + 门禁（见 SPEC M59-10）
+
+## M60 — 真异步预览架构（2026-11-26 蒸馏，见 SPEC M60 节）
+
+- [ ] M60-1 预览 worker + generation token + channel（见 SPEC M60-1）
+- [ ] M60-2 文本读取/高亮 off-thread + 缓存引用化（见 SPEC M60-2）
+- [ ] M60-3 图片解码 off-thread（见 SPEC M60-3）
+- [ ] M60-4 归档/Office/PDF 缓存未命中 off-thread（见 SPEC M60-4）
+- [ ] M60-5 性能验收 + 文档 + 门禁（见 SPEC M60-5）

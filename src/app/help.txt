@@ -170,8 +170,10 @@ rvifm 帮助（vim 风格文件管理器）
   ↑/↓（命令行内） 浏览已执行命令（frecency 排序跨会话持久，常用优先；
                   本会话未入库命令并入；Enter 执行，Esc 取消）
   Tab（命令行内） 补全：`:` 仅内部命令（名+描述+使用频率排序），`:!` 仅 shell 历史
-                   完整命令行；有空白时仍补文件路径。底部浮层 ≤40% 高、两列，
-                   Tab 循环、Enter 执行；[command] scan_shell_history 默认开。
+                   完整命令行；有空白时仍补文件路径。底部浮层尽量全显+滚动条、两列，
+                   输入实时过滤、Tab 循环自动滚动、Space 选定到输入栏、Enter 执行；
+                   外部命令整行（含参数）入库，多行命令顶部预览，返回码进状态栏；
+                   独立只读入口 rvifm cmd [query]；[command] scan_shell_history 默认开。
   ! 快捷入口      无默认键位；用户可在 [normal] append_keymap 绑定
                    open_external_command_line（预填 ! 进入命令行）。
   %d/%f/%F/%D     自定义命令变量；[command] quote_expansion=true 时自动加双引号

@@ -1902,6 +1902,38 @@ append_rules = [
 **OUT_OF_SCOPE**
 - 不引入 fzf 二进制；不修改 `record` 唯一写入红线；不 bump / tag / Release。
 
+## M59 — 预览与归档 VFS 体验修复（2026-11-26 蒸馏，用户已确认）
+
+> 用户确认：拆分登记；`r` 只清 bookmark/mark、保留条目与分数并可由 `u` 恢复；
+> frecency `Tab` 固定进/出预览；图片协议允许默认后台查询。沿用不发布口径。
+
+**MUST**
+- **M59-1 预览同源**：`rvifm pick` 改用 TUI 预览渲染链（保持只读）；锁定 frecency / `w`/`:view` / 归档成员同源测试。
+- **M59-2 归档预览导航**：archive 成员的 `w` 预览 j/k 可滚动、`Tab` 可进/出预览（修 `activate_viewer` 对 archive 取 `preview_path()=None` 导致 `line_count=0`）。
+- **M59-3 归档预览高亮**：确认临时副本保留成员扩展名，语法高亮与常规文本一致。
+- **M59-4 归档 opener**：归档成员 `l`/Enter 改走 `opener::open_with_layers`（现为 `system_open`，绕过 `[opener]`/`[open]` 规则）。
+- **M59-5 快速预览行数**：`max(36, 视口可见行+10)`，保证充满预览区。
+- **M59-6 卡顿与二进制闪现**：渲染 committed `viewer.path`；缓存命中零克隆；按视口读取/高亮；复用 Highlighter。
+- **M59-7 预览焦点视觉**：预览获焦时蓝色边框（沿用 theme `focused_border`）+ 明显高亮。
+- **M59-8 frecency Tab**：`Tab` 固定进/出预览；左右栏切换改由其它键承担（用户确认保留 Tab 进预览）。
+- **M59-9 r/u 语义**：`r` 仅清 keyword/mark（保留条目与分数），带确认；`u` 连 keyword 一起恢复；不新增 redb 写入口。
+- **M59-10 文档与验收**：GUIDE/help/SPEC/ACCEPTANCE/STATE/PLAN/NOTES 同步 + 质量门禁。
+
+**OUT_OF_SCOPE**：不写归档内成员；`pick` 不写 redb；不 bump / tag / Release。
+
+## M60 — 真异步预览架构（2026-11-26 蒸馏，用户已确认）
+
+> 依赖 M59；generation token 同时解决快速导航中间态与图片加载卡顿。
+
+**MUST**
+- **M60-1** `preview_tx/rx` + `preview_generation` 后台 worker，事件循环只接受 generation 匹配的结果。
+- **M60-2** 文本读取/切行/高亮移入 worker；缓存改引用/Cow，消除整文件克隆。
+- **M60-3** 图片解码移入 worker（UI 线程只做协议编码）；快速切换不渲染中间图片。
+- **M60-4** 归档列目录、Office、PDF 缓存未命中移入 worker。
+- **M60-5** 性能验收 + 文档 + 门禁；不 bump / tag / Release。
+
+**SIMPLIFIED**：不新增异步运行时，复用 `std::thread` + `mpsc`（与 git/jobs 同源）。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
