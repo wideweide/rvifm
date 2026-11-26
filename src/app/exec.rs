@@ -168,7 +168,8 @@ pub(crate) fn run_external_current_result(
     result: std::io::Result<std::process::ExitStatus>,
 ) -> Option<String> {
     match result {
-        Ok(st) if st.success() => None,
+        // M58-7：成功也回显返回码，便于判断是否真的执行成功。
+        Ok(st) if st.success() => Some("命令完成（返回码 0）".to_owned()),
         Ok(st) => Some(format!(
             "命令退出码: {}",
             st.code()

@@ -849,6 +849,11 @@ pub(crate) fn command_completion_rect(
     }
 }
 
+/// M58-6：多行外部命令预览行（仅含换行的候选才显示）。纯函数便于测试。
+pub(crate) fn command_preview_lines(candidate: &str) -> Vec<String> {
+    candidate.lines().map(str::to_owned).collect()
+}
+
 /// M58-4：选中索引对应的视口首行（自动滚动使其可见）。纯函数便于测试。
 pub(crate) fn completion_offset(index: usize, total: usize, visible: usize) -> usize {
     index
@@ -2503,6 +2508,32 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     } = mode
         && !comp.candidates.is_empty()
     {
+        // M58-6：多行外部命令在顶部预览（不截断为单行）。
+        if let Some(candidate) = comp.candidates.get(comp.index) {
+            let preview_lines = command_preview_lines(candidate);
+            if preview_lines.len() > 1 {
+                let h = (preview_lines.len() + 2)
+                    .min(frame.area().height.saturating_sub(4) as usize)
+                    .max(3) as u16;
+                let preview = ratatui::layout::Rect {
+                    x: frame.area().x,
+                    y: frame.area().y.saturating_add(1),
+                    width: frame.area().width,
+                    height: h,
+                };
+                frame.render_widget(ratatui::widgets::Clear, preview);
+                frame.render_widget(
+                    Paragraph::new(
+                        preview_lines
+                            .into_iter()
+                            .map(Line::from)
+                            .collect::<Vec<_>>(),
+                    )
+                    .block(ratatui::widgets::Block::bordered().title("外部命令预览（Tab 选定）")),
+                    preview,
+                );
+            }
+        }
         let rect = command_completion_rect(frame.area(), comp.candidates.len());
         frame.render_widget(ratatui::widgets::Clear, rect);
         let visible = rect.height.saturating_sub(2) as usize;

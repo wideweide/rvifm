@@ -2727,6 +2727,33 @@ fn m583_space_accept_keeps_command_head() {
 }
 
 #[test]
+fn m586_multiline_command_preview_lines() {
+    // M58-6：多行候选拆成完整预览行；单行候选不产生预览。
+    assert_eq!(
+        command_preview_lines("for f in *\ndo echo $f\ndone"),
+        vec!["for f in *", "do echo $f", "done"]
+    );
+    assert_eq!(command_preview_lines("ls -la").len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn m587_external_success_reports_return_code() {
+    // M58-7：成功与失败均在状态栏显示返回码。
+    let ok = std::process::Command::new("true").status().unwrap();
+    assert_eq!(
+        crate::app::exec::run_external_current_result(Ok(ok)).as_deref(),
+        Some("命令完成（返回码 0）")
+    );
+    let bad = std::process::Command::new("false").status().unwrap();
+    assert!(
+        crate::app::exec::run_external_current_result(Ok(bad))
+            .as_deref()
+            .is_some_and(|m| m.contains("退出码"))
+    );
+}
+
+#[test]
 fn m584_completion_offset_follows_selection() {
     // M58-4：循环到不可见项时视口滚动使其可见；索引与描述同源不漂移。
     assert_eq!(completion_offset(2, 10, 5), 0);
@@ -10333,7 +10360,12 @@ fn m18_4_bang_routes_and_config() {
             .args(["-c", "exit 0"])
             .status()
     };
-    assert!(run_external_current_result(ok).is_none());
+    // M58-7：成功也回显返回码（旧行为 None 已变更）。
+    assert!(
+        run_external_current_result(ok)
+            .unwrap()
+            .contains("返回码 0")
+    );
     let bad = std::process::Command::new("rvifm-nonexistent-cmd-xyz").status();
     assert!(run_external_current_result(bad).unwrap().contains("失败"));
     // 路由判定不依赖宿主变量（AUDIT-14）：只注入会短路到 CurrentPane 的
