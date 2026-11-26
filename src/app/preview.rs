@@ -98,17 +98,19 @@ pub(crate) fn render_view_path(
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
         // M60-3：UI 线程不再解码——后台解码完成后只做协议编码；未就绪先提示。
-        if let Some((cached_path, img)) = state.decoded_preview.as_ref() {
-            if cached_path == &path {
-                if state
-                    .image_engine
-                    .render_dynamic(frame, inner, img.clone())
-                    .is_err()
-                {
-                    frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
-                }
-                return;
+        if let Some((_, img)) = state
+            .decoded_preview
+            .as_ref()
+            .filter(|(cached, _)| cached == &path)
+        {
+            if state
+                .image_engine
+                .render_dynamic(frame, inner, img.clone())
+                .is_err()
+            {
+                frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
             }
+            return;
         }
         frame.render_widget(Paragraph::new("图片解码中…（后台加载）"), inner);
         return;

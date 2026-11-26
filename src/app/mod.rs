@@ -817,10 +817,11 @@ fn run_with_initial_mode(
                 .pane_frecency
                 .as_ref()
                 .is_some_and(|p| p.preview_focus);
-        if focus && let Some(path) = state.active_tab().preview_target() {
-            if crate::preview::preview_kind(&path) == crate::preview::PreviewKind::Image {
-                state.ensure_image_preview(&path);
-            }
+        if focus
+            && let Some(path) = state.active_tab().preview_target()
+            && crate::preview::preview_kind(&path) == crate::preview::PreviewKind::Image
+        {
+            state.ensure_image_preview(&path);
         }
         // M53-3：归档成员预览——光标变化时解出临时只读副本（按 key 缓存）。
         {
