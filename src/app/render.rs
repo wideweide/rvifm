@@ -642,11 +642,10 @@ pub(crate) fn tutor_overall_progress(
             done_modules += 1;
         }
     }
-    let pct = if total_items == 0 {
-        0
-    } else {
-        mastered_items * 100 / total_items
-    };
+    let pct = mastered_items
+        .saturating_mul(100)
+        .checked_div(total_items)
+        .unwrap_or(0);
     (
         done_modules,
         modules.len(),
