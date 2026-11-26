@@ -2784,6 +2784,106 @@ fn zkey2_hidden_file_toggle_actions() {
 }
 
 #[test]
+fn m552_live_find_streams_and_respects_depth_guard() {
+    // M55-2：后台流式扫描 + ignore 语义 + 深度 20 护栏（不写 redb）。
+    let tmp = TempDir::new().unwrap();
+    // tempfile 根目录名以 `.` 开头，ignore walker 会跳过——用非隐藏子目录作 root。
+    let root = tmp.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("a.txt"), "").unwrap();
+    fs::write(root.join("b.md"), "").unwrap();
+    let mut deep = root.clone();
+    for i in 0..25 {
+        deep.push(format!("d{i}"));
+    }
+    fs::create_dir_all(&deep).unwrap();
+    fs::write(deep.join("deep.txt"), "").unwrap();
+    let mut lf = crate::state::LiveFindState::new(root, false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while lf.scanning && std::time::Instant::now() < deadline {
+        lf.drain(64);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(!lf.scanning, "扫描应完成");
+    assert!(lf.all.iter().any(|i| i.path.ends_with("a.txt")));
+    assert!(lf.all.iter().any(|i| i.path.ends_with("b.md")));
+    assert!(
+        !lf.all.iter().any(|i| i.path.ends_with("deep.txt")),
+        "深度 > 20 的条目应被护栏跳过"
+    );
+    lf.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[test]
+fn m553_live_find_input_filter_move_and_enter_jump() {
+    // M55-3：j/k 是输入字符，↑↓ 移动；实时子串过滤；Enter 跳转走 record。
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    for name in ["a.txt", "ab.txt", "b.md"] {
+        fs::write(root.join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(&root, Config::default()).unwrap());
+    let mut lf = crate::state::LiveFindState::new(root, false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while lf.scanning && std::time::Instant::now() < deadline {
+        lf.drain(64);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    state.live_find = Some(lf);
+    let mut msg = None;
+    let key = |code: KeyCode, mods: KeyModifiers| KeyEvent::new(code, mods);
+    let none = KeyModifiers::NONE;
+    // 输入 a → 命中 2 项。
+    assert!(!live_find_key(
+        &mut state,
+        &mut msg,
+        key(KeyCode::Char('a'), none)
+    ));
+    assert_eq!(state.live_find.as_ref().unwrap().query, "a");
+    assert_eq!(state.live_find.as_ref().unwrap().filtered.len(), 2);
+    // j/k 是输入字符（aj 无命中），不是移动。
+    assert!(!live_find_key(
+        &mut state,
+        &mut msg,
+        key(KeyCode::Char('j'), none)
+    ));
+    assert_eq!(state.live_find.as_ref().unwrap().query, "aj");
+    assert!(state.live_find.as_ref().unwrap().filtered.is_empty());
+    assert!(!live_find_key(
+        &mut state,
+        &mut msg,
+        key(KeyCode::Backspace, none)
+    ));
+    assert_eq!(state.live_find.as_ref().unwrap().filtered.len(), 2);
+    // ↑↓ 移动光标（j/k 之外的导航键）。
+    assert!(!live_find_key(
+        &mut state,
+        &mut msg,
+        key(KeyCode::Down, none)
+    ));
+    assert_eq!(state.live_find.as_ref().unwrap().cursor, 1);
+    assert!(!live_find_key(&mut state, &mut msg, key(KeyCode::Up, none)));
+    assert_eq!(state.live_find.as_ref().unwrap().cursor, 0);
+    // Enter 跳转到选中项，并计入 live_recorded（record 唯一写入入口的记账）。
+    assert!(live_find_key(
+        &mut state,
+        &mut msg,
+        key(KeyCode::Enter, none)
+    ));
+    // 测试直接调用 handler；事件循环收到 true 后 take + stop（此处模拟）。
+    if let Some(lf) = state.live_find.take() {
+        lf.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    assert!(state.live_find.is_none(), "跳转后应退出实时模式");
+    assert!(!state.live_recorded.is_empty(), "跳转应登记一次真实访问");
+    assert!(
+        msg.as_deref().is_some_and(|m| m.contains("定位")),
+        "{msg:?}"
+    );
+}
+
+#[test]
 fn m551_search_input_line_has_border_and_caret() {
     // M55-1：Search 态有边框输入框 + 可见光标 + 明确 j/k 为输入；Normal 态无文本框。
     let tmp = TempDir::new().unwrap();

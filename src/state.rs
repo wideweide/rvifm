@@ -385,6 +385,8 @@ pub struct AppState {
     pub history_commands: Vec<String>,
     /// M54 ZKEY-3：zR 保存的会话内过滤器快照（不写配置、退出不保留）。
     pub filter_snapshot: Option<crate::state::FilterSnapshot>,
+    /// M55-2：`O` 实时递归查找会话（仅内存，退出即丢弃）。
+    pub live_find: Option<crate::state::LiveFindState>,
     /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
     pub text_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
@@ -446,6 +448,102 @@ pub struct FilterSnapshot {
     pub right: Vec<Option<String>>,
 }
 
+/// M55-2/3：实时递归查找会话（仅内存；后台流式扫描 + 增量子串过滤）。
+#[derive(Debug)]
+pub struct LiveFindState {
+    pub root: PathBuf,
+    pub query: String,
+    /// 已扫描到的全部文件（按到达顺序）。
+    pub all: Vec<crate::search::ResultItem>,
+    /// 当前 query 命中的 `all` 下标。
+    pub filtered: Vec<usize>,
+    pub cursor: usize,
+    pub scanning: bool,
+    pub truncated: bool,
+    /// 退出时置位，后台线程据此停止遍历。
+    pub stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub rx: std::sync::mpsc::Receiver<crate::search::LiveFindUpdate>,
+}
+
+impl LiveFindState {
+    /// 启动后台扫描（复用 `:find` 的 ignore 语义），初始 query 为空 = 全部文件。
+    pub fn new(root: PathBuf, show_hidden: bool) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        crate::search::spawn_live_find(tx, root.clone(), show_hidden, stop.clone());
+        Self {
+            root,
+            query: String::new(),
+            all: Vec::new(),
+            filtered: Vec::new(),
+            cursor: 0,
+            scanning: true,
+            truncated: false,
+            stop,
+            rx,
+        }
+    }
+
+    /// 大小写不敏感子串匹配（多词 AND；不做模糊评分/正则）。
+    fn matches(item: &crate::search::ResultItem, query: &str) -> bool {
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|t| t.to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect();
+        if terms.is_empty() {
+            return true;
+        }
+        let hay = item.path.to_string_lossy().to_lowercase();
+        terms.iter().all(|t| hay.contains(t))
+    }
+
+    /// query 变更时从全量重建命中下标。
+    pub fn refilter(&mut self) {
+        self.filtered = self
+            .all
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| Self::matches(item, &self.query).then_some(i))
+            .collect();
+        self.cursor = self.cursor.min(self.filtered.len().saturating_sub(1));
+    }
+
+    /// 每帧抽干至多 `limit` 条扫描更新；新条目只追加命中项（增量过滤）。
+    pub fn drain(&mut self, limit: usize) {
+        let mut got = 0;
+        while got < limit {
+            match self.rx.try_recv() {
+                Ok(crate::search::LiveFindUpdate::Entry(item)) => {
+                    let hit = Self::matches(&item, &self.query);
+                    self.all.push(item);
+                    if hit {
+                        self.filtered.push(self.all.len() - 1);
+                    }
+                    got += 1;
+                }
+                Ok(crate::search::LiveFindUpdate::Done { truncated }) => {
+                    self.scanning = false;
+                    self.truncated = truncated;
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.scanning = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// 当前命中的条目（若列表非空）。
+    pub fn selected(&self) -> Option<&crate::search::ResultItem> {
+        self.filtered
+            .get(self.cursor)
+            .and_then(|i| self.all.get(*i))
+    }
+}
+
 impl AppState {
     /// 以一个初始标签启动。
     pub fn new(initial: Tab) -> Self {
@@ -473,6 +571,7 @@ impl AppState {
             transfer_queue: Vec::new(),
             history_commands: Vec::new(),
             filter_snapshot: None,
+            live_find: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,

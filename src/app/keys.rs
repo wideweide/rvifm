@@ -506,6 +506,81 @@ fn frecency_preview_match_lines(pane: &crate::tab::FrecencyPane) -> Vec<usize> {
         .collect()
 }
 
+/// M55-2/3：实时递归查找按键处理。返回 true 表示退出该模式。
+/// j/k 是输入字符（与搜索态一致），↑↓/Ctrl+J/K 才是移动；Esc 取消，Enter 跳转。
+pub(crate) fn live_find_key(state: &mut AppState, msg: &mut Option<String>, key: KeyEvent) -> bool {
+    if key.kind != KeyEventKind::Press {
+        return false;
+    }
+    let Some(lf) = state.live_find.as_mut() else {
+        return true;
+    };
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    match key.code {
+        KeyCode::Esc => {
+            *msg = None;
+            return true;
+        }
+        KeyCode::Backspace => {
+            lf.query.pop();
+            lf.cursor = 0;
+            lf.refilter();
+            return false;
+        }
+        KeyCode::Down | KeyCode::Char('j') if ctrl => {
+            lf.cursor = (lf.cursor + 1).min(lf.filtered.len().saturating_sub(1));
+            return false;
+        }
+        KeyCode::Up | KeyCode::Char('k') if ctrl => {
+            lf.cursor = lf.cursor.saturating_sub(1);
+            return false;
+        }
+        KeyCode::Down => {
+            lf.cursor = (lf.cursor + 1).min(lf.filtered.len().saturating_sub(1));
+            return false;
+        }
+        KeyCode::Up => {
+            lf.cursor = lf.cursor.saturating_sub(1);
+            return false;
+        }
+        KeyCode::Enter => {
+            let Some(item) = lf.selected().cloned() else {
+                *msg = Some("无匹配条目".to_owned());
+                return false;
+            };
+            let entry = crate::frecency::ScoredEntry {
+                path: item.path.to_string_lossy().replace('\\', "/"),
+                topic: "file".to_owned(),
+                keyword: String::new(),
+                score: 0.0,
+                grade: crate::frecency::Grade::None,
+                last_visit: 0,
+            };
+            let side = if state.active_tab().focus == crate::tab::Focus::Right {
+                'R'
+            } else {
+                'L'
+            };
+            *msg = Some(match crate::app::exec::jump_to(state, &entry) {
+                Ok(m) => m,
+                Err(e) => e,
+            });
+            // M55-3：真实跳转后走 record 唯一写入入口（仅内存记账，退出批量刷写）。
+            crate::app::exec::record_live_visit(state, state.active, side);
+            return true;
+        }
+        KeyCode::Char(c) if !ctrl && !alt => {
+            lf.query.push(c);
+            lf.cursor = 0;
+            lf.refilter();
+            return false;
+        }
+        _ => {}
+    }
+    false
+}
+
 pub(crate) fn frec_pane_key(
     state: &mut AppState,
     _input: &mut InputState,
@@ -833,6 +908,30 @@ pub(crate) fn handle_key(
     // M23-6：Frecency Pane 模式——全部键路由到 pane 键处理。
     if state.active_tab().pane_frecency.is_some() {
         return frec_pane_key(state, input, msg, key);
+    }
+    // M55-2：`O` 进入实时递归查找（仅 Normal 模式、本地目录；两键序列不冲突）。
+    if key.kind == KeyEventKind::Press
+        && key.code == KeyCode::Char('O')
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
+        && !key.modifiers.contains(KeyModifiers::ALT)
+        && input.seq.is_empty()
+        && state.active_tab().visual.is_none()
+    {
+        input.count = None;
+        match state.active_tab().focused_location() {
+            crate::tab::Location::Physical(root) => {
+                let root = root.clone();
+                state.live_find = Some(crate::state::LiveFindState::new(
+                    root,
+                    state.config.show_hidden,
+                ));
+                return Outcome::EnterLiveFind;
+            }
+            _ => {
+                *msg = Some("实时递归查找仅支持本地目录".to_owned());
+                return Outcome::Continue;
+            }
+        }
     }
     // FIX-7：普通模式左右 pane 共用完整 Action 分发。短暂将右 pane 的
     // Location/entries/cursor/scroll/父行投影到活动列表字段，执行同一分发器，

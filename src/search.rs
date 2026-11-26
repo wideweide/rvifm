@@ -46,6 +46,66 @@ pub enum SearchKind {
 /// 结果上限（与 :tree 的 1 万条上限同模式）。
 pub const MAX_RESULTS: usize = 10_000;
 
+/// M55-2：实时递归模式（`O`）的护栏——深度 20、条目 5 万。
+pub const LIVE_FIND_MAX_DEPTH: usize = 20;
+pub const LIVE_FIND_MAX_ENTRIES: usize = 50_000;
+
+/// M55-2：后台流式扫描回传（逐条产出，不写盘、不改 frecency tick）。
+#[derive(Debug)]
+pub enum LiveFindUpdate {
+    Entry(ResultItem),
+    Done { truncated: bool },
+}
+
+/// M55-2：后台线程扫描 root，逐条 `send`；`stop` 置位即中止（用户退出）。
+/// 复用 `:find` 的 ignore 语义（gitignore/.ignore、隐藏文件按配置），
+/// 仅收文件；深度/条目护栏见常量，超限以 `Done { truncated: true }` 结束。
+pub fn spawn_live_find(
+    tx: std::sync::mpsc::Sender<LiveFindUpdate>,
+    root: PathBuf,
+    show_hidden: bool,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        let mut count = 0usize;
+        let mut builder = ignore::WalkBuilder::new(&root);
+        builder
+            .hidden(!show_hidden)
+            .max_depth(Some(LIVE_FIND_MAX_DEPTH));
+        for result in builder.build() {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let Ok(entry) = result else { continue };
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.path().to_path_buf();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if tx
+                .send(LiveFindUpdate::Entry(ResultItem {
+                    path,
+                    line: None,
+                    text: name,
+                    size: 0,
+                }))
+                .is_err()
+            {
+                break;
+            }
+            count += 1;
+            if count >= LIVE_FIND_MAX_ENTRIES {
+                let _ = tx.send(LiveFindUpdate::Done { truncated: true });
+                return;
+            }
+        }
+        let _ = tx.send(LiveFindUpdate::Done { truncated: false });
+    });
+}
+
 /// 构造遍历器：gitignore/.ignore 感知，隐藏文件按配置。
 fn walker(root: &Path, show_hidden: bool) -> ignore::Walk {
     ignore::WalkBuilder::new(root).hidden(!show_hidden).build()

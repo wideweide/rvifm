@@ -134,6 +134,8 @@ pub(crate) enum Outcome {
     EnterSearch,
     /// 请求进入过滤输入模式（`=`，M4-2）。
     EnterFilter,
+    /// M55-2：请求进入实时递归查找（`O`；会话已在 handle_key 中启动）。
+    EnterLiveFind,
     /// 请求进入查看器搜索输入（M17 VIEW-1：查看器内 `/`）。
     EnterViewerSearch,
     /// 请求打开排序对话框（M18-1：`S`）。
@@ -191,6 +193,8 @@ const CMD_RANKED_LIMIT: usize = 100;
 pub(crate) enum InputMode {
     #[default]
     Normal,
+    /// M55-2：`O` 实时递归查找（输入实时过滤，j/k 为输入字符，↑↓ 移动）。
+    LiveFind,
     /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
     /// 与进入历史前保存的草稿输入（↓ 越过最新条目时恢复）；M24-7 增 Tab
     /// 补全状态（None = 无进行中的补全）。
@@ -334,7 +338,8 @@ pub(crate) fn ime_periodic_due(
 fn ime_editable_mode(mode: &InputMode) -> bool {
     matches!(
         mode,
-        InputMode::Command { .. }
+        InputMode::LiveFind
+            | InputMode::Command { .. }
             | InputMode::Search { .. }
             | InputMode::Filter { .. }
             | InputMode::HelpSearch { .. }
@@ -878,6 +883,10 @@ fn run_with_initial_mode(
             state.git_cache.insert(dir, res.ok());
         }
         crate::git::sync_status_trigger(&mut state);
+        // M55-2：抽干实时递归扫描结果（每帧限量，避免大量条目阻塞绘制）。
+        if let Some(lf) = state.live_find.as_mut() {
+            lf.drain(256);
+        }
         // AUDIT-6：待决序列超时——poll 预算按截止时刻收缩；到期清空 seq
         // （下一次按键按全新序列解析，不被旧前缀吞掉）。
         let now = std::time::Instant::now();
@@ -1662,6 +1671,15 @@ fn run_with_initial_mode(
                         }
                     }
                 }
+                InputMode::LiveFind => {
+                    // M55-2/3：实时递归查找——按键由专用 handler 处理；返回 true 表示退出。
+                    if crate::app::keys::live_find_key(&mut state, &mut msg, key) {
+                        if let Some(lf) = state.live_find.take() {
+                            lf.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        mode = InputMode::Normal;
+                    }
+                }
                 InputMode::Normal => {
                     // M47-6：Normal 模式 Esc 防御性切英文（比依赖模式边界可靠）。
                     // 仅捕获"按键前已是 Normal"的场景，文本输入模式按 Esc 返回
@@ -1724,6 +1742,9 @@ fn run_with_initial_mode(
                             mode = InputMode::Filter {
                                 input: String::new(),
                             };
+                        }
+                        Outcome::EnterLiveFind => {
+                            mode = InputMode::LiveFind;
                         }
                         Outcome::EnterViewerSearch => {
                             mode = InputMode::ViewerSearch {

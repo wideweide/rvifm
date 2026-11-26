@@ -875,6 +875,118 @@ pub(crate) fn highlight_query_spans(value: &str, query: &str) -> Vec<Span<'stati
     spans
 }
 
+/// M55-1/3：单行带边框输入框 + 可见光标 + 右侧提示（frecency 搜索与实时递归共用）。
+fn render_input_line(frame: &mut Frame, area: ratatui::layout::Rect, query: &str, hint: String) {
+    frame.render_widget(ratatui::widgets::Clear, area);
+    if area.width < 12 {
+        frame.render_widget(Paragraph::new(hint), area);
+        return;
+    }
+    let hint_w = (hint.chars().count() as u16).min(area.width / 2);
+    let input_w = area.width.saturating_sub(hint_w).max(12).min(area.width);
+    let input_area = ratatui::layout::Rect {
+        x: area.x,
+        y: area.y,
+        width: input_w,
+        height: area.height,
+    };
+    let hint_area = ratatui::layout::Rect {
+        x: area.x.saturating_add(input_w),
+        y: area.y,
+        width: area.width.saturating_sub(input_w),
+        height: area.height,
+    };
+    let block = ratatui::widgets::Block::new()
+        .borders(ratatui::widgets::Borders::LEFT | ratatui::widgets::Borders::RIGHT)
+        .border_style(pane_border_style(true));
+    let spans = vec![
+        Span::styled("/", Style::new().fg(Color::LightYellow)),
+        Span::from(query.to_owned()),
+        Span::styled(
+            "▋",
+            Style::new()
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    frame.render_widget(Paragraph::new(Line::from(spans)).block(block), input_area);
+    if hint_area.width > 0 {
+        frame.render_widget(Paragraph::new(hint), hint_area);
+    }
+}
+
+/// M55-2：`O` 实时递归查找渲染——复用 frecency 的列表几何/图标/高亮，
+/// 状态栏带边框输入框与 scanning 计数。
+pub(crate) fn render_live_find(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
+    let Some(lf) = state.live_find.as_ref() else {
+        return;
+    };
+    let [tab_bar_area, main, _right, status_area] =
+        pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
+    let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
+    frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
+    let [topline, inner] =
+        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(main);
+    frame.render_widget(ratatui::widgets::Clear, topline);
+    let title = if lf.scanning {
+        format!(
+            "实时递归查找  /{}  [scanning {} 项{}]",
+            lf.query,
+            lf.all.len(),
+            if lf.truncated { "，已截断" } else { "" }
+        )
+    } else {
+        format!(
+            "实时递归查找  /{}  [{} 项{}]",
+            lf.query,
+            lf.filtered.len(),
+            if lf.truncated { "，已截断" } else { "" }
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(title).style(pane_border_style(true).add_modifier(Modifier::BOLD)),
+        topline,
+    );
+    let items: Vec<ListItem> = lf
+        .filtered
+        .iter()
+        .enumerate()
+        .map(|(idx, i)| {
+            let item = &lf.all[*i];
+            let icon = crate::icons::icon_for_active(&item.path);
+            let mut spans = vec![
+                Span::from(LIST_LEADING_BLANK),
+                Span::from(format!("{} ", icon.glyph)),
+            ];
+            spans.extend(highlight_query_spans(
+                &item.path.to_string_lossy().replace('\\', "/"),
+                &lf.query,
+            ));
+            ListItem::new(Line::from(spans)).style(if idx == lf.cursor {
+                Style::new().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::new()
+            })
+        })
+        .collect();
+    let offset = frecency_list_offset(lf.cursor, inner.height as usize);
+    let mut list_state = ListState::default()
+        .with_selected(Some(lf.cursor))
+        .with_offset(offset);
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        inner,
+        &mut list_state,
+    );
+    let hint = format!(
+        "↑↓/Ctrl+J/K=移动（j/k 为输入） Enter=跳转 Esc=退出  匹配 {}/{} 项{}",
+        lf.filtered.len(),
+        lf.all.len(),
+        msg.map(|m| format!("  {m}")).unwrap_or_default()
+    );
+    render_input_line(frame, status_area, &lf.query, hint);
+}
+
 /// M23-6：Frecency Pane 渲染——焦点 pane 显示搜索+结果，对侧显示光标
 /// 条目的快速预览（PreviewRenderer，文本 100 行截断 + 标记）。
 pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
@@ -984,47 +1096,21 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             visible.len()
         );
         frame.render_widget(Paragraph::new(hint), status_area);
-    } else if status_area.width >= 12 {
+    } else {
         let hint = format!(
             " ↑↓/Ctrl+J/K=移动（j/k 为输入） Enter=跳转 Esc=Normal（{} 项）",
             visible.len()
         );
-        let hint_w = (hint.chars().count() as u16).min(status_area.width / 2);
-        let input_w = status_area.width.saturating_sub(hint_w).max(12);
-        let input_area = ratatui::layout::Rect {
-            x: status_area.x,
-            y: status_area.y,
-            width: input_w.min(status_area.width),
-            height: status_area.height,
-        };
-        let hint_area = ratatui::layout::Rect {
-            x: status_area.x.saturating_add(input_area.width),
-            y: status_area.y,
-            width: status_area.width.saturating_sub(input_area.width),
-            height: status_area.height,
-        };
-        let block = ratatui::widgets::Block::new()
-            .borders(ratatui::widgets::Borders::LEFT | ratatui::widgets::Borders::RIGHT)
-            .border_style(pane_border_style(true));
-        let caret = Span::styled(
-            "▋",
-            Style::new()
-                .fg(Color::LightYellow)
-                .add_modifier(Modifier::BOLD),
-        );
-        let spans = vec![
-            Span::styled("/", Style::new().fg(Color::LightYellow)),
-            Span::from(pane.query.clone()),
-            caret,
-        ];
-        frame.render_widget(Paragraph::new(Line::from(spans)).block(block), input_area);
-        if hint_area.width > 0 {
-            frame.render_widget(Paragraph::new(hint), hint_area);
-        }
+        render_input_line(frame, status_area, &pane.query, hint);
     }
 }
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
+    // M55-2：`O` 实时递归查找覆盖整屏（与目录列表共用几何/图标/主题）。
+    if matches!(mode, InputMode::LiveFind) && state.live_find.is_some() {
+        render_live_find(frame, state, msg);
+        return;
+    }
     let tab = state.active_tab();
     // M14-2：标签栏（1 行）——M39-6：命名标签 + 溢出滚动（共享 spans）。
     let layout = state.config.ui.layout();
@@ -2026,6 +2112,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         }
     }
     let status = match mode {
+        InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
         InputMode::JobDetail { .. } => {
             Line::from(String::new()) // 详情覆盖层提前 return，不可达（M28-3）
         }
