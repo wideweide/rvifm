@@ -365,6 +365,32 @@ fn rank_progress(
 }
 
 #[test]
+fn m674_sandbox_visits_are_not_recorded() {
+    // M67-4：沙箱内的真实练习不写 frecency 记账（撤销栈不受影响）。
+    let mut state =
+        AppState::new(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
+    let (left, _) = crate::tutor::ensure_sandbox().unwrap();
+    state.active_tab_mut().location = Location::Physical(left);
+    crate::app::exec::record_live_visit(&mut state, 0, 'L');
+    assert!(state.live_recorded.is_empty());
+}
+
+#[test]
+fn m673_tutor_entry_locations_sandbox() {
+    // M67-3：进入向导会话后左右栏定位到沙箱目录，焦点回左。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    enter_tutor_sandbox(&mut state);
+    let tab = state.active_tab();
+    assert_eq!(tab.focus, crate::tab::Focus::Left);
+    assert!(matches!(&tab.location, Location::Physical(p) if p.ends_with("rvifm-tutor/left")));
+    assert!(
+        matches!(&tab.right.location, Location::Physical(p) if p.ends_with("rvifm-tutor/right"))
+    );
+}
+
+#[test]
 fn m641_tutor_cultivation_ranks() {
     use crate::app::render::tutor_rank;
     assert_eq!(tutor_rank(&rank_progress(0, false, false)).name, "入门");

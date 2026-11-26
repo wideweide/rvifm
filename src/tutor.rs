@@ -10,6 +10,7 @@
 //! `:tutor reset <module_id>` 清空。
 
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 /// 模块内单个自验/学习条目。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +133,53 @@ const BUILTIN_TUTOR_MODULES: &[(&str, &str)] = &[
         include_str!("../assets/tutor/remote_sftp.toml"),
     ),
 ];
+
+/// M67-1：向导沙箱根目录（跨平台，Windows 走 `%TEMP%`）。
+pub fn sandbox_root() -> PathBuf {
+    std::env::temp_dir().join("rvifm-tutor")
+}
+
+/// M67-4：沙箱路径判定（纯函数部分，供 frecency 排除与会话恢复守卫）。
+pub fn is_sandbox_path(path: &Path) -> bool {
+    path.starts_with(sandbox_root())
+}
+
+/// M67-1/2：创建沙箱左右目录与样例文件；已存在的内容不覆盖。
+pub fn ensure_sandbox() -> std::io::Result<(PathBuf, PathBuf)> {
+    let root = sandbox_root();
+    let left = root.join("left");
+    let right = root.join("right");
+    std::fs::create_dir_all(&left)?;
+    std::fs::create_dir_all(&right)?;
+    let samples: &[(&Path, &str)] = &[
+        (
+            &left.join("notes.txt"),
+            "rvifm 向导沙箱：可安全练习 j/k、yy、p、dd。\n",
+        ),
+        (
+            &left.join("readme.md"),
+            "# 练习用 Markdown\n\n- 真实操作\n- 可用 u 撤销\n",
+        ),
+        (
+            &left.join("data.json"),
+            "{\"practice\": true, \"items\": [1, 2, 3]}\n",
+        ),
+        (
+            &right.join("backup.txt"),
+            "右侧练习目录：试试跨栏 yank / put。\n",
+        ),
+        (
+            &right.join("blob.bin"),
+            "MZ\x00\x01rvifm sandbox binary sample\x00",
+        ),
+    ];
+    for (path, body) in samples {
+        if !path.exists() {
+            std::fs::write(path, body)?;
+        }
+    }
+    Ok((left, right))
+}
 
 /// 解析模块 TOML 为 [`TutorModule`]。
 pub fn parse_module(text: &str) -> Result<TutorModule, String> {
@@ -381,6 +429,16 @@ mod tests {
         assert_eq!(entry.mastered[0], core.items[0].id);
         assert_eq!(entry.skipped.len(), 1);
         assert_eq!(progress[&other.id].mastered.len(), 1, "其它进度不得丢失");
+    }
+
+    #[test]
+    fn m671_sandbox_creates_left_and_right_samples() {
+        let (left, right) = ensure_sandbox().unwrap();
+        assert!(left.is_dir() && right.is_dir());
+        assert!(left.join("notes.txt").is_file());
+        assert!(left.join("readme.md").is_file());
+        assert!(right.join("backup.txt").is_file());
+        assert!(is_sandbox_path(&left) && is_sandbox_path(&right));
     }
 
     #[test]

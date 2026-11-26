@@ -5862,6 +5862,10 @@ pub(crate) fn record_live_visit(state: &mut AppState, tab_id: usize, side: char)
     let Location::Physical(p) = loc else {
         return;
     };
+    // M67-4：向导沙箱中的真实练习不写 frecency（撤销栈仍保留，便于练 u）。
+    if crate::tutor::is_sandbox_path(&p) {
+        return;
+    }
     let path = p.to_string_lossy().replace('\\', "/");
     // M23-4：IGNORE_PATTERNS——命中路径静默跳过（不登记不入库）。
     if crate::frecency::ignored(&path, &state.config.frecency.ignore_patterns) {

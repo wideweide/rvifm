@@ -495,6 +495,23 @@ pub(crate) fn tutor_list_key(
     }
 }
 
+/// M67-3：进入向导会话时把左右两栏定位到沙箱目录（已清理则重建）。
+fn enter_tutor_sandbox(state: &mut AppState) {
+    let Ok((left, right)) = crate::tutor::ensure_sandbox() else {
+        return;
+    };
+    let cfg = state.config.clone();
+    let tab = state.active_tab_mut();
+    tab.location = Location::Physical(left);
+    tab.cursor = 0;
+    tab.scroll = 0;
+    let _ = tab.refresh(cfg.clone());
+    if let Ok(pane) = crate::tab::Pane::from_physical(&right, cfg) {
+        tab.right = pane;
+    }
+    tab.focus = crate::tab::Focus::Left;
+}
+
 /// M56-8：模块是否已全部掌握（按稳定 item id 判定，进度按模块 id 查）。
 pub(crate) fn tutor_module_is_complete(
     progress: &crate::tutor::TutorProgress,
@@ -755,6 +772,13 @@ fn run_with_initial_mode(
     // M32-3：恢复跳过的 tab 汇入状态栏提示（远端重连失败/归档缺失）。
     startup_step!("appstate_new");
     let hints = crate::session::restore_session_with_hints(&mut state);
+    // M67-4：会话若停在沙箱而临时目录已被系统清理，启动时重建。
+    if state.tabs.iter().any(|t| {
+        matches!(&t.location, Location::Physical(p) if crate::tutor::is_sandbox_path(p))
+            || matches!(&t.right.location, Location::Physical(p) if crate::tutor::is_sandbox_path(p))
+    }) {
+        let _ = crate::tutor::ensure_sandbox();
+    }
     if let Some(h) = hints.first() {
         msg = Some(h.clone());
     }
@@ -1342,6 +1366,7 @@ fn run_with_initial_mode(
                                                     done: false,
                                                     review,
                                                 });
+                                                enter_tutor_sandbox(&mut state);
                                             }
                                         }
                                         None => {
@@ -2138,6 +2163,7 @@ fn run_with_initial_mode(
                                     done: false,
                                     review: false,
                                 });
+                                enter_tutor_sandbox(&mut state);
                             }
                             mode = InputMode::Normal;
                         } else {
@@ -2227,6 +2253,7 @@ fn run_with_initial_mode(
                                         done: false,
                                         review,
                                     });
+                                    enter_tutor_sandbox(&mut state);
                                     // M45-8a：进入会话必须退出列表覆盖层，否则
                                     // render 先匹配 TutorList 全屏渲染，底部 Panel
                                     // 永不可见（用户实测 l/Enter 后列表不消失）。
