@@ -761,3 +761,11 @@
 - [x] M53-7 `.deb` 等大归档去除「归档较大」误提示（见 SPEC M53-7）；2026-11-26 完成：dpkg-deb -c 映射 + 表格输出末列解析，m537 通过
 - [x] M53-8 真异步/防抖预览（快速切换跳过中间预览）（见 SPEC M53-8）；2026-11-26 完成：viewer/归档临时副本 150ms 防抖 + preview_debounce_due，m538 通过
 - [x] M53-9 文档收尾 + 质量门禁（见 SPEC M53-9）；2026-11-26 完成：GUIDE/help/CHANGELOG/STATE/PLAN/NOTES 同步，harness_check 通过，未发版
+
+## M54 — vifm z 系列快捷键（2026-11-26 蒸馏，见 SPEC M54 节）
+
+- [x] ZKEY-1 声明/实现不一致排查（NOTES 对照表）（见 SPEC ZKEY-1）；2026-11-26 完成：z 系列与 scrolloff 均无声明/实现，对照表入 NOTES，非 z 全量审计 defer
+- [ ] ZKEY-2 隐藏文件切换 za/zo/zm（见 SPEC ZKEY-2）
+- [ ] ZKEY-3 过滤器临时重置 zR/zM/zO（见 SPEC ZKEY-3）
+- [ ] ZKEY-4 视口定位 zt/zz/zb + `[ui] scrolloff`（见 SPEC ZKEY-4）
+- [ ] ZKEY-5 键位注册、GUIDE/ACCEPTANCE/NOTES 同步（见 SPEC ZKEY-5）
