@@ -60,14 +60,34 @@ fn archive_listing_tool(path: &Path) -> Option<(&'static str, &'static [&'static
         || name.ends_with(".txz")
         || name.ends_with(".tar.zst")
         || name.ends_with(".tar")
-        || name.ends_with(".deb")
     {
         Some(("tar", &["-tf"]))
+    } else if name.ends_with(".deb") {
+        // M53-7：deb 是 ar 容器，`tar -tf` 失败 → 用 dpkg-deb -c 直列成员，
+        // 避免大包回退内置 VFS 后触发 64MB「归档较大」提示。
+        Some(("dpkg-deb", &["-c"]))
     } else if name.ends_with(".7z") || name.ends_with(".rar") {
         Some(("7z", &["l", "-ba"]))
     } else {
         None
     }
+}
+
+/// M53-7：解析不同列目录工具的输出行 → (成员路径, 是否目录)。
+fn parse_listing_line(tool: &str, raw: &str) -> Option<(String, bool)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let path = if tool == "dpkg-deb" || tool == "7z" {
+        // `dpkg-deb -c` / `7z l -ba` 输出为多列表格，路径是最后一列。
+        trimmed.split_whitespace().last()?
+    } else {
+        trimmed
+    };
+    let path = path.strip_prefix("./").unwrap_or(path).replace('\\', "/");
+    let is_dir = path.ends_with('/');
+    Some((path.trim_end_matches('/').to_owned(), is_dir))
 }
 
 /// M48-7：用外部只读列目录命令快速取成员（vifm fileviewer 同思路）。
@@ -95,10 +115,9 @@ fn external_archive_members(path: &Path) -> Option<Vec<(String, bool)>> {
     let text = String::from_utf8_lossy(&out);
     let mut members: Vec<(String, bool)> = text
         .lines()
-        .map(|s| s.trim().replace('\\', "/"))
-        .filter(|s| !s.is_empty())
-        .filter(|s| !s.starts_with('/') && !s.split('/').any(|p| p == ".."))
-        .map(|s| (s.trim_end_matches('/').to_owned(), s.ends_with('/')))
+        .filter_map(|raw| parse_listing_line(tool, raw))
+        .filter(|(s, _)| !s.is_empty())
+        .filter(|(s, _)| !s.starts_with('/') && !s.split('/').any(|p| p == ".."))
         .collect();
     if members.is_empty() {
         return None;
@@ -1022,6 +1041,19 @@ mod tests {
 
     /// M46-8：缓存命中时直接使用已有成员列表（无需打开归档）；键含
     /// (路径, mtime, size)，文件变化后自动失效重建。
+    #[test]
+    fn m537_deb_listing_parse_and_tool_mapping() {
+        assert_eq!(
+            archive_listing_tool(std::path::Path::new("big.deb")),
+            Some(("dpkg-deb", &["-c"][..]))
+        );
+        let line = "-rw-r--r-- root/root  12345 2026-01-01 00:00 ./usr/bin/app";
+        assert_eq!(
+            parse_listing_line("dpkg-deb", line),
+            Some(("usr/bin/app".to_owned(), false))
+        );
+    }
+
     #[test]
     fn m487_archive_listing_tool_mapping_and_guard() {
         // M48-7：按归档类型映射到固定只读命令，不经 shell；未知类型无工具。
