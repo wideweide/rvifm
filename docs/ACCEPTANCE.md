@@ -1111,9 +1111,9 @@
 
 ## 54. M49 — 用户实测批次 5（见 SPEC M49 节）
 
-- [x] M49-1 `o`/`:j`/`:J` 搜索列表固定左、预览固定右；Tab 进右预览（j/k 滚动、/ 与 n/N 搜索），再 Tab 回左；预览位置不随焦点移动。（2026-11-26：m491_frecency_preview_fixed_on_right 通过）
-- [x] M49-2 `w`/`:view` 预览固定右、左侧保持目录列表；Tab 进/出预览；再按 w 恢复双栏目录列表；与 M49-1 预览区位置一致。（2026-11-26：m34_4 用例显式 fixed_side=false，固定侧由 m491 覆盖）
-- [x] M49-3 `[preview] fixed_side` 默认 true；false 恢复动态对侧；仅新打开会话生效。（2026-11-26：PreviewConfig 默认值 + 旧动态用例改显式 false）
+- [x] M49-1（已被 M52 取代）`o`/`:j`/`:J` 搜索列表固定左、预览固定右；Tab 进右预览（j/k 滚动、/ 与 n/N 搜索），再 Tab 回左；预览位置不随焦点移动。（2026-11-26：m491_frecency_preview_fixed_on_right 通过）
+- [x] M49-2（已被 M52 取代）`w`/`:view` 预览固定右、左侧保持目录列表；Tab 进/出预览；再按 w 恢复双栏目录列表；与 M49-1 预览区位置一致。（2026-11-26：m34_4 用例显式 fixed_side=false，固定侧由 m491 覆盖）
+- [x] M49-3（已被 M52 取代）`[preview] fixed_side` 默认 true；false 恢复动态对侧；仅新打开会话生效。（2026-11-26：PreviewConfig 默认值 + 旧动态用例改显式 false）
 - [x] M49-4 GUIDE/SPEC/NOTES/ACCEPTANCE 布局描述一致。（2026-11-26：GUIDE §2.4/§3 与 NOTES 决策记录同步）
 - [x] M49-5 `:gi` 可用，`:gitui` 兼容别名仍可用；文档同步。
 - [x] M49-6 列表左侧留白约图标半宽且不超过图标宽，高亮覆盖留白。
@@ -1144,3 +1144,9 @@
 - [x] M51-3 `.vifm`/`.vim` 与无扩展名文本（LICENSE）按文本识别并走 `edit_text`（vim）。
 - [x] M51-4 粘贴同名冲突弹窗显示 `y`/Enter、`n`/Esc、`j/k` 提示（与删除确认底栏一致）。
 - [x] M51-5 文档收尾一致；harness_check 通过；未发版。
+
+## 57. M52 — 预览布局策略反转（见 SPEC M52 节）
+
+- [x] M52-1 `[preview] fixed_side` 默认 false、仅 frecency 生效；`:view` 恒对侧预览；`pick` 恒右；仅新会话生效。（2026-11-26：m521 + m491 显式 true 通过）
+- [ ] M52-2 右栏快捷键/命令与左侧基本一致；两种布局下 `Tab` 进出预览、`j/k`、`/`、n/N 语义成立；审计结论入 NOTES。
+- [ ] M52-3 全部 harness/项目文档与代码一致；M49 历史条目标注被取代；质量门禁全绿、未发版。

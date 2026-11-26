@@ -1494,3 +1494,10 @@ rvifm record  → 静默记录访问
 - **IME 过度干扰根因**：输入法状态是桌面全局的；M48-9 的 1s 周期 `force_english` 在 rvifm 仍处 Normal 时持续把全局输入法切回英文，导致 `s` 新窗口里的 vim/任意程序无法保持中文输入。修法：进程内 `IME_SUSPENDED` 标志——外部窗口 spawn 成功、`FocusLost` 时暂停；`FocusGained` / 任意按键时恢复；`force_english` 暂停期直接返回（不影响 FIX-9 保存/恢复）。tmux 内无焦点事件时以「spawn 暂停 + 按键恢复」为准。
 - **测试隔离补充**：`run_external_target_with_and_dir` 在 `#[cfg(test)]` 下直接返回 `CurrentPane`，不再真实 spawn tmux 窗口（否则改变全局 IME/焦点状态并污染并行测试）。
 - **文本识别**：`mime_of` 对未知扩展名做 4KB 有界嗅探（无 NUL + UTF-8 即 text/plain），扩展名表补 `vifm/vim/cfg`；`LICENSE` 等无扩展名文本也可命中 `text/*` opener 规则。默认 `edit_text` 改 `vim %s`。
+
+### 2026-11-26 — M52 预览布局策略反转（用户确认「理解正确」后登记）
+
+- **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
+- **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
+- **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+- **一致性**：M52-3 全量扫 harness 文档（SPEC/TASKS/ACCEPTANCE/STATE/PLAN/NOTES）与项目文档（GUIDE/README/CHANGELOG/help/tutor）及代码测试，消除 M49 遗留的「默认固定右侧」冲突；M23-6/M34-4/M44-1 旧验收条目（对侧预览）与新口径恢复一致。

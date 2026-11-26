@@ -10,7 +10,8 @@ pub(crate) fn render_view_content(
     area: ratatui::layout::Rect,
 ) {
     let tab = state.active_tab();
-    let Some(path) = tab.preview_path_with(state.config.preview.fixed_side) else {
+    // M52-1：`:view` 恒对侧预览，目标取焦点栏光标文件（M34-4 焦点感知语义）。
+    let Some(path) = tab.preview_path() else {
         let pane = ratatui::widgets::Block::bordered()
             .title("view · 预览")
             .border_style(pane_border_style(true));
@@ -335,8 +336,7 @@ pub(crate) fn render_right_pane(
     let layout = state.config.ui.layout();
     if tab.view_mode
         && (layout == crate::config::LayoutMode::PreviewRight
-            || layout == crate::config::LayoutMode::Dual
-                && (state.config.preview.fixed_side || tab.focus == crate::tab::Focus::Left))
+            || (layout == crate::config::LayoutMode::Dual && tab.focus == crate::tab::Focus::Left))
     {
         render_view_content(frame, state, area);
         return;

@@ -126,7 +126,7 @@ impl Default for PreviewConfig {
             pdf_image_pages: 1,
             pdf_prefer_image: false,
             archive_external_listing: true,
-            fixed_side: true,
+            fixed_side: false,
         }
     }
 }

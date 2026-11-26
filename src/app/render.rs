@@ -67,9 +67,9 @@ pub(crate) fn pane_layout(
     [tab_bar, left, right, status]
 }
 
-/// M49-1/2：frecency 与 `:view` 共用的「预览区位置」语义。默认 `fixed_side=true`
-/// 时预览恒在右栏；`false` 保留旧动态对侧（焦点栏搜索、对侧预览）。返回
-/// (列表区, 预览区)，几何与 `pane_layout(Dual)` 同源。
+/// M52-1：frecency 专用「预览区位置」语义。默认 `fixed_side=false` → 焦点栏
+/// 搜索/列表、对侧预览；显式 `true` 时预览恒在右栏。`:view` 不走本函数（恒对侧）。
+/// 返回 (列表区, 预览区)，几何与 `pane_layout(Dual)` 同源。
 pub(crate) fn preview_layout_areas(
     area: ratatui::layout::Rect,
     focus: crate::tab::Focus,
@@ -1039,9 +1039,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // M39-6：布局感知——Single 的查看器占全宽（列表隐藏）；PreviewRight
     // 恒右侧（经 render_right_pane 内部分派）；PreviewBottom 列表上半可见
     // （查看器下半由 viewer_rect 渲染）。
+    // M52-1：`:view` 恒对侧预览（焦点右 → 查看器占左栏），不再读 fixed_side。
     let view_in_left = viewing
         && layout == crate::config::LayoutMode::Dual
-        && !state.config.preview.fixed_side
         && tab.focus == crate::tab::Focus::Right;
     let single_viewer = viewing && layout == crate::config::LayoutMode::Single;
     // M39-6：PreviewBottom——查看器占主区下半（全宽）。

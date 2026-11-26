@@ -1662,6 +1662,7 @@ append_rules = [
 
 > 来源：用户 2026-11-26 指令（LAYOUT-1..4 硬约束）+ 实测反馈 124–141 条，按 AGENTS §8 蒸馏。
 > 编号沿用 M45–M48 用户实测批次先例取 M49；用户给出的 LAYOUT-n 映射到 M49-1..4，124–141 按原序随后。
+> **注意：M49-1/2/3 的「默认固定右侧」策略已被 M52 反转（默认改为对侧、仅 frecency 受开关控制）；历史条目保留供追溯。**
 > 沿用「只提交并推送代码、不 bump / tag / GitHub Release」口径。
 
 **MUST**
@@ -1724,6 +1725,29 @@ append_rules = [
 - 不扫描 PATH 发现外部命令、不实现 `execve` 守护进程监控、不补全参数/子命令（如 `git commit` 的 `commit`）。
 - 不内置 `!` 快捷键；不为补全单独写一套浮层；不持久化完整命令行到 frecency（仅命令名）。
 - 不 bump 版本、不推送 tag、不触发 GitHub Release。
+
+## M52 — 预览布局策略反转（2026-11-26 蒸馏，已确认；见 NOTES 同日条目）
+
+> 来源：用户 2026-11-26 指令，确认「理解正确」后登记。本批次**反转 M49 LAYOUT-1..3 的默认策略**；
+> M49 历史条目保留不抹除，在 SPEC/NOTES/CHANGELOG 显式标注「已被 M52 取代」。
+> 沿用「不 bump / 不 tag / 不 GitHub Release」口径。
+
+**MUST**
+- **M52-1 策略反转**：`[preview] fixed_side` 默认值由 `true` 改为 **`false`**，且**只作用于 rvifm 内的 `o`/`:j`/`:J` frecency 模式**。
+  - `:view`（`w`）：左右双栏，**始终在对侧栏预览**（焦点左→右预览，焦点右→左预览），恢复 M34-4/M39-6 语义，不再读取 `fixed_side`。
+  - `rvifm pick`（外部调用）：始终**左侧候选、右侧预览**（现状保持，不改）。
+  - rvifm 内 frecency：默认**对侧预览**（焦点栏搜索/列表、对侧预览）；显式 `fixed_side = true` 时固定右侧预览。
+  - 配置仅对**新打开**的会话生效，不热切换（延续 M49-3 口径）。
+- **M52-2 右栏能力审计**：右侧 pane 可用快捷键/冒号命令与左侧基本一致（焦点投影 + 命令分派）；`Tab` 进入预览、`j/k` 滚动、`/`、`n/N`、`Tab` 返回的语义在两种布局下均成立；审计结果落 NOTES。
+- **M52-3 全量一致性收尾**：检查并统一全部 harness 文档（SPEC/TASKS/ACCEPTANCE/STATE/PLAN/NOTES）与项目文档（GUIDE/README/CHANGELOG/内置 help/tutor）及相关代码/测试，消除 M49 遗留的「默认固定右侧」描述冲突；质量门禁全绿。
+
+**SIMPLIFIED**
+- 不改 frecency 评分/候选来源/只读语义、Esc 逐级退出、Ctrl+Y/N 判定、标题与过滤态。
+- 不移除 `fixed_side` 配置键（仅改默认值与作用域），避免已有配置解析失败；显式 `true` 仍可用。
+- 共享几何函数保留，但 `:view` 路径不再传入该开关；`preview_path_with` 按用途分派（`:view` 焦点感知 / frecency 按开关）。
+
+**OUT_OF_SCOPE**
+- 不改变普通双栏目录浏览模型；不引入新依赖或新 TUI 框架；不 bump / tag / Release。
 
 ## M51 — 用户实测批次 6（2026-11-26 蒸馏；IME 干扰 / 默认编辑器 / 文本识别 / 冲突弹窗）
 

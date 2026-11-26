@@ -1859,27 +1859,18 @@ impl Tab {
     /// M17 SRCH：预览/操作的目标文件路径——结果模式取命中项，
     /// 物理视图取 base.join(name)；归档视图 None（预览未接入）；
     /// 远端视图 None（预览经 RemoteFs read 的链路在 M20 后接入）。
+    /// M52-1：恒取焦点栏光标文件（`:view` 对侧预览语义）；frecency 预览走显式路径。
     pub fn preview_path(&self) -> Option<PathBuf> {
-        self.preview_path_with(false)
-    }
-
-    /// M49-2：`fixed_side=true` 时预览目标恒为左栏（列表固定左侧），
-    /// `false` 保留焦点栏语义（M34-4）。
-    pub fn preview_path_with(&self, fixed_side: bool) -> Option<PathBuf> {
         if let Some(r) = &self.results {
             return r.items.get(self.cursor).map(|i| i.path.clone());
         }
-        let (base, entries, cursor) = if fixed_side {
-            (&self.location, &self.entries, &self.cursor)
-        } else {
-            match self.focus {
-                Focus::Right => (
-                    &self.right.location,
-                    &self.right.entries,
-                    &self.right.cursor,
-                ),
-                Focus::Left => (&self.location, &self.entries, &self.cursor),
-            }
+        let (base, entries, cursor) = match self.focus {
+            Focus::Right => (
+                &self.right.location,
+                &self.right.entries,
+                &self.right.cursor,
+            ),
+            Focus::Left => (&self.location, &self.entries, &self.cursor),
         };
         match base {
             Location::Physical(p) => entries.get(*cursor).map(|i| p.join(&i.name)),

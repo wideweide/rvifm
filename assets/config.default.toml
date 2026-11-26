@@ -39,8 +39,9 @@ pdf_prefer_image = false
 # M48-7：归档 w 预览优先用系统已有 unzip/tar/7z 列目录（大归档也快速展开）；
 # 工具缺失或失败时自动回退内置只读 VFS。false = 仅用内置实现。
 archive_external_listing = true
-# M49-3：true = frecency / :view 预览固定右侧（默认）；false = 动态对侧（焦点栏搜索、对侧预览）
-fixed_side = true
+# M52-1：仅作用于 rvifm 内 o/:j/:J 的 frecency 模式；false（默认）= 对侧预览，
+# true = 搜索/列表固定左栏、预览固定右栏。:view 始终对侧预览，不受此开关影响。
+fixed_side = false
 
 # ── 归档 ────────────────────────────────────────────────────────────────
 [archive]

@@ -2584,6 +2584,77 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
+    // M52-1：默认 fixed_side=false → frecency 列表在焦点栏、预览在对侧；
+    // `:view` 不受开关影响，焦点在右时查看器仍在左栏。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("alpha.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert!(!state.config.preview.fixed_side, "默认动态对侧");
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: tmp.path().join("alpha.txt").to_string_lossy().into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 0.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    });
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let text = |x0: u16, x1: u16| -> String {
+        (x0..x1)
+            .map(|x| buf[(x, 1)].symbol().to_owned())
+            .collect::<String>()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    };
+    assert!(
+        text(41, 80).contains("recency"),
+        "焦点右 → 列表在右: {}",
+        text(41, 80)
+    );
+    assert!(
+        !text(0, 40).contains("Frecency"),
+        "预览在左: {}",
+        text(0, 40)
+    );
+
+    // `:view` 焦点右 → 查看器占左栏（与开关无关）。
+    state.active_tab_mut().pane_frecency = None;
+    state.active_tab_mut().view_mode = true;
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut left = String::new();
+    for y in 1..5u16 {
+        for x in 0..40u16 {
+            left.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(left.contains("alpha"), "左侧查看器标题含文件名: {left}");
+}
+
+#[test]
 fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
     // M49-12/14：标题含 SEARCH + [filter]；Esc 返回 NORMAL 但保留过滤。
     let tmp = TempDir::new().unwrap();
@@ -2763,10 +2834,12 @@ fn m498_extract_explicit_dir_entries_yield_files() {
 
 #[test]
 fn m491_frecency_preview_fixed_on_right() {
-    // M49-1：默认固定右侧——标题/列表在左，预览在右；Tab 只切预览焦点。
+    // M52-1：显式 fixed_side=true 时固定右侧——标题/列表在左，预览在右；
+    // Tab 只切预览焦点（默认 false 的动态布局另测）。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("alpha.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.preview.fixed_side = true;
     state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
         entries: vec![crate::frecency::ScoredEntry {
             path: tmp.path().join("alpha.txt").to_string_lossy().into_owned(),
