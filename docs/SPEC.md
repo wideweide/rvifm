@@ -1769,6 +1769,33 @@ append_rules = [
 - 不移除「可执行文件 Enter 仅提示」特例；不把外部编辑器作为必需依赖；不改变 frecency/撤销栈/归档只读边界。
 - 不 bump 版本、不推送 tag、不触发 GitHub Release。
 
+## M53 — 标签栏对齐、归档 VFS 预览与预览性能（2026-11-26 蒸馏，已确认）
+
+> 来源：用户 2026-11-26 需求，确认「理解正确」且明确：① `r` = 删除当前条目的 frecency bookmark/mark 记录；
+> ② 归档内 `l`/Enter 允许系统 opener 打开**临时只读副本**。沿用「不 bump / 不 tag / 不 Release」。
+
+**MUST**
+- **M53-1 标签栏全路径**：标签标题改为 `[序号:焦点栏全路径]`（如 `[1:/etc]`），随焦点切换同步更新；路径用 `/` 分隔，归档/远端用既有 `host:inner` / `remote:path` 显示；溢出滚动沿用同一几何。
+- **M53-2 标签状态持久化**：`:tabname <名>` 修改的标签名**持久化到会话**并在重启后保持（无参清除）；各标签**右侧 pane 的当前活动项（location + cursor）**记录并在重启后恢复；会话结构增字段须 `#[serde(default)]` 保持向后兼容。
+- **M53-3 归档 VFS 预览/打开**：归档虚拟目录内文件支持 `w` 预览；`l`/Enter 将该成员解到**临时只读副本**并交系统 opener 打开；不写归档内，临时副本登记清理（复用 temp_opens），大成员沿用 64MB 护栏。
+- **M53-4 frecency NORMAL 提示与 r 键**：NORMAL 底部提示显示**全部**可用键位及说明（至少 `dd`/`u`/`yf`/`yn`/`yc`/`gi`/`e`/`w`/`l`/`Tab`/`Esc`）；新增 `r` 删除当前光标条目的 frecency bookmark/mark 记录（与 `dd` 同源 Remove 墓碑），不删对应文件。
+- **M53-5 文本预览**：快速态文本按**行**截取至少 36 行（至少充满预览区），替代 M49-9 的 300 字截断；排查并修复小文本文件（如 JOURNEY.md）预览卡顿（有界读取 + 缓存，避免每帧重复解析/高亮）。
+- **M53-6 foot 原生图片预览**：修复 tmux/foot 下被强制 halfblocks（马赛克）的问题——仅在实际未启用 passthrough 时降级；启用 passthrough 时走 `ratatui-image` 协议探测；保留 M50 启动性能修复（不在无 passthrough 环境阻塞查询）。
+- **M53-7 大归档误提示**：`.deb`（及同类）不再提示「归档较大」——补 `dpkg-deb -c` / `ar t` 外部列目录回退；列表场景避免 64MB 护栏误伤；成员数/输出上限保留。
+- **M53-8 真异步/防抖预览**：快速 `j/k` 导航时不生成中间预览（避免卡顿），停下后再渲染最终目标（图片仍完整预览）；用目标路径 + 稳定时间戳/生成序号实现，不引入新线程或必需依赖。
+- **M53-9 文档收尾**：GUIDE / help / CHANGELOG / SPEC / ACCEPTANCE / STATE / PLAN / NOTES 同步；质量门禁全绿、未发版。
+
+**SIMPLIFIED**
+- M53-2 右栏恢复仅当前活动项（location + cursor），不持久化完整 cursor_memory（保留内存态语义）。
+- M53-3 临时副本放在系统临时目录，退出时尽力清理；系统 opener 失败给可读提示。
+- M53-5 缓存仅内存态（路径 + mtime + size 键），与 ArchivePreviewCache 同模式。
+- M53-6 以 tmux `allow-passthrough` 判定 + 显式 env 覆盖实现，不做全局桌面焦点监听。
+- M53-8 防抖阈值约 120–200ms；不引入新 TUI 框架。
+
+**OUT_OF_SCOPE**
+- 不写入归档内成员；不做嵌套归档递归浏览；不引入 fzf/SQLite/新必需依赖。
+- 不 bump / tag / GitHub Release。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

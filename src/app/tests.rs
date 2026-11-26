@@ -2584,6 +2584,30 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn m531_tab_label_is_focus_aware_full_path() {
+    // M53-1：标签标题 `[N:焦点栏全路径]`，焦点切换同步更新。
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    let (labels, _) = crate::app::render::tab_bar_labels_and_visible(&state, 120);
+    assert!(
+        labels[0].contains(&format!("[1:{}", left.path().display())),
+        "{labels:?}"
+    );
+
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let (labels, _) = crate::app::render::tab_bar_labels_and_visible(&state, 120);
+    assert!(
+        labels[0].contains(&format!("[1:{}", right.path().display())),
+        "{labels:?}"
+    );
+    let label = labels[0].trim_end();
+    assert!(label.starts_with("[1:") && label.ends_with(']'), "{label}");
+}
+
+#[test]
 fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
     // M52-1：默认 fixed_side=false → frecency 列表在焦点栏、预览在对侧；
     // `:view` 不受开关影响，焦点在右时查看器仍在左栏。

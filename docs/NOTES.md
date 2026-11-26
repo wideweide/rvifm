@@ -1501,5 +1501,11 @@ rvifm record  → 静默记录访问
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
 - **一致性**：M52-3 全量扫 harness 文档（SPEC/TASKS/ACCEPTANCE/STATE/PLAN/NOTES）与项目文档（GUIDE/README/CHANGELOG/help/tutor）及代码测试，消除 M49 遗留的「默认固定右侧」冲突；M23-6/M34-4/M44-1 旧验收条目（对侧预览）与新口径恢复一致。
+### 2026-11-26 — M53 蒸馏决策（用户确认）
+
+- 用户确认两点：① `r` = 删除当前光标条目的 frecency bookmark/mark 记录（不是删文件）；② 归档成员 `l`/Enter 允许系统 opener 打开**临时只读副本**（不写归档内）。
+- 其余按需求原文：标签 `[N:焦点栏全路径]`、`:tabname` 与右栏活动项持久化、归档 `w` 预览、36 行文本预览与卡顿排查、foot 原生图片协议修复、`.deb` 误提示消除、真异步/防抖预览。
+- 沿用不 bump / tag / Release；历史批次条目保留。
+
 - **M52-3 附加稳定性修复**：并行测试偶发 `Database already open`（`nav4_recent_exec_opens_selector`）源于 redb 读写句柄争锁；`open_store_readonly_at` 增加 10×20ms 有限重试（生产双开 rvifm 同样受益），连续 4 次全量 `cargo test` 全绿。
 - **M52-2 右栏审计结论**：`dispatch_right_pane` 投影 8 个状态字段后复用共享 `handle_key`，Normal 键位（j/k/gg/G、v/t、yy/p/P、o 等）左右一致；冒号命令在 `exec_command_impl` 与 `focused_*` 访问器下按焦点栏分派（`:sort`/`:select`/`:rename`/`:move`/`:copy`/`:archive`/`:extract`/`:file`/`gi` 均已焦点化）。预览焦点 `Tab` 进出与侧别无关，新增 m521 断言「焦点右 + 查看器在左 + Tab 进出预览且焦点不跳栏」。剩余 `tab.location`/`tab.entries[tab.cursor]` 直读仅在**右键上下文菜单**（M41-3 明确固定左栏，非「仅导航」限制）与 `jump_to` 左分支（焦点左时正确）——无残留「右栏仅导航」限制。

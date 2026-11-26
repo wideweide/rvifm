@@ -158,14 +158,13 @@ pub(crate) fn tab_bar_labels_and_visible(
         .iter()
         .enumerate()
         .map(|(idx, t)| {
-            let dir = t.name.clone().unwrap_or_else(|| {
-                t.location
-                    .base_dir()
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| t.location.display_path())
-            });
-            format!("{}:{} ", idx + 1, dir)
+            // M53-1：标签显示**焦点栏全路径**，中括号包裹；随焦点切换同步变化。
+            let path = match t.focused_location() {
+                crate::tab::Location::Physical(p) => p.to_string_lossy().replace('\\', "/"),
+                other => other.display_path().replace('\\', "/"),
+            };
+            let label = t.name.clone().unwrap_or(path);
+            format!("[{}:{}] ", idx + 1, label)
         })
         .collect();
     let widths: Vec<usize> = labels.iter().map(|l| l.chars().count()).collect();

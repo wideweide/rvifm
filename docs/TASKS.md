@@ -749,3 +749,15 @@
 - [x] M52-1 策略反转：`fixed_side` 默认 false 且仅 frecency 生效；`:view` 恒对侧；pick 恒右（见 SPEC M52-1）；2026-11-26 完成：config 默认 false、render/preview/tab 拆分作用域，m521 通过
 - [x] M52-2 右栏快捷键/命令一致性审计与补缺（见 SPEC M52-2）；2026-11-26 完成：审计结论入 NOTES（无残留仅导航限制），m521 覆盖预览焦点与侧别无关
 - [x] M52-3 全量文档/代码一致性收尾 + 质量门禁（见 SPEC M52-3）；2026-11-26 完成：GUIDE/README/CHANGELOG/help/SPEC/ACCEPTANCE/STATE/PLAN/NOTES 全部同步，harness_check 通过，未发版
+
+## M53 — 标签栏对齐、归档 VFS 预览与预览性能（2026-11-26 蒸馏，已确认，见 SPEC M53 节）
+
+- [x] M53-1 标签标题 `[N:焦点栏全路径]` 且随焦点更新（见 SPEC M53-1）；2026-11-26 完成：tab_bar_labels_and_visible 取 focused_location 全路径，m531 通过
+- [ ] M53-2 `:tabname` 与右栏活动项会话持久化（见 SPEC M53-2）
+- [ ] M53-3 归档成员 `w` 预览 + `l`/Enter 临时只读副本交系统 opener（见 SPEC M53-3）
+- [ ] M53-4 frecency NORMAL 完整键位提示 + `r` 删记录（见 SPEC M53-4）
+- [ ] M53-5 文本 36 行预览 + 小文件卡顿排查（见 SPEC M53-5）
+- [ ] M53-6 foot/tmux 原生图片协议恢复（见 SPEC M53-6）
+- [ ] M53-7 `.deb` 等大归档去除「归档较大」误提示（见 SPEC M53-7）
+- [ ] M53-8 真异步/防抖预览（快速切换跳过中间预览）（见 SPEC M53-8）
+- [ ] M53-9 文档收尾 + 质量门禁（见 SPEC M53-9）
