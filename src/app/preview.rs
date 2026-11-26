@@ -134,18 +134,19 @@ pub(crate) fn render_view_path(
     } else {
         String::new()
     };
+    let quick_mark = if quick { "快速 " } else { "" };
     let title = if viewer_state.is_none() {
-        format!("{shown} · 预览")
+        format!("{quick_mark}{shown} · 预览")
     } else {
         match &viewer.query {
             Some(q) => format!(
-                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
+                "{quick_mark}{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
                 viewer.scroll + 1,
                 viewer.line_count,
                 q
             ),
             None => format!(
-                "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
+                "{quick_mark}{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
                 viewer.scroll + 1,
                 viewer.line_count
             ),
@@ -238,34 +239,67 @@ pub(crate) fn render_view_path(
         frame.render_widget(Paragraph::new(out), inner);
         return;
     }
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        // M34-7：读取失败/非 UTF-8 → 结构化信息面板（类型/大小/修改）。
-        frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
-        return;
-    };
-    // M49-9：快速态仅展示前 300 字；预览获焦后（quick=false）展示完整内容。
-    let text = if quick && text.chars().count() > 300 {
-        let mut short: String = text.chars().take(300).collect();
-        short.push_str("\n…（快速预览仅前 300 字，Tab 进入预览加载完整内容）");
-        short
-    } else {
-        text
-    };
-    // M45-4b：tar 等归档的头部含大量 NUL 填充——`read_to_string` 仍能成功
-    // （NUL 是合法 UTF-8），旧实现直接当文本渲染出乱码。NUL 即判二进制，
-    // 回退结构化信息面板（与 M34-7 的 preview 层二进制探测同源）。
-    if text.contains('\0') {
-        frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
-        return;
-    }
     let height = inner.height as usize;
     let width = inner.width as usize;
-    let lines: Vec<&str> = text.lines().take(VIEWER_MAX_LINES).collect();
+    // M53-5：按 (path, mtime, size) 缓存行，避免快速 j/k 每帧重读/重解析。
+    let meta = std::fs::metadata(&path).ok();
+    let key = (
+        path.clone(),
+        meta.as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        meta.as_ref().map(|m| m.len()).unwrap_or(0),
+    );
+    let cached = state
+        .text_preview_cache
+        .try_borrow()
+        .ok()
+        .and_then(|cache| cache.get(&key).cloned());
+    let all_lines: Vec<String> = if let Some(hit) = cached {
+        hit
+    } else {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+            return;
+        };
+        // NUL 即判二进制（M45-4b）。
+        if text.contains('\0') {
+            frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+            return;
+        }
+        let parsed: Vec<String> = text
+            .lines()
+            .take(VIEWER_MAX_LINES)
+            .map(str::to_owned)
+            .collect();
+        if let Ok(mut cache) = state.text_preview_cache.try_borrow_mut() {
+            if cache.len() >= 16 {
+                cache.clear();
+            }
+            cache.insert(key, parsed.clone());
+        }
+        parsed
+    };
+    // M53-5：快速态截取至少 36 行且充满预览区（替代 M49-9 的 300 字）。
+    let lines: Vec<String> = if quick && all_lines.len() > 36.max(height) {
+        let n = 36.max(height);
+        let mut short: Vec<String> = all_lines.iter().take(n).cloned().collect();
+        short.push("…（快速预览仅前若干行，Tab 进入预览加载完整内容）".to_owned());
+        short
+    } else {
+        all_lines
+    };
     // M21-E3：语法高亮——扩展名/shebang 推断，未命中或搜索模式下
     // 降级纯文本（查询黄底叠加与语法着色互斥，SIMPLIFIED）。
     let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
     let mut highlighter = if viewer.query.is_none() {
-        crate::highlight::Highlighter::for_path(&path, lines.first().copied().unwrap_or(""), dark)
+        crate::highlight::Highlighter::for_path(
+            &path,
+            lines.first().map(String::as_str).unwrap_or(""),
+            dark,
+        )
     } else {
         None
     };
@@ -302,7 +336,7 @@ pub(crate) fn render_view_path(
             None => {
                 if let Some(h) = highlighter.as_mut() {
                     // 语法着色片段（宽超界由渲染器裁剪；解析失败降级纯文本）。
-                    let toks = h.highlight_line(line);
+                    let toks = h.highlight_line(line.as_str());
                     if toks.is_empty() {
                         spans.push(Span::from(display));
                     } else {

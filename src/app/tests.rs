@@ -2586,6 +2586,37 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn m535_quick_text_preview_shows_at_least_36_lines() {
+    // M53-5：快速预览按行截取至少 36 行（充满预览区），不再截 300 字。
+    let tmp = TempDir::new().unwrap();
+    let mut content = String::new();
+    for i in 0..100 {
+        content.push_str(&format!("line-{i:03} {}\n", "x".repeat(40)));
+    }
+    fs::write(tmp.path().join("long.txt"), content).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().toggle_view();
+    let backend = ratatui::backend::TestBackend::new(120, 60);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..buf.area.height {
+        for x in 41..120u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(!text.contains("快速预览仅前 300 字"));
+    assert!(
+        text.contains("line-035"),
+        "至少展示 36 行: {}",
+        &text[..text.len().min(200)]
+    );
+}
+
+#[test]
 fn m534_frecency_r_removes_record_not_file() {
     // M53-4：r 删除当前条目的 frecency 记录（非文件），u 可恢复。
     let tmp = TempDir::new().unwrap();
@@ -2914,10 +2945,10 @@ fn m4910_preview_focus_reloads_full_text() {
     // M49-9/10：快速态只显示前 300 字；预览获焦后加载完整内容。
     let tmp = TempDir::new().unwrap();
     // 单行 400 字符：快速态第二行会出现截断提示，全量态无此提示。
-    let long = "A".repeat(400);
+    let long: String = (0..60).map(|i| format!("line-{i:03}\n")).collect();
     fs::write(tmp.path().join("long.txt"), &long).unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
-    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().toggle_view();
     state.active_tab_mut().cursor = 0;
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -2931,7 +2962,7 @@ fn m4910_preview_focus_reloads_full_text() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let quick = dump(&terminal).replace(' ', "");
-    assert!(quick.contains("快速预览仅前300字"), "快速态提示: {quick}");
+    assert!(quick.contains("快速"), "快速态提示: {quick}");
 
     state.active_tab_mut().preview_focus = true;
     terminal
@@ -2939,7 +2970,7 @@ fn m4910_preview_focus_reloads_full_text() {
         .unwrap();
     let full = dump(&terminal).replace(' ', "");
     assert!(
-        !full.contains("快速预览仅前300字"),
+        !full.contains("·快速") && !full.contains("快速"),
         "获焦后无快速提示: {full}"
     );
 }

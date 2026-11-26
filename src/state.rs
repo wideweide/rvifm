@@ -383,6 +383,9 @@ pub struct AppState {
     pub transfer_queue: Vec<TransferQueueEntry>,
     /// M50-3：shell 历史完整命令行（仅内存补全候选，不入库）。
     pub history_commands: Vec<String>,
+    /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
+    pub text_preview_cache:
+        std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
     /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
@@ -459,6 +462,7 @@ impl AppState {
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
             history_commands: Vec::new(),
+            text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),
