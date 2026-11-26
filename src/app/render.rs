@@ -2151,7 +2151,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     "模块完成！掌握 {mastered}/{total}，未掌握 {skipped}。"
                 )),
                 Line::from("未掌握项已记录（M42-2 起本地持久化，下次进入优先复习）。"),
-                Line::from("Ctrl+Q 退出（作答已即时保存）。"),
+                Line::from("Enter=继续学习其它模块（:tutor）  Ctrl+Q 退出（作答已即时保存）。"),
             ];
             frame.render_widget(Paragraph::new(lines).block(block), panel_area);
         } else if let Some(item) = module.items.get(*idx) {

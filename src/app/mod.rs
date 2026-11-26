@@ -510,7 +510,13 @@ pub(crate) fn tutor_hotkey(state: &mut AppState, key: &KeyEvent) -> TutorHotkey 
     if state.tutor.is_none() || key.kind != KeyEventKind::Press {
         return TutorHotkey::None;
     }
-    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    // M56-7：模块完成后 Enter = 继续学习其它模块（回向导列表，等同 :tutor）。
+    if !ctrl && key.code == KeyCode::Enter && state.tutor.as_ref().is_some_and(|s| s.done) {
+        state.tutor = None;
+        return TutorHotkey::ExitToList;
+    }
+    if !ctrl {
         return TutorHotkey::None;
     }
     match key.code {

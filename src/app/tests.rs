@@ -21,6 +21,27 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
 }
 
 #[test]
+fn m567_done_enter_returns_to_guide_list() {
+    // M56-7：模块完成后 Enter = 继续学习其它模块；未完成时 Enter 仍放行。
+    let base = crate::tutor::module_by_id("core_nav").unwrap();
+    let (_tmp, mut state) = make_state(2);
+    let session = |done: bool| crate::tutor::TutorSession {
+        module: base.clone(),
+        idx: 0,
+        marks: Vec::new(),
+        done,
+        review: false,
+    };
+    state.tutor = Some(session(true));
+    let ev = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(tutor_hotkey(&mut state, &ev), TutorHotkey::ExitToList);
+    assert!(state.tutor.is_none());
+    state.tutor = Some(session(false));
+    assert_eq!(tutor_hotkey(&mut state, &ev), TutorHotkey::None);
+    assert!(state.tutor.is_some());
+}
+
+#[test]
 fn m566_wrong_only_keeps_original_item_numbering() {
     // M56-6：有记录模块只显示错题，但编号仍是原模块编号（不重排为 1/N）。
     let base = crate::tutor::module_by_id("core_nav").unwrap();
