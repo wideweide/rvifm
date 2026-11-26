@@ -14,6 +14,7 @@
 - `:` 键入补全内部命令（名+描述，按 frecency 频率排序），`:!` 补全 shell 历史完整命令行；底部两列浮层 ≤40% 终端高，Tab 循环、Enter 执行。
 - shell 历史读取默认开、增量记账；完整命令行仅内存候选，只有命令名进 frecency；不扫描 PATH、不做 execve 守护、不补参数。
 - 新增 `open_external_command_line` Action（无默认键位，用户自定义）；`[command] quote_expansion` 开关让 `%d/%f/%F/%D` 自动加双引号。
+- 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
 
 ### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
 

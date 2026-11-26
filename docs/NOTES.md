@@ -1482,3 +1482,4 @@ rvifm record  → 静默记录访问
 - **WHY（不做 B）**：`execve` 守护进程监控引入常驻进程、Linux 特有、隐私敏感，性价比低，明确 OUT_OF_SCOPE。
 - **隐私边界**：完整命令行仅作内存补全候选；只有**命令名**进入 frecency `cmd` topic（持久化），文档需写明「当前仍打开的 shell 会话尚未落盘的命令可能缺失」。
 - **排序**：M50-1 → M50-6；沿用不 bump / tag / Release。
+- **M50 执行后修复（用户实测反馈）**：`cargo test` 期间残留大量 `cosmic-edit /tmp/.tmp*/a.txt` 进程——根因是单测通过无 opener 规则的文本条目走到 `system_open` 真实启动了 GUI。修法：`system_open` 在 `#[cfg(test)]` 下只模拟结果、不启动外部程序（AUDIT-14 测试隔离同源）。另把补全用的 `cmd_scores()` 改为 `open_store_readonly()`，避免与并发测试争 redb 写锁导致 `Database already open` 抖动。

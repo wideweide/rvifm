@@ -833,7 +833,8 @@ pub fn path_scores_at(db_path: &Path) -> std::collections::HashMap<(String, Stri
 /// M50-1：内部命令补全用的只读分数表（cmd topic，key = 命令名）。
 pub fn cmd_scores() -> std::collections::HashMap<String, f64> {
     let mut out = std::collections::HashMap::new();
-    let Ok(store) = Store::open(&crate::config::frecency_db_path()) else {
+    // 只读打开（AUDIT-1 红线：补全不得写库；也避免并发测试争写锁）。
+    let Ok(Some(store)) = open_store_readonly() else {
         return out;
     };
     let snapshot = store.snapshot_all().unwrap_or_default();

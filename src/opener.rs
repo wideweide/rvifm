@@ -24,7 +24,19 @@ fn silent(mut cmd: Command) -> Command {
 /// 系统默认 opener（M11-3；M21-F8 子进程 IO 静默化）。
 /// Linux：`gio open` → `xdg-open`；macOS：`open`；Windows：`cmd /c start`。
 pub fn system_open(path: &Path) -> std::io::Result<()> {
-    #[cfg(target_os = "linux")]
+    // AUDIT-14/测试隔离：单元测试不得触发真实 GUI opener（会残留 cosmic-edit
+    // 等进程）。库内测试仅模拟结果；集成冒烟测试不调用本函数。
+    #[cfg(test)]
+    {
+        if path.exists() {
+            return Ok(());
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "测试环境不启动系统 opener",
+        ))
+    }
+    #[cfg(all(not(test), target_os = "linux"))]
     {
         // Linux：优先 gio open，回退 xdg-open。
         if let Ok(s) = silent(Command::new("gio"))
@@ -45,11 +57,11 @@ pub fn system_open(path: &Path) -> std::io::Result<()> {
             "gio open 和 xdg-open 均不可用",
         ))
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(all(not(test), target_os = "macos"))]
     {
         silent(Command::new("open")).arg(path).status().map(|_| ())
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(not(test), target_os = "windows"))]
     {
         let status = silent(Command::new("cmd"))
             .args(["/c", "start", ""])
