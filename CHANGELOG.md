@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### M59 预览与归档 VFS 体验修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `rvifm pick` 文本预览与 TUI 查看器共用 `highlight::styled_lines`（同源语法高亮，仍纯只读）。
+- 归档成员 `w` 预览恢复 j/k 滚动与 Tab 进/出（viewer 走临时副本路径）、语法高亮保留；`l`/Enter 改走 `[opener]`/`[open]` 分层而非硬编码系统 opener。
+- 快速文本预览行数改为 `max(36, 视口+10)`；渲染 committed viewer 路径消除「先二进制后文本」闪现，缓存命中只克隆所需行；预览获焦蓝色边框。
+- frecency `Tab` 固定进/出预览、`Shift+Tab` 切左右栏；`r` 改为两键确认仅清 bookmark/mark（保留条目与分数），`u` 连 keyword 恢复。
+
 ### M58 命令补全增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 补全浮层标题提示 `Space=选定到输入栏`，描述常显、输入即实时过滤；命令行 500ms 闪烁光标；Space 选定替换最后一个词。

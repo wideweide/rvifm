@@ -224,7 +224,8 @@ M49 实测批次 5（命令/预览效率/frecency 键位；布局策略随后被
   `o`/`:j`/`:J` 原固定右侧预览（M52 起默认改为对侧，fixed_side=true 可恢复固定右侧）；
   快速切换时图片/PDF 仅元数据、文本至少 36 行（视口+10），Tab 进入预览后全量加载；
   `:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目修复；
-  frecency：标题含 NORMAL/SEARCH 与 [filter]、Esc 保留过滤、dd 删记录/u 恢复、yf/yn/yc、gi。
+  frecency：标题含 NORMAL/SEARCH 与 [filter]、Esc 保留过滤、dd 删记录/u 恢复、yf/yn/yc、gi；
+  r→y 两键确认仅清 bookmark/mark（保留条目与分数），u 连 keyword 恢复；Tab 进预览、Shift+Tab 切栏。
 
 M50 命令补全增强（DeepSeek 分享稿）：
   `:` 键入补全内部命令（名+描述，按 frecency 频率排序）、`:!` 补全 shell 历史完整命令行；
