@@ -17,10 +17,18 @@ pub(crate) fn render_view_content(
     let tab = state.active_tab();
     // M52-1：`:view` 恒对侧预览，目标取焦点栏光标文件（M34-4 焦点感知语义）。
     // M53-3：归档成员走临时只读副本（由事件循环按光标解出）。
-    let Some(path) = tab
-        .preview_path()
-        .or_else(|| tab.archive_preview_tmp.clone())
-    else {
+    // M59-6：查看器已提交的路径优先——避免 150ms 防抖期间用新路径渲染旧
+    // `ViewerState`（典型症状：从二进制切到 Markdown 先闪出 hex）。
+    let path = if tab.view_mode && tab.viewer.is_some() {
+        tab.viewer.as_ref().and_then(|v| v.path.clone())
+    } else {
+        None
+    }
+    .or_else(|| {
+        tab.preview_path()
+            .or_else(|| tab.archive_preview_tmp.clone())
+    });
+    let Some(path) = path else {
         let pane = ratatui::widgets::Block::bordered()
             .title("view · 预览")
             .border_style(pane_border_style(true));
@@ -257,11 +265,23 @@ pub(crate) fn render_view_path(
             .unwrap_or(0),
         meta.as_ref().map(|m| m.len()).unwrap_or(0),
     );
-    let cached = state
-        .text_preview_cache
-        .try_borrow()
-        .ok()
-        .and_then(|cache| cache.get(&key).cloned());
+    let quick_n = quick_preview_line_count(height);
+    // M59-6：命中缓存只克隆当前需要的行（旧实现克隆最多 10 万行，小文件也会卡）。
+    let needed = if quick {
+        quick_n
+    } else {
+        viewer.scroll.saturating_add(height)
+    };
+    let cached: Option<Vec<String>> =
+        state
+            .text_preview_cache
+            .try_borrow()
+            .ok()
+            .and_then(|cache| {
+                cache
+                    .get(&key)
+                    .map(|lines| lines.iter().take(needed).cloned().collect())
+            });
     let all_lines: Vec<String> = if let Some(hit) = cached {
         hit
     } else {
@@ -289,7 +309,6 @@ pub(crate) fn render_view_path(
     };
     // M53-5：快速态截取至少 36 行且充满预览区（替代 M49-9 的 300 字）。
     // M59-5：至少 36 行，且按视口实际高度 +10 行扩展，保证充满预览区。
-    let quick_n = quick_preview_line_count(height);
     let lines: Vec<String> = if quick && all_lines.len() > quick_n {
         let n = quick_n;
         let mut short: Vec<String> = all_lines.iter().take(n).cloned().collect();

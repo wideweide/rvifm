@@ -180,6 +180,40 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m596_committed_preview_path_avoids_binary_flash() {
+    // M59-6：查看器已提交路径优先于当前光标路径（防抖期间不渲染新文件的旧状态）。
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "AAA-committed").unwrap();
+    fs::write(tmp.path().join("b.txt"), "BBB-pending").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().cursor = 1; // 光标在 b.txt
+    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().viewer = Some(crate::tab::ViewerState {
+        scroll: 0,
+        line_count: 1,
+        total_lines: 1,
+        query: None,
+        match_line: 0,
+        hex: false,
+        page: 0,
+        path: Some(tmp.path().join("a.txt")),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let all: String = (0..20)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect();
+    assert!(all.contains("AAA-committed"), "{all}");
+    assert!(!all.contains("BBB-pending"), "{all}");
+}
+
+#[test]
 fn m595_quick_preview_line_count_covers_viewport() {
     // M59-5：小视口至少 36 行；大视口按可见行 +10。
     assert_eq!(quick_preview_line_count(10), 36);
