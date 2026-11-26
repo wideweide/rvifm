@@ -180,6 +180,14 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m595_quick_preview_line_count_covers_viewport() {
+    // M59-5：小视口至少 36 行；大视口按可见行 +10。
+    assert_eq!(quick_preview_line_count(10), 36);
+    assert_eq!(quick_preview_line_count(30), 40);
+    assert_eq!(quick_preview_line_count(80), 90);
+}
+
+#[test]
 fn m592_archive_preview_viewer_navigates_and_highlights() {
     // M59-2/3：归档成员走临时副本路径，viewer 有真实行数且 j/k 可滚动；
     // 临时文件保留扩展名 → 同源语法高亮可用。

@@ -814,7 +814,7 @@
 - [x] M59-2 归档成员预览 j/k/Tab 导航（见 SPEC M59-2）；2026-11-26 完成：Tab::preview_target（preview_path 或 archive 临时副本）供 activate_viewer/refresh/viewer_lines，m592 通过
 - [x] M59-3 归档成员预览语法高亮（见 SPEC M59-3）；2026-11-26 完成：临时副本保留扩展名 + shared styled_lines，m592 断言高亮命中
 - [x] M59-4 归档 l/Enter 走配置的 opener（见 SPEC M59-4）；2026-11-26 完成：open_with_layers 替代 system_open + block 规则走 pending_external，m594 通过
-- [ ] M59-5 快速文本行数 = 视口+10（至少 36）（见 SPEC M59-5）
+- [x] M59-5 快速文本行数 = 视口+10（至少 36）（见 SPEC M59-5）；2026-11-26 完成：quick_preview_line_count + m595
 - [ ] M59-6 卡顿与二进制闪现修复（见 SPEC M59-6）
 - [ ] M59-7 预览焦点蓝色边框高亮（见 SPEC M59-7）
 - [ ] M59-8 frecency Tab 固定进/出预览（见 SPEC M59-8）

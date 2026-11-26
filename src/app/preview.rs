@@ -4,6 +4,11 @@ use std::fs;
 /// M34-4：查看器内容渲染（M17 VIEW-1 文本 + 图片/目录/PDF/Office 分流）——
 /// 对侧 pane 复用：render_right_pane（焦点左）与 render()（焦点右）分派到
 /// 非焦点 pane。预览目标 = preview_path()（M34-4 起焦点感知）。
+/// M59-5：快速预览行数——至少 36 行，且不低于视口高度 +10（保证充满预览区）。
+pub(crate) fn quick_preview_line_count(height: usize) -> usize {
+    36.max(height.saturating_add(10))
+}
+
 pub(crate) fn render_view_content(
     frame: &mut Frame,
     state: &AppState,
@@ -283,8 +288,10 @@ pub(crate) fn render_view_path(
         parsed
     };
     // M53-5：快速态截取至少 36 行且充满预览区（替代 M49-9 的 300 字）。
-    let lines: Vec<String> = if quick && all_lines.len() > 36.max(height) {
-        let n = 36.max(height);
+    // M59-5：至少 36 行，且按视口实际高度 +10 行扩展，保证充满预览区。
+    let quick_n = quick_preview_line_count(height);
+    let lines: Vec<String> = if quick && all_lines.len() > quick_n {
+        let n = quick_n;
         let mut short: Vec<String> = all_lines.iter().take(n).cloned().collect();
         short.push("…（快速预览仅前若干行，Tab 进入预览加载完整内容）".to_owned());
         short
