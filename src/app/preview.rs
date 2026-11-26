@@ -97,9 +97,20 @@ pub(crate) fn render_view_path(
             .border_style(pane_border_style(true));
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
-        if state.image_engine.render_file(frame, inner, &path).is_err() {
-            frame.render_widget(Paragraph::new("图片渲染失败（损坏/超大）"), inner);
+        // M60-3：UI 线程不再解码——后台解码完成后只做协议编码；未就绪先提示。
+        if let Some((cached_path, img)) = state.decoded_preview.as_ref() {
+            if cached_path == &path {
+                if state
+                    .image_engine
+                    .render_dynamic(frame, inner, img.clone())
+                    .is_err()
+                {
+                    frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
+                }
+                return;
+            }
         }
+        frame.render_widget(Paragraph::new("图片解码中…（后台加载）"), inner);
         return;
     }
     // M21-F6：光标在目录上 → 浅层 tree（复用 M13-7 构建器，深度 2、

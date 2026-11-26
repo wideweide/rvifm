@@ -103,6 +103,14 @@ fn plan_image(area: Rect, img_w: u32, img_h: u32, fw: f64, fh: f64) -> ImagePlan
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
 /// 是否为可预览的图片文件（按扩展名判断）。
+/// M60-3：后台解码（纯 IO + 解码，不碰 Frame；协议编码仍在 UI 线程）。
+pub fn decode(path: &Path) -> std::io::Result<image::DynamicImage> {
+    image::ImageReader::open(path)?
+        .with_guessed_format()?
+        .decode()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
 pub fn is_image_file(path: &Path) -> bool {
     path.extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -204,15 +212,12 @@ impl ImageEngine {
         area: Rect,
         path: &Path,
     ) -> std::io::Result<()> {
-        let img = image::ImageReader::open(path)?
-            .with_guessed_format()?
-            .decode()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let img = decode(path)?;
         self.render_dynamic(frame, area, img)
     }
 
-    /// M34-9：已解码图像的尺寸适配渲染（render_file 内部实现）。
-    fn render_dynamic(
+    /// M60-3：已解码图像的尺寸适配渲染（供后台解码结果在 UI 线程只做协议编码）。
+    pub(crate) fn render_dynamic(
         &self,
         frame: &mut Frame<'_>,
         area: Rect,

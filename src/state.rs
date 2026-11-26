@@ -391,6 +391,9 @@ pub struct AppState {
     pub preview_tx: std::sync::mpsc::Sender<crate::state::PreviewJobResult>,
     pub preview_rx: std::sync::mpsc::Receiver<crate::state::PreviewJobResult>,
     pub preview_generation: u64,
+    /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
+    pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
+    pub image_pending: Option<PathBuf>,
     /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
     pub text_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
@@ -550,11 +553,19 @@ impl LiveFindState {
     }
 }
 
-/// M60-1：后台预览结果（代次不匹配即丢弃，快速导航不渲染中间预览）。
+/// M60-1/3：后台预览结果（代次不匹配即丢弃，快速导航不渲染中间预览）。
+#[derive(Debug)]
+pub enum PreviewJobKind {
+    Viewer,
+    Image,
+}
+
 #[derive(Debug)]
 pub struct PreviewJobResult {
     pub generation: u64,
+    pub kind: PreviewJobKind,
     pub payload: crate::preview::ViewerPayload,
+    pub image: Option<image::DynamicImage>,
 }
 
 impl AppState {
@@ -573,33 +584,80 @@ impl AppState {
             let payload = crate::preview::load_viewer_payload(&target);
             let _ = tx.send(PreviewJobResult {
                 generation,
+                kind: PreviewJobKind::Viewer,
                 payload,
+                image: None,
             });
         });
     }
 
-    /// M60-1：收割后台预览结果；只接受当前代次，安装到活动 tab 的 viewer。
+    /// M60-3：图片解码投递后台；同路径已有解码或在途则跳过。
+    pub fn ensure_image_preview(&mut self, path: &std::path::Path) {
+        if self
+            .decoded_preview
+            .as_ref()
+            .is_some_and(|(p, _)| p == path)
+        {
+            return;
+        }
+        if self.image_pending.as_deref() == Some(path) {
+            return;
+        }
+        self.image_pending = Some(path.to_path_buf());
+        let target = path.to_path_buf();
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        let tx = self.preview_tx.clone();
+        std::thread::spawn(move || {
+            let image = crate::image::decode(&target).ok();
+            let _ = tx.send(PreviewJobResult {
+                generation,
+                kind: PreviewJobKind::Image,
+                payload: crate::preview::ViewerPayload {
+                    path: target,
+                    lines: Vec::new(),
+                    total: 0,
+                    hex: false,
+                },
+                image,
+            });
+        });
+    }
+
+    /// M60-1/3：收割后台结果；只接受当前代次，按类型安装 viewer 或解码图。
     pub fn drain_preview_results(&mut self) {
         while let Ok(result) = self.preview_rx.try_recv() {
             if result.generation != self.preview_generation {
                 continue;
             }
-            let Some(tab) = self.tabs.get_mut(self.active) else {
-                return;
-            };
-            if !tab.view_mode || tab.preview_focus {
-                continue;
+            match result.kind {
+                PreviewJobKind::Image => {
+                    if self.image_pending.as_deref() == Some(result.payload.path.as_path()) {
+                        self.image_pending = None;
+                    }
+                    if let Some(img) = result.image {
+                        self.decoded_preview = Some((result.payload.path, img));
+                    }
+                }
+                PreviewJobKind::Viewer => {
+                    let Some(tab) = self.tabs.get_mut(self.active) else {
+                        return;
+                    };
+                    if !tab.view_mode || tab.preview_focus {
+                        continue;
+                    }
+                    tab.viewer = Some(crate::tab::ViewerState {
+                        scroll: 0,
+                        line_count: result.payload.lines.len(),
+                        total_lines: result.payload.total,
+                        query: None,
+                        match_line: 0,
+                        hex: result.payload.hex,
+                        page: 0,
+                        path: Some(result.payload.path),
+                    });
+                }
             }
-            tab.viewer = Some(crate::tab::ViewerState {
-                scroll: 0,
-                line_count: result.payload.lines.len(),
-                total_lines: result.payload.total,
-                query: None,
-                match_line: 0,
-                hex: result.payload.hex,
-                page: 0,
-                path: Some(result.payload.path),
-            });
         }
     }
 
@@ -634,6 +692,8 @@ impl AppState {
             preview_tx: preview_channel.0,
             preview_rx: preview_channel.1,
             preview_generation: 0,
+            decoded_preview: None,
+            image_pending: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             watcher: None,
             watch_rx: None,

@@ -810,6 +810,18 @@ fn run_with_initial_mode(
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
         // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。
         state.refresh_viewer_async();
+        // M60-3：获焦图片预览后台解码（UI 线程只做协议编码）。
+        let focus = state.active_tab().preview_focus
+            || state
+                .active_tab()
+                .pane_frecency
+                .as_ref()
+                .is_some_and(|p| p.preview_focus);
+        if focus && let Some(path) = state.active_tab().preview_target() {
+            if crate::preview::preview_kind(&path) == crate::preview::PreviewKind::Image {
+                state.ensure_image_preview(&path);
+            }
+        }
         // M53-3：归档成员预览——光标变化时解出临时只读副本（按 key 缓存）。
         {
             let tab = state.active_tab();

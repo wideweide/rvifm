@@ -180,6 +180,26 @@ fn m565_tutor_search_filters_while_typing() {
 }
 
 #[test]
+fn m603_image_decode_runs_off_ui_thread() {
+    // M60-3：后台解码生成 DynamicImage，UI 线程只持有结果。
+    let tmp = TempDir::new().unwrap();
+    let png = tmp.path().join("one.png");
+    image::DynamicImage::new_rgb8(2, 2).save(&png).unwrap();
+    assert_eq!(crate::image::decode(&png).unwrap().width(), 2);
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.ensure_image_preview(&png);
+    assert!(state.image_pending.is_some());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while state.decoded_preview.is_none() && std::time::Instant::now() < deadline {
+        state.drain_preview_results();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let (path, img) = state.decoded_preview.as_ref().expect("后台解码应完成");
+    assert_eq!(path, &png);
+    assert_eq!(img.width(), 2);
+}
+
+#[test]
 fn m601_async_preview_discards_stale_generation() {
     // M60-1：只接受当前代次的后台结果；快速切换的中间载荷被丢弃。
     let tmp = TempDir::new().unwrap();
@@ -198,14 +218,18 @@ fn m601_async_preview_discards_stale_generation() {
         .preview_tx
         .send(crate::state::PreviewJobResult {
             generation: 1,
+            kind: crate::state::PreviewJobKind::Viewer,
             payload: payload_a,
+            image: None,
         })
         .unwrap();
     state
         .preview_tx
         .send(crate::state::PreviewJobResult {
             generation: 2,
+            kind: crate::state::PreviewJobKind::Viewer,
             payload: payload_b,
+            image: None,
         })
         .unwrap();
     state.drain_preview_results();
