@@ -1708,7 +1708,7 @@ append_rules = [
 **MUST**
 - **M50-1 内部命令补全**：`:` 命令模式键入时提供补全候选：内部命令表（名称 + 功能描述）+ 使用频率（frecency `cmd` topic）。排序 = 前缀匹配优先 → frecency 分数降序 → 字母序。UI 复用现有 frecency overlay 骨架，底部满宽、高度 ≤40% 终端（候选 <5 时约 5 行，最多 12–15 行），左列命令名、右列描述，选中项用主题 `selected` token；`Enter` 执行、`Tab` 仅补全前缀不执行。内部命令元数据从内嵌 help 文本（`include_str!`）或轻量表生成，避免描述重复维护。
 - **M50-2 `!` 前缀来源分离**：`:` 开头仅补全内部命令；`:!` 开头仅补全 shell 历史中的**完整命令行（带参数）**。两者共用同一 overlay 与评分/过滤逻辑，候选池按首字符决定；不改变 vim/vifm 的 `:!` 执行语义。外部候选右侧显示：已记录次数 / 「外部命令」占位（不做 PATH 主动扫描）。
-- **M50-3 shell 历史解析**：新增 shell 历史读取（至少 bash `~/.bash_history`、zsh `~/.zsh_history`），配置 `[command] scan_shell_history = true`（**默认开**）；支持**增量读取**（记录文件 size/mtime/offset，只解析新增行）。完整命令行仅作内存补全候选；**只有命令名进入 frecency `cmd` topic**（隐私边界）。读取失败/文件缺失静默降级；不读参数/路径入库。
+- **M50-3 shell 历史解析**：新增 shell 历史读取（至少 bash `~/.bash_history`、zsh `~/.zsh_history`），配置 `[command] scan_shell_history = true`（**默认开**）；支持**增量读取**（记录文件 size/mtime/offset，只解析新增行）。完整命令行作内存补全候选并写入 frecency `cmd` topic（M58-5 起按整行；旧「只有命令名」隐私边界已由用户确认推翻）。读取失败/文件缺失静默降级；不读参数/路径入库。
 - **M50-4 新 Action（无默认键位）**：新增 `Action::OpenExternalCommandLine`（字符串名 `open_external_command_line`），进入命令模式并预填 `!`；**不设置任何默认绑定**，仅在 config.toml / GUIDE 给出 `[normal] append_keymap` 示例由用户自选按键。
 - **M50-5 变量引号配置**：新增 `[command] quote_expansion = true|false`（默认 `false`，与 vifm 裸变量对齐）；现有 `%d`/`%f`/`%F`/`%D` 在该开关开启时展开值自动加双引号；引号变体 `%"f` 等本批次**不做**。
 - **M50-6 文档收尾**：GUIDE / SPEC / NOTES / ACCEPTANCE / 内嵌 help / config 默认模板同步；记录「不做 PATH 扫描 / 不做 execve 守护 / 不做参数补全」边界。
@@ -1723,7 +1723,7 @@ append_rules = [
 
 **OUT_OF_SCOPE**
 - 不扫描 PATH 发现外部命令、不实现 `execve` 守护进程监控、不补全参数/子命令（如 `git commit` 的 `commit`）。
-- 不内置 `!` 快捷键；不为补全单独写一套浮层；不持久化完整命令行到 frecency（仅命令名）。
+- 不内置 `!` 快捷键；不为补全单独写一套浮层；完整命令行持久化到 frecency（M58-5 推翻旧边界；见 SPEC M58）。
 - 不 bump 版本、不推送 tag、不触发 GitHub Release。
 
 ## M52 — 预览布局策略反转（2026-11-26 蒸馏，已确认；见 NOTES 同日条目）

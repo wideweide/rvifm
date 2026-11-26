@@ -319,7 +319,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 - `:` 开头：仅补全**内部命令**（名 + 描述，按使用频率 frecency 排序 → 前缀 → 字母序）。
 - `:!` 开头：仅补全 **shell 历史中的完整命令行**（带参数）；fzf Ctrl+R 同款，读已落盘历史，当前仍打开的 shell 会话中新命令可能缺失。
 - `Tab` 循环候选、只补全不执行；`Enter` 执行。不做 PATH 扫描、不做 `execve` 守护、不做参数补全。
-- `[command] scan_shell_history = true`（默认开，增量读取）：完整命令行仅内存候选，**只有命令名**写入 frecency `cmd` topic；可在配置中关闭。
+- `[command] scan_shell_history = true`（默认开，增量读取）：完整命令行（含参数/路径）作为候选并写入 frecency `cmd` topic（M58-5）；可在配置中关闭。
 - 无内置 `!` 快捷键；需要快捷入口时自定义：
   ```toml
   [normal]

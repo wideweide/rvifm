@@ -840,6 +840,30 @@ pub fn path_scores_at(db_path: &Path) -> std::collections::HashMap<(String, Stri
 /// "常用命令置顶"口径）；store 缺失/为空时仅会话列表（行为退化同
 /// M24-6 FIFO）。无 pending 合并（AUDIT-1：合并只在 record/TUI 启动）。
 /// M50-1：内部命令补全用的只读分数表（cmd topic，key = 命令名）。
+/// M58-5：cmd topic 中已入库的**完整命令行**（只读；补全按整行去重用）。
+pub fn cmd_full_lines() -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let Ok(Some(store)) = open_store_readonly() else {
+        return out;
+    };
+    let snapshot = store.snapshot_all().unwrap_or_default();
+    let events = store
+        .last_compaction()
+        .and_then(|s| store.events_since(s))
+        .unwrap_or_default();
+    let replayed = replay(
+        &snapshot,
+        &events,
+        store.type_tick("dir").unwrap_or(0),
+        store.type_tick("file").unwrap_or(0),
+        store.type_tick("cmd").unwrap_or(0),
+    );
+    for entry in replayed.into_iter().filter(|e| e.topic == "cmd") {
+        out.insert(entry.path);
+    }
+    out
+}
+
 pub fn cmd_scores() -> std::collections::HashMap<String, f64> {
     let mut out = std::collections::HashMap::new();
     // 只读打开（AUDIT-1 红线：补全不得写库；也避免并发测试争写锁）。
@@ -927,7 +951,7 @@ pub fn record_command_line_now(line: &str, ignore_patterns: &[String]) {
 
 /// M50 性能修复：批量记录命令名（shell 历史增量导入用）。单次打开 store、
 /// 单次 merge_pending、单次容量清理；失败整批降级 pending，避免 N 次事务。
-pub fn record_command_names_bulk(names: &[String], ignore_patterns: &[String]) -> usize {
+pub fn record_command_lines_bulk(names: &[String], ignore_patterns: &[String]) -> usize {
     let db_path = crate::config::frecency_db_path();
     let pending = db_path
         .parent()

@@ -802,7 +802,7 @@
 - [x] M58-2 命令行光标闪烁（见 SPEC M58-2）；2026-11-26 完成：SystemTime 500ms 翻转 ▋，无额外线程
 - [x] M58-3 Space 选定补全到输入栏（见 SPEC M58-3）；2026-11-26 完成：completion_accept 保留头部参数，m583 通过
 - [x] M58-4 Tab 循环三 bug 修复（见 SPEC M58-4）；2026-11-26 完成：浮层尽量全显+滚动条、completion_offset 自动滚动、索引/描述同源，m584 + m501 更新
-- [ ] M58-5 外部命令读取完整命令行（推翻 M50 边界）（见 SPEC M58-5）
+- [x] M58-5 外部命令读取完整命令行（推翻 M50 边界）（见 SPEC M58-5）；2026-11-26 完成：shell_history 写整行 + cmd_full_lines 整行去重 + record_command_lines_bulk，SPEC/GUIDE/源码隐私注释同步改写
 - [ ] M58-6 多行外部命令预览（见 SPEC M58-6）
 - [ ] M58-7 外部命令返回码提示（见 SPEC M58-7）
 - [ ] M58-8 `rvifm cmd` 外部入口（见 SPEC M58-8）

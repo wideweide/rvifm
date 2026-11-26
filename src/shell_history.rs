@@ -1,9 +1,10 @@
 //! M50-3：shell 历史读取（命令补全数据源）。
 //!
-//! - 完整命令行仅作内存补全候选；只有命令名（首个 token）写入 frecency `cmd` topic。
+//! - M58-5 起：完整命令行（含参数/路径）同时作补全候选并写入 frecency `cmd` topic；
+//!   旧 M50 边界「只有命令名入库」已由用户确认推翻。
 //! - 增量：记录每个历史文件的 (len, mtime) 签名，只在变化时对新行记账；
 //!   签名不变时跳过记录（候选列表仍从文件内容读取，保持可用）。
-//! - 不扫描 PATH、不监控 execve、不读取命令参数入库。
+//! - 不扫描 PATH、不监控 execve；历史整行由用户提供，仍不做额外参数展开。
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -186,11 +187,8 @@ pub fn record_new_commands(enabled: bool, ignore_patterns: &[String]) {
         if next_offset == start && previous.is_some() {
             continue;
         }
-        for line in new_lines {
-            if let Some(name) = line.split_whitespace().next() {
-                names.push(name.to_owned());
-            }
-        }
+        // M58-5：整行（含参数/路径）作为补全候选与 frecency cmd 记录。
+        names.extend(new_lines.into_iter().filter(|l| !l.trim().is_empty()));
         if let Some(current) = sig(&path, next_offset) {
             state.files.insert(key, current);
             changed = true;
@@ -199,8 +197,8 @@ pub fn record_new_commands(enabled: bool, ignore_patterns: &[String]) {
     // 只为「尚未入库的命令名」补冷启动数据，且设上限——避免每次启动把
     // 全部历史重复写入 frecency（原逐条写库/无去重是启动慢的主因）。
     if !names.is_empty() {
-        let existing = crate::frecency::cmd_scores();
-        names.retain(|name| !existing.contains_key(name));
+        let existing = crate::frecency::cmd_full_lines();
+        names.retain(|name| !existing.contains(name));
         names.sort();
         names.dedup();
         names.truncate(500);
@@ -209,7 +207,7 @@ pub fn record_new_commands(enabled: bool, ignore_patterns: &[String]) {
     let t0 = std::time::Instant::now();
     if !names.is_empty() {
         let n = names.len();
-        crate::frecency::record_command_names_bulk(&names, ignore_patterns);
+        crate::frecency::record_command_lines_bulk(&names, ignore_patterns);
         if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
             eprintln!("history bulk {n} names: {:?}", t0.elapsed());
         }
