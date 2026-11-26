@@ -4408,10 +4408,24 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
             format!("{}/{}", inner.to_string_lossy().replace('\\', "/"), name)
         };
         match extract_member_to_temp(state, &host, &full_inner) {
-            Ok(tmp) => match crate::opener::system_open(&tmp) {
-                Ok(()) => *msg = Some(format!("已用系统程序打开只读副本: {}", tmp.display())),
-                Err(e) => *msg = Some(format!("打开归档成员失败: {e}")),
-            },
+            Ok(tmp) => {
+                // M59-4：与物理文件共用 opener 分层（[opener]/[open] 规则），
+                // 不再硬编码 system_open；block=true 规则交 run 循环挂起执行。
+                match crate::opener::open_with_layers(
+                    &state.config.open,
+                    &state.config.opener,
+                    &tmp,
+                ) {
+                    Ok(None) => {
+                        *msg = Some(format!("已用配置的 opener 打开只读副本: {}", tmp.display()));
+                    }
+                    Ok(Some(cmd)) => {
+                        state.pending_external = Some(cmd);
+                        *msg = None;
+                    }
+                    Err(e) => *msg = Some(format!("打开归档成员失败: {e}")),
+                }
+            }
             Err(e) => *msg = Some(e),
         }
         return;

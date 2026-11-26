@@ -367,6 +367,37 @@ mod tests {
     }
 
     #[test]
+    fn m594_archive_temp_path_honors_opener_layers() {
+        // M59-4：归档临时副本同样走 [open]/[opener] 分层，而非硬编码系统 opener。
+        let mut defs = std::collections::BTreeMap::new();
+        defs.insert(
+            "custom".to_owned(),
+            OpenerDef {
+                run: "myopen %s".to_owned(),
+                block: true,
+                desc: None,
+            },
+        );
+        let layers = OpenLayers {
+            prepend_rules: vec![OpenRule {
+                mime: None,
+                name: Some("*.md".to_owned()),
+                use_rules: vec!["custom".to_owned()],
+            }],
+            append_rules: Vec::new(),
+            rules: None,
+        };
+        let path = Path::new("/tmp/rvifm-arc-1-readme.md");
+        assert_eq!(
+            resolve_open_actions(&layers, &defs, path),
+            vec![OpenAction::Run {
+                cmd: format!("myopen {}", arg(&path.to_string_lossy())),
+                block: true,
+            }]
+        );
+    }
+
+    #[test]
     fn glob_match_patterns() {
         // AUDIT-10：opener 规则名匹配统一走 tab::glob_match（单一实现）。
         assert!(crate::tab::glob_match("*.txt", "readme.txt"));
