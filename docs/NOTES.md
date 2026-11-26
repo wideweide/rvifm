@@ -1500,6 +1500,32 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-26 — M56-10 向导条目 ↔ ACCEPTANCE 映射与同步规则
+
+> 机制：向导每个模块以稳定 `module_id` 对应一组 ACCEPTANCE 验收条目；条目以稳定 `item_id`
+> 对应具体验收点。ACCEPTANCE 变更时必须回查本表：若验收项被删除/改名，先更新 `assets/tutor/<id>.toml`
+> 的 `[[items]]`（保留或新增稳定 id，进度文件按 id 自动忽略未知项），再勾选该批次的 M56-10 同步项。
+> `scripts/harness_check.py` 规则 8 校验下表覆盖全部模块且引用的 ACCEPTANCE 章节存在。
+
+<!-- TUTOR-ACCEPTANCE-MAP:START -->
+| module_id | 模块 | 对应 ACCEPTANCE 条目 | 备注 |
+|---|---|---|---|
+| core_nav | 核心导航 | §3, §18 | 浏览/h/j/k/gg/G、`'` 快速跳转 |
+| file_ops | 文件操作 | §4, §5 | 复制/移动/删除/撤销与批量 |
+| visual_tag | 选择与批量 | §5 | `v`/`t`/`yy`/`p` 多选链路 |
+| search_filter | 搜索与过滤 | §6, §19 | `/`、`=`、`f/F`、`:find` |
+| search_frecency | 检索与记忆 | §10, §19, §61 | `O` 实时递归、`:j`/`:J`、`pick` |
+| marks_frecency | marks 与 frecency | §10, §18, §22 | `m<char>`/`'<char>`/keyword |
+| panes_sort | 视图与排序 | §3, §20 | 双栏、`S` 排序、对比 |
+| tabs_history | 标签与历史 | §3, §18 | `gt`/`gT`/`N gt`、历史前进后退 |
+| command_line | 命令行 | §7, §55 | `:` 命令与补全（M50） |
+| clipboard_git | 剪贴板与 git | §4, §5 | `y*`/`gi` 与系统剪贴板 |
+| archive_ops | 归档操作 | §9 | 只读 VFS、创建/解压 |
+| remote_sftp | 远端 SFTP | §21 | 远端浏览/上传下载 |
+| maintenance | 运维操作 | §10, §38 | frecency compaction、shell 集成 |
+| tutor_meta | 向导模式用法 | §42, §43, §62 | 向导自身（本批 M56） |
+<!-- TUTOR-ACCEPTANCE-MAP:END -->
+
 ### 2026-11-26 — M55 实时递归模式（`O`）实现决策
 
 - `O` 是**独立实时模式**（`InputMode::LiveFind` + `AppState.live_find`），不复用 `:find` 的静态结果虚拟目录；`:find`/`:grep` 语义保持不变。

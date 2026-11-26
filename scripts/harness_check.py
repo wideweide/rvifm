@@ -113,10 +113,27 @@ st_published = bool(re.search(r"已发布.*GitHub Release|GitHub Release 已发�
 if rm_publishing and st_published:
     check("R7-README", False, "README 写'发布中'而 STATE 已记录发布完成")
 
+# ── 规则 8：向导模块 ↔ ACCEPTANCE 映射表完整（M56-10） ───────────────
+notes = read("docs", "NOTES.md")
+acceptance = read("docs", "ACCEPTANCE.md")
+s = notes.find("<!-- TUTOR-ACCEPTANCE-MAP:START -->")
+e = notes.find("<!-- TUTOR-ACCEPTANCE-MAP:END -->")
+map_text = notes[s:e] if s >= 0 and e > s else ""
+module_ids = [p.stem for p in (root / "assets" / "tutor").glob("*.toml")]
+mapped = set(re.findall(r"^\|\s*([a-z_]+)\s*\|", map_text, re.M))
+missing_modules = [m for m in module_ids if m not in mapped]
+check("R8-TUTOR-MAP", bool(map_text) and not missing_modules,
+      f"NOTES 向导映射表缺失模块: {missing_modules}" if missing_modules
+      else "NOTES 缺少 TUTOR-ACCEPTANCE-MAP 标记块")
+sections = set(re.findall(r"^## (\d+)\.", acceptance, re.M))
+bad_refs = [ref for ref in re.findall(r"§(\d+)", map_text) if ref not in sections]
+check("R8-TUTOR-MAP", not bad_refs,
+      f"向导映射表引用了不存在的 ACCEPTANCE 章节: {bad_refs}")
+
 # ── 结果 ─────────────────────────────────────────────────────────────
 if problems:
     print(f"harness_check: {len(problems)} 项不一致")
     for p in problems:
         print("  " + p)
     sys.exit(1)
-print("harness_check: OK（七条规则全部通过）")
+print("harness_check: OK（八条规则全部通过）")
