@@ -1170,3 +1170,7 @@
 - [x] ZKEY-3 zR 临时全显 + 快照、zM 恢复（无快照给提示）、zO 清永久过滤器不动隐藏开关。（2026-11-26：zkey3 通过）
 - [x] ZKEY-4 zt/zz/zb 将光标文件置于顶/中/底，光标索引不变，尊重 scrolloff；不足一屏不报错。（2026-11-26：zkey4 通过）
 - [x] ZKEY-5 9 个 z 键默认可触发；GUIDE/ACCEPTANCE/NOTES 一致；`[z/]z/zj/zk` 无默认绑定仅有示例。（2026-11-26：默认表 + 文档同步）
+
+## 60. M57 — `rv help` 外部入口收敛（见 SPEC M57 节）
+
+- [x] M57-1 `rvifm help` 外部子命令已移除（未知参数）；`:help` 仅在应用内以覆盖层打开（Esc/q 返回），GUIDE/help/CHANGELOG 同步，`--version`/`--help` 冒烟不变。（2026-11-26：cli 测试断言不可用）

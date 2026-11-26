@@ -1817,6 +1817,20 @@ append_rules = [
 **OUT_OF_SCOPE**
 - 不内置兄弟目录跳转；不引入 Vim 脚本/插件；不 bump / tag / Release。
 
+## M57 — `rv help` 外部入口收敛（2026-11-26 蒸馏，已确认）
+
+> 用户确认：移除 `rvifm help` 子命令（外部入口），帮助只在应用内执行。
+> 沿用「不 bump / 不 tag / 不 Release」口径。
+
+**MUST**
+- 从 `src/main.rs` 移除 `help` 子命令分派与 usage 中的外部入口；`app::help_text()` 仅保留给应用内 `:help` 覆盖层与查看器使用。
+- 同步内置 help / GUIDE / CHANGELOG / ACCEPTANCE / TASKS / STATE / NOTES，移除「`rvifm help` 可单独输出帮助」等外部入口描述。
+- 集成测试不再断言 `rvifm help` 子命令；`--version` / `--help` 冒烟不变。
+
+**OUT_OF_SCOPE**
+- 不改变应用内 `:help` 的不透明覆盖层、`/` 搜索与查看器语义。
+- 不 bump / tag / Release。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

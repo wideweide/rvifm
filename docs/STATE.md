@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-25
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：无待执行任务（M54 ZKEY-1～5 全部勾选）。本批次沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前任务**：M57 已关闭；下一批按确认顺序为 M55（frecency 搜索态区分 + 实时递归 `O`）→ M56（向导模式）→ M58（命令补全）。本批次沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -26,6 +26,7 @@
 
 ## 批次关闭记录
 
+- M57（2026-11-26，`rv help` 外部入口收敛；1/1 落地，未发版）：移除 `rvifm help` 子命令，`rvifm help` 现报「未知参数」；`:help` 恒应用内不透明覆盖层（页内 `/` 搜索、Esc/q 返回），`help_in_new_window` 配置保留兼容但失效。GUIDE/help/CHANGELOG/config 默认模板/cli 测试同步。616 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M54（2026-11-26，vifm z 系列快捷键；5/5 全部落地，未发版）：声明/实现排查对照表入 NOTES；za/zo/zm 共享 show_hidden、zR/zM/zO 会话内过滤器快照、zt/zz/zb 视口定位 + `[ui] scrolloff`；9 键默认注册两键序列；GUIDE/help/config/ACCEPTANCE/NOTES 同步。616 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**不触发版本 bump/tag/GitHub Release**，代码提交并推送当前分支。
 - M53（2026-11-26，标签栏对齐/归档 VFS 预览/预览性能；9/9 全部落地，未发版）：标签 `[N:焦点栏全路径]`、`:tabname` 与右栏活动项持久化、归档成员 w 预览与临时只读副本系统打开、frecency `r` 键与全键位提示、36 行文本预览+缓存、tmux passthrough 原生图片协议、`.deb` 列目录、150ms 预览防抖、文档同步。613 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**不触发版本 bump/tag/GitHub Release**，代码提交并推送当前分支。
 - M52（2026-11-26，预览布局策略反转；3/3 全部落地，未发版）：`fixed_side` 默认 false 且仅 frecency 生效，`:view` 恒对侧预览、`pick` 恒右；右栏能力审计无残留「仅导航」限制；全量 harness/项目文档与 M49 历史条目标注同步。606 单测 + 13 集成 + fmt/clippy/build + harness_check 全绿；**不触发版本 bump/tag/GitHub Release**，代码提交并推送当前分支。

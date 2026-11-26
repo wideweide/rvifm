@@ -769,3 +769,7 @@
 - [x] ZKEY-3 过滤器临时重置 zR/zM/zO（见 SPEC ZKEY-3）；2026-11-26 完成：FilterSnapshot + 3 个 Action + zkey3 测试
 - [x] ZKEY-4 视口定位 zt/zz/zb + `[ui] scrolloff`（见 SPEC ZKEY-4）；2026-11-26 完成：3 个 Action + scrolloff 默认 0 + zkey4 测试（光标不变）
 - [x] ZKEY-5 键位注册、GUIDE/ACCEPTANCE/NOTES 同步（见 SPEC ZKEY-5）；2026-11-26 完成：9 键默认注册 + z 前缀 Resolver + GUIDE/help/config 默认模板 + 取舍 NOTES，harness_check 通过
+
+## M57 — `rv help` 外部入口收敛（2026-11-26 蒸馏，见 SPEC M57 节）
+
+- [x] M57-1 移除 `rvifm help` 子命令与文档/测试中的外部入口描述（见 SPEC M57）；2026-11-26 完成：main.rs 去分派与 usage、app/mod.rs 去 help_text/run_help_viewer、exec.rs `:help` 恒应用内、cli 测试改为断言不可用、GUIDE/help/CHANGELOG/config 同步

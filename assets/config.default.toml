@@ -29,7 +29,7 @@ pane_borders = false
 pane_separator = false
 # 主区布局：dual（默认）| single | preview-right | preview-bottom
 # layout = "dual"
-# :help 在复用器新窗口打开（默认开；无 tmux/screen 时回退应用内帮助）
+# 旧配置兼容项；M57 起 :help 只在应用内打开，此键不再生效
 # help_in_new_window = true
 
 # ── 预览 ────────────────────────────────────────────────────────────────

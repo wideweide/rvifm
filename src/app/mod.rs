@@ -638,26 +638,9 @@ fn spawn_job_from_plan(
     None
 }
 
-/// M46-7：`rvifm help` 子命令输出的内嵌帮助文本（与 TUI `:help` 同源，
-/// 新终端窗口打开时无需再嵌入一份文档）。
-pub fn help_text() -> &'static str {
-    render::HELP_TEXT
-}
-
 /// 事件循环：进入时终端已由 `ratatui::init` 处于 raw mode + 备用屏。
 pub fn run(terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     run_with_initial_mode(terminal, InputMode::default())
-}
-
-/// M48-12：`rvifm help` 以查看器模式启动（高亮 + 页内搜索），而非打印即退出。
-pub fn run_help_viewer(terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
-    run_with_initial_mode(
-        terminal,
-        InputMode::HelpView {
-            scroll: 0,
-            search: None,
-        },
-    )
 }
 
 fn run_with_initial_mode(

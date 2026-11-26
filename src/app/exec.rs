@@ -3577,22 +3577,9 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Ok(ExecOutcome::Done { msg: None })
         }
         Some("help") => {
-            // M46-7：复用器环境下在新窗口打开 `rvifm help`（内嵌正文），
-            // 并"激活"该窗口；无 tmux/screen 或配置关闭时回退应用内不透明
-            // 帮助覆盖层（CI/无 TTY 亦走此路径）。
-            if state.config.ui.help_in_new_window {
-                let exe = std::env::current_exe()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| "rvifm".to_owned());
-                let cmd = format!("{} help", crate::opener::shell_quote(&exe));
-                let run_dir = state.active_tab().focus_base().to_path_buf();
-                match run_external_target_with_dir(&state.config.ui, &cmd, &run_dir) {
-                    ExternalRun::Multiplexer(msg) => Ok(ExecOutcome::Done { msg: Some(msg) }),
-                    ExternalRun::CurrentPane(_) => Ok(ExecOutcome::EnterHelp),
-                }
-            } else {
-                Ok(ExecOutcome::EnterHelp)
-            }
+            // M57：帮助只在应用内执行（不透明覆盖层 + 页内 / 搜索）。
+            // 已移除 `rvifm help` 外部子命令，`help_in_new_window` 配置随之失效。
+            Ok(ExecOutcome::EnterHelp)
         }
         Some("tabnew") => {
             if state.new_tab_here() {

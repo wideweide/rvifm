@@ -48,18 +48,16 @@ fn help_flag_prints_usage_and_exits_zero() {
     assert!(stdout.contains("--version"), "stdout: {stdout}");
 }
 
-/// M46-7：新增 `rvifm help` 子命令——输出与 TUI 同源的内嵌帮助正文，
-/// 供 `:help` 在 tmux/screen 新窗口打开（CI 无 TTY 亦可冒烟）。
+/// M57：帮助只在应用内 `:help` 执行，`rvifm help` 外部子命令已移除。
 #[test]
-fn help_subcommand_prints_embedded_text() {
+fn help_subcommand_is_not_available() {
     let output = Command::new(env!("CARGO_BIN_EXE_rvifm"))
         .arg("help")
         .output()
-        .expect("rvifm help 可运行");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("rvifm 帮助"), "stdout: {stdout}");
-    assert!(stdout.contains("搜索"), "stdout: {stdout}");
+        .expect("rvifm 可运行");
+    assert!(!output.status.success(), "外部 help 子命令应不可用");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("未知参数"), "stderr: {stderr}");
 }
 
 #[test]

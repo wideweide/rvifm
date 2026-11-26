@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M57 帮助外部入口收敛（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 移除 `rvifm help` 外部子命令；`:help` 只在应用内以不透明覆盖层打开（页内 `/` 搜索、Esc/q 返回），不再新开终端窗口。
+- `[ui] help_in_new_window` 配置键保留以兼容旧配置，但不再生效。
+
 ### M48 用户实测批次 4（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
