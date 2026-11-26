@@ -99,6 +99,8 @@ SEARCH 态标题改用焦点边框色 + 加粗，底部为**带边框输入框 +
 预览获焦后加载完整内容。独立 `rvifm pick` 固定左侧搜索、右侧预览。
 数据持久化在 frecency 存储（redb），跨会话累积。
 
+预览采用后台 worker + generation（M60）：快速 `j/k` 的中间目标不会渲染，文本读取/图片解码/
+归档列目录均在后台完成，停下后加载最终目标；获焦预览有蓝色边框。
 frecency 面板内 `Tab` **固定进/出预览**（与 `[preview] fixed_side` 无关，M59-8）；
 `Shift+Tab` 才切换左右栏。frecency SEARCH 态 `j/k` 仍是输入字符，进入预览后 `j/k` 滚动。
 

@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M60 真异步预览架构（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 引入预览后台 worker + generation token：快速 j/k 的中间目标被丢弃，文本读取/hex 判定、图片解码、Office/归档/PDF 文本行解析均不在 UI 线程完成。
+- UI 线程只做协议编码与文本高亮；PDF 视觉页因依赖 `Frame` 仍在 UI 线程（SIMPLIFIED）。
+
 ### M59 预览与归档 VFS 体验修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `rvifm pick` 文本预览与 TUI 查看器共用 `highlight::styled_lines`（同源语法高亮，仍纯只读）。

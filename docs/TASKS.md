@@ -827,4 +827,4 @@
 - [x] M60-2 文本读取/高亮 off-thread + 缓存引用化（见 SPEC M60-2）；2026-11-26 完成：整文件读取/hex 判定移入 worker（M60-1）+ M59-6 缓存按需克隆；**每帧语法着色仍在 UI 线程**（SIMPLIFIED，NOTES 记录）
 - [x] M60-3 图片解码 off-thread（见 SPEC M60-3）；2026-11-26 完成：image::decode + ensure_image_preview + decoded_preview 缓存，render_dynamic 仅协议编码，未解码显示加载提示，m603 通过
 - [x] M60-4 归档/Office/PDF 缓存未命中 off-thread（见 SPEC M60-4）；2026-11-26 完成：load_special_preview_lines + ensure_special_preview + special_preview 缓存，Office/归档/PDF 文本走后台；**PDF 视觉页仍需 Frame 留在 UI 线程**（NOTES）
-- [ ] M60-5 性能验收 + 文档 + 门禁（见 SPEC M60-5）
+- [x] M60-5 性能验收 + 文档 + 门禁（见 SPEC M60-5）；2026-11-26 完成：CHANGELOG/GUIDE/help/STATE/PLAN/NOTES 同步，642 单测 + 14 集成 + 全门禁绿，未发版
