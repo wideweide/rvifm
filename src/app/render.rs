@@ -972,7 +972,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     // Normal 显示操作提示。计数自标题移至两处提示行。
     let hint = if pane.normal {
         format!(
-            "j/k/gg/G=移动 l/Enter=跳转 y=复制 e=编辑 w=view Esc=关闭（{} 项）",
+            "j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=删标记 yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
             visible.len()
         )
     } else {

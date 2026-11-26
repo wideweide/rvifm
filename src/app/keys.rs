@@ -641,6 +641,21 @@ pub(crate) fn frec_pane_key(
                     }
                 }
             }
+            KeyCode::Char('r') => {
+                // M53-4：r 移除当前条目的 frecency bookmark/mark 记录（非文件）。
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(entry) = visible.get(pane.cursor).cloned() {
+                    let _ = crate::frecency::remove_entry(&entry.topic, &entry.path);
+                    pane.last_deleted = Some((entry.topic, entry.path.clone()));
+                    pane.entries.retain(|e| e.path != entry.path);
+                    pane.cursor = pane.cursor.min(
+                        filter_jump(&pane.entries, &pane.query)
+                            .len()
+                            .saturating_sub(1),
+                    );
+                    *msg = Some(format!("已移除书签/mark 记录: {}（u 恢复）", entry.path));
+                }
+            }
             KeyCode::Char('u') => {
                 // M49-15：u 恢复最近被删的记录（追加 Navigate 事件）。
                 if let Some((topic, path)) = pane.last_deleted.take() {

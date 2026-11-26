@@ -2586,6 +2586,69 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
 }
 
 #[test]
+fn m534_frecency_r_removes_record_not_file() {
+    // M53-4：r 删除当前条目的 frecency 记录（非文件），u 可恢复。
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.txt");
+    fs::write(&file, "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![crate::frecency::ScoredEntry {
+            path: file.to_string_lossy().into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 1.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+    });
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('r'),
+        KeyModifiers::NONE,
+    );
+    assert!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .is_empty()
+    );
+    assert!(file.exists(), "原文件不受影响");
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('u'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn m533_archive_member_preview_and_readonly_open() {
     // M53-3：归档成员解临时副本（预览与系统 opener 共用，不写归档内）。
     let tmp = TempDir::new().unwrap();
