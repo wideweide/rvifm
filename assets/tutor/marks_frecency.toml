@@ -1,4 +1,4 @@
-# M43-3：导师模式内容批 1——marks 与 frecency 模块。
+# M43-3：向导模式内容批 1——marks 与 frecency 模块。
 # 语义对照：o 焦点 pane 内嵌搜索（M8-12/M23-6/FIX-8）、:j/:J 分型（M8-12）、:recent
 # （NAV-4）、m<char>/'<char> marks（M25-2 frecency 实现）、:bmark 族
 # （M25-2）、:keyword（NAV-1）、:cmdmark+' 展开（M30-4）、选择器 d+u（M23-8）。

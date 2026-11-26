@@ -383,6 +383,30 @@ mod tests {
         assert_eq!(progress[&other.id].mastered.len(), 1, "其它进度不得丢失");
     }
 
+    #[test]
+    fn m661_tutor_meta_safety_and_wording() {
+        let module = module_by_id("tutor_meta").unwrap();
+        assert_eq!(module.items.len(), 5, "稳定 ID 与条目数不变");
+        for id in ["tutor_keys", "tutor_passthrough", "tutor_exit"] {
+            let item = module.items.iter().find(|i| i.id == id).unwrap();
+            assert!(
+                item.prompt.contains("重要的事说三遍"),
+                "{id}: {}",
+                item.prompt
+            );
+            assert!(item.prompt.contains("真实"), "{id}");
+        }
+        let exit = module.items.iter().find(|i| i.id == "tutor_exit").unwrap();
+        assert!(exit.expected.contains(":tutor"), "退出后应提示可重进");
+        for m in builtin_modules() {
+            assert!(
+                !m.name.contains("导师") && !m.description.contains("导师"),
+                "{}",
+                m.id
+            );
+        }
+    }
+
     /// 内嵌内容必须全部可解析且 id 唯一（内嵌内容为编译期事实，测试固化）。
     #[test]
     fn builtin_modules_parse_and_unique() {

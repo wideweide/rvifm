@@ -1,4 +1,4 @@
-# M43-4：导师模式内容批 2——运维操作模块。
+# M43-4：向导模式内容批 2——运维操作模块。
 # 语义对照：:chmod（M37-1 POSIX）、:du（M37-4 top-5）、:dup（M37-5 SHA-256）、
 # :checksum（M37-6 md5 sidecar）、:sync（M37-3 dry-run 缺省/--apply/--delete）、
 # :trash clear|purge（M37-7）、:jobs（M13-8/M24-9/M28-3）、:queue（M36-7）。

@@ -1,4 +1,4 @@
-# M43-3：导师模式内容批 1——标签与历史模块。
+# M43-3：向导模式内容批 1——标签与历史模块。
 # 语义对照：:tabnew/:tabclose/:tabmove（M1-5）、gt/gT/Ngt（M1-5+M41-1 右 pane
 # 同语义）、:tabname（M39-6）、:histprev/:histnext（NAV-3 新导航截断 forward）、
 # :history 菜单（NAV-2）、跨 tab 撤销（M2-7）。
