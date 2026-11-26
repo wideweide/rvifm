@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn m563_tutor_dialog_geometry_and_progress_bar() {
+    // M56-3/M56-4：80% 居中对话框、极小终端全屏降级、带边框进度条。
+    let rect = tutor_dialog_rect(ratatui::layout::Rect::new(0, 0, 100, 30));
+    assert_eq!((rect.width, rect.height), (80, 24));
+    assert_eq!(rect.x, 10);
+    assert_eq!(rect.y, 3);
+    assert_eq!(
+        tutor_dialog_rect(ratatui::layout::Rect::new(0, 0, 40, 30)).width,
+        40
+    );
+    assert_eq!(
+        tutor_dialog_rect(ratatui::layout::Rect::new(0, 0, 100, 10)).height,
+        10
+    );
+    let bar = tutor_progress_bar(42, 10);
+    assert!(bar.starts_with('[') && bar.ends_with("42%"), "{bar}");
+    assert!(bar.contains('█') && bar.contains('░'), "{bar}");
+}
+
+#[test]
 fn m562_first_run_enters_guide_mode() {
     // M56-2：无配置 → 向导；有配置 → Normal（纯函数，不依赖宿主 HOME）。
     assert!(matches!(
@@ -14052,9 +14072,10 @@ fn m43_1_tutor_list_scroll_render() {
         cursor: 2,
         search: None,
     };
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    // M56-3：向导改为 80% 对话框——用较大终端保证 14 模块仍可同屏断言。
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 30)).unwrap();
     terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
-    let all: String = (0..12)
+    let all: String = (0..30)
         .map(|y| {
             (0..80)
                 .map(|x| terminal.backend().buffer()[(x, y)].symbol())

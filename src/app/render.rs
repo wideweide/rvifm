@@ -599,6 +599,75 @@ pub(crate) fn tutor_panel_height(total_height: u16) -> u16 {
     (total_height / 4).clamp(6, 10)
 }
 
+/// M56-3：向导对话框几何——居中的 80%×80%；极小终端（≤40 列或 ≤10 行）
+/// 降级为全屏，避免对话框过小无法阅读。纯函数便于测试。
+pub(crate) fn tutor_dialog_rect(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    if area.width <= 40 || area.height <= 10 {
+        return area;
+    }
+    let w = (area.width * 80 / 100).max(1);
+    let h = (area.height * 80 / 100).max(1);
+    Rect {
+        x: area.x + (area.width - w) / 2,
+        y: area.y + (area.height - h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
+/// M56-4：总体学习进度 `(已完成模块, 模块总数, 已掌握功能点, 功能点总数, 百分比)`。
+/// 按稳定模块 ID 从进度表聚合，不依赖 rvifm 版本。
+pub(crate) fn tutor_overall_progress(
+    progress: &crate::tutor::TutorProgress,
+) -> (usize, usize, usize, usize, usize) {
+    let modules = crate::tutor::builtin_modules();
+    let mut total_items = 0usize;
+    let mut mastered_items = 0usize;
+    let mut done_modules = 0usize;
+    for m in &modules {
+        let total = m.items.len();
+        let mastered = progress
+            .get(&m.id)
+            .map(|p| {
+                p.mastered
+                    .iter()
+                    .filter(|id| m.items.iter().any(|i| &i.id == *id))
+                    .count()
+            })
+            .unwrap_or(0);
+        total_items += total;
+        mastered_items += mastered;
+        if total > 0 && mastered >= total {
+            done_modules += 1;
+        }
+    }
+    let pct = if total_items == 0 {
+        0
+    } else {
+        mastered_items * 100 / total_items
+    };
+    (
+        done_modules,
+        modules.len(),
+        mastered_items,
+        total_items,
+        pct,
+    )
+}
+
+/// M56-4：带边框的单条文本进度条（█/░，不引入新绘图引擎）。
+pub(crate) fn tutor_progress_bar(pct: usize, width: u16) -> String {
+    let w = width.max(4) as usize;
+    let filled = (w * pct.min(100)) / 100;
+    format!(
+        "[{}{}] {:>3}%",
+        "█".repeat(filled),
+        "░".repeat(w - filled),
+        pct.min(100)
+    )
+}
+
 /// M45-3c：删除确认居中弹窗矩形——宽取终端减边距（24–72），高按正文行数
 /// +2 边框，小终端取终端本身。
 pub(crate) fn confirm_rect(
@@ -1592,39 +1661,45 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 ))
             })
             .collect();
+        // M56-3：欢迎对话框（80% 居中，极小终端全屏）；M56-4：底部进度状态栏。
+        let dialog = tutor_dialog_rect(frame.area());
+        let block = ratatui::widgets::Block::bordered()
+            .title("🎓 向导模式 (:tutor)")
+            .title_bottom(
+                ratatui::text::Line::from(" j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 ")
+                    .centered(),
+            );
+        let inner = block.inner(dialog);
+        frame.render_widget(block, dialog);
+        let status_h = 5u16.min(inner.height.saturating_sub(2));
+        let [mut list_area, status_area] =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(status_h)]).areas(inner);
+        if let Some(q) = search {
+            let [top, rest] =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_area);
+            frame.render_widget(Paragraph::new(format!("/{q}  (Esc=清除)")), top);
+            list_area = rest;
+        }
         let list = ratatui::widgets::List::new(items)
-            .block(
-                ratatui::widgets::Block::bordered()
-                    .title("🎓 向导模式 (:tutor)")
-                    .title_bottom(
-                        ratatui::text::Line::from(
-                            " j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 ",
-                        )
-                        .centered(),
-                    ),
-            )
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .highlight_symbol("▶ ");
-        let list_area = if let Some(q) = search {
-            let [_top, rest] = ratatui::layout::Layout::vertical([
-                ratatui::layout::Constraint::Length(1),
-                ratatui::layout::Constraint::Min(0),
-            ])
-            .areas(frame.area());
-            frame.render_widget(
-                Paragraph::new(format!("/{q}  (Enter=应用 Esc=清除)")),
-                ratatui::layout::Rect {
-                    y: frame.area().y,
-                    height: 1,
-                    ..frame.area()
-                },
-            );
-            rest
-        } else {
-            frame.area()
-        };
         let mut list_state = ratatui::widgets::ListState::default().with_selected(Some(*cursor));
         frame.render_stateful_widget(list, list_area, &mut list_state);
+        if status_area.height >= 2 {
+            let (done, mods, mastered, total, pct) = tutor_overall_progress(&state.tutor_progress);
+            let bar = tutor_progress_bar(pct, status_area.width.saturating_sub(2).min(24));
+            let lines = vec![
+                Line::from("欢迎使用 rvifm！可通过本向导学习全部功能；随时输入 :tutor 再次进入。"),
+                Line::from(format!(
+                    "模块 {done}/{mods}  功能点 {mastered}/{total}  已掌握本系统 {pct}% 的功能"
+                )),
+                Line::from(bar),
+            ];
+            frame.render_widget(
+                Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("学习进度")),
+                status_area,
+            );
+        }
         return;
     }
     if let InputMode::TutorListSearch { input, cursor } = mode {
