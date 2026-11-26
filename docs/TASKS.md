@@ -747,5 +747,5 @@
 > 用户确认「理解正确」后登记；反转 M49-1/2/3 的默认策略，历史条目保留。沿用不发布口径。
 
 - [x] M52-1 策略反转：`fixed_side` 默认 false 且仅 frecency 生效；`:view` 恒对侧；pick 恒右（见 SPEC M52-1）；2026-11-26 完成：config 默认 false、render/preview/tab 拆分作用域，m521 通过
-- [ ] M52-2 右栏快捷键/命令一致性审计与补缺（见 SPEC M52-2）
-- [ ] M52-3 全量文档/代码一致性收尾 + 质量门禁（见 SPEC M52-3）
+- [x] M52-2 右栏快捷键/命令一致性审计与补缺（见 SPEC M52-2）；2026-11-26 完成：审计结论入 NOTES（无残留仅导航限制），m521 覆盖预览焦点与侧别无关
+- [x] M52-3 全量文档/代码一致性收尾 + 质量门禁（见 SPEC M52-3）；2026-11-26 完成：GUIDE/README/CHANGELOG/help/SPEC/ACCEPTANCE/STATE/PLAN/NOTES 全部同步，harness_check 通过，未发版

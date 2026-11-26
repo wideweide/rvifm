@@ -2640,7 +2640,7 @@ fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
 
     // `:view` 焦点右 → 查看器占左栏（与开关无关）。
     state.active_tab_mut().pane_frecency = None;
-    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().toggle_view(); // 正确激活 viewer（含 ViewerState）
     terminal
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
@@ -2652,6 +2652,19 @@ fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
         }
     }
     assert!(left.contains("alpha"), "左侧查看器标题含文件名: {left}");
+
+    // Tab 进出预览焦点与侧别无关：焦点保持在右栏。
+    state.active_tab_mut().view_mode = true;
+    let mut input = crate::app::InputState::default();
+    press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(state.active_tab().preview_focus, "Tab 进入预览");
+    assert_eq!(
+        state.active_tab().focus,
+        crate::tab::Focus::Right,
+        "焦点不跳栏"
+    );
+    press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
+    assert!(!state.active_tab().preview_focus, "Tab 返回列表");
 }
 
 #[test]

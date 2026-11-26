@@ -1469,7 +1469,7 @@ rvifm record  → 静默记录访问
 
 ### 2026-11-26 — M49 用户实测批次蒸馏（LAYOUT-1..4 + 反馈 124–141）
 
-- **布局决策（LAYOUT-1..3）**：frecency 与 `:view` 默认预览**固定右侧**，搜索/目录列表固定左侧——理由是空间稳定性优先于视线距离（预览区不随焦点切换跳动，利于快速瞥确认内容）；对齐 yazi/ranger。动态对侧（焦点栏搜索、对侧预览）保留为 `[preview] fixed_side = false` 配置选项，不作默认。
+- **布局决策（LAYOUT-1..3，已被 M52 反转）**：frecency 与 `:view` 默认预览**固定右侧**，搜索/目录列表固定左侧——理由是空间稳定性优先于视线距离（预览区不随焦点切换跳动，利于快速瞥确认内容）；对齐 yazi/ranger。动态对侧（焦点栏搜索、对侧预览）保留为 `[preview] fixed_side = false` 配置选项，不作默认。
 - **共享实现**：抽出 `render::preview_layout_areas()` 作为两模式共用的位置语义；`FrecencyPane` 增 `preview_focus/preview_scroll/preview_query/preview_match`，Tab 在原布局只切焦点归属、不切 pane，预览焦点复用 viewer 渲染链（滚动/搜索/高亮）。`Tab::preview_path_with(fixed_side)` 在固定模式恒取左栏光标文件。
 - **热切换**：配置只影响新打开的会话（用户明确授权「热切换成本高则按新会话交付」）；已打开的 frecency/`:view` 不重排。
 - **不发布**：沿用用户 2026-11-25 口径，本批次只提交并推送，不 bump / tag / Release。
@@ -1501,3 +1501,5 @@ rvifm record  → 静默记录访问
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
 - **一致性**：M52-3 全量扫 harness 文档（SPEC/TASKS/ACCEPTANCE/STATE/PLAN/NOTES）与项目文档（GUIDE/README/CHANGELOG/help/tutor）及代码测试，消除 M49 遗留的「默认固定右侧」冲突；M23-6/M34-4/M44-1 旧验收条目（对侧预览）与新口径恢复一致。
+- **M52-3 附加稳定性修复**：并行测试偶发 `Database already open`（`nav4_recent_exec_opens_selector`）源于 redb 读写句柄争锁；`open_store_readonly_at` 增加 10×20ms 有限重试（生产双开 rvifm 同样受益），连续 4 次全量 `cargo test` 全绿。
+- **M52-2 右栏审计结论**：`dispatch_right_pane` 投影 8 个状态字段后复用共享 `handle_key`，Normal 键位（j/k/gg/G、v/t、yy/p/P、o 等）左右一致；冒号命令在 `exec_command_impl` 与 `focused_*` 访问器下按焦点栏分派（`:sort`/`:select`/`:rename`/`:move`/`:copy`/`:archive`/`:extract`/`:file`/`gi` 均已焦点化）。预览焦点 `Tab` 进出与侧别无关，新增 m521 断言「焦点右 + 查看器在左 + Tab 进出预览且焦点不跳栏」。剩余 `tab.location`/`tab.entries[tab.cursor]` 直读仅在**右键上下文菜单**（M41-3 明确固定左栏，非「仅导航」限制）与 `jump_to` 左分支（焦点左时正确）——无残留「右栏仅导航」限制。

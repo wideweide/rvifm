@@ -495,11 +495,20 @@ pub fn open_store_readonly() -> std::io::Result<Option<Store>> {
 
 /// 注入路径形态（测试用）；语义同 `open_store_readonly`。
 fn open_store_readonly_at(db_path: &Path) -> std::io::Result<Option<Store>> {
-    match Store::open_readonly(db_path) {
-        Ok(store) => Ok(Some(store)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
+    // redb 单写多读；并发写事务/另一进程短暂持锁时有限重试（10ms×3），
+    // 避免并行测试或双开 rvifm 时偶发 "Database already open"。
+    let mut last = None;
+    for _ in 0..10 {
+        match Store::open_readonly(db_path) {
+            Ok(store) => return Ok(Some(store)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                last = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
     }
+    Err(last.unwrap_or_else(|| std::io::Error::other("frecency 只读打开失败")))
 }
 
 // ── M38-4：frecency 数据管理（:frecency stats / export / purge / prune） ──

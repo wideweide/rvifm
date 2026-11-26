@@ -17,6 +17,12 @@
 - 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
 - 启动性能：debug 二进制 461M→152M（关闭依赖 debuginfo）；tmux/screen 内跳过阻塞的终端协议查询；shell 历史改单事务批量导入 + 字节偏移增量（首次 0.26s / 常规 0.18s）。诊断开关 `RVIFM_STARTUP_TRACE=1`。
 
+### M52 预览布局策略反转（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `[preview] fixed_side` 默认改为 `false`，且只作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式；`:view` 恢复对侧预览（焦点左→右、焦点右→左），`rvifm pick` 恒左候选/右预览。已显式配置 `fixed_side = true` 的用户需手动移除才能回到默认对侧。
+- 右栏能力审计：Normal 键位与冒号命令与左栏基本一致（焦点投影 + `focused_*` 分派），预览焦点 `Tab` 进出与侧别无关；全量文档一致性收尾。
+- 稳定性：frecency 只读打开 redb 增加 10×20ms 有限重试，消除并行测试/双开实例偶发 `Database already open`。
+
 ### M51 用户实测批次 6（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - IME：打开外部窗口/失焦期间暂停周期性切英文，避免干扰 vim 等程序的中文输入法；回焦或按键后恢复。
@@ -25,7 +31,7 @@
 
 ### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
-- 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。
+- 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。**（此策略随后被 M52 反转：默认改为对侧预览，且开关仅作用于 frecency；历史条目保留供追溯。）**
 - 命令/编辑：`:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目解压出真实文件；列表左侧留白收窄为 1 空格。
 - 预览：快速切换时图片/PDF 仅元数据、文本仅前 300 字；`Tab` 进入预览后全量加载。
 - frecency：标题动态 `NORMAL/SEARCH` + `[filter]` 黄底高亮；SEARCH 提示方向键并支持 `Ctrl+J/K`；Esc 保留过滤；`dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`。
