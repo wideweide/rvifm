@@ -651,6 +651,12 @@ pub(crate) fn frec_pane_key(
     }
     // M23-7（修订）：Normal 态键位与 Normal 一致（作用于光标结果条目）。
     if pane.normal {
+        // M59-9：r→y 两键确认；除 y 外任何键取消，避免误清书签。
+        if pane.r_pending && key.code != KeyCode::Char('y') {
+            pane.r_pending = false;
+            *msg = Some("已取消移除书签".to_owned());
+            return Outcome::Continue;
+        }
         match key.code {
             KeyCode::Esc => {
                 // 退出 pane 模式回目录。
@@ -701,6 +707,28 @@ pub(crate) fn frec_pane_key(
                     crate::tab::Focus::Right => crate::tab::Focus::Left,
                 };
             }
+            KeyCode::Char('y') if pane.r_pending => {
+                // M59-9：确认清除 keyword（保留条目/分数），供 u 精确恢复。
+                pane.r_pending = false;
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(entry) = visible.get(pane.cursor).cloned() {
+                    match crate::frecency::set_keyword_topic_now(&entry.path, &entry.topic, "") {
+                        Ok(()) => {
+                            pane.last_keyword = Some((
+                                entry.topic.clone(),
+                                entry.path.clone(),
+                                entry.keyword.clone(),
+                            ));
+                            if let Some(e) = pane.entries.iter_mut().find(|e| e.path == entry.path)
+                            {
+                                e.keyword.clear();
+                            }
+                            *msg = Some(format!("已移除书签 {}（u 恢复）", entry.keyword));
+                        }
+                        Err(e) => *msg = Some(format!("移除书签失败: {e}")),
+                    }
+                }
+            }
             KeyCode::Char('y') => {
                 // M49-15：y-f/y-n/y-c 前缀（不跳转、不关面板）；面板态绕过
                 // 全局 seq 分发，故用面板自己的 pending 标记。
@@ -743,21 +771,31 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('r') => {
-                // M53-4：r 移除当前条目的 frecency bookmark/mark 记录（非文件）。
+                // M59-9：r 仅清 keyword/mark（保留条目与分数），需 y 二次确认。
                 let visible = filter_jump(&pane.entries, &pane.query);
                 if let Some(entry) = visible.get(pane.cursor).cloned() {
-                    let _ = crate::frecency::remove_entry(&entry.topic, &entry.path);
-                    pane.last_deleted = Some((entry.topic, entry.path.clone()));
-                    pane.entries.retain(|e| e.path != entry.path);
-                    pane.cursor = pane.cursor.min(
-                        filter_jump(&pane.entries, &pane.query)
-                            .len()
-                            .saturating_sub(1),
-                    );
-                    *msg = Some(format!("已移除书签/mark 记录: {}（u 恢复）", entry.path));
+                    if entry.keyword.is_empty() {
+                        *msg = Some("该条目无 bookmark/mark 记录".to_owned());
+                    } else {
+                        pane.r_pending = true;
+                        *msg = Some(format!("确认移除书签 {} ? y=确认 其它=取消", entry.keyword));
+                    }
                 }
             }
             KeyCode::Char('u') => {
+                // M59-9：优先恢复 r 清掉的 keyword（保留原条目/分数）；否则恢复 dd 删除。
+                if let Some((topic, path, keyword)) = pane.last_keyword.take() {
+                    match crate::frecency::set_keyword_topic_now(&path, &topic, &keyword) {
+                        Ok(()) => {
+                            if let Some(e) = pane.entries.iter_mut().find(|e| e.path == path) {
+                                e.keyword = keyword.clone();
+                            }
+                            *msg = Some(format!("已恢复书签 {keyword}（条目与分数保留）"));
+                        }
+                        Err(e) => *msg = Some(format!("恢复书签失败: {e}")),
+                    }
+                    return Outcome::Continue;
+                }
                 // M49-15：u 恢复最近被删的记录（追加 Navigate 事件）。
                 if let Some((topic, path)) = pane.last_deleted.take() {
                     match crate::frecency::restore_entry(&topic, &path) {

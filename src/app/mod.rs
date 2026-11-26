@@ -1226,6 +1226,8 @@ fn run_with_initial_mode(
                                             d_pending: false,
                                             y_pending: false,
                                             last_deleted: None,
+                                            r_pending: false,
+                                            last_keyword: None,
                                         });
                                     mode = InputMode::Normal;
                                 }
@@ -1901,6 +1903,8 @@ fn run_with_initial_mode(
                                 d_pending: false,
                                 y_pending: false,
                                 last_deleted: None,
+                                r_pending: false,
+                                last_keyword: None,
                             });
                         }
                         Outcome::EditFile { path } => {

@@ -259,6 +259,8 @@ fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let mut input = crate::app::InputState::default();
     let mut msg = None;
@@ -3303,6 +3305,8 @@ fn m551_search_input_line_has_border_and_caret() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     };
     let row = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>, y: u16| -> String {
         let buf = terminal.backend().buffer().clone();
@@ -3406,30 +3410,27 @@ fn m534_frecency_r_removes_record_not_file() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
+    // M59-9：r 仅清 keyword/mark（保留条目与分数），y 二次确认，u 连 keyword 恢复。
+    state
+        .active_tab_mut()
+        .pane_frecency
+        .as_mut()
+        .unwrap()
+        .entries[0]
+        .keyword = "k".to_owned();
     let mut input = crate::app::InputState::default();
-    press(
+    let mut msg = None;
+    press_msg(
         &mut state,
         &mut input,
+        &mut msg,
         KeyCode::Char('r'),
         KeyModifiers::NONE,
     );
-    assert!(
-        state
-            .active_tab()
-            .pane_frecency
-            .as_ref()
-            .unwrap()
-            .entries
-            .is_empty()
-    );
-    assert!(file.exists(), "原文件不受影响");
-    press(
-        &mut state,
-        &mut input,
-        KeyCode::Char('u'),
-        KeyModifiers::NONE,
-    );
+    assert!(state.active_tab().pane_frecency.as_ref().unwrap().r_pending);
     assert_eq!(
         state
             .active_tab()
@@ -3438,7 +3439,33 @@ fn m534_frecency_r_removes_record_not_file() {
             .unwrap()
             .entries
             .len(),
-        1
+        1,
+        "确认前条目不消失"
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('y'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.active_tab().pane_frecency.as_ref().unwrap().entries[0].keyword,
+        "",
+        "仅清 keyword"
+    );
+    assert!(file.exists(), "原文件不受影响");
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('u'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.active_tab().pane_frecency.as_ref().unwrap().entries[0].keyword,
+        "k",
+        "u 恢复原 keyword"
     );
 }
 
@@ -3531,6 +3558,8 @@ fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -3612,6 +3641,8 @@ fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let backend = ratatui::backend::TestBackend::new(100, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -3656,6 +3687,8 @@ fn m4915_frecency_dd_delete_and_u_restore() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let mut input = crate::app::InputState::default();
     press(
@@ -3792,6 +3825,8 @@ fn m491_frecency_preview_fixed_on_right() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -4581,6 +4616,8 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -4633,6 +4670,8 @@ fn m475_frecency_pane_is_borderless_and_click_matches_list() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let area = ratatui::layout::Rect::new(0, 0, 80, 12);
     let backend = ratatui::backend::TestBackend::new(80, 12);
@@ -11137,6 +11176,8 @@ fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
         d_pending: false,
         y_pending: false,
         last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
     });
     let area = ratatui::layout::Rect::new(0, 0, 100, 30);
     let [_, _, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
@@ -11186,6 +11227,8 @@ fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
             d_pending: false,
             y_pending: false,
             last_deleted: None,
+            r_pending: false,
+            last_keyword: None,
         });
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();

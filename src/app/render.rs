@@ -1209,7 +1209,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     frame.render_widget(ratatui::widgets::Clear, status_area);
     if pane.normal {
         let hint = format!(
-            "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=删标记 yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
+            "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=清书签(y确认) yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
             visible.len()
         );
         frame.render_widget(Paragraph::new(hint), status_area);

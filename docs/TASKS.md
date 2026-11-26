@@ -818,7 +818,7 @@
 - [x] M59-6 卡顿与二进制闪现修复（见 SPEC M59-6）；2026-11-26 完成：render_view_content 优先 viewer.path（committed）、缓存命中只克隆所需行，m596 通过
 - [x] M59-7 预览焦点蓝色边框高亮（见 SPEC M59-7）；2026-11-26 完成：render_view_path 获焦叠加蓝色加粗边框并收缩内容区，m597 通过
 - [x] M59-8 frecency Tab 固定进/出预览（见 SPEC M59-8）；2026-11-26 完成：Tab 两态均切 preview_focus、BackTab 切左右栏（含预览内），m598 + GUIDE/help 同步
-- [ ] M59-9 r/u 仅清/恢复 bookmark 且带确认（见 SPEC M59-9）
+- [x] M59-9 r/u 仅清/恢复 bookmark 且带确认（见 SPEC M59-9）；2026-11-26 完成：r→y 两键确认 + set_keyword_topic_now 清 keyword（保留条目/分数）+ u 精确恢复 keyword，m534 重写通过
 - [ ] M59-10 文档/验收同步 + 门禁（见 SPEC M59-10）
 
 ## M60 — 真异步预览架构（2026-11-26 蒸馏，见 SPEC M60 节）

@@ -697,6 +697,9 @@ pub struct FrecencyPane {
     pub d_pending: bool,
     pub y_pending: bool,
     pub last_deleted: Option<(String, String)>,
+    /// M59-9：`r` 待确认（两键序列 r→y）；last_keyword 保存被清的 keyword 供 u 恢复。
+    pub r_pending: bool,
+    pub last_keyword: Option<(String, String, String)>,
 }
 
 /// M18-1：运行时排序字段。

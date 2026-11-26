@@ -1500,6 +1500,12 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-26 — M59-9 r/u 语义与写入红线
+
+- `r` 不再调用 `remove_entry`（整条 tombstone）——改为既有 `set_keyword_topic_now(path,topic,"")` 清空 keyword，保留条目、分数与 last_visit，不违反 `record` 是评分唯一写入口的红线（keyword 事件本就是 marks/bookmark 的既有写入路径）。
+- `r` 采用面板内两键确认（r→y，其它键取消），避免复用 `InputMode::Confirm` 误触文件删除。
+- `u` 优先恢复 `last_keyword` 中的原 keyword（连条目分数保留）；`dd` 的整条恢复仍走 `restore_entry`。
+
 ### 2026-11-26 — M58 命令补全边界翻转与 M59/M60 拆分确认
 
 - 用户确认推翻 M50「只读取命令名、不读参数/路径」的隐私边界：shell 历史**整行**作为补全候选并写入 frecency `cmd` topic；SPEC/GUIDE/help/源码注释已同步改写。
