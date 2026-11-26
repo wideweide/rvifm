@@ -1161,4 +1161,4 @@
 - [x] M53-6 foot/tmux 下 passthrough 开启时不再强制 halfblocks（马赛克），启动仍不阻塞。（2026-11-26：should_query_protocol 纯函数测试 + tmux passthrough/env 覆盖）
 - [x] M53-7 `.deb` 等大归档正常列出成员，不再误提示「归档较大」。（2026-11-26：dpkg-deb -c 映射 + m537）
 - [x] M53-8 快速 j/k 不渲染中间预览，停下后渲染最终目标（图片仍完整预览）。（2026-11-26：150ms 防抖 + m538；press_follow 测试辅助模拟停顿）
-- [ ] M53-9 文档收尾一致；harness_check 通过；未发版。
+- [x] M53-9 文档收尾一致；harness_check 通过；未发版。（2026-11-26：四处 harness + GUIDE/help/CHANGELOG 同步）

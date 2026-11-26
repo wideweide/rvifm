@@ -760,4 +760,4 @@
 - [x] M53-6 foot/tmux 原生图片协议恢复（见 SPEC M53-6）；2026-11-26 完成：should_query_protocol + tmux allow-passthrough 探测 + env 覆盖，测试保留
 - [x] M53-7 `.deb` 等大归档去除「归档较大」误提示（见 SPEC M53-7）；2026-11-26 完成：dpkg-deb -c 映射 + 表格输出末列解析，m537 通过
 - [x] M53-8 真异步/防抖预览（快速切换跳过中间预览）（见 SPEC M53-8）；2026-11-26 完成：viewer/归档临时副本 150ms 防抖 + preview_debounce_due，m538 通过
-- [ ] M53-9 文档收尾 + 质量门禁（见 SPEC M53-9）
+- [x] M53-9 文档收尾 + 质量门禁（见 SPEC M53-9）；2026-11-26 完成：GUIDE/help/CHANGELOG/STATE/PLAN/NOTES 同步，harness_check 通过，未发版

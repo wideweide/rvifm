@@ -181,7 +181,7 @@ m{字符}    标记当前条目（".." 行 = 当前目录）
 
 ```
 :tabnew / :tabclose / gt / gT / {N}gt / :tabmove   多标签
-:tabname <名>    命名当前标签（无参清除；仅本会话）；标签溢出自动滚动（‹ ›）
+:tabname <名>    命名当前标签（无参清除；会话持久化，重启后保持）；标签显示 [序号:焦点栏全路径]，溢出自动滚动（‹ ›）
 S                排序对话框；:sort 字段,... 多字段排序
 :tree [depth]    树视图（只读快照）
 :compare [byname|bycontents]   左右 pane 目录对比；dp/do 同步（只读边界内可逆）
@@ -281,6 +281,11 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 > 归档 `w` 预览优先系统 `unzip`/`tar`/`7z` 列目录（`[preview] archive_external_listing`，缺工具回退内置）；
 > `:archive` 无参直接执行、`-i` 交互；Normal 模式每 1s 周期切英文；`:tutor` 列表 `/` 搜索 / `d` 重置 /
 > 有记录模块只显示错题 / 模块结束 `Ctrl+N` 回列表；删除确认框内状态栏与滚动条；`rv help` 为可搜索查看器。
+>
+> 最近批次（M53）的用户可见变化：标签栏 `[序号:焦点栏全路径]` 且随焦点变，`:tabname` 与右栏活动项
+> 重启后保持；归档成员 `w` 预览、`l`/Enter 临时只读副本交系统 opener；frecency `r` 删记录、
+> NORMAL 全键位提示；文本快速预览 ≥36 行 + 缓存 + 150ms 防抖；foot 原生图片协议恢复；
+> `.deb` 用 `dpkg-deb -c` 列成员，不再误提示「归档较大」。
 
 ## 11.5 命令补全（M50）
 

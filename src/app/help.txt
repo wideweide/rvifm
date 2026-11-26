@@ -75,7 +75,7 @@ rvifm 帮助（vim 风格文件管理器）
   :tabnew / :tabclose
   gt / gT / {N}gt 切换标签
   :tabmove {N}    调整标签顺序
-  :tabname <名>   命名当前标签（无参清除；仅本会话）；标签溢出自动滚动（‹ ›）
+  :tabname <名>   命名当前标签（无参清除；会话持久化，重启后保持）；标签显示 [序号:焦点栏全路径]，溢出自动滚动（‹ ›）
   布局选项        [ui] layout = single|dual|preview-right|preview-bottom
                   （缺省 dual；view 模式查看器占位随布局）
 
@@ -238,3 +238,10 @@ M52 预览布局策略反转：
   `o`/`:j`/`:J` 默认搜索栏在焦点 pane、预览在对侧；`[preview] fixed_side = true` 可改为固定右侧（仅新会话）。
   `w`/`:view` 始终对侧预览（焦点左→右、焦点右→左），不受开关影响；`rvifm pick` 恒左搜索/右预览。
   右键栏快捷键与命令与左栏基本一致；`Tab` 进/出预览与预览所在侧无关。
+
+M53 标签栏对齐与预览提升：
+  标签显示 `[序号:焦点栏全路径]`（随焦点变）；`:tabname` 与右栏活动项随会话持久化（重启保持）。
+  归档虚拟目录内 `w` 可预览；`l`/Enter 解临时只读副本交系统 opener（不写归档内）。
+  frecency NORMAL 提示列出全部键位；`r` 删除当前条目的 frecency 书签/mark 记录（`u` 可恢复）。
+  快速预览至少 36 行；文本行缓存避免卡顿；快速 j/k 150ms 防抖，不生成中间预览。
+  tmux passthrough 开启（或 RVIFM_IMAGE_PROTOCOL_QUERY=1）时恢复 foot 原生图片协议；`.deb` 用 dpkg-deb -c 列成员。

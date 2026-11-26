@@ -17,6 +17,12 @@
 - 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
 - 启动性能：debug 二进制 461M→152M（关闭依赖 debuginfo）；tmux/screen 内跳过阻塞的终端协议查询；shell 历史改单事务批量导入 + 字节偏移增量（首次 0.26s / 常规 0.18s）。诊断开关 `RVIFM_STARTUP_TRACE=1`。
 
+### M53 标签栏对齐、归档 VFS 预览与预览性能（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 标签显示 `[序号:焦点栏全路径]` 且随焦点切换；`:tabname` 与右栏活动项写入 session.toml，重启后保持（旧会话兼容）。
+- 归档成员 `w` 预览、`l`/Enter 解临时只读副本交系统 opener；frecency NORMAL 全键位提示与 `r` 删记录。
+- 文本快速预览 ≥36 行 + 行缓存；150ms 防抖跳过快速 j/k 的中间预览；tmux passthrough 下恢复 foot 原生图片协议；`.deb` 用 dpkg-deb -c 列成员。
+
 ### M52 预览布局策略反转（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `[preview] fixed_side` 默认改为 `false`，且只作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式；`:view` 恢复对侧预览（焦点左→右、焦点右→左），`rvifm pick` 恒左候选/右预览。已显式配置 `fixed_side = true` 的用户需手动移除才能回到默认对侧。
