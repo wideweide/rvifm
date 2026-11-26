@@ -111,6 +111,39 @@ pub fn decode(path: &Path) -> std::io::Result<image::DynamicImage> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
+/// M62-1：后台预缩放（默认 Nearest，速度优先）。把大图先缩到 `max_side`
+/// 以内，UI 线程再做精确视口编码时只处理小图。
+/// M62：后台预缩放的最大边长（预览区远小于此；再小则失真）。
+pub const PREVIEW_MAX_SIDE: u32 = 2048;
+
+pub fn decode_for_preview(path: &Path, max_side: u32) -> std::io::Result<image::DynamicImage> {
+    let img = decode(path)?;
+    let longest = img.width().max(img.height());
+    if longest <= max_side {
+        return Ok(img);
+    }
+    let scale = max_side as f64 / longest as f64;
+    let width = ((img.width() as f64) * scale).max(1.0) as u32;
+    let height = ((img.height() as f64) * scale).max(1.0) as u32;
+    let src = img.to_rgba8();
+    let mut resizer = fast_image_resize::Resizer::new();
+    let src_view = fast_image_resize::images::Image::from_vec_u8(
+        src.width(),
+        src.height(),
+        src.into_raw(),
+        fast_image_resize::PixelType::U8x4,
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut dst_view =
+        fast_image_resize::images::Image::new(width, height, fast_image_resize::PixelType::U8x4);
+    resizer
+        .resize(&src_view, &mut dst_view, None)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let resized = image::RgbaImage::from_raw(width, height, dst_view.into_vec())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "缩放缓冲大小不符"))?;
+    Ok(image::DynamicImage::ImageRgba8(resized))
+}
+
 pub fn is_image_file(path: &Path) -> bool {
     path.extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -226,12 +259,25 @@ impl ImageEngine {
         area: Rect,
         img: image::DynamicImage,
     ) -> std::io::Result<()> {
-        // M46-1：只与调用方传入的预览 pane 相交（不再拿整帧兜底——那会把
-        // 越界 area 原样放行，使原生协议图片出现在窗口顶部）。调用方传入的
-        // 是 `pane.inner(preview_area)`，即唯一的预览区真值。
-        let area = area.intersection(frame.area());
+        let (protocol, rect) = self.encode_for_area(img, area, frame.area())?;
+        frame.render_widget(Image::new(&protocol), rect);
+        Ok(())
+    }
+
+    /// M62-2：把已解码图编码为协议 + 绘制矩形（可缓存复用，避免每帧重编码）。
+    pub(crate) fn encode_for_area(
+        &self,
+        img: image::DynamicImage,
+        area: Rect,
+        frame_area: Rect,
+    ) -> std::io::Result<(ratatui_image::protocol::Protocol, Rect)> {
+        // M46-1：只与调用方传入的预览 pane 相交（不再拿整帧兜底）。
+        let area = area.intersection(frame_area);
         if area.width == 0 || area.height == 0 {
-            return Ok(());
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "空预览区",
+            ));
         }
         // M45-4a：字体尺寸合理性钳制（原生协议探测兜底 10×20）。
         let fs = safe_font_size(&self.picker);
@@ -256,8 +302,7 @@ impl ImageEngine {
                 Resize::Fit(None),
             )
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        frame.render_widget(Image::new(&protocol), plan.rect);
-        Ok(())
+        Ok((protocol, plan.rect))
     }
 }
 
@@ -284,6 +329,21 @@ mod tests {
         assert!(!is_image_file(Path::new("noext")));
         // 目录与归档不算图片。
         assert!(!is_image_file(Path::new("dir.zip")));
+    }
+
+    #[test]
+    fn m621_decode_for_preview_downscales_in_worker() {
+        // M62-1：后台预缩放把大图缩到目标边长以内（SIMD 路径）。
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("big.png");
+        image::DynamicImage::new_rgba8(200, 100)
+            .save(&path)
+            .unwrap();
+        let small = decode_for_preview(&path, 20).unwrap();
+        assert_eq!(small.width(), 20);
+        assert_eq!(small.height(), 10);
+        let unchanged = decode_for_preview(&path, 512).unwrap();
+        assert_eq!(unchanged.width(), 200);
     }
 
     #[test]

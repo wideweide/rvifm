@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### M62 图片缩放与编码流水线（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 后台 worker 用 `fast_image_resize`（SIMD/Nearest，默认最快）把解码图预缩到 2048px 以内；UI 线程复用已编码协议缓存，不再每帧 resize+encode。
+
 ### M61 大文本视口虚拟化（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 新增 `memmap2` 视口读取器与 `[preview] virtual_text_threshold`（默认 1MiB）；超阈值本地文件不再整文件读取/内存驻留，只渲染视口行，聚焦不再触发全量加载。

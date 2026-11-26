@@ -103,12 +103,31 @@ pub(crate) fn render_view_path(
             .as_ref()
             .filter(|(cached, _)| cached == &path)
         {
-            if state
-                .image_engine
-                .render_dynamic(frame, inner, img.clone())
-                .is_err()
+            // M62-2：同一路径+区域尺寸复用已编码协议，UI 线程不再重复 resize+encode。
+            let hit = state
+                .encoded_preview_cache
+                .borrow()
+                .as_ref()
+                .is_some_and(|(p, rect, _)| {
+                    p == &path && rect.width == inner.width && rect.height == inner.height
+                });
+            if !hit {
+                match state
+                    .image_engine
+                    .encode_for_area(img.clone(), inner, frame.area())
+                {
+                    Ok((protocol, rect)) => {
+                        frame.render_widget(ratatui_image::Image::new(&protocol), rect);
+                        *state.encoded_preview_cache.borrow_mut() =
+                            Some((path.clone(), rect, protocol));
+                    }
+                    Err(_) => {
+                        frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
+                    }
+                }
+            } else if let Some((_, rect, protocol)) = state.encoded_preview_cache.borrow().as_ref()
             {
-                frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
+                frame.render_widget(ratatui_image::Image::new(protocol), *rect);
             }
             return;
         }

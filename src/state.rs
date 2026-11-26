@@ -398,6 +398,14 @@ pub struct AppState {
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
     pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
     pub image_pending: Option<PathBuf>,
+    /// M62-2：已编码图片协议缓存（path + 绘制区域尺寸 → Protocol）。
+    pub encoded_preview_cache: std::cell::RefCell<
+        Option<(
+            PathBuf,
+            ratatui::layout::Rect,
+            ratatui_image::protocol::Protocol,
+        )>,
+    >,
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
     pub special_preview: Option<(PathBuf, Vec<String>)>,
     pub special_pending: Option<PathBuf>,
@@ -618,7 +626,8 @@ impl AppState {
         let generation = self.preview_generation;
         let tx = self.preview_tx.clone();
         std::thread::spawn(move || {
-            let image = crate::image::decode(&target).ok();
+            let image =
+                crate::image::decode_for_preview(&target, crate::image::PREVIEW_MAX_SIDE).ok();
             let _ = tx.send(PreviewJobResult {
                 generation,
                 kind: PreviewJobKind::Image,
@@ -744,6 +753,7 @@ impl AppState {
             highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,
             image_pending: None,
+            encoded_preview_cache: std::cell::RefCell::new(None),
             special_preview: None,
             special_pending: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),

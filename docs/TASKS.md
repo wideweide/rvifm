@@ -841,8 +841,8 @@
 
 ## M62 — 图片缩放与编码流水线（2026-11-26 蒸馏，见 SPEC M62 节）
 
-- [ ] M62-1 fast_image_resize + worker 预缩放（见 SPEC M62-1）
-- [ ] M62-2 编码结果缓存 + 文档门禁（见 SPEC M62-2）
+- [x] M62-1 fast_image_resize + worker 预缩放（见 SPEC M62-1）；2026-11-26 完成：decode_for_preview（Nearest/SIMD）+ PREVIEW_MAX_SIDE=2048，m621 通过
+- [x] M62-2 编码结果缓存 + 文档门禁（见 SPEC M62-2）；2026-11-26 完成：encode_for_area + encoded_preview_cache（path+Rect→Protocol），UI 线程复用已编码协议
 
 ## M63 — 其它预览增强（2026-11-26 蒸馏，见 SPEC M63 节）
 
