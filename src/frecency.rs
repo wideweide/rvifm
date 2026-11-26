@@ -1571,6 +1571,46 @@ pub fn cmd_pick(args: Vec<String>) -> std::io::Result<()> {
     pick_interactive(&out, &initial_query)
 }
 
+/// `rvifm cmd [query]`（M58-8）：从 shell 历史中选择完整命令行（fzf Ctrl+R 同款）。
+/// **纯只读**：不写 redb/events.pending、不更新 global_tick；与 `pick` 共用交互链。
+pub fn cmd_cmd(args: Vec<String>) -> std::io::Result<()> {
+    use std::io::{IsTerminal, Write as _};
+    let query = args
+        .into_iter()
+        .find(|a| !a.starts_with('-'))
+        .unwrap_or_default();
+    let scores = cmd_scores();
+    let mut candidates: Vec<(String, String, f64)> = crate::shell_history::read_all_commands()
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let name = line.split_whitespace().next().unwrap_or("").to_owned();
+            (
+                line,
+                "cmd".to_owned(),
+                scores.get(&name).copied().unwrap_or(0.0),
+            )
+        })
+        .collect();
+    candidates.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+    if !std::io::stdout().is_terminal() {
+        let hits: Vec<_> = candidates
+            .into_iter()
+            .filter(|(line, _, _)| query.is_empty() || ci_contains(line, &query))
+            .collect();
+        if hits.is_empty() {
+            std::process::exit(1);
+        }
+        let stdout = std::io::stdout();
+        let mut w = std::io::BufWriter::new(stdout.lock());
+        for (line, _, _) in hits {
+            writeln!(w, "{line}")?;
+        }
+        return Ok(());
+    }
+    pick_interactive(&candidates, &query)
+}
+
 /// 交互式选择器结果。
 enum PickOutcome {
     Selected(String),

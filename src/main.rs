@@ -30,6 +30,10 @@ fn main() -> std::io::Result<()> {
         Some("pick") => {
             return frecency::cmd_pick(args.collect());
         }
+        // M58-8：只读 shell 历史命令选择器（fzf Ctrl+R 同款）。
+        Some("cmd") => {
+            return frecency::cmd_cmd(args.collect());
+        }
         // M38-3：shell 集成初始化脚本（一行接入）。
         Some("init") => {
             return match args.next().as_deref() {
@@ -87,6 +91,7 @@ fn print_help() {
          子命令:\n  \
          record --topic dir <path>  记录一次已发生的访问（仅 cd/打开成功后调用）\n  \
          pick                       只读模糊选择器（stdin 候选 → stdout 选中）\n  \
+         cmd [query]                只读 shell 历史命令选择（fzf Ctrl+R 同款）\n  \
          maintenance compact        合并事件到 snapshot（手动 compaction）\n\n\
          不带子命令启动 TUI 文件管理器。",
         env!("CARGO_PKG_VERSION")

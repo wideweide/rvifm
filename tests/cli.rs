@@ -16,6 +16,21 @@ fn run_flag(flag: &str) -> (i32, String, String) {
 }
 
 #[test]
+fn cmd_subcommand_is_readonly_and_filters_history() {
+    // M58-8：非 TTY 下 rvifm cmd 为 filter 语义；不可能命中的 query → 退出 1。
+    let output = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+        .args(["cmd", "rvifm-no-such-history-line-xyz"])
+        .output()
+        .expect("rvifm cmd 可运行");
+    assert!(!output.status.success());
+    let help = Command::new(env!("CARGO_BIN_EXE_rvifm"))
+        .arg("--help")
+        .output()
+        .expect("--help 可运行");
+    assert!(String::from_utf8_lossy(&help.stdout).contains("cmd [query]"));
+}
+
+#[test]
 fn rv_alias_binary_prints_version_and_exits_zero() {
     // MISC-1：`rv` 短别名与 `rvifm` 同源（同一 main.rs）——冒烟只验
     // `--version` 形态一致，不进入交互模式（AGENTS §7）。

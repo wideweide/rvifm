@@ -805,5 +805,5 @@
 - [x] M58-5 外部命令读取完整命令行（推翻 M50 边界）（见 SPEC M58-5）；2026-11-26 完成：shell_history 写整行 + cmd_full_lines 整行去重 + record_command_lines_bulk，SPEC/GUIDE/源码隐私注释同步改写
 - [x] M58-6 多行外部命令预览（见 SPEC M58-6）；2026-11-26 完成：command_preview_lines + 顶部「外部命令预览」边框框，m586 通过
 - [x] M58-7 外部命令返回码提示（见 SPEC M58-7）；2026-11-26 完成：成功也回显「返回码 0」，m587 + m18_4 更新
-- [ ] M58-8 `rvifm cmd` 外部入口（见 SPEC M58-8）
+- [x] M58-8 `rvifm cmd` 外部入口（见 SPEC M58-8）；2026-11-26 完成：frecency::cmd_cmd 复用 pick_interactive（只读），main.rs 分派与 usage，cli 测试 14 项通过
 - [ ] M58-9 文档/验收同步 + 质量门禁（见 SPEC M58-9）
