@@ -7,7 +7,7 @@
 
 # [opener]
 # preview_image = { run = "imv %s", desc = "用 imv 看图" }
-# edit_text = { run = "nvim %s", block = true, desc = "用 nvim 编辑" }
+# edit_text = { run = "vim %s", block = true, desc = "用 vim 编辑" }
 # play_audio = { run = "mpv %s", block = true }
 
 # [open]

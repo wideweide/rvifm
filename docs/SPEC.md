@@ -1725,6 +1725,26 @@ append_rules = [
 - 不内置 `!` 快捷键；不为补全单独写一套浮层；不持久化完整命令行到 frecency（仅命令名）。
 - 不 bump 版本、不推送 tag、不触发 GitHub Release。
 
+## M51 — 用户实测批次 6（2026-11-26 蒸馏；IME 干扰 / 默认编辑器 / 文本识别 / 冲突弹窗）
+
+> 来源：用户 2026-11-26 实测反馈 4 条，按 AGENTS §8 蒸馏。沿用「不 bump / 不 tag / 不 GitHub Release」口径。
+
+**MUST**
+- **M51-1 IME 过度干扰修复**：rvifm 通过 `s` 等打开新终端窗口后，在该窗口运行 vim 或任意程序时**不得**被 rvifm 的 Normal 模式周期探测强制切回英文（输入法状态是桌面全局的）。要求：启动外部窗口/挂起 TUI 时暂停 IME 强制；收到 `FocusLost` 时暂停；回到 rvifm 并收到按键 / `FocusGained` 时恢复。Esc/FocusGained 触发与 FIX-9 既有保存/恢复语义不变。
+- **M51-2 默认编辑器**：内嵌 `config.toml` / `keymap.example.toml` / `opener.example.toml` 中的 `edit_text` 默认命令由 `nvim` 改为 `vim`。
+- **M51-3 文本类型识别**：补齐 `.vifm`（以及 `.vim` 等配置文本）与**无扩展名文本文件**（如 `LICENSE`）的识别——扩展名表补齐 + 有界内容嗅探（无 NUL 且 UTF-8 可解码即文本），使 `text/*` opener 规则命中并调用 `edit_text`（vim），不再落到系统 opener/无反应。不引入新依赖，读取有界（≤4KB）。
+- **M51-4 粘贴冲突弹窗提示**：`p`/`P` 同名冲突的阻塞确认弹窗必须显示按键提示（`y`/Enter 确认、`n`/Esc 取消、`j/k` 浏览），与删除确认的窗口底栏一致；不得只显示文件列表而没有提示行。
+- **M51-5 文档收尾**：GUIDE / help / CHANGELOG / ACCEPTANCE / NOTES 同步本批次，保持 harness_check 通过。
+
+**SIMPLIFIED**
+- M51-1 暂停标志用进程内原子量，不引入桌面级监听；tmux 内无焦点事件时以「外部窗口 spawn 时暂停、收到任意按键时恢复」为准。
+- M51-3 内容嗅探只读前 4KB；路径不可读/二进制时回退既有分类，不改变 `pick` 与预览同源。
+- 所有改动沿用既有键位/主题/TestBackend 测试路径，不引入必需外部依赖。
+
+**OUT_OF_SCOPE**
+- 不移除「可执行文件 Enter 仅提示」特例；不把外部编辑器作为必需依赖；不改变 frecency/撤销栈/归档只读边界。
+- 不 bump 版本、不推送 tag、不触发 GitHub Release。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

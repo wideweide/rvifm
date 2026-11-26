@@ -95,7 +95,7 @@ ibus_english_engine = "xkb:us::eng"
 
 # ── 文件打开规则（可选；完整示例见同目录 opener.example.toml） ───────────
 # [opener]
-# edit_text = { run = "nvim %s", block = true, desc = "编辑文本" }
+# edit_text = { run = "vim %s", block = true, desc = "编辑文本" }
 # [open]
 # append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
 

@@ -1488,3 +1488,9 @@ rvifm record  → 静默记录访问
   - 启动慢根因①：`Picker::from_query_stdio()` 在 tmux/screen 里发送被包裹的转义查询且等不到响应 → 阻塞；改为复用器内直接 halfblocks（无条件可用）。
   - 启动慢根因②：M50 shell 历史导入每次启动逐条 `append_event`（2000 行历史 = 2000 个写事务，并把库膨胀到 3MB 触发每次 compaction）。修法：`Store::append_events_batch()` 单事务批量写；只导入尚未入库的命令名、上限 500；`shell_history.json` 记录每文件字节偏移实现真正增量。修复后首次启动 0.26s、常规启动 0.18s（实测 pty）。
   - 诊断开关：`RVIFM_STARTUP_TRACE=1 rvifm` 打印各启动阶段耗时（默认关闭）。
+
+### 2026-11-26 — M51 用户实测批次 6 蒸馏
+
+- **IME 过度干扰根因**：输入法状态是桌面全局的；M48-9 的 1s 周期 `force_english` 在 rvifm 仍处 Normal 时持续把全局输入法切回英文，导致 `s` 新窗口里的 vim/任意程序无法保持中文输入。修法：进程内 `IME_SUSPENDED` 标志——外部窗口 spawn 成功、`FocusLost` 时暂停；`FocusGained` / 任意按键时恢复；`force_english` 暂停期直接返回（不影响 FIX-9 保存/恢复）。tmux 内无焦点事件时以「spawn 暂停 + 按键恢复」为准。
+- **测试隔离补充**：`run_external_target_with_and_dir` 在 `#[cfg(test)]` 下直接返回 `CurrentPane`，不再真实 spawn tmux 窗口（否则改变全局 IME/焦点状态并污染并行测试）。
+- **文本识别**：`mime_of` 对未知扩展名做 4KB 有界嗅探（无 NUL + UTF-8 即 text/plain），扩展名表补 `vifm/vim/cfg`；`LICENSE` 等无扩展名文本也可命中 `text/*` opener 规则。默认 `edit_text` 改 `vim %s`。

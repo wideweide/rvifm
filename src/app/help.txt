@@ -176,12 +176,14 @@ rvifm 帮助（vim 风格文件管理器）
 
 输入法（Linux）：Normal 下默认自动切英文；进入命令/搜索等文本输入模式时恢复之前的状态。
   从其它窗口切回（终端 FocusGained）与 Normal 模式按 Esc 也会防御性切英文，不覆盖已保存的输入法状态。
+  注意：s 打开新终端窗口/失焦期间会暂停强制切英文（输入法状态是全局的，避免干扰窗口内 vim/中文输入）；
+  回到 rvifm 并按键或 FocusGained 后恢复。
   使用系统已有的 fcitx5-remote / fcitx-remote / ibus 命令，不新增编译依赖；未检测到时不影响操作。
   [ime] enabled = false 可关闭；ibus_english_engine 可配置 IBus 的英文 engine（默认 xkb:us::eng）。
 
 提示：用户配置见 README（config.toml：[normal] 键位分层 / [opener]+[open] / [ui] theme / [frecency] / [keymap] / [ime]）。
 opener 必须写成表（写成字符串会解析失败并整体回退默认配置）：
-  [opener] edit_text = { run = "nvim %s", block = true }
+  [opener] edit_text = { run = "vim %s", block = true }
   [open] prepend_rules = [{ mime = "text/*", use = ["edit_text", "open"] }]
 
 M45 实测批次的便利改动：状态栏 HOME 路径缩写 ~/…；标签栏可点击切换；

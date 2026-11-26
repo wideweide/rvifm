@@ -888,6 +888,17 @@ fn run_with_initial_mode(
         // 有待决序列时预算收缩到超时余量（AUDIT-6）。
         let polled = event::poll(std::time::Duration::from_millis(poll_ms))?;
         let key_ev = if polled { event::read().ok() } else { None };
+        // M51-1：焦点事件优先——失焦暂停全局 IME 强制，回焦恢复。
+        if matches!(key_ev, Some(Event::FocusLost)) {
+            crate::ime::suspend_ime();
+        }
+        if matches!(key_ev, Some(Event::FocusGained)) {
+            crate::ime::resume_ime();
+        }
+        // 收到任意按键即视为用户已回到 rvifm，恢复 IME 强制。
+        if matches!(key_ev, Some(Event::Key(_))) {
+            crate::ime::resume_ime();
+        }
         // M47-6：切回终端窗口且不在可编辑模式时切英文；多数终端不发送此事件，
         // 故 Normal 模式 Esc 也触发（见下方 Normal 分支）。
         if matches!(key_ev, Some(Event::FocusGained)) && !ime_editable_mode(&mode) {

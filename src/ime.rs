@@ -4,6 +4,28 @@
 //! 调用本模块，命令探测和 IPC 不占用 TUI 事件循环。
 
 use crate::config::ImeConfig;
+
+/// M51-1：IME 强制切换暂停标志（桌面输入法状态是全局的）。rvifm 打开外部
+/// 终端窗口或失去焦点时置位，避免周期探测把别的程序（vim 等）的中文输入法
+/// 瞬间切回英文；回到 rvifm 并收到按键/FocusGained 时清除。
+static IME_SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn suspend_ime() {
+    IME_SUSPENDED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn resume_ime() {
+    IME_SUSPENDED.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn ime_suspended() -> bool {
+    IME_SUSPENDED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// M51-1：是否允许强制切英文的纯判定（便于测试隔离全局标志）。
+fn ime_force_allowed(suspended: bool, enabled: bool, linux: bool) -> bool {
+    !suspended && enabled && linux
+}
 #[cfg(target_os = "linux")]
 use std::process::Command;
 #[cfg(target_os = "linux")]
@@ -96,7 +118,12 @@ impl<R: CommandRunner> ImeManager<R> {
     /// 后的恢复语义），仅在检测到非英文时发一次切换命令。节流避免连按 Esc
     /// 反复探测/IPC。
     pub(crate) fn force_english(&mut self) {
-        if !self.config.enabled || !cfg!(target_os = "linux") {
+        // M51-1：外部窗口拥有焦点/会话期间不得干扰全局输入法状态。
+        if !ime_force_allowed(
+            ime_suspended(),
+            self.config.enabled,
+            cfg!(target_os = "linux"),
+        ) {
             return;
         }
         const FORCE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(250);
@@ -434,6 +461,14 @@ mod tests {
         assert_eq!(calls[1], ("fcitx5-remote".into(), vec!["-c".into()]));
         assert_eq!(calls[2], ("fcitx5-remote".into(), vec![]));
         assert_eq!(calls[3], ("fcitx5-remote".into(), vec!["-o".into()]));
+    }
+
+    #[test]
+    fn m511_force_english_disallowed_while_suspended() {
+        assert!(!ime_force_allowed(true, true, true), "暂停时不强制");
+        assert!(ime_force_allowed(false, true, true), "恢复后允许");
+        assert!(!ime_force_allowed(false, false, true), "配置关闭时不强制");
+        assert!(!ime_force_allowed(false, true, false), "非 Linux 不强制");
     }
 
     #[test]

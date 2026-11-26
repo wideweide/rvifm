@@ -1136,3 +1136,11 @@
 - [x] M50-4 `open_external_command_line` Action 可绑定并预填 `!`，无默认键位；GUIDE/config 示例存在。
 - [x] M50-5 `[command] quote_expansion` 默认 false；开启时 `%d/%f/%F/%D` 展开值自动加双引号；vifm 裸变量语义不破坏。
 - [x] M50-6 文档收尾一致；明确不做 PATH 扫描/execve 守护/参数补全/完整命令行入库；未发版。
+
+## 56. M51 — 用户实测批次 6（见 SPEC M51 节）
+
+- [x] M51-1 rvifm 开新窗口后，窗口内 vim/任意程序可正常激活中文输入法，不再被周期性切回英文；失焦暂停、按键/FocusGained 恢复。
+- [x] M51-2 内嵌配置模板默认 `edit_text` 使用 `vim %s`。
+- [x] M51-3 `.vifm`/`.vim` 与无扩展名文本（LICENSE）按文本识别并走 `edit_text`（vim）。
+- [x] M51-4 粘贴同名冲突弹窗显示 `y`/Enter、`n`/Esc、`j/k` 提示（与删除确认底栏一致）。
+- [x] M51-5 文档收尾一致；harness_check 通过；未发版。

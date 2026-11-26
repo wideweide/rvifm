@@ -149,7 +149,9 @@ fn mime_of(path: &Path) -> String {
         "js" | "mjs" => "text/javascript",
         "json" => "application/json",
         "xml" => "text/xml",
-        "rs" | "c" | "h" | "cpp" | "py" | "go" | "sh" => "text/plain",
+        "rs" | "c" | "h" | "cpp" | "py" | "go" | "sh" | "vifm" | "vim" | "cfg" | "conf" => {
+            "text/plain"
+        }
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
@@ -169,6 +171,9 @@ fn mime_of(path: &Path) -> String {
         "mkv" => "video/x-matroska",
         "webm" => "video/webm",
         "avi" => "video/x-msvideo",
+        // M51-3：未知扩展名（LICENSE / README / Makefile …）按有界内容嗅探，
+        // 文本则归 text/plain，使 text/* opener 规则命中 vim。
+        _ if is_text_like(path) => "text/plain",
         _ => "application/octet-stream",
     };
     mime.to_owned()
@@ -179,7 +184,7 @@ fn mime_of(path: &Path) -> String {
 pub(crate) fn is_text_like(path: &Path) -> bool {
     const TEXT_EXTS: &[&str] = &[
         "txt", "md", "markdown", "md5", "sh", "csv", "log", "toml", "yaml", "yml", "rs", "c", "h",
-        "cpp", "py", "go", "json", "xml", "ini", "conf",
+        "cpp", "py", "go", "json", "xml", "ini", "conf", "cfg", "vifm", "vim", "rc",
     ];
     let ext = path
         .extension()
@@ -389,7 +394,14 @@ mod tests {
         assert_eq!(mime_of(Path::new("/a/sum.md5")), "text/plain");
         assert_eq!(mime_of(Path::new("/a/paper.PDF")), "application/pdf");
         assert_eq!(mime_of(Path::new("/a/clip.MP4")), "video/mp4");
+        // M51-3：.vifm 与无扩展名文本（LICENSE）均识别为 text/plain。
+        assert_eq!(mime_of(Path::new("/a/x.vifm")), "text/plain");
         assert_eq!(mime_of(Path::new("/a/noext")), "application/octet-stream");
+        let dir = tempfile::TempDir::new().unwrap();
+        let license = dir.path().join("LICENSE");
+        std::fs::write(&license, "MIT License\nPermission is hereby granted\n").unwrap();
+        assert_eq!(mime_of(&license), "text/plain");
+        assert!(is_text_like(&license));
         assert_eq!(
             mime_of(Path::new("/a/unknown.xyz")),
             "application/octet-stream"

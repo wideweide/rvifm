@@ -101,12 +101,19 @@ pub(crate) fn safe_external_dir(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// AUDIT-14 注入版 + M48-1 起始目录：测试可指定 mux 形态而不受宿主环境影响。
+#[allow(unreachable_code)] // cfg(test) 下提前返回，余下生产分支仍参与类型检查
 pub(crate) fn run_external_target_with_and_dir(
     mux: Option<MuxKind>,
     cfg: &config::UiConfig,
     cmd: &str,
     dir: &std::path::Path,
 ) -> ExternalRun {
+    // AUDIT-14：单测不真实 spawn 复用器窗口（会改变焦点/IME 全局状态）。
+    #[cfg(test)]
+    {
+        let _ = (mux, cfg, dir);
+        return ExternalRun::CurrentPane(cmd.to_owned());
+    }
     let dir = safe_external_dir(dir);
     let dir = dir.as_path();
     if cfg.terminal_in_new_window {
@@ -122,6 +129,8 @@ pub(crate) fn run_external_target_with_and_dir(
                     Ok(st) if st.success() => {
                         // `new-window` 不带 `-d` 即选中新窗口；不再额外 select，
                         // 避免目标表达式歧义（`:` 会误选别的窗口/反复触发）。
+                        // M51-1：新窗口接管焦点后暂停 rvifm 的全局 IME 强制。
+                        crate::ime::suspend_ime();
                         ExternalRun::Multiplexer(format!("已在新窗口执行: {cmd}"))
                     }
                     _ => ExternalRun::CurrentPane(cmd.to_owned()), // 失败回退
@@ -142,6 +151,7 @@ pub(crate) fn run_external_target_with_and_dir(
                             .stdout(std::process::Stdio::null())
                             .stderr(std::process::Stdio::null())
                             .status();
+                        crate::ime::suspend_ime();
                         ExternalRun::Multiplexer(format!("已在 screen 新窗口执行: {cmd}"))
                     }
                     _ => ExternalRun::CurrentPane(cmd.to_owned()),

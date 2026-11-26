@@ -260,6 +260,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 防御性切换到英文（不覆盖已进入文本输入模式时保存的状态；250ms 内重复触发节流）。
 功能调用系统已有的 `fcitx5-remote`、`fcitx-remote`、`ibus` 命令，不增加
 编译依赖；命令缺失或失败时保持原行为。可用 `[ime] enabled = false` 关闭。
+`s` 打开新终端窗口或 rvifm 失焦期间会暂停强制切英文（输入法是桌面全局状态，避免干扰窗口内的 vim/中文输入）；回到 rvifm 并按键或 FocusGained 后恢复。
 
 完整字段与示例见 README「配置」章节；主题可用名可用 `:theme` 无参列出。
 

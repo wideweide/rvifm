@@ -17,6 +17,12 @@
 - 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
 - 启动性能：debug 二进制 461M→152M（关闭依赖 debuginfo）；tmux/screen 内跳过阻塞的终端协议查询；shell 历史改单事务批量导入 + 字节偏移增量（首次 0.26s / 常规 0.18s）。诊断开关 `RVIFM_STARTUP_TRACE=1`。
 
+### M51 用户实测批次 6（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- IME：打开外部窗口/失焦期间暂停周期性切英文，避免干扰 vim 等程序的中文输入法；回焦或按键后恢复。
+- 配置：默认 `edit_text` 改为 `vim %s`；`.vifm`/`.vim` 与 `LICENSE` 等无扩展名文本通过有界内容嗅探识别为 text/plain，走 vim 打开。
+- 粘贴同名冲突弹窗补上 `y`/Enter、n/Esc、j/k 按键提示（与删除确认底栏一致）。
+
 ### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。

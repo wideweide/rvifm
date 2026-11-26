@@ -733,3 +733,11 @@
 - [x] M50-4 `Action::OpenExternalCommandLine`（无默认绑定）+ 配置示例（见 SPEC M50-4）；2026-11-26 完成：Action open_external_command_line + Outcome，无默认绑定（m504）
 - [x] M50-5 `[command] quote_expansion` + 裸 `%f/%F/%d/%D` 引号（见 SPEC M50-5）；2026-11-26 完成：[command] quote_expansion + 裸变量引号（m505/m503）
 - [x] M50-6 文档收尾（GUIDE/SPEC/NOTES/ACCEPTANCE/help/config 模板）（见 SPEC M50-6）；2026-11-26 完成：GUIDE/help/CHANGELOG/config 模板同步，harness_check 通过
+
+## M51 — 用户实测批次 6（2026-11-26 蒸馏；IME 干扰 / 默认编辑器 / 文本识别 / 冲突弹窗，见 SPEC M51 节）
+
+- [x] M51-1 IME 过度干扰修复（外部窗口/失焦期间暂停强制切英文）（见 SPEC M51-1）；2026-11-26 完成：IME_SUSPENDED 全局暂停 + FocusLost/外部窗口暂停、按键/FocusGained 恢复（m511）
+- [x] M51-2 `edit_text` 默认命令改为 vim（见 SPEC M51-2）；2026-11-26 完成：config/opener/help 模板默认 edit_text=vim %s
+- [x] M51-3 `.vifm` / 无扩展名文本（LICENSE）识别补齐（见 SPEC M51-3）；2026-11-26 完成：mime_of 未知扩展名 4KB 嗅探 + vifm/vim/cfg 文本表（opener 测试）
+- [x] M51-4 粘贴冲突弹窗显示按键提示（见 SPEC M51-4）；2026-11-26 完成：ConfirmPaste 独立 footer 渲染按键提示（m514）
+- [x] M51-5 文档收尾（GUIDE/help/CHANGELOG/ACCEPTANCE/NOTES）（见 SPEC M51-5）；2026-11-26 完成：GUIDE/help/CHANGELOG/NOTES 同步，harness_check 通过

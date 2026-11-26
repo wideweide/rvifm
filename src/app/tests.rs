@@ -2556,6 +2556,34 @@ fn m505_quote_expansion_config_applies_to_variables() {
 }
 
 #[test]
+fn m514_paste_conflict_dialog_shows_key_hints() {
+    // M51-4：冲突确认弹窗必须显示 y/n/Esc/j/k 提示（与删除确认一致）。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state
+        .pending_paste_conflicts
+        .push(tmp.path().join("dup.txt"));
+    let mode = InputMode::ConfirmPaste {
+        cursor: 0,
+        scroll: 0,
+    };
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("确认"), "{compact}");
+    assert!(compact.contains("取消"), "{compact}");
+    assert!(compact.contains("j/k"), "{compact}");
+}
+
+#[test]
 fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
     // M49-12/14：标题含 SEARCH + [filter]；Esc 返回 NORMAL 但保留过滤。
     let tmp = TempDir::new().unwrap();

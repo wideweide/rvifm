@@ -1307,20 +1307,28 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::ConfirmPaste { cursor, scroll } => {
             // M48-5：复用删除确认窗口渲染冲突目标列表（覆盖标题为覆盖确认）。
             let paths = state.pending_paste_conflicts.clone();
-            let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 2);
-            let (_, _, lines) = confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
+            let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 3);
+            // M51-4：与删除确认同款，footer 必须单独渲染（原只画列表，
+            // 丢失 y/n/Esc/j/k 按键提示）。
+            let (_, footer, lines) =
+                confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
             frame.render_widget(ratatui::widgets::Clear, rect);
             let centered = Line::from("⚠ 是否覆盖同名文件")
                 .style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD))
                 .centered();
-            frame.render_widget(
-                Paragraph::new(lines).block(
-                    ratatui::widgets::Block::bordered()
-                        .title(centered)
-                        .border_style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                ),
-                rect,
-            );
+            let border = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
+            let block = ratatui::widgets::Block::bordered()
+                .title(centered)
+                .border_style(border);
+            let inner = block.inner(rect);
+            frame.render_widget(block, rect);
+            let [body, foot] = ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Min(1),
+                ratatui::layout::Constraint::Length(1),
+            ])
+            .areas(inner);
+            frame.render_widget(Paragraph::new(lines), body);
+            frame.render_widget(Paragraph::new(footer), foot);
             return;
         }
         InputMode::ConfirmTagDelete { cursor, scroll } => {
