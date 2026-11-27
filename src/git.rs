@@ -403,6 +403,37 @@ pub fn discard_file(root: &Path, path: &str) -> Result<String, String> {
     run_git(root, &["restore", "--worktree", "--", path])
 }
 
+/// M71：反向应用单个 hunk（实验性）。调用方负责保存原文供撤销。
+pub fn discard_hunk(
+    root: &Path,
+    path: &str,
+    hunks: &[crate::gitdiff::DiffHunk],
+    index: usize,
+) -> Result<String, String> {
+    let hunk = hunks
+        .get(index)
+        .ok_or_else(|| "没有选中差异块".to_owned())?;
+    let patch = format!(
+        "--- a/{path}\n+++ b/{path}\n{}\n{}\n",
+        hunk.header,
+        hunk.lines
+            .iter()
+            .map(|l| match l.kind {
+                crate::gitdiff::DiffLineKind::Add => format!("+{}", l.text),
+                crate::gitdiff::DiffLineKind::Del => format!("-{}", l.text),
+                crate::gitdiff::DiffLineKind::Context => format!(" {}", l.text),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let tmp =
+        std::env::temp_dir().join(format!("rvifm-hunk-{}-{}.patch", std::process::id(), index));
+    std::fs::write(&tmp, patch).map_err(|e| e.to_string())?;
+    let result = run_git(root, &["apply", "-R", &tmp.to_string_lossy()]);
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
 /// M70：`c` = commit staged changes。
 pub fn commit(root: &Path, message: &str) -> Result<String, String> {
     run_git(root, &["commit", "-m", message])

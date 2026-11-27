@@ -41,6 +41,9 @@ pub fn parse_unified(input: &str) -> Vec<DiffHunk> {
     let (mut old_no, mut new_no) = (0usize, 0usize);
     for raw in input.lines() {
         if raw.starts_with("@@") {
+            if let Some(done) = current.take() {
+                hunks.push(done);
+            }
             let mut old = 0usize;
             let mut new = 0usize;
             for part in raw.split_whitespace() {
@@ -232,6 +235,25 @@ pub fn render_side_by_side(
         }
     }
     (rows, starts)
+}
+
+/// M71：单个 hunk 的确认预览文本。
+pub fn hunk_preview(hunks: &[DiffHunk], index: usize) -> String {
+    let Some(hunk) = hunks.get(index) else {
+        return "（无差异块）".to_owned();
+    };
+    let mut out = hunk.header.clone();
+    for line in &hunk.lines {
+        let marker = match line.kind {
+            DiffLineKind::Add => "+",
+            DiffLineKind::Del => "-",
+            DiffLineKind::Context => " ",
+        };
+        out.push('\n');
+        out.push_str(marker);
+        out.push_str(&line.text);
+    }
+    out
 }
 
 #[cfg(test)]

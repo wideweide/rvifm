@@ -1423,9 +1423,23 @@ fn render_git_confirm(frame: &mut Frame, op: &crate::state::GitOp, area: ratatui
         crate::state::GitOp::Commit(m) => format!("提交暂存区，信息：{m}？"),
         crate::state::GitOp::Pull => "从远端拉取（git pull）？".to_owned(),
         crate::state::GitOp::Push => "推送到远端（git push）？".to_owned(),
+        crate::state::GitOp::DiscardHunk(path, _, preview) => {
+            format!("放弃 {path} 的当前差异块（实验性，可 u 撤销）？\n{preview}")
+        }
     };
-    let lines = vec![Line::from(body), Line::from("y/Enter=确认    其它键=取消")];
-    let h = area.height.min(4);
+    let h = area
+        .height
+        .min(if matches!(op, crate::state::GitOp::DiscardHunk(..)) {
+            12
+        } else {
+            4
+        });
+    let mut lines: Vec<Line> = body
+        .lines()
+        .take(h.saturating_sub(2) as usize)
+        .map(Line::from)
+        .collect();
+    lines.push(Line::from("y/Enter=确认    其它键=取消"));
     let rect = ratatui::layout::Rect {
         x: area.x + area.width.saturating_sub(60) / 2,
         y: area.y + area.height.saturating_sub(h) / 2,

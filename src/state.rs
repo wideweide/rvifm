@@ -395,6 +395,8 @@ pub struct AppState {
     pub viewport_text: Option<crate::viewport::ViewportText>,
     /// M69：`:diff` 只读 diff overlay 会话（仅内存，退出即丢弃）。
     pub git_diff: Option<GitDiffSession>,
+    /// M71：最近一次 hunk 丢弃的原文，供 `u` 立即撤销。
+    pub git_undo: Option<(PathBuf, Vec<u8>)>,
     /// M63-1：目录树预览快照缓存（按目录 mtime 失效，避免每帧重扫）。
     pub directory_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64), Vec<crate::tab::FileItem>>>,
@@ -598,6 +600,8 @@ pub enum GitOp {
     Commit(String),
     Pull,
     Push,
+    /// M71：实验性块级丢弃（路径、hunk 下标、预览文本）。
+    DiscardHunk(String, usize, String),
 }
 
 /// M69：diff overlay 的面板焦点。
@@ -885,6 +889,7 @@ impl AppState {
             preview_generation: 0,
             viewport_text: None,
             git_diff: None,
+            git_undo: None,
             directory_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,

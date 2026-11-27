@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M71 块级 hunk 丢弃（实验性；仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `:diff` 补丁面板 `D` 对当前 hunk 做反向 `git apply -R`：先显示预览与确认，丢弃后按 `u` 可从原文备份立即恢复。
+- 修复统一补丁解析器中多个 `@@` hunk 只保留最后一个的 bug。
+
 ### M70 Git 文件级写操作（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `:diff` overlay 内对齐 lazygit：`a` 暂存/取消暂存全部、`A` 修补提交、`d` 放弃文件、`c` 提交、`p` 拉取、`P` 推送；写操作弹确认并回显结果，完成后刷新 diff。

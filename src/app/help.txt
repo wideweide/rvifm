@@ -124,6 +124,7 @@ rvifm 帮助（vim 风格文件管理器）
    :diff           只读 git 差异：左栏变更文件、右栏补丁；j/k 逐行 J/K 跳 hunk，
                    / 搜索 n/N；| 左右对照、= 完整文件、^w 换行；Tab 切栏 Esc/q 退出
                    a 暂存/取消暂存、A 修补提交、d 放弃文件、c 提交、p 拉取、P 推送（均确认）
+                   D 放弃当前 hunk（实验性，预览确认后可 u 撤销）
   :view           同 w
   Ctrl-G          文件详情对话框
   :jobs           后台作业列表（j/k 选择、x 取消、p 暂停/恢复、Enter 详情、Esc 关闭）

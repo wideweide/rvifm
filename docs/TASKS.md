@@ -903,5 +903,5 @@
 
 ## M71 — 块级 hunk 丢弃（Git P3，2026-11-27 蒸馏，见 SPEC M71 节）
 
-- [ ] M71-1 D 丢弃当前 hunk + 预览确认 + u 撤销（见 SPEC M71）
-- [ ] M71-2 文档/验收/门禁（见 SPEC M71）
+- [x] M71-1 D 丢弃当前 hunk + 预览确认 + u 撤销（见 SPEC M71）；2026-11-27 完成：反向 `git apply -R` 单 hunk + 原文备份恢复，m711 通过；修复补丁解析器多 hunk 覆盖 bug
+- [x] M71-2 文档/验收/门禁（见 SPEC M71）；2026-11-27 完成：GUIDE/help/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁

@@ -537,6 +537,22 @@ fn run_git_op(state: &mut AppState, op: &crate::state::GitOp, msg: &mut Option<S
         crate::state::GitOp::Commit(text) => crate::git::commit(&root, text),
         crate::state::GitOp::Pull => crate::git::pull(&root),
         crate::state::GitOp::Push => crate::git::push(&root),
+        crate::state::GitOp::DiscardHunk(path, index, _) => {
+            let Some(data) = diff.data.get(path) else {
+                *msg = Some("差异数据未就绪".to_owned());
+                return;
+            };
+            let original = std::fs::read(root.join(path)).ok();
+            match crate::git::discard_hunk(&root, path, &data.hunks, *index) {
+                Ok(out) => {
+                    if let Some(bytes) = original {
+                        state.git_undo = Some((root.join(path), bytes));
+                    }
+                    Ok(out)
+                }
+                Err(e) => Err(e),
+            }
+        }
     };
     match result {
         Ok(out) => {
@@ -2216,6 +2232,7 @@ fn run_with_initial_mode(
                     }
                     let n = input.count.take().unwrap_or(1).max(1);
                     let mut exit = false;
+                    let mut undo = false;
                     let mut pending_op: Option<crate::state::GitOp> = None;
                     if let Some(diff) = state.git_diff.as_mut() {
                         match key.code {
@@ -2320,6 +2337,20 @@ fn run_with_initial_mode(
                                     }
                                 }
                             }
+                            // M71：块级丢弃（先预览确认，丢弃后 u 可撤销）。
+                            KeyCode::Char('D') if diff.focus == crate::state::DiffFocus::Patch => {
+                                if let Some(data) = diff.selected() {
+                                    let path = data.path.clone();
+                                    let preview =
+                                        crate::gitdiff::hunk_preview(&data.hunks, diff.hunk);
+                                    mode = InputMode::GitDiffConfirm {
+                                        op: crate::state::GitOp::DiscardHunk(
+                                            path, diff.hunk, preview,
+                                        ),
+                                    };
+                                }
+                            }
+                            KeyCode::Char('u') => undo = true,
                             // M70：lazygit 兼容写键（仅 diff overlay 内生效）。
                             KeyCode::Char('a') => {
                                 mode = InputMode::GitDiffConfirm {
@@ -2360,6 +2391,23 @@ fn run_with_initial_mode(
                                 };
                             }
                             _ => {}
+                        }
+                    }
+                    if undo {
+                        if let Some((path, bytes)) = state.git_undo.take() {
+                            match std::fs::write(&path, bytes) {
+                                Ok(()) => {
+                                    msg = Some(format!("已撤销丢弃：{}", path.display()));
+                                    if let Some(diff) = state.git_diff.as_mut() {
+                                        diff.data.clear();
+                                        diff.pending.clear();
+                                        diff.generation = diff.generation.wrapping_add(1);
+                                    }
+                                }
+                                Err(e) => msg = Some(format!("撤销失败: {e}")),
+                            }
+                        } else {
+                            msg = Some("没有可撤销的 hunk 丢弃".to_owned());
                         }
                     }
                     if let Some(op) = pending_op {

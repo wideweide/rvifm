@@ -365,6 +365,45 @@ fn rank_progress(
 }
 
 #[test]
+fn m711_hunk_discard_and_undo() {
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(tmp.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test"]);
+    let original: String = ('a'..='t').map(|c| format!("{c}\n")).collect();
+    fs::write(tmp.path().join("f.txt"), &original).unwrap();
+    run(&["add", "f.txt"]);
+    run(&["commit", "-q", "-m", "init"]);
+    let modified = format!("A\n{}T\n", &original[2..original.len() - 2]);
+    fs::write(tmp.path().join("f.txt"), &modified).unwrap();
+    let data = crate::git::diff_payload(tmp.path(), "f.txt", false).unwrap();
+    assert_eq!(data.hunks.len(), 2, "两处独立修改应产生两个 hunk");
+    let before = fs::read(tmp.path().join("f.txt")).unwrap();
+    crate::git::discard_hunk(tmp.path(), "f.txt", &data.hunks, 0).unwrap();
+    let after = fs::read_to_string(tmp.path().join("f.txt")).unwrap();
+    assert!(after.starts_with("a\n"), "第一个 hunk 应撤销");
+    assert!(after.ends_with("T\n"), "第二个 hunk 应保留");
+    // 模拟 u：恢复原文。
+    fs::write(tmp.path().join("f.txt"), before).unwrap();
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("f.txt")).unwrap(),
+        modified
+    );
+}
+
+#[test]
 fn m701_git_stage_commit_and_discard() {
     let tmp = TempDir::new().unwrap();
     let run = |args: &[&str]| {
