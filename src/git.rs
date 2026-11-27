@@ -354,6 +354,69 @@ pub fn diff_payload(
     })
 }
 
+/// M70：执行 git 写命令（逐参数传递，不经 shell）；失败返回可读错误。
+pub fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(args)
+        .current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if out.status.success() {
+        Ok(stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        Err(format!(
+            "git {} 失败（退出码 {}）{}",
+            args.first().copied().unwrap_or(""),
+            out.status.code().unwrap_or(-1),
+            if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            }
+        ))
+    }
+}
+
+/// M70：`a` = stage all / unstage all（按当前 index 状态切换）。
+pub fn stage_all(root: &Path) -> Result<String, String> {
+    let has_staged = changed_files(root)
+        .map_err(|e| e.to_string())?
+        .iter()
+        .any(|(_, x, _)| *x != ' ' && *x != '?');
+    if has_staged {
+        run_git(root, &["reset", "-q"])
+    } else {
+        run_git(root, &["add", "-A"])
+    }
+}
+
+/// M70：`A` = amend last commit（lazygit 语义）。
+pub fn amend_last(root: &Path) -> Result<String, String> {
+    run_git(root, &["commit", "--amend", "--no-edit"])
+}
+
+/// M70：`d` = discard changes to file（保留已暂存内容）。
+pub fn discard_file(root: &Path, path: &str) -> Result<String, String> {
+    run_git(root, &["restore", "--worktree", "--", path])
+}
+
+/// M70：`c` = commit staged changes。
+pub fn commit(root: &Path, message: &str) -> Result<String, String> {
+    run_git(root, &["commit", "-m", message])
+}
+
+/// M70：`p` / `P` = pull / push。
+pub fn pull(root: &Path) -> Result<String, String> {
+    run_git(root, &["pull"])
+}
+
+pub fn push(root: &Path) -> Result<String, String> {
+    run_git(root, &["push"])
+}
+
 /// 异步查询（gitui 同款：后台线程 + mpsc 回传；UI 不等待）。
 pub fn spawn_status_query(
     tx: &std::sync::mpsc::Sender<(PathBuf, std::io::Result<GitDirStatus>)>,

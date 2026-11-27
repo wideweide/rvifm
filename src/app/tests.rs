@@ -365,6 +365,53 @@ fn rank_progress(
 }
 
 #[test]
+fn m701_git_stage_commit_and_discard() {
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(tmp.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test"]);
+    fs::write(tmp.path().join("f.txt"), "one\n").unwrap();
+    run(&["add", "f.txt"]);
+    run(&["commit", "-q", "-m", "init"]);
+
+    fs::write(tmp.path().join("f.txt"), "two\n").unwrap();
+    crate::git::stage_all(tmp.path()).unwrap();
+    let files = crate::git::changed_files(tmp.path()).unwrap();
+    assert!(files.iter().any(|(_, x, _)| *x == 'M'), "应已暂存");
+    crate::git::commit(tmp.path(), "change").unwrap();
+    assert!(
+        crate::git::changed_files(tmp.path()).unwrap().is_empty(),
+        "提交后干净"
+    );
+
+    fs::write(tmp.path().join("f.txt"), "dirty\n").unwrap();
+    crate::git::discard_file(tmp.path(), "f.txt").unwrap();
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("f.txt")).unwrap(),
+        "two\n"
+    );
+}
+
+#[test]
+fn m702_git_confirm_config() {
+    let cfg: Config = toml::from_str("[git]\nconfirm_destructive = false\n").unwrap();
+    assert!(!cfg.git.confirm_destructive);
+    assert!(Config::default().git.confirm_destructive);
+}
+
+#[test]
 fn m692_diff_payload_from_real_repo() {
     // M69-2：用真实 git 仓库验证 porcelain 列表 + 统一补丁解析链路。
     let tmp = TempDir::new().unwrap();

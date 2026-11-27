@@ -589,6 +589,17 @@ pub struct PreviewJobResult {
     pub image: Option<image::DynamicImage>,
 }
 
+/// M70：git 写操作确认载荷（仅 overlay 内使用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitOp {
+    StageAll,
+    Amend,
+    DiscardFile(String),
+    Commit(String),
+    Pull,
+    Push,
+}
+
 /// M69：diff overlay 的面板焦点。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffFocus {

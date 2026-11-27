@@ -1500,6 +1500,12 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-27 — M70 Git 写操作边界
+
+- 写操作统一走 `git` CLI 逐参数执行（无 shell），成功后重建 diff session 以反映新状态，失败只提示不改视图。
+- `a` 按当前 index 状态在 stage all / unstage all 间切换；`A` 明确为 `--amend --no-edit`，与 lazygit 一致；`d` 用 `git restore --worktree` 保留已暂存内容。
+- `[git] confirm_destructive=true` 仅控制破坏性操作（discard/amend）的确认；提交/拉取/推送始终确认（比链接建议更保守）。pull/push 当前同步执行，可能阻塞 UI，记为已知限制。
+
 ### 2026-11-27 — M69 Git diff 技术取舍
 
 - 沿用 M23-12「零编译期 git 依赖」路线：diff 由 `git diff --no-color -U3` 产出，`src/gitdiff.rs` 自解析 hunks；不引入 `similar`/`diffs-rs`/`gix`，避免新的 C/构建链风险。

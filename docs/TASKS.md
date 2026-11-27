@@ -897,9 +897,9 @@
 
 ## M70 — Git 文件级写操作（Git P2，2026-11-27 蒸馏，见 SPEC M70 节）
 
-- [ ] M70-1 a/A/d/c/p/P 写操作 + 确认 + 结果回显（见 SPEC M70）
-- [ ] M70-2 `[git] confirm_destructive` 配置（见 SPEC M70）
-- [ ] M70-3 文档/验收/门禁（见 SPEC M70）
+- [x] M70-1 a/A/d/c/p/P 写操作 + 确认 + 结果回显（见 SPEC M70）；2026-11-27 完成：git CLI 写函数 + GitDiffConfirm/GitCommitInput + 成功后刷新 session，m701 通过
+- [x] M70-2 `[git] confirm_destructive` 配置（见 SPEC M70）；2026-11-27 完成：默认 true，m702 通过
+- [x] M70-3 文档/验收/门禁（见 SPEC M70）；2026-11-27 完成：GUIDE/help/CHANGELOG/STATE/PLAN 同步 + 全门禁
 
 ## M71 — 块级 hunk 丢弃（Git P3，2026-11-27 蒸馏，见 SPEC M71 节）
 

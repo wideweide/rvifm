@@ -28,6 +28,9 @@ pub struct Config {
     /// M27-3：预览选项（[preview] 表——PDF 图像页数/展示优先级）。
     #[serde(default)]
     pub preview: PreviewConfig,
+    /// M70：git 写操作选项（[git] 表）。
+    #[serde(default)]
+    pub git: GitConfig,
     /// M36-5：传输选项（[transfer] 表——冲突策略）。
     #[serde(default)]
     pub transfer: TransferConfig,
@@ -103,6 +106,22 @@ impl Default for CommandConfig {
         Self {
             quote_expansion: false,
             scan_shell_history: true,
+        }
+    }
+}
+
+/// M70：git 选项（`[git]` 表）。
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct GitConfig {
+    /// 破坏性操作（discard / amend / hunk discard）是否弹确认，默认开。
+    pub confirm_destructive: bool,
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self {
+            confirm_destructive: true,
         }
     }
 }
@@ -284,6 +303,7 @@ impl Default for Config {
             frecency: FrecencyConfig::default(),
             archive: ArchiveConfig::default(),
             preview: PreviewConfig::default(),
+            git: GitConfig::default(),
             transfer: TransferConfig::default(),
             opener: std::collections::BTreeMap::new(),
             open: crate::opener::OpenLayers::default(),

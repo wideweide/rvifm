@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M70 Git 文件级写操作（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `:diff` overlay 内对齐 lazygit：`a` 暂存/取消暂存全部、`A` 修补提交、`d` 放弃文件、`c` 提交、`p` 拉取、`P` 推送；写操作弹确认并回显结果，完成后刷新 diff。
+- 新增 `[git] confirm_destructive`（默认 true）。
+
 ### M69 :diff 只读 Git 差异浏览（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 新增 `:diff` overlay：左栏变更文件、右栏统一补丁/左右对照，复用 git CLI 零编译期依赖路线（自解析 `git diff`，不引第三方 diff 库）。

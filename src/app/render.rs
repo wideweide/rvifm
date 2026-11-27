@@ -1414,6 +1414,30 @@ fn render_tutor_list(
     }
 }
 
+/// M70：git 写操作确认框（y/Enter 确认，其它键取消）。
+fn render_git_confirm(frame: &mut Frame, op: &crate::state::GitOp, area: ratatui::layout::Rect) {
+    let body = match op {
+        crate::state::GitOp::StageAll => "暂存/取消暂存全部变更？".to_owned(),
+        crate::state::GitOp::Amend => "修补上一次提交（--amend）？".to_owned(),
+        crate::state::GitOp::DiscardFile(p) => format!("放弃 {p} 的未暂存修改？此操作不可恢复。"),
+        crate::state::GitOp::Commit(m) => format!("提交暂存区，信息：{m}？"),
+        crate::state::GitOp::Pull => "从远端拉取（git pull）？".to_owned(),
+        crate::state::GitOp::Push => "推送到远端（git push）？".to_owned(),
+    };
+    let lines = vec![Line::from(body), Line::from("y/Enter=确认    其它键=取消")];
+    let h = 4u16.min(area.height.max(4));
+    let rect = ratatui::layout::Rect {
+        x: area.x + area.width.saturating_sub(60) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: area.width.min(60),
+        height: h,
+    };
+    frame.render_widget(
+        Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("git 操作确认")),
+        rect,
+    );
+}
+
 /// M69：git diff 只读 overlay——左栏变更文件，右栏统一补丁/左右对照。
 fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     frame.render_widget(ratatui::widgets::Clear, frame.area());
@@ -1506,8 +1530,30 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
     // M69：git diff overlay（早于普通目录列表渲染）。
-    if matches!(mode, InputMode::GitDiff | InputMode::GitDiffSearch { .. }) {
+    if matches!(
+        mode,
+        InputMode::GitDiff
+            | InputMode::GitDiffSearch { .. }
+            | InputMode::GitDiffConfirm { .. }
+            | InputMode::GitCommitInput { .. }
+    ) {
         render_git_diff(frame, state, msg);
+        if let InputMode::GitDiffConfirm { op } = mode {
+            render_git_confirm(frame, op, frame.area());
+        }
+        if let InputMode::GitCommitInput { input } = mode {
+            let area = ratatui::layout::Rect {
+                x: frame.area().x,
+                y: frame.area().y + frame.area().height.saturating_sub(3),
+                width: frame.area().width,
+                height: 3,
+            };
+            frame.render_widget(
+                Paragraph::new(format!("git commit -m \"{input}\""))
+                    .block(ratatui::widgets::Block::bordered().title("提交信息（Enter 确认）")),
+                area,
+            );
+        }
         return;
     }
     // M55-2：`O` 实时递归查找覆盖整屏（与目录列表共用几何/图标/主题）。
@@ -2471,8 +2517,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     let status = match mode {
         InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
-        InputMode::GitDiff | InputMode::GitDiffSearch { .. } => {
-            Line::from(String::new()) // diff overlay 提前 return（M69）
+        InputMode::GitDiff
+        | InputMode::GitDiffSearch { .. }
+        | InputMode::GitDiffConfirm { .. }
+        | InputMode::GitCommitInput { .. } => {
+            Line::from(String::new()) // diff overlay 提前 return（M69/M70）
         }
         InputMode::TutorResetConfirm { .. } => {
             Line::from(String::new()) // 确认框提前 return，不可达（M56-8）

@@ -380,7 +380,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 | `:remote` | SFTP |
 | `:jobs` `:trash` `:file` `:history` | 任务 / 暂存区 / 详情 / 历史 |
 | `:!` `s` `gi` | 外部命令 / shell / git TUI |
-| `:diff` | 内建只读差异：j/k 行、J/K hunk、`|` 对照、`=` 完整文件、`^w` 换行 |
+| `:diff` | 内建差异：只读浏览 j/k 行、J/K hunk、`|` 对照、`=` 完整文件、`^w` 换行；写键 a/A/d/c/p/P（lazygit 语义，带确认） |
 | `:q` `:help` | 退出 / 帮助 |
 
 ---

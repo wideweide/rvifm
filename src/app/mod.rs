@@ -199,6 +199,10 @@ pub(crate) enum InputMode {
     GitDiff,
     /// M69：diff 补丁内搜索输入。
     GitDiffSearch { input: String },
+    /// M70：git 写操作确认。
+    GitDiffConfirm { op: crate::state::GitOp },
+    /// M70：git commit 信息输入。
+    GitCommitInput { input: String },
     /// M56-8：100% 模块重入时的重置确认（from_list 决定取消后回列表还是 Normal）。
     TutorResetConfirm { module_id: String, from_list: bool },
     /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
@@ -346,6 +350,7 @@ fn ime_editable_mode(mode: &InputMode) -> bool {
         mode,
         InputMode::LiveFind
             | InputMode::GitDiffSearch { .. }
+            | InputMode::GitCommitInput { .. }
             | InputMode::Command { .. }
             | InputMode::Search { .. }
             | InputMode::Filter { .. }
@@ -517,6 +522,38 @@ fn enter_tutor_sandbox(state: &mut AppState) {
         tab.right = pane;
     }
     tab.focus = crate::tab::Focus::Left;
+}
+
+/// M70：执行 git 写操作并刷新 diff overlay（失败不改本地视图）。
+fn run_git_op(state: &mut AppState, op: &crate::state::GitOp, msg: &mut Option<String>) {
+    let Some(diff) = state.git_diff.as_ref() else {
+        return;
+    };
+    let root = diff.root.clone();
+    let result = match op {
+        crate::state::GitOp::StageAll => crate::git::stage_all(&root),
+        crate::state::GitOp::Amend => crate::git::amend_last(&root),
+        crate::state::GitOp::DiscardFile(path) => crate::git::discard_file(&root, path),
+        crate::state::GitOp::Commit(text) => crate::git::commit(&root, text),
+        crate::state::GitOp::Pull => crate::git::pull(&root),
+        crate::state::GitOp::Push => crate::git::push(&root),
+    };
+    match result {
+        Ok(out) => {
+            *msg = Some(format!(
+                "git: {}",
+                if out.is_empty() {
+                    "完成".to_owned()
+                } else {
+                    out
+                }
+            ));
+            if let Ok(fresh) = crate::state::GitDiffSession::open(root) {
+                state.git_diff = Some(fresh);
+            }
+        }
+        Err(e) => *msg = Some(e),
+    }
 }
 
 /// M56-8：模块是否已全部掌握（按稳定 item id 判定，进度按模块 id 查）。
@@ -2179,6 +2216,7 @@ fn run_with_initial_mode(
                     }
                     let n = input.count.take().unwrap_or(1).max(1);
                     let mut exit = false;
+                    let mut pending_op: Option<crate::state::GitOp> = None;
                     if let Some(diff) = state.git_diff.as_mut() {
                         match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => exit = true,
@@ -2282,8 +2320,50 @@ fn run_with_initial_mode(
                                     }
                                 }
                             }
+                            // M70：lazygit 兼容写键（仅 diff overlay 内生效）。
+                            KeyCode::Char('a') => {
+                                mode = InputMode::GitDiffConfirm {
+                                    op: crate::state::GitOp::StageAll,
+                                };
+                            }
+                            KeyCode::Char('A') => {
+                                let op = crate::state::GitOp::Amend;
+                                if state.config.git.confirm_destructive {
+                                    mode = InputMode::GitDiffConfirm { op };
+                                } else {
+                                    pending_op = Some(op);
+                                }
+                            }
+                            KeyCode::Char('d') if diff.focus == crate::state::DiffFocus::Files => {
+                                if let Some(path) = diff.selected_path().map(str::to_owned) {
+                                    let op = crate::state::GitOp::DiscardFile(path);
+                                    if state.config.git.confirm_destructive {
+                                        mode = InputMode::GitDiffConfirm { op };
+                                    } else {
+                                        pending_op = Some(op);
+                                    }
+                                }
+                            }
+                            KeyCode::Char('c') => {
+                                mode = InputMode::GitCommitInput {
+                                    input: String::new(),
+                                };
+                            }
+                            KeyCode::Char('p') => {
+                                mode = InputMode::GitDiffConfirm {
+                                    op: crate::state::GitOp::Pull,
+                                };
+                            }
+                            KeyCode::Char('P') => {
+                                mode = InputMode::GitDiffConfirm {
+                                    op: crate::state::GitOp::Push,
+                                };
+                            }
                             _ => {}
                         }
+                    }
+                    if let Some(op) = pending_op {
+                        run_git_op(&mut state, &op, &mut msg);
                     }
                     if exit {
                         state.git_diff = None;
@@ -2310,6 +2390,38 @@ fn run_with_initial_mode(
                                         (!search_input.is_empty()).then(|| search_input.clone());
                                 }
                             }
+                        }
+                    }
+                }
+                InputMode::GitCommitInput {
+                    input: commit_input,
+                } => {
+                    if key.kind == KeyEventKind::Press {
+                        match command_input(commit_input, key) {
+                            CmdInput::Submit => {
+                                let text = commit_input.trim().to_owned();
+                                if !text.is_empty() {
+                                    mode = InputMode::GitDiffConfirm {
+                                        op: crate::state::GitOp::Commit(text),
+                                    };
+                                } else {
+                                    mode = InputMode::GitDiff;
+                                }
+                            }
+                            CmdInput::Cancel => mode = InputMode::GitDiff,
+                            CmdInput::Continue => {}
+                        }
+                    }
+                }
+                InputMode::GitDiffConfirm { op } => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                let operation = op.clone();
+                                run_git_op(&mut state, &operation, &mut msg);
+                                mode = InputMode::GitDiff;
+                            }
+                            _ => mode = InputMode::GitDiff,
                         }
                     }
                 }
