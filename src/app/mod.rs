@@ -1403,6 +1403,13 @@ fn run_with_initial_mode(
                                         &mut state, &job_tx, &op, &names, &target, &base,
                                     ) {
                                         msg = Some(e);
+                                    } else if op.starts_with("archive:") {
+                                        // M86-5：两栏同目录时产物视觉上仍在"同侧"，
+                                        // 显式提示目标路径，消除"生成到同侧"的误解。
+                                        msg = Some(format!(
+                                            "archive: 产物写入对侧 {}",
+                                            target.display().to_string().replace('\\', "/")
+                                        ));
                                     }
                                 }
                                 Ok(ExecOutcome::ShowJobs) => {

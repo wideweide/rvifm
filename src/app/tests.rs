@@ -15446,3 +15446,24 @@ fn m864_tutor_progress_has_divider_and_no_bar() {
     assert!(text.contains('─'), "顶部有分割线");
     assert!(!text.contains('█'), "进度条已移除");
 }
+
+#[test]
+fn m865_archive_plan_focus_left_dest_is_right() {
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(left.path().join("l.txt"), "L").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Left;
+    let (_op, names, target, base) = crate::app::exec::archive_plan(
+        &state,
+        crate::ops::ArchiveFormat::Zip,
+        "out.zip",
+        crate::ops::Checksum::Md5,
+    )
+    .unwrap();
+    assert_eq!(names, vec!["l.txt"], "源取焦点左栏条目");
+    assert_eq!(base, left.path());
+    assert_eq!(target, right.path().join("out.zip"), "产物落在右栏");
+}
