@@ -168,8 +168,8 @@ frecency 面板内 `Tab` **固定进/出预览**（与 `[preview] fixed_side` �
 ## 5. 选择与批量
 
 ```
-v / V      可视选择 / 行可视（互斥；Esc 退出）
-t          标记/取消标记当前条目（tag）
+v          可视选择（整行/目录；j/k 扩展选区，Esc 退出）
+t          标记/取消标记当前条目（tag，BOLD+下划线高亮；d/D 批量删除）
 :select {glob} / :unselect   按 pattern 批量标记/取消
 :tag copy|move|delete <目录>  对标记集合批量操作（复制/移动后台执行，:jobs 可见）
 ```
@@ -358,6 +358,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 | 焦点/视图 | `Tab` `w`/`:view` `S` `:sort` `:tree` `:theme` `Ctrl-G` |
 | 搜索 | `/` `n/N` `={glob}` `f/F{字符}` `:find` `:grep` |
 | 选择/批量 | `v` `t` `:select` `:unselect` `:tag` |
+| 粘贴冲突 | 同名时弹选项：同路径 rename/skip/skip all；异路径另加 append the tail/overwrite/overwrite all |
 | 文件操作 | `yy` `p/P` `dd` `DD` `u` `cw` `:rename` `:copy` `:move` `:link` `:mkdir` `:touch` `:mk` `y/yn/yf/yc` |
 | 跳转 | `o` `:j/:J` `:recent` `'{字符}` `m{字符}` `:bmark` 族 `:cmdmark` |
 | 标签/历史 | `:tabnew` `gt/gT` `:tabmove` `:histprev` `:histnext` `:history` |

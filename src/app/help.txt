@@ -46,7 +46,7 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 选择、标记与批量 ==
   v               可视选择（j/k 扩选，Esc 退出）
-  V               行可视模式（与 v 互斥；d/y/x 对选中区域执行）
+  t               标记/取消标记（BOLD+下划线高亮；d 批量删除 / D 永久删除）
   t               标记/取消标记当前条目（tag）
   :select {glob}  按 pattern 批量标记（无参=当前条目）
   :unselect       同上取消（无参=清空全部）
@@ -285,3 +285,6 @@ M82–M85（git diff 体验 / 文本预览 / 归档打开 / 图片流水线）�
 
 M88 长文件名：名称列按 Unicode 宽度以 `…` 中间省略并保留尾部扩展名链（如 …B5.pdf.md5），
   大小/时间列固定不被文件名挤压。
+
+粘贴冲突：同名时弹出选项——同路径 rename/skip/skip all，
+  异路径另加 append the tail/overwrite/overwrite all；j/k 选择，y/Enter 应用，Esc 取消。

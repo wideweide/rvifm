@@ -3,6 +3,20 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### M86 test.md 实测反馈批次（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 预览：扩展文本类型覆盖 + lossy 解码去乱码；`:view` 标题改「路径 · 预览」，去掉无意义行数/截断提示。
+- frecency：SEARCH 带边框输入框+闪烁光标；对侧面板保留；BackTab 失效；`w` 激活预览；`d` 多选删除/`dd` 当前条目；pick 单栏默认、`w` 双栏；`l`/Enter 前记录访问。
+- git：`|` 全屏对照修复左半留白（patch 区回到文件栏起点）。
+- tutor：去圆点与进度条、境界图标按级着色、提示入框底、焦点外框、分割线与左对齐标题、竖线分隔。
+- archive：核实产物落对侧并显示目标路径；`t` 标记可见高亮 + `d`/`D` 批量删除；移除 `V`；粘贴冲突选项扩展。
+
+### M88 长文件名省略策略（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 按 Unicode 单元格宽度在名称列内以 `…` 中间省略，保留 `.pdf.md5`/`.tar.gz` 等尾部扩展链；大小/时间列不再被挤压。
+
 ## [1.5.0] — 2026-11-27
 
 > M47–M85 共 39 个批次随 **1.5.0** 发布。增量功能与修复：异步预览流水线、git `:diff` 浏览与写操作、tutor 全功能覆盖、frecency 对齐、焦点样式与归档 opener 修复、图片后台编码。crates.io 不发布（沿用用户决策，仍停 1.0.0）。人工终端项保持 deferred。
