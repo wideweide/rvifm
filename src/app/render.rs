@@ -1425,7 +1425,7 @@ fn render_git_confirm(frame: &mut Frame, op: &crate::state::GitOp, area: ratatui
         crate::state::GitOp::Push => "推送到远端（git push）？".to_owned(),
     };
     let lines = vec![Line::from(body), Line::from("y/Enter=确认    其它键=取消")];
-    let h = 4u16.min(area.height.max(4));
+    let h = area.height.min(4);
     let rect = ratatui::layout::Rect {
         x: area.x + area.width.saturating_sub(60) / 2,
         y: area.y + area.height.saturating_sub(h) / 2,
