@@ -365,6 +365,22 @@ fn rank_progress(
 }
 
 #[test]
+fn m742_tutor_dialog_keeps_pane_context() {
+    let (_tmp, mut state) = make_state(3);
+    state.new_tab_here();
+    let mode = InputMode::TutorList {
+        cursor: 0,
+        search: None,
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
+    terminal.draw(|f| render(f, &state, &mode, None)).unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row = |y: u16| -> String { (0..120u16).map(|x| buf[(x, y)].symbol()).collect() };
+    assert!(!row(0).trim().is_empty(), "标签栏上下文应保留: {}", row(0));
+    assert!(row(0).contains('['), "顶部标签仍可见: {}", row(0));
+}
+
+#[test]
 fn m731_tab_background_differs_from_path_line() {
     let (_tmp, mut state) = make_state(2);
     state.new_tab_here();
@@ -7307,7 +7323,7 @@ fn m458d_tutor_list_shows_progress_on_left() {
 fn m458c_tutor_panel_does_not_hide_bottom_entry() {
     // M45-8c：Tutor 面板遮住 pane 底部——列表渲染区与视口高度都须扣除面板，
     // G 跳末尾条目时高亮行落在面板之上。
-    assert_eq!(tutor_panel_height(24), 6);
+    assert_eq!(tutor_panel_height(24), 8);
     assert_eq!(tutor_panel_height(40), 10);
     let tmp = TempDir::new().unwrap();
     for i in 0..20 {
@@ -14870,7 +14886,12 @@ fn m43_1_tutor_list_scroll_render() {
     let compact: String = all.chars().filter(|c| !c.is_whitespace()).collect();
     // M45-8d：高亮符号 ▶ 在进度标签（如 " 0%"）之前——定位模块名再回看前缀。
     let pos = compact.find("search_frecency").expect("末模块应在列表");
-    let prefix = &compact[pos.saturating_sub(8)..pos];
+    let char_pos = compact[..pos].chars().count();
+    let prefix: String = compact
+        .chars()
+        .skip(char_pos.saturating_sub(8))
+        .take(8)
+        .collect();
     assert!(prefix.contains('▶'), "末模块选中高亮: {all}");
     assert!(compact.contains("tutor_meta"), "首模块应为向导用法: {all}");
     assert!(compact.contains("core_nav"), "核心模块仍在列表: {all}");

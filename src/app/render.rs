@@ -617,7 +617,8 @@ pub(crate) fn tutor_progress_label(total: usize, mastered: usize) -> String {
 /// 列表渲染区与 `sync_viewport_scroll` 都须扣除它，避免 `G` 跳到底部条目
 /// 被面板遮住。
 pub(crate) fn tutor_panel_height(total_height: u16) -> u16 {
-    (total_height / 4).clamp(6, 10)
+    // M74-1：给换行后的长提示更多行空间。
+    (total_height / 4).clamp(8, 14)
 }
 
 /// M56-3：向导对话框几何——居中的 80%×80%；极小终端（≤40 列或 ≤10 行）
@@ -1339,8 +1340,9 @@ fn render_tutor_list(
     search: Option<&str>,
     editing: bool,
 ) {
-    // FIX-5-1：覆盖层先清除下层 TUI，避免目录文字从列表空白行透出。
-    frame.render_widget(ratatui::widgets::Clear, frame.area());
+    // M74-2：只清对话框矩形，并用不透明底色覆盖原文字，双栏上下文仍可见。
+    let dialog = tutor_dialog_rect(frame.area());
+    frame.render_widget(ratatui::widgets::Clear, dialog);
     let modules = crate::tutor::builtin_modules();
     let filtered: Vec<_> = modules
         .iter()
@@ -1367,8 +1369,8 @@ fn render_tutor_list(
             ))
         })
         .collect();
-    let dialog = tutor_dialog_rect(frame.area());
     let block = ratatui::widgets::Block::bordered()
+        .style(Style::new().bg(Color::Black))
         .title("🎓 向导模式 (:tutor)")
         .title_bottom(
             ratatui::text::Line::from(if editing {
@@ -2038,8 +2040,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         return;
     }
     if let InputMode::TutorResetConfirm { module_id, .. } = mode {
-        // M56-8：100% 模块重入重置确认。
-        frame.render_widget(ratatui::widgets::Clear, frame.area());
+        // M74-2：确认框不整帧清除，双栏上下文保留。
+
         let lines = vec![
             Line::from("本模块已全部掌握，重置后将重新显示所有条目。是否重置？"),
             Line::from(format!("模块：{module_id}")),
@@ -2047,7 +2049,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         ];
         let area = confirm_rect(frame.area(), lines.len());
         frame.render_widget(
-            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title("向导模块重置")),
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered()
+                    .style(Style::new().bg(Color::Black))
+                    .title("向导模块重置"),
+            ),
             area,
         );
         return;
@@ -2532,8 +2538,15 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 Line::from("[Ctrl+Q] 退出"),
             ];
             frame.render_widget(block, panel_area);
-            frame.render_widget(Paragraph::new(left_lines), left);
-            frame.render_widget(Paragraph::new(right_lines), right);
+            // M74-1：长 prompt/expected 自动换行，不再被底部键位提示截断/覆盖。
+            frame.render_widget(
+                Paragraph::new(left_lines).wrap(ratatui::widgets::Wrap { trim: true }),
+                left,
+            );
+            frame.render_widget(
+                Paragraph::new(right_lines).wrap(ratatui::widgets::Wrap { trim: true }),
+                right,
+            );
         } else {
             // idx 越界兜底（正常不可达：done 先于越界成立）。
             frame.render_widget(
