@@ -15516,3 +15516,30 @@ fn m866_tagged_d_and_D_trigger_batch_delete() {
     assert!(matches!(outcome, Outcome::ConfirmTagDelete));
     assert!(state.pending_permanent_delete, "D 走永久删除");
 }
+
+#[test]
+fn m867_capital_v_no_longer_enters_visual() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('V'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().visual.is_none(), "V 不应进入可视模式");
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    assert!(state.active_tab().visual.is_some(), "v 仍进入可视模式");
+}

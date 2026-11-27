@@ -357,7 +357,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 | 导航 | `j/k` `↑↓←→`（同 k/j/h/l）`l/Enter` `h` `gg/G` `Ctrl-d/u` `..` |
 | 焦点/视图 | `Tab` `w`/`:view` `S` `:sort` `:tree` `:theme` `Ctrl-G` |
 | 搜索 | `/` `n/N` `={glob}` `f/F{字符}` `:find` `:grep` |
-| 选择/批量 | `v` `V` `t` `:select` `:unselect` `:tag` |
+| 选择/批量 | `v` `t` `:select` `:unselect` `:tag` |
 | 文件操作 | `yy` `p/P` `dd` `DD` `u` `cw` `:rename` `:copy` `:move` `:link` `:mkdir` `:touch` `:mk` `y/yn/yf/yc` |
 | 跳转 | `o` `:j/:J` `:recent` `'{字符}` `m{字符}` `:bmark` 族 `:cmdmark` |
 | 标签/历史 | `:tabnew` `gt/gT` `:tabmove` `:histprev` `:histnext` `:history` |

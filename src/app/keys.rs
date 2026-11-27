@@ -2278,13 +2278,6 @@ pub(crate) fn handle_key(
             // M33-2：进入/退出 visual → 切换 per-mode 键位表（未配置不换）。
             input.switch_mode_map(if entering { Some("visual") } else { None });
         }
-        KeyCode::Char('V') => {
-            // M24-3：行可视模式 V——与 v 同语义（选中条目），互斥自动。
-            input.count = None;
-            let entering = state.active_tab().visual.is_none();
-            state.active_tab_mut().toggle_visual();
-            input.switch_mode_map(if entering { Some("visual") } else { None });
-        }
         KeyCode::Char('t') => {
             input.count = None;
             state.active_tab_mut().toggle_tag();
