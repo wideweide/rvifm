@@ -864,7 +864,7 @@
 - [x] M65-1 境界 0 级「凡人」→「入门」全量同步（见 SPEC M65-1）；2026-11-27 完成：符号 ○ 不变，render/tests/help/GUIDE/NOTES/SPEC/CHANGELOG 同步
 - [x] M65-2 Windows CI 测试 cfg(unix) 门禁（见 SPEC M65-2）；2026-11-27 完成：m482 加 #[cfg(unix)]，Windows 不再编译 POSIX 权限测试
 - [x] M65-3 macOS 平台相关渲染断言修复（见 SPEC M65-3）；2026-11-27 完成：tab 可见项/过滤标记/查看器快速标记 4 处断言改为平台无关
-- [ ] M65-4 文档/验收/门禁 + CI 三平台（见 SPEC M65-4）；本地 647 单测 + 14 集成 + 八条 harness 绿；CI run 45867166976 进行中，待确认三平台后勾选
+- [x] M65-4 文档/验收/门禁 + CI 三平台（见 SPEC M65-4）；2026-11-27 完成：CI run 45915060986 三平台 test + fuzz + supply-chain 全绿，八条 harness（现已九条）绿
 
 ## M66 — tutor_meta 与安全提示完善（2026-11-27 蒸馏，见 SPEC M66 节）
 

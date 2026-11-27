@@ -1264,7 +1264,7 @@
 - [x] M65-1 境界 0 级显示「入门」○；代码/GUIDE/help/CHANGELOG/NOTES/SPEC 一致。（2026-11-27：全量替换）
 - [x] M65-2 Windows `cargo test` 不再因 `std::os::unix` 未 gate 失败。（2026-11-27：m482 cfg(unix)）
 - [x] M65-3 macOS 4 个平台相关渲染断言修复（长临时路径）。（2026-11-27：断言改为平台无关）
-- [ ] M65-4 文档/验收/门禁 + CI 三平台绿，未发版。（本地 647 单测 + 14 集成 + 八条 harness 绿；CI run 45867166976 进行中）
+- [x] M65-4 文档/验收/门禁 + CI 三平台绿，未发版。（2026-11-27：CI run 45915060986 三平台 + fuzz + supply-chain 全绿）
 
 ## 71. M66 — tutor_meta 与安全提示完善（见 SPEC M66 节）
 
