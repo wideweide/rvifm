@@ -1717,3 +1717,13 @@ rvifm record  → 静默记录访问
 - M1：`clean-tmp` 同时匹配 `/tmp/` 与 `std::env::temp_dir()`（Windows 归档临时副本死记录可清理）；M3 `image_max_side` 钳制 1..4096；M5 配置关闭协议查询时接线 `force_halfblocks`。
 
 - **版本选择 1.5.0**：M47–M85 均为增量功能/修复，按项目惯例用 semver minor；虽然 M57 移除了 `rvifm help` 子命令，但 CLI 非稳定 API 且历史版本均以 minor 记录用户可见变化，故不升 2.0.0。
+
+
+### 2026-11-28 — M86 蒸馏决策（test.md）
+
+- **编号**：M86 为空闲号（TASKS 最高 M85，REL-7 已关闭）；按 §8.3 取 M86，未与既有批次冲突。
+- **vifm 文本类型依据**：`/mnt/shared-data/dlt/.config/vifm/vifmrc` 的 `fileviewer <text/*,application ...>` 定义；`.json` 在 rvifm `is_text_like` 白名单内但仍被预览判为二进制，执行时需查 `looks_binary`/UTF-8 判定与 `preview_kind` 分流的真实原因（可能是 NUL/BOM 或 `.zip` 估算路径串扰）。
+- **与既有实现的冲突（执行前先核实）**：`u` 恢复 bookmark 代码已存在（`src/app/keys.rs:812` M59-9）；`:archive` 默认对侧已实现（`src/app/exec.rs:1629` M47-3）；M82 已实现 `|` 全屏对照。用户实测为「未生效」，按用户实测为准登记，执行时先复现，若确为旧二进制/配置导致则修正文档与提示，不盲改。
+- **V 键裁决**：用户明确 `V` 对 rvifm 无用途 → 移除；此前 M24-3「V 行可视、与 v 互斥」的 SPEC/ACCEPTANCE 口径同步清理（`src/app/keys.rs:2273-2286` 两者当前同实现）。
+- **tutor 自决项**：获奖标题置于分割线下方左对齐；境界图标按级别渐变着色（低阶冷色 → 高阶暖色/金色），不引入新依赖。
+- **粘贴冲突**：同路径 rename/skip/skip all；异路径追加 append the tail/overwrite/overwrite all（对齐常见文件管理器术语）。

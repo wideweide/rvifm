@@ -997,3 +997,15 @@
 - [x] REL-7-1 全面审计 + 文档同步 + tutor 验证条款（见 SPEC REL / ACCEPTANCE M46-12；2026-11-27 完成：REVIEW-2026-11-27 + 文档同步 + M46-12 计数测试）
 - [x] REL-7-2 版本 bump 至 1.5.0 并推送 main，CI 全绿（run 45993907109）
 - [x] REL-7-3 tag v1.5.0 → GitHub Release 三 musl 归档 + SHA256SUMS，验证产物（tag CI 45996577565）
+
+## M86 — test.md 实测反馈批次（2026-11-28，见 SPEC M86 节）
+
+- [ ] M86-1 预览文本识别 + :view 标题/行数修正（见 SPEC M86）
+- [ ] M86-2 frecency 搜索框/预览布局/d 与 dd/record 与 u 核实修复（见 SPEC M86）
+- [ ] M86-3 git `|` 全屏对照复核或 popup 方案（见 SPEC M86）
+- [ ] M86-4 tutor 视觉重排与进度条移除（见 SPEC M86）
+- [ ] M86-5 archive 产物目标栏核实修复（见 SPEC M86）
+- [ ] M86-6 t 标记高亮 + d/D 批量删除（见 SPEC M86）
+- [ ] M86-7 删除 V 快捷键并修正 M24-3 口径（见 SPEC M86）
+- [ ] M86-8 粘贴冲突选项扩展（见 SPEC M86）
+- [ ] M86-9 文档/验收/门禁（见 SPEC M86）
