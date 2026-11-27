@@ -995,5 +995,5 @@
 ## REL-7 — v1.5.0 发布（2026-11-27 用户授权，覆盖此前「不发布」口径）
 
 - [x] REL-7-1 全面审计 + 文档同步 + tutor 验证条款（见 SPEC REL / ACCEPTANCE M46-12；2026-11-27 完成：REVIEW-2026-11-27 + 文档同步 + M46-12 计数测试）
-- [ ] REL-7-2 版本 bump 至 1.5.0 并推送 main，CI 全绿
-- [ ] REL-7-3 tag v1.5.0 → GitHub Release 三 musl 归档 + SHA256SUMS，验证产物
+- [x] REL-7-2 版本 bump 至 1.5.0 并推送 main，CI 全绿（run 45993907109）
+- [x] REL-7-3 tag v1.5.0 → GitHub Release 三 musl 归档 + SHA256SUMS，验证产物（tag CI 45996577565）

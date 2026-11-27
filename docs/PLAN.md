@@ -153,10 +153,11 @@
   预览焦点修复。tag v1.1.0 → CI 三平台测试全绿 → GitHub Release 四归档 + SHA256SUMS。
 - **crates.io 不发布**（用户 2026-11-23 指令）；版本 bump 与 tag 仅用于 GitHub 分发。
 
-### 1.5.0（2026-11-27，版本已 bump；待 tag/Release；crates.io 不发布）
+### 1.5.0（2026-11-27，GitHub Release；crates.io 不发布）
 
-- M47–M85（39 个用户实测/蒸馏批次）随 **1.5.0** 发布：异步预览与文本/图片流水线、git `:diff` 浏览与写操作、tutor 全功能覆盖与修仙境界、frecency 对齐、焦点样式与归档 opener 修复。M82–M85 已在本地全门禁验证；CI 三平台 + fuzz + supply-chain 需全绿后打 tag。
+- M47–M85（39 个用户实测/蒸馏批次）随 **1.5.0** 发布：异步预览与文本/图片流水线、git `:diff` 浏览与写操作、tutor 全功能覆盖与修仙境界、frecency 对齐、焦点样式与归档 opener 修复。M82–M85 已在本地全门禁验证；main CI 45993907109 与 tag CI 45996577565 全绿（三平台 test + fuzz + supply-chain）。
 - 范围收缩：M85-1b 磁盘已编码协议缓存 deferred（ratatui-image 不公开编码字节）；人工项 M11-6/C6 大图、FIX-9-M1 IME、rar 工具环境保持 deferred。
+- Release 三 musl 归档（linux-x64-musl / windows-x64 / linux-aarch64-musl 静态）+ SHA256SUMS 3 行，`sha256sum -c` 验证通过。
 - crates.io 不发布（沿用用户 2026-11-23 决策，仍停 1.0.0）。
 
 ### 1.4.0（2026-11-25，GitHub Release；crates.io 不发布）

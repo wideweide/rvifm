@@ -36,3 +36,9 @@
 - harness 文档矛盾（「不发布」口径）与用户授权对齐；ACCEPTANCE 未勾项完成自动/manual 分诊；tutor 验证条款落实为 14 模块 105 项严格计数测试。
 - 发布建议：1.5.0（minor）、tag v1.5.0、三 musl 归档 + SHA256SUMS；crates.io 不发布；人工终端项保持 deferred。
 - 完整证据见 [reviews/REVIEW-2026-11-27.md](reviews/REVIEW-2026-11-27.md)。
+
+## 发布验证（2026-11-27，v1.5.0）
+
+- main CI run 45993907109：三平台 test + fuzz + supply-chain 全绿。
+- tag CI run 45996577565：release + release-checksums 全绿；GitHub Release 含 3 个 musl 归档与 3 行 SHA256SUMS，`sha256sum -c` 通过；aarch64 静态 ELF、x64-musl `--version = rvifm 1.5.0`。
+- crates.io 未发布（停 1.0.0）；人工终端项保持 deferred。

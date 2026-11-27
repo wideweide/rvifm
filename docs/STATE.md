@@ -3,8 +3,8 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-27
-- **当前阶段**：**M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；v1.5.0 版本已 bump（待 main CI 全绿后打 tag 并触发 GitHub Release）**（2026-11-27；M47–M85 增量批次全部落地；AUDIT-1/2/3 修复跨平台 CI 与代码审计问题；人工项 deferred）。
-- **当前任务**：REL-7 发布进行中（版本已 bump 至 1.5.0；下一步：确认 main CI 全绿 → tag `v1.5.0` → GitHub Release 三 musl 归档 + SHA256SUMS → 验证产物）。沿用「crates.io 不发布」口径（用户 2026-11-23 决策）。M85-1b 磁盘协议缓存及既有人工项保持 deferred。
+- **当前阶段**：**M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；v1.5.0 GitHub Release 已发布**（2026-11-27；tag CI run 45996577565 全绿；三 musl 归档 + SHA256SUMS 3 行；人工项 deferred）。
+- **当前任务**：无待执行任务（REL-7 已关闭；M85-1b 磁盘协议缓存与既有人工项 deferred）。沿用「crates.io 不发布」口径（用户 2026-11-23 决策）。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,12 +20,13 @@
 
 ## 下一步
 
-1. 确认 main CI（三平台 test + fuzz + supply-chain）全绿；若失败先修复再打 tag。
-2. `git tag -a v1.5.0` + push tag，等待 tag CI 触发 GitHub Release。
-3. 校验 Release 三个 musl 归档 + `SHA256SUMS.txt`（3 行），`sha256sum -c` 通过，aarch64 为静态 ELF、`--version` = rvifm 1.5.0。
-4. crates.io 不发布（用户 2026-11-23 决策，仍停 1.0.0）。
+1. 仅提交并推送代码；不 bump 版本、不推送 tag、不触发 GitHub Release（沿用后续批次默认口径）。
+2. 用户可在真实终端补验 M11-6/C6 大图不越界、FIX-9-M1 IME 会话等 deferred 项。
+3. crates.io 不发布（用户 2026-11-23 决策，仍停 1.0.0）。
+
 
 ## 批次关闭记录
+- REL-7（2026-11-27，v1.5.0 发布；已关闭）：全面审计 + 文档同步 + tutor 验证条款（14 模块 105 项）+ 代码审计整改（diff 标记/完整视图高亮/图片 id 碰撞/高亮漂移）；版本 bump 至 1.5.0，main CI 45993907109 全绿；tag `v1.5.0` → tag CI 45996577565 全绿 → GitHub Release 三 musl 归档 + SHA256SUMS 3 行，校验通过；crates.io 不发布。
 - M85（2026-11-27，图片流水线；3/3 + 1 deferred，未发版）：ThreadProtocol 把 resize+encode 移出 UI 线程；图片 job 独立 generation；缓存矩形含坐标；预缩放显式 Nearest、最长边 1600；`[preview] image_max_side` / `image_protocol_query` 可配。**磁盘已编码协议缓存 deferred**（ratatui-image 不公开编码字节，见 NOTES）。671 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M84（2026-11-27，归档成员打开对齐；1/1 完成，未发版）：文本成员按 `is_text_like` + `terminal_in_new_window` 走新终端窗口（起始目录取归档所在目录，带安全回退），完成后 `record_file_open`；其它成员保持 pending_external。669 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M83（2026-11-27，文本预览两段式消除；3/3 全部落地，未发版）：文本一律视口渲染 + 始终语法高亮，`/` 查询黄底叠加不再关高亮；高亮缓存 key 含 mtime/size；`G` 定位末屏；缺失文件首行「文件不存在」；文本缓存改 `Arc` 只拷贝可视行。668 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
