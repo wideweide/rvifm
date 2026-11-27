@@ -297,6 +297,71 @@ fn kind_style(kind: DiffLineKind) -> Style {
     }
 }
 
+/// 按字节区间裁剪语法片段（保留样式）；无片段时回退原文切片。
+fn token_slice(
+    tokens: &[(String, Style)],
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Vec<Span<'static>> {
+    if tokens.is_empty() {
+        return vec![Span::from(text.get(start..end).unwrap_or("").to_owned())];
+    }
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    for (tok, style) in tokens {
+        let len = tok.len();
+        let s = pos;
+        let e = pos + len;
+        pos = e;
+        if e <= start || s >= end {
+            continue;
+        }
+        let a = start.saturating_sub(s).min(len);
+        let b = end.saturating_sub(s).min(len);
+        out.push(Span::styled(tok[a..b].to_owned(), *style));
+    }
+    out
+}
+
+/// 把带语法着色的行按宽度切块并保留 diff 标记前缀（H1/H2 回归）。
+fn styled_chunks(
+    tokens: &[(String, Style)],
+    text: &str,
+    wrap: bool,
+    width: usize,
+    marker: &str,
+) -> Vec<Vec<Span<'static>>> {
+    let prefix = marker.chars().count();
+    let eff = width.saturating_sub(prefix + 1).max(1);
+    let chars: Vec<char> = text.chars().collect();
+    let n = if wrap {
+        chars.len().div_ceil(eff).max(1)
+    } else {
+        1
+    };
+    let mut rows = Vec::with_capacity(n);
+    for idx in 0..n {
+        let (byte_a, byte_b) = if wrap {
+            let a = (idx * eff).min(chars.len());
+            let b = ((idx + 1) * eff).min(chars.len());
+            let ba: usize = chars[..a].iter().map(|c| c.len_utf8()).sum();
+            let bb: usize = chars[..b].iter().map(|c| c.len_utf8()).sum();
+            (ba, bb)
+        } else {
+            (0, text.len())
+        };
+        let mut spans = vec![Span::from(if idx == 0 {
+            marker.to_owned()
+        } else {
+            " ".repeat(prefix)
+        })];
+        spans.extend(token_slice(tokens, text, byte_a, byte_b));
+        rows.push(spans);
+    }
+    rows
+}
+
 /// M82：带语法高亮的统一补丁渲染。
 pub fn render_unified_styled(
     hunks: &[DiffHunk],
@@ -324,24 +389,11 @@ pub fn render_unified_styled(
                 DiffLineKind::Del => "-",
                 DiffLineKind::Context => " ",
             };
-            let chunks = if wrap {
-                wrap_line(&line.text, width.saturating_sub(2), marker)
-            } else {
-                vec![format!("{marker}{}", line.text)]
-            };
             let tokens = hl
                 .as_mut()
                 .map(|h| h.highlight_line(&line.text))
                 .unwrap_or_default();
-            for chunk in chunks {
-                let spans = if tokens.is_empty() {
-                    vec![Span::from(chunk)]
-                } else {
-                    tokens
-                        .iter()
-                        .map(|(t, s)| Span::styled(t.clone(), *s))
-                        .collect()
-                };
+            for spans in styled_chunks(&tokens, &line.text, wrap, width, marker) {
                 rows.push(Line::from(spans).style(kind_style(line.kind)));
             }
         }
@@ -361,10 +413,33 @@ pub fn render_side_by_side_styled(
     let mut starts = Vec::new();
     if full {
         starts.push(0);
+        let sample = data
+            .old_full
+            .first()
+            .or_else(|| data.new_full.first())
+            .map(String::as_str)
+            .unwrap_or("");
+        // 左右各用一个高亮器，跨行状态独立推进（H2）。
+        let mut hl_l = highlighter_for(&data.path, sample);
+        let mut hl_r = highlighter_for(&data.path, sample);
         for i in 0..data.old_full.len().max(data.new_full.len()) {
             let left = data.old_full.get(i).cloned().unwrap_or_default();
             let right = data.new_full.get(i).cloned().unwrap_or_default();
-            rows.push((Line::from(left), Line::from(right)));
+            let tl = hl_l
+                .as_mut()
+                .map(|h| h.highlight_line(&left))
+                .unwrap_or_default();
+            let tr = hl_r
+                .as_mut()
+                .map(|h| h.highlight_line(&right))
+                .unwrap_or_default();
+            let lrows = styled_chunks(&tl, &left, wrap, half, "");
+            let rrows = styled_chunks(&tr, &right, wrap, half, "");
+            for k in 0..lrows.len().max(rrows.len()) {
+                let l = lrows.get(k).cloned().unwrap_or_default();
+                let r = rrows.get(k).cloned().unwrap_or_default();
+                rows.push((Line::from(l), Line::from(r)));
+            }
         }
         return (rows, starts);
     }
@@ -401,7 +476,16 @@ pub fn render_side_by_side_styled(
                 .map(Span::from)
                 .collect()
             } else {
-                word_spans(old, new, true)
+                // M4：词级模式也保留 +/- 标记，与 plain/wrap 一致。
+                let mut spans = vec![Span::from(
+                    if left_line.is_some_and(|l| l.kind == DiffLineKind::Del) {
+                        "-".to_owned()
+                    } else {
+                        " ".to_owned()
+                    },
+                )];
+                spans.extend(word_spans(old, new, true));
+                spans
             };
             let rspans = if wrap {
                 wrap_line(
@@ -417,7 +501,15 @@ pub fn render_side_by_side_styled(
                 .map(Span::from)
                 .collect()
             } else {
-                word_spans(old, new, false)
+                let mut spans = vec![Span::from(
+                    if right_line.is_some_and(|l| l.kind == DiffLineKind::Add) {
+                        "+".to_owned()
+                    } else {
+                        " ".to_owned()
+                    },
+                )];
+                spans.extend(word_spans(old, new, false));
+                spans
             };
             let lstyle = left_line.map(|l| kind_style(l.kind)).unwrap_or_default();
             let rstyle = right_line.map(|l| kind_style(l.kind)).unwrap_or_default();
@@ -467,5 +559,59 @@ mod tests {
         );
         let (full, _) = render_side_by_side(&data, true, false, 80);
         assert!(full.len() >= 3);
+    }
+
+    #[test]
+    fn audit_styled_diff_keeps_markers_and_full_highlight() {
+        // H1/H2：语法高亮不得吞掉 +/- 标记，`=` 完整视图也要着色。
+        let hunks = parse_unified(SAMPLE);
+        let (rows, _) = render_unified_styled(&hunks, "f.txt", false, 40);
+        let texts: Vec<String> = rows
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|t| t.starts_with('-')),
+            "保留 -: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.starts_with('+')),
+            "保留 +: {texts:?}"
+        );
+
+        let long = DiffHunk {
+            header: "@@ -1 +1 @@".to_owned(),
+            lines: vec![DiffLine {
+                kind: DiffLineKind::Add,
+                text: "abcdefghijklmnopqrstuvwxyz".to_owned(),
+                old_no: None,
+                new_no: Some(1),
+            }],
+        };
+        let (wrapped, _) = render_unified_styled(&[long], "f.rs", true, 8);
+        assert!(wrapped.len() > 1, "软换行应产生多行: {}", wrapped.len());
+        assert!(
+            wrapped
+                .iter()
+                .all(|l| { l.spans.first().is_some_and(|s| !s.content.is_empty()) })
+        );
+
+        let data = DiffFileData {
+            path: "f.rs".to_owned(),
+            hunks,
+            old_full: vec!["fn old() {}".to_owned()],
+            new_full: vec!["fn new() {}".to_owned()],
+            staged: false,
+        };
+        let (full, _) = render_side_by_side_styled(&data, true, false, 80);
+        assert!(
+            full[0].0.spans.iter().any(|s| s.style.fg.is_some()),
+            "完整视图应着色"
+        );
     }
 }

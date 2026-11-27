@@ -8,6 +8,9 @@ use crate::tab::Tab;
 /// M83：文本预览/高亮缓存键（路径 + mtime 秒 + 字节数）。
 pub type HighlightCacheKey = (PathBuf, u64, u64);
 
+/// M85：图片 resize+encode 结果（Err 表示编码失败，需节流重试）。
+pub type ResizeResult = Result<ratatui_image::thread::ResizeResponse, ()>;
+
 /// 可逆操作记录（M2-1）。每条都携带所属 tab 与路径（ACCEPTANCE §4），
 /// 撤销栈全局共享，跨 tab 撤销据此定位。
 /// 各操作的构造与 `u` 执行逻辑随 M2-2～M2-5 接入，此前仅结构落地。
@@ -412,17 +415,8 @@ pub struct AppState {
     pub image_pending: Option<PathBuf>,
     /// M85：图片 job 独立代次——viewer job 递增不再丢弃在途图片结果。
     pub image_generation: u64,
-    /// M85：resize+encode worker 通道（ThreadProtocol 用）。
-    pub image_resize_tx: std::sync::mpsc::Sender<ratatui_image::thread::ResizeRequest>,
-    pub image_resize_rx: std::sync::mpsc::Receiver<ratatui_image::thread::ResizeResponse>,
-    /// M85：当前图片的线程化协议（path + 完整绘制矩形 → ThreadProtocol）。
-    pub thread_preview: std::cell::RefCell<
-        Option<(
-            PathBuf,
-            ratatui::layout::Rect,
-            ratatui_image::thread::ThreadProtocol,
-        )>,
-    >,
+    /// M85：当前图片的线程化协议（每图独立通道，避免 id 重置碰撞）。
+    pub thread_preview: std::cell::RefCell<Option<ThreadPreview>>,
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
     pub special_preview: Option<(PathBuf, Vec<String>)>,
     pub special_pending: Option<PathBuf>,
@@ -605,6 +599,17 @@ pub struct PreviewJobResult {
     pub image: Option<image::DynamicImage>,
 }
 
+/// M85：单张图片的线程化协议状态。每图独立请求/响应通道：切换图片时旧
+/// `ThreadProtocol` 连同发送端被丢弃，在途的旧 id 请求无法串进新图（H3）。
+pub struct ThreadPreview {
+    pub path: PathBuf,
+    pub rect: ratatui::layout::Rect,
+    pub proto: ratatui_image::thread::ThreadProtocol,
+    pub rx: std::sync::mpsc::Receiver<ResizeResult>,
+    /// 编码失败后的节流重试时刻：一次失败不能永久空白。
+    pub retry_after: Option<std::time::Instant>,
+}
+
 /// M70：git 写操作确认载荷（仅 overlay 内使用）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitOp {
@@ -781,7 +786,7 @@ impl AppState {
         let target = path.to_path_buf();
         self.image_generation = self.image_generation.wrapping_add(1);
         let generation = self.image_generation;
-        let max_side = self.config.preview.image_max_side.max(1);
+        let max_side = self.config.preview.image_max_side.clamp(1, 4096);
         let tx = self.preview_tx.clone();
         std::thread::spawn(move || {
             let image = crate::image::decode_for_preview(&target, max_side).ok();
@@ -799,13 +804,21 @@ impl AppState {
         });
     }
 
-    /// M85：收割后台 resize+encode 结果，交给 ThreadProtocol 更新。
+    /// M85：收割当前图片的 resize+encode 结果；失败时清空协议并节流重试。
     pub fn drain_image_resizes(&self) {
-        while let Ok(response) = self.image_resize_rx.try_recv() {
-            if let Ok(mut guard) = self.thread_preview.try_borrow_mut()
-                && let Some((_, _, proto)) = guard.as_mut()
-            {
-                proto.update_resized_protocol(response);
+        while let Ok(mut guard) = self.thread_preview.try_borrow_mut()
+            && let Some(preview_state) = guard.as_mut()
+            && let Ok(result) = preview_state.rx.try_recv()
+        {
+            match result {
+                Ok(response) => {
+                    preview_state.proto.update_resized_protocol(response);
+                }
+                Err(()) => {
+                    preview_state.proto.empty_protocol();
+                    preview_state.retry_after =
+                        Some(std::time::Instant::now() + std::time::Duration::from_millis(1000));
+                }
             }
         }
     }
@@ -911,23 +924,6 @@ impl AppState {
             eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
         }
         let preview_channel = std::sync::mpsc::channel();
-        // M85：一个常驻 worker 承担所有图片的 resize+encode（ThreadProtocol
-        // 把请求发进来，完成后回传 ResizeResponse），UI 线程只做 widget 渲染。
-        let (image_resize_tx, resize_rx): (
-            std::sync::mpsc::Sender<ratatui_image::thread::ResizeRequest>,
-            std::sync::mpsc::Receiver<ratatui_image::thread::ResizeRequest>,
-        ) = std::sync::mpsc::channel();
-        let (resize_resp_tx, image_resize_rx): (
-            std::sync::mpsc::Sender<ratatui_image::thread::ResizeResponse>,
-            std::sync::mpsc::Receiver<ratatui_image::thread::ResizeResponse>,
-        ) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            while let Ok(request) = resize_rx.recv() {
-                if let Ok(response) = request.resize_encode() {
-                    let _ = resize_resp_tx.send(response);
-                }
-            }
-        });
         Self {
             tabs: vec![initial],
             active: 0,
@@ -955,8 +951,6 @@ impl AppState {
             decoded_preview: None,
             image_pending: None,
             image_generation: 0,
-            image_resize_tx,
-            image_resize_rx,
             thread_preview: std::cell::RefCell::new(None),
             special_preview: None,
             special_pending: None,

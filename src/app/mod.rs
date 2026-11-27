@@ -826,6 +826,10 @@ fn run_with_initial_mode(
         allow_image_query,
     );
     state.config = config;
+    // M85：构造期已按配置关闭查询；这里再次兜底（含运行时配置重载路径）。
+    if !state.config.preview.image_protocol_query {
+        state.image_engine.force_halfblocks();
+    }
     // M50-3：shell 历史补全候选 + 增量记账（默认开，失败静默降级）。
     if state.config.command.scan_shell_history {
         state.history_commands = crate::shell_history::read_all_commands();

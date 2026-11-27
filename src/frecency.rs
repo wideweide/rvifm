@@ -1297,9 +1297,23 @@ fn arg_err(msg: &'static str) -> std::io::Error {
 
 /// `rvifm maintenance compact`（M8-5）：合并 `last_compaction` 之后的
 /// 事件进 snapshot 表，推进标记并裁剪已合并事件。幂等：无新事件时为 no-op。
-/// M76-1：清理 frecency 记录中 path 以 `/tmp/` 开头的条目（只读扫描 + Remove 墓碑）。
+/// M76-1/M84：清理 frecency 记录中 path 位于 `/tmp/` 或系统临时目录的条目（只读扫描 + Remove 墓碑）。
 /// 只改 frecency 存储，不删除本机任何临时文件。
 pub fn cmd_clean_tmp() -> std::io::Result<()> {
+    // M84：归档成员临时副本在系统临时目录（Windows 非 /tmp），同样纳入清理。
+    let temp_roots: Vec<String> = {
+        let mut roots = vec!["/tmp/".to_owned()];
+        let sys = std::env::temp_dir()
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_owned()
+            + "/";
+        if !roots.contains(&sys) {
+            roots.push(sys);
+        }
+        roots
+    };
     let targets: Vec<(String, String)> = {
         let Some(store) = open_store_readonly()? else {
             println!("已清理 0 条 /tmp/ 前缀记录");
@@ -1318,7 +1332,7 @@ pub fn cmd_clean_tmp() -> std::io::Result<()> {
             store.type_tick("cmd").unwrap_or(0),
         )
         .into_iter()
-        .filter(|e| e.path.starts_with("/tmp/"))
+        .filter(|e| temp_roots.iter().any(|root| e.path.starts_with(root)))
         .map(|e| (e.topic, e.path))
         .collect()
     };
@@ -1328,7 +1342,7 @@ pub fn cmd_clean_tmp() -> std::io::Result<()> {
             cleaned += 1;
         }
     }
-    println!("已清理 {cleaned} 条 /tmp/ 前缀记录（未删除本地文件）");
+    println!("已清理 {cleaned} 条临时目录前缀记录（/tmp 与系统临时目录；未删除本地文件）");
     Ok(())
 }
 

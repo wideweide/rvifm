@@ -1709,3 +1709,9 @@ rvifm record  → 静默记录访问
 - 审计发现 CI 连续失败（Windows CRLF 断言 / macOS 长路径标题截断），已在 AUDIT-1 修复；发布前以 main CI 全绿为硬门禁。
 - tutor 维护规则（SPEC M43-6）落实：新增 3 条条目覆盖 `:diff`/`|`、归档成员新窗口、`G` 末屏；总条目 102 → 105，新增严格计数测试 `builtin_modules_count_is_current`，ACCEPTANCE M46-12 同步更新并勾选。
 - 历史 ACCEPTANCE 未勾项分诊：自动且已通过者勾选，真实终端/环境项统一标 `[deferred]` 并注明自动部分覆盖情况；M85-1b 同样标 `[deferred]`。
+
+### 2026-11-27 — AUDIT-3 代码审计整改
+
+- H1/H2：补丁/对照的语法高亮不得吞掉 diff 标记；`=` 完整视图与软换行同源（新增 `styled_chunks`/`token_slice`）。
+- H3/H4：图片 ThreadProtocol 改为每图独立通道（避免 id 重置串图），编码失败节流 1s 重试；文本高亮器每帧新建，避免跨帧状态漂移。
+- M1：`clean-tmp` 同时匹配 `/tmp/` 与 `std::env::temp_dir()`（Windows 归档临时副本死记录可清理）；M3 `image_max_side` 钳制 1..4096；M5 配置关闭协议查询时接线 `force_halfblocks`。

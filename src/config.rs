@@ -147,7 +147,7 @@ pub struct PreviewConfig {
     /// M85：图片后台预缩放的最长边（默认 1600，贴近本机 vifm 的 1600 上限）。
     pub image_max_side: u32,
     /// M85：启动时是否查询原生图片协议；false 直接用 halfblocks（零等待）。
-    /// 环境变量 `RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off` 优先级更高。
+    /// 任一来源关闭即禁用（配置或环境变量 `RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off`）。
     pub image_protocol_query: bool,
 }
 

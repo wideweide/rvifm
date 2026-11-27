@@ -93,34 +93,64 @@ pub(crate) fn render_view_path(
         if inner.width == 0 || inner.height == 0 {
             return;
         }
-        // M85：后台解码完成后只构造一次 ThreadProtocol；真正的 resize+encode
-        // 交给常驻 worker，UI 线程每帧只渲染已完成的协议（不再重复编码）。
+        // M85：每张图独立 worker 通道——切换图片时旧发送端随协议一起丢弃，
+        // 在途的旧 id 请求无法串进新图（H3）；编码失败节流重试（H2 风险）。
         let mut guard = match state.thread_preview.try_borrow_mut() {
             Ok(g) => g,
             Err(_) => return,
         };
-        let path_changed = guard.as_ref().is_none_or(|(p, _, _)| p != &path);
-        if path_changed {
-            // 丢弃旧图尚未回传的 resize 结果，防止 id 复用后串图。
-            while state.image_resize_rx.try_recv().is_ok() {}
+        let now = std::time::Instant::now();
+        let rebuild = guard
+            .as_ref()
+            .is_none_or(|p| p.path.as_path() != path.as_path())
+            || guard
+                .as_ref()
+                .and_then(|p| p.retry_after)
+                .is_some_and(|t| t <= now);
+        if rebuild {
             *guard = None;
             if let Some((_, img)) = state.decoded_preview.as_ref().filter(|(p, _)| p == &path) {
-                let proto = state.image_engine.resize_protocol(img.clone());
-                let threaded = ratatui_image::thread::ThreadProtocol::new(
-                    state.image_resize_tx.clone(),
-                    Some(proto),
+                let (req_tx, req_rx): (
+                    std::sync::mpsc::Sender<ratatui_image::thread::ResizeRequest>,
+                    std::sync::mpsc::Receiver<ratatui_image::thread::ResizeRequest>,
+                ) = std::sync::mpsc::channel();
+                let (resp_tx, resp_rx): (
+                    std::sync::mpsc::Sender<crate::state::ResizeResult>,
+                    std::sync::mpsc::Receiver<crate::state::ResizeResult>,
+                ) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    while let Ok(request) = req_rx.recv() {
+                        let result = request.resize_encode().map_err(|_| ());
+                        if resp_tx.send(result).is_err() {
+                            break;
+                        }
+                    }
+                });
+                let proto = ratatui_image::thread::ThreadProtocol::new(
+                    req_tx,
+                    Some(state.image_engine.resize_protocol(img.clone())),
                 );
-                *guard = Some((path.clone(), inner, threaded));
+                *guard = Some(crate::state::ThreadPreview {
+                    path: path.clone(),
+                    rect: inner,
+                    proto,
+                    rx: resp_rx,
+                    retry_after: None,
+                });
             }
         }
-        if let Some((_, rect, proto)) = guard.as_mut() {
-            // 记录完整矩形（含坐标），布局移动后不再复用错误位置（旧 key 只比宽高）。
-            *rect = inner;
-            frame.render_stateful_widget(
-                ratatui_image::StatefulImage::new().resize(ratatui_image::Resize::Fit(None)),
-                inner,
-                proto,
-            );
+        if let Some(preview_state) = guard.as_mut() {
+            if preview_state.retry_after.is_some_and(|t| t > now) {
+                frame.render_widget(Paragraph::new("图片编码失败，稍后重试…"), inner);
+            } else {
+                // 记录完整矩形（含坐标），布局变化由 ThreadProtocol 自动发 resize。
+                preview_state.rect = inner;
+                frame.render_stateful_widget(
+                    ratatui_image::StatefulImage::new().resize(ratatui_image::Resize::Fit(None)),
+                    inner,
+                    &mut preview_state.proto,
+                );
+            }
         } else {
             frame.render_widget(Paragraph::new("图片解码中…（后台加载）"), inner);
         }
@@ -363,18 +393,11 @@ pub(crate) fn render_view_path(
         (parsed[start..end].to_vec(), viewer.scroll)
     };
     // M83：语法高亮始终启用；查询命中改黄底叠加（不再互斥）。
-    // 缓存 key 含内容指纹，文件变化后自动重建高亮器。
+    // H4：每帧新建高亮器（从当前视口首行推进），避免跨帧复用导致 syntect
+    // 状态单调前进、块注释/字符串在第二帧起错色。构造本身很便宜。
     let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
-    let mut hl_cache = state.highlighter_cache.borrow_mut();
-    let mut highlighter = {
-        let reuse = hl_cache.as_ref().is_some_and(|(k, _)| k == &key);
-        if !reuse {
-            let first = lines.first().map(String::as_str).unwrap_or("");
-            *hl_cache = crate::highlight::Highlighter::for_path(&path, first, dark)
-                .map(|h| (key.clone(), h));
-        }
-        hl_cache.as_mut().map(|(_, h)| h)
-    };
+    let first = lines.first().map(String::as_str).unwrap_or("");
+    let mut highlighter = crate::highlight::Highlighter::for_path(&path, first, dark);
     let mut out: Vec<Line> = Vec::with_capacity(height);
     for (i, line) in lines.iter().take(height).enumerate() {
         let lineno = base_line + i + 1;
