@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-27
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：M83 文本预览两段式消除已完成（3/3）；下一批 M84 归档成员打开 → M85 图片流水线。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。
+- **当前任务**：M84 归档成员打开对齐已完成（1/1）；下一批 M85 图片流水线。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -20,11 +20,12 @@
 
 ## 下一步
 
-1. M83 已完成；继续 M84 归档成员打开对齐，仅提交并推送代码，不 bump 版本、不推送 tag、不触发 GitHub Release。
+1. M84 已完成；继续 M85 图片流水线，仅提交并推送代码，不 bump 版本、不推送 tag、不触发 GitHub Release。
 2. 用户可在真实终端补验 M11-6/C6 大图不越界、M46-8 firefox tarball 预览提速、M46-9 rar 工具环境与 FIX-9-M1 IME 会话。
 3. crates.io 不发布（用户 2026-11-23 决策，仍停 1.0.0）。
 
 ## 批次关闭记录
+- M84（2026-11-27，归档成员打开对齐；1/1 完成，未发版）：文本成员按 `is_text_like` + `terminal_in_new_window` 走新终端窗口（起始目录取归档所在目录，带安全回退），完成后 `record_file_open`；其它成员保持 pending_external。669 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M83（2026-11-27，文本预览两段式消除；3/3 全部落地，未发版）：文本一律视口渲染 + 始终语法高亮，`/` 查询黄底叠加不再关高亮；高亮缓存 key 含 mtime/size；`G` 定位末屏；缺失文件首行「文件不存在」；文本缓存改 `Arc` 只拷贝可视行。668 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M82（2026-11-27，git diff 体验；3/3 全部落地，未发版）：补丁/对照按路径 syntect 高亮；`|` 全屏对照（双 Block 连续分隔）；词级差异（纯 Rust `similar`）；`git diff -U1` 可配 `[git] diff_context`。667 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 

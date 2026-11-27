@@ -4420,17 +4420,42 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
             Ok(tmp) => {
                 // M59-4：与物理文件共用 opener 分层（[opener]/[open] 规则），
                 // 不再硬编码 system_open；block=true 规则交 run 循环挂起执行。
+                // M84：文本成员与物理文件同一路径——优先新终端窗口打开，
+                // 并记录一次真实打开。
+                let text_like = crate::opener::is_text_like(&tmp);
                 match crate::opener::open_with_layers(
                     &state.config.open,
                     &state.config.opener,
                     &tmp,
                 ) {
                     Ok(None) => {
+                        let tab_id = state.active;
+                        record_file_open(state, tab_id, &tmp);
                         *msg = Some(format!("已用配置的 opener 打开只读副本: {}", tmp.display()));
                     }
                     Ok(Some(cmd)) => {
-                        state.pending_external = Some(cmd);
-                        *msg = None;
+                        if text_like && state.config.ui.terminal_in_new_window {
+                            let run_dir = host
+                                .parent()
+                                .filter(|p| p.is_dir())
+                                .map(std::path::Path::to_path_buf)
+                                .unwrap_or_else(|| safe_external_dir(std::path::Path::new(".")));
+                            match run_external_target_with_dir(&state.config.ui, &cmd, &run_dir) {
+                                ExternalRun::Multiplexer(m) => {
+                                    let tab_id = state.active;
+                                    record_file_open(state, tab_id, &tmp);
+                                    *msg = Some(m);
+                                    return;
+                                }
+                                ExternalRun::CurrentPane(cmd) => {
+                                    state.pending_external = Some(cmd);
+                                    *msg = None;
+                                }
+                            }
+                        } else {
+                            state.pending_external = Some(cmd);
+                            *msg = None;
+                        }
                     }
                     Err(e) => *msg = Some(format!("打开归档成员失败: {e}")),
                 }

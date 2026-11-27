@@ -1684,3 +1684,10 @@ rvifm record  → 静默记录访问
 - **`G` 语义**：`line_count - 视口高度`；大文件 `line_count=0` 时用估算 `total_lines` 兜底，避免跳到顶或只剩一行。
 - **小文件性能**：`text_preview_cache` 改 `Arc<Vec<String>>`，命中只克隆指针并仅取可视窗口行；仍有缓存未命中时整文件读取（SIMPLIFIED，后续按实测再优化）。
 - **工具链**：`cargo +1.95.0 clippy` 匹配 clippy-driver；一次全量测试出现偶发单测失败，连续两次重跑全绿，判为并行 flake（与既有 redb 锁重试历史一致）。
+
+
+### 2026-11-27 — M84 决策（归档成员打开）
+
+- 解出的临时副本保留成员扩展名，故 `is_text_like(&tmp)` 与物理文件同语义；新窗口起始目录用归档 `host.parent()`（虚拟 inner 不是真实目录），并经 `safe_external_dir` 回退。
+- `Ok(None)`（系统/非 block opener 已完成）与复用器新窗口成功均 `record_file_open`；`CurrentPane` 仍延后到 run 循环执行后才算完成，不提前记。
+- cfg(test) 下 `run_external_target_with_and_dir` 短路到 `CurrentPane`，新窗口 spawn 无法自动断言；新增单测验证 `Ok(None)` 完成路径确有一次 frecency 记录。

@@ -4028,6 +4028,55 @@ fn m533_archive_member_preview_and_readonly_open() {
 }
 
 #[test]
+fn m841_archive_member_open_records_file_access() {
+    // M84：归档成员 `l`/Enter 与物理文件同一路径——打开完成后记录一次访问。
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("b.zip");
+    crate::archive::make_test_zip(&zip);
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let _ = state.active_tab_mut().navigate_to(
+        crate::tab::Location::Archive {
+            host: zip.clone(),
+            inner: PathBuf::new(),
+        },
+        Config::default(),
+    );
+    let idx = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "readme.md")
+        .unwrap();
+    state.active_tab_mut().cursor = idx;
+    // 非 block 的 `true` opener：open_with_layers 返回 Ok(None)，走完成路径。
+    state.config.open.rules = Some(vec![crate::opener::OpenRule {
+        mime: None,
+        name: Some("*.md".to_owned()),
+        use_rules: vec!["noop".to_owned()],
+    }]);
+    state.config.opener.insert(
+        "noop".to_owned(),
+        crate::opener::OpenerDef {
+            run: "true %s".to_owned(),
+            block: false,
+            desc: None,
+        },
+    );
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    assert!(state.pending_external.is_none(), "{msg:?}");
+    let recorded = state
+        .live_recorded
+        .keys()
+        .any(|(t, k, p)| *t == state.active && *k == 'F' && p.contains("readme.md"));
+    assert!(
+        recorded,
+        "归档成员打开应记录访问: {:?}",
+        state.live_recorded
+    );
+}
+
+#[test]
 fn m531_tab_label_is_focus_aware_full_path() {
     // M53-1：标签标题 `[N:焦点栏全路径]`，焦点切换同步更新。
     let left = TempDir::new().unwrap();
