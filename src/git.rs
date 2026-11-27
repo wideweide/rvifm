@@ -317,9 +317,15 @@ pub fn diff_payload(
     root: &Path,
     path: &str,
     staged: bool,
+    context: u32,
 ) -> std::io::Result<crate::gitdiff::DiffFileData> {
     let mut cmd = std::process::Command::new("git");
-    cmd.args(["--no-optional-locks", "diff", "--no-color", "-U3"]);
+    cmd.args([
+        "--no-optional-locks",
+        "diff",
+        "--no-color",
+        &format!("-U{context}"),
+    ]);
     if staged {
         cmd.arg("--cached").arg(path);
     } else {

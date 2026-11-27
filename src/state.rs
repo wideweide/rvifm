@@ -622,6 +622,8 @@ pub struct GitDiffSession {
     pub focus: DiffFocus,
     pub data: std::collections::HashMap<String, crate::gitdiff::DiffFileData>,
     pub side_by_side: bool,
+    /// M82：`|` 同时切到全屏左右对照（文件列表让位）。
+    pub fullscreen: bool,
     pub full: bool,
     pub wrap: bool,
     pub patch_scroll: usize,
@@ -646,6 +648,7 @@ impl GitDiffSession {
             focus: DiffFocus::Files,
             data: std::collections::HashMap::new(),
             side_by_side: false,
+            fullscreen: false,
             full: false,
             wrap: true,
             patch_scroll: 0,
@@ -665,7 +668,7 @@ impl GitDiffSession {
     }
 
     /// M69-2：投递后台 diff 任务（staged = index 版本 vs HEAD）。
-    pub fn request(&mut self, path: &str, staged: bool) {
+    pub fn request(&mut self, path: &str, staged: bool, context: u32) {
         if self.data.contains_key(path) || self.pending.contains(path) {
             return;
         }
@@ -676,7 +679,7 @@ impl GitDiffSession {
         let target = path.to_owned();
         let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let result = crate::git::diff_payload(&root, &target, staged);
+            let result = crate::git::diff_payload(&root, &target, staged, context);
             let _ = tx.send((generation, target, result));
         });
     }

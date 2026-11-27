@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M82 git diff 体验（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 补丁与左右对照视图按路径做 syntect 语法高亮，统一视图与对照视图同源。
+- `|` 切换全屏左右对照：文件列表让位，两个相邻 Block + 连续分隔线；增删行底色 + 词级差异高亮（纯 Rust `similar`）。
+- `git diff` 上下文改为 `-U1`，可用 `[git] diff_context` 配置。
+
 ### M81 焦点样式细调（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 非焦点标签统一白字无背景、焦点标签白底反色；预览获焦时对侧标题栏按失焦显示；预览标题栏下方改完整方框，边框与 :diff 弹窗同源（失焦灰色）。

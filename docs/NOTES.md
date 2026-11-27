@@ -1666,3 +1666,11 @@ rvifm record  → 静默记录访问
 
 - **M52-3 附加稳定性修复**：并行测试偶发 `Database already open`（`nav4_recent_exec_opens_selector`）源于 redb 读写句柄争锁；`open_store_readonly_at` 增加 10×20ms 有限重试（生产双开 rvifm 同样受益），连续 4 次全量 `cargo test` 全绿。
 - **M52-2 右栏审计结论**：`dispatch_right_pane` 投影 8 个状态字段后复用共享 `handle_key`，Normal 键位（j/k/gg/G、v/t、yy/p/P、o 等）左右一致；冒号命令在 `exec_command_impl` 与 `focused_*` 访问器下按焦点栏分派（`:sort`/`:select`/`:rename`/`:move`/`:copy`/`:archive`/`:extract`/`:file`/`gi` 均已焦点化）。预览焦点 `Tab` 进出与侧别无关，新增 m521 断言「焦点右 + 查看器在左 + Tab 进出预览且焦点不跳栏」。剩余 `tab.location`/`tab.entries[tab.cursor]` 直读仅在**右键上下文菜单**（M41-3 明确固定左栏，非「仅导航」限制）与 `jump_to` 左分支（焦点左时正确）——无残留「右栏仅导航」限制。
+
+
+### 2026-11-27 — M82 决策（git diff 体验）
+
+- **similar 依赖**：用户确认接受纯 Rust `similar = 2.7` 做词级 diff（无 C 依赖）；hunk（Node.js 应用）仅参考交互不集成。
+- **`|` 语义**：切换全屏左右对照（文件列表让位）；`fullscreen` 随 `side_by_side` 同开同关；`=`/`^w` 保留 ziggity 语义。
+- **上下文 -U1**：`[git] diff_context` 可配，默认 1；`git::diff_payload` 增 `context` 参数。
+- **工具链坑**：`cargo clippy` 默认走 clippy-driver 1.95 但默认 cargo/rustc 为 1.100，会因 rmeta 版本不匹配报 E0514；用 `cargo +1.95.0 clippy -- -D warnings` 通过（本机两工具链共存）。

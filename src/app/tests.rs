@@ -611,7 +611,7 @@ fn m711_hunk_discard_and_undo() {
     run(&["commit", "-q", "-m", "init"]);
     let modified = format!("A\n{}T\n", &original[2..original.len() - 2]);
     fs::write(tmp.path().join("f.txt"), &modified).unwrap();
-    let data = crate::git::diff_payload(tmp.path(), "f.txt", false).unwrap();
+    let data = crate::git::diff_payload(tmp.path(), "f.txt", false, 1).unwrap();
     assert_eq!(data.hunks.len(), 2, "两处独立修改应产生两个 hunk");
     let before = fs::read(tmp.path().join("f.txt")).unwrap();
     crate::git::discard_hunk(tmp.path(), "f.txt", &data.hunks, 0).unwrap();
@@ -699,7 +699,7 @@ fn m692_diff_payload_from_real_repo() {
     let root = crate::git::require_repo_root(tmp.path()).unwrap();
     let session = crate::state::GitDiffSession::open(root.clone()).unwrap();
     assert!(!session.files.is_empty());
-    let data = crate::git::diff_payload(&root, &session.files[0].0, false).unwrap();
+    let data = crate::git::diff_payload(&root, &session.files[0].0, false, 1).unwrap();
     assert!(!data.hunks.is_empty(), "应解析出差异块");
     assert!(data.new_full.iter().any(|l| l == "TWO"));
 }

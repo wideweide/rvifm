@@ -1458,79 +1458,138 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     let Some(diff) = state.git_diff.as_ref() else {
         return;
     };
-    // M72-1：复用 pane_layout——标签栏 1 行、左右主区、状态栏 1 行，
-    // 快捷键提示放进 status_area，不再覆盖左右 pane 边框。
-    let [tab_bar_area, files_area, patch_area, status_area] =
+    // M72-1/M82-2：复用 pane_layout；全屏对照时文件列表让位。
+    let [tab_bar_area, mut files_area, mut patch_area, status_area] =
         pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
+    if diff.fullscreen {
+        patch_area.width = files_area.width.saturating_add(patch_area.width);
+        files_area.width = 0;
+    }
     let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
-    let files_block = ratatui::widgets::Block::bordered()
-        .title("diff · 变更文件")
-        .border_style(if diff.focus == crate::state::DiffFocus::Files {
-            pane_border_style(true)
-        } else {
-            pane_border_style(false)
-        });
-    let files_inner = files_block.inner(files_area);
-    frame.render_widget(files_block, files_area);
-    let items: Vec<ListItem> = diff
-        .files
-        .iter()
-        .map(|(path, x, y)| {
-            let label = format!("{x}{y} {path}");
-            ListItem::new(Line::from(label)).style(
-                if diff.focus == crate::state::DiffFocus::Files {
+    if files_area.width > 0 {
+        let files_focused = diff.focus == crate::state::DiffFocus::Files;
+        let files_block = ratatui::widgets::Block::bordered()
+            .title("diff · 变更文件")
+            .border_style(if files_focused {
+                pane_border_style(true)
+            } else {
+                pane_border_style(false)
+            });
+        let files_inner = files_block.inner(files_area);
+        frame.render_widget(files_block, files_area);
+        let items: Vec<ListItem> = diff
+            .files
+            .iter()
+            .map(|(path, x, y)| {
+                ListItem::new(Line::from(format!("{x}{y} {path}"))).style(if files_focused {
                     vifm_style("TopLineSel")
                 } else {
                     Style::new()
-                },
-            )
-        })
-        .collect();
-    let mut file_state = ListState::default().with_selected(Some(diff.cursor));
-    frame.render_stateful_widget(
-        List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
-        files_inner,
-        &mut file_state,
-    );
+                })
+            })
+            .collect();
+        let mut file_state = ListState::default().with_selected(Some(diff.cursor));
+        frame.render_stateful_widget(
+            List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+            files_inner,
+            &mut file_state,
+        );
+    }
 
     let flags = format!(
-        "{}{}{}",
+        "{}{}{}{}",
         if diff.side_by_side {
             "对照"
         } else {
             "补丁"
         },
+        if diff.fullscreen { "·全屏" } else { "" },
         if diff.full { "·完整" } else { "" },
         if diff.wrap { "·换行" } else { "·不换行" },
     );
-    // M72-3：标题只显示路径与视图标记；状态消息只进状态栏。
-    let patch_block = ratatui::widgets::Block::bordered()
-        .title(format!(
-            "diff · {} · {}",
-            diff.selected_path().unwrap_or("（无文件）"),
-            flags
-        ))
-        .border_style(if diff.focus == crate::state::DiffFocus::Patch {
-            pane_border_style(true)
-        } else {
-            pane_border_style(false)
-        });
-    let patch_inner = patch_block.inner(patch_area);
-    frame.render_widget(patch_block, patch_area);
-    let (rows, _) = diff.rows(patch_inner.width as usize);
-    let shown: Vec<Line> = rows
-        .iter()
-        .skip(diff.patch_scroll)
-        .take(patch_inner.height as usize)
-        .map(|r| {
-            let start = diff.hscroll.min(r.chars().count());
-            Line::from(r.chars().skip(start).collect::<String>())
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(shown), patch_inner);
+    let title = format!(
+        "diff · {} · {}",
+        diff.selected_path().unwrap_or("（无文件）"),
+        flags
+    );
+    let border = if diff.focus == crate::state::DiffFocus::Patch {
+        pane_border_style(true)
+    } else {
+        pane_border_style(false)
+    };
+    if diff.side_by_side {
+        let [left_area, right_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(patch_area);
+        let left_block = ratatui::widgets::Block::bordered()
+            .title(format!("{title} · 旧"))
+            .border_style(border);
+        let right_block = ratatui::widgets::Block::bordered()
+            .title(format!("{title} · 新"))
+            .border_style(border);
+        let left_inner = left_block.inner(left_area);
+        let right_inner = right_block.inner(right_area);
+        frame.render_widget(left_block, left_area);
+        frame.render_widget(right_block, right_area);
+        let (rows, _) = match diff.selected() {
+            Some(data) => crate::gitdiff::render_side_by_side_styled(
+                data,
+                diff.full,
+                diff.wrap,
+                left_inner.width as usize,
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
+        let shown: Vec<(Line, Line)> = rows
+            .into_iter()
+            .skip(diff.patch_scroll)
+            .take(left_inner.height as usize)
+            .map(|(l, r)| {
+                let skip = diff.hscroll;
+                let l2 = l.spans.into_iter().skip(skip).collect::<Vec<_>>();
+                let r2 = r.spans.into_iter().skip(skip).collect::<Vec<_>>();
+                (Line::from(l2).style(l.style), Line::from(r2).style(r.style))
+            })
+            .collect();
+        let (left_lines, right_lines): (Vec<_>, Vec<_>) = shown.into_iter().unzip();
+        frame.render_widget(Paragraph::new(left_lines), left_inner);
+        frame.render_widget(Paragraph::new(right_lines), right_inner);
+    } else {
+        let patch_block = ratatui::widgets::Block::bordered()
+            .title(title)
+            .border_style(border);
+        let patch_inner = patch_block.inner(patch_area);
+        frame.render_widget(patch_block, patch_area);
+        let rows = match diff.selected() {
+            Some(data) => {
+                crate::gitdiff::render_unified_styled(
+                    &data.hunks,
+                    &data.path,
+                    diff.wrap,
+                    patch_inner.width as usize,
+                )
+                .0
+            }
+            None => vec![Line::from("正在读取 diff…")],
+        };
+        let shown: Vec<Line> = rows
+            .into_iter()
+            .skip(diff.patch_scroll)
+            .take(patch_inner.height as usize)
+            .map(|line| {
+                let spans = line
+                    .spans
+                    .into_iter()
+                    .skip(diff.hscroll)
+                    .collect::<Vec<_>>();
+                Line::from(spans).style(line.style)
+            })
+            .collect();
+        frame.render_widget(Paragraph::new(shown), patch_inner);
+    }
     let hint = format!(
-        "j/k 行 · J/K hunk · / 搜索 n/N · | 对照 · = 完整 · ^w 换行 · Tab 切栏 · Esc/q 退出{}",
+        "j/k · J/K · / n/N · | 对照 · = 完整 · ^w 换行 · Tab · Esc/q{}",
         msg.map(|m| format!("  {m}")).unwrap_or_default()
     );
     frame.render_widget(Paragraph::new(hint), status_area);

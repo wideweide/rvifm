@@ -1058,7 +1058,7 @@ fn run_with_initial_mode(
                 .get(diff.cursor)
                 .is_some_and(|(_, x, y)| *x != ' ' && *y == ' ');
             if let Some(path) = target {
-                diff.request(&path, staged);
+                diff.request(&path, staged, state.config.git.diff_context);
             }
         }
         // M55-2：抽干实时递归扫描结果（每帧限量，避免大量条目阻塞绘制）。
@@ -2312,7 +2312,11 @@ fn run_with_initial_mode(
                             KeyCode::Char('l') | KeyCode::Right => {
                                 diff.hscroll = diff.hscroll.saturating_add(2);
                             }
-                            KeyCode::Char('|') => diff.side_by_side = !diff.side_by_side,
+                            // M82：`|` 切换全屏左右对照（与 ziggity 一致）。
+                            KeyCode::Char('|') => {
+                                diff.side_by_side = !diff.side_by_side;
+                                diff.fullscreen = diff.side_by_side;
+                            }
                             KeyCode::Char('=') if diff.side_by_side => diff.full = !diff.full,
                             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 diff.wrap = !diff.wrap;

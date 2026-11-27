@@ -1,7 +1,10 @@
 //! M69：git 统一补丁解析与渲染（只读，不执行任何 git 写操作）。
 //!
 //! 项目坚持 git CLI 零编译期依赖路线：diff 由 `git diff` 产出，这里只做
-//! 结构化解析与 Ratatui 行渲染，不引入 `similar` / `diffs-rs`。
+//! 结构化解析与 Ratatui 行渲染；词级差异用纯 Rust `similar`（M82）。
+
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
@@ -254,6 +257,177 @@ pub fn hunk_preview(hunks: &[DiffHunk], index: usize) -> String {
         out.push_str(&line.text);
     }
     out
+}
+
+/// M82：词级差异（左删红底，右增绿底），用于左右对照。
+pub fn word_spans(old: &str, new: &str, left: bool) -> Vec<Span<'static>> {
+    let diff = similar::TextDiff::from_words(old, new);
+    let mut spans = Vec::new();
+    for change in diff.iter_all_changes() {
+        let text = change.value().to_owned();
+        if text.is_empty() {
+            continue;
+        }
+        match change.tag() {
+            similar::ChangeTag::Equal => spans.push(Span::from(text)),
+            similar::ChangeTag::Delete if left => spans.push(Span::styled(
+                text,
+                Style::new().bg(Color::LightRed).fg(Color::Black),
+            )),
+            similar::ChangeTag::Insert if !left => spans.push(Span::styled(
+                text,
+                Style::new().bg(Color::LightGreen).fg(Color::Black),
+            )),
+            _ => {}
+        }
+    }
+    spans
+}
+
+fn highlighter_for(path: &str, sample: &str) -> Option<crate::highlight::Highlighter> {
+    let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
+    crate::highlight::Highlighter::for_path(std::path::Path::new(path), sample, dark)
+}
+
+fn kind_style(kind: DiffLineKind) -> Style {
+    match kind {
+        DiffLineKind::Add => Style::new().bg(Color::Rgb(20, 80, 20)),
+        DiffLineKind::Del => Style::new().bg(Color::Rgb(80, 20, 20)),
+        DiffLineKind::Context => Style::new(),
+    }
+}
+
+/// M82：带语法高亮的统一补丁渲染。
+pub fn render_unified_styled(
+    hunks: &[DiffHunk],
+    path: &str,
+    wrap: bool,
+    width: usize,
+) -> (Vec<Line<'static>>, Vec<usize>) {
+    let mut rows = Vec::new();
+    let mut starts = Vec::new();
+    let sample = hunks
+        .first()
+        .and_then(|h| h.lines.first())
+        .map(|l| l.text.as_str())
+        .unwrap_or("");
+    let mut hl = highlighter_for(path, sample);
+    for hunk in hunks {
+        starts.push(rows.len());
+        rows.push(Line::from(Span::styled(
+            hunk.header.clone(),
+            Style::new().add_modifier(ratatui::style::Modifier::BOLD),
+        )));
+        for line in &hunk.lines {
+            let marker = match line.kind {
+                DiffLineKind::Add => "+",
+                DiffLineKind::Del => "-",
+                DiffLineKind::Context => " ",
+            };
+            let chunks = if wrap {
+                wrap_line(&line.text, width.saturating_sub(2), marker)
+            } else {
+                vec![format!("{marker}{}", line.text)]
+            };
+            let tokens = hl
+                .as_mut()
+                .map(|h| h.highlight_line(&line.text))
+                .unwrap_or_default();
+            for chunk in chunks {
+                let spans = if tokens.is_empty() {
+                    vec![Span::from(chunk)]
+                } else {
+                    tokens
+                        .iter()
+                        .map(|(t, s)| Span::styled(t.clone(), *s))
+                        .collect()
+                };
+                rows.push(Line::from(spans).style(kind_style(line.kind)));
+            }
+        }
+    }
+    (rows, starts)
+}
+
+/// M82：带词级高亮的左右对照渲染（两个 Block 各占一列，分隔线连续）。
+pub fn render_side_by_side_styled(
+    data: &DiffFileData,
+    full: bool,
+    wrap: bool,
+    width: usize,
+) -> (Vec<(Line<'static>, Line<'static>)>, Vec<usize>) {
+    let half = width / 2;
+    let mut rows = Vec::new();
+    let mut starts = Vec::new();
+    if full {
+        starts.push(0);
+        for i in 0..data.old_full.len().max(data.new_full.len()) {
+            let left = data.old_full.get(i).cloned().unwrap_or_default();
+            let right = data.new_full.get(i).cloned().unwrap_or_default();
+            rows.push((Line::from(left), Line::from(right)));
+        }
+        return (rows, starts);
+    }
+    for hunk in &data.hunks {
+        starts.push(rows.len());
+        let dels: Vec<_> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind != DiffLineKind::Add)
+            .collect();
+        let adds: Vec<_> = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind != DiffLineKind::Del)
+            .collect();
+        for i in 0..dels.len().max(adds.len()) {
+            let left_line = dels.get(i);
+            let right_line = adds.get(i);
+            let (old, new) = (
+                left_line.map(|l| l.text.as_str()).unwrap_or(""),
+                right_line.map(|l| l.text.as_str()).unwrap_or(""),
+            );
+            let lspans = if wrap {
+                wrap_line(
+                    old,
+                    half,
+                    if left_line.is_some_and(|l| l.kind == DiffLineKind::Del) {
+                        "-"
+                    } else {
+                        " "
+                    },
+                )
+                .into_iter()
+                .map(Span::from)
+                .collect()
+            } else {
+                word_spans(old, new, true)
+            };
+            let rspans = if wrap {
+                wrap_line(
+                    new,
+                    half,
+                    if right_line.is_some_and(|l| l.kind == DiffLineKind::Add) {
+                        "+"
+                    } else {
+                        " "
+                    },
+                )
+                .into_iter()
+                .map(Span::from)
+                .collect()
+            } else {
+                word_spans(old, new, false)
+            };
+            let lstyle = left_line.map(|l| kind_style(l.kind)).unwrap_or_default();
+            let rstyle = right_line.map(|l| kind_style(l.kind)).unwrap_or_default();
+            rows.push((
+                Line::from(lspans).style(lstyle),
+                Line::from(rspans).style(rstyle),
+            ));
+        }
+    }
+    (rows, starts)
 }
 
 #[cfg(test)]

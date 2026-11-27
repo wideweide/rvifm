@@ -116,12 +116,15 @@ impl Default for CommandConfig {
 pub struct GitConfig {
     /// 破坏性操作（discard / amend / hunk discard）是否弹确认，默认开。
     pub confirm_destructive: bool,
+    /// M82：diff 上下文行数（默认 1，即 -U1）。
+    pub diff_context: u32,
 }
 
 impl Default for GitConfig {
     fn default() -> Self {
         Self {
             confirm_destructive: true,
+            diff_context: 1,
         }
     }
 }
