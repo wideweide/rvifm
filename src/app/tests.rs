@@ -3522,9 +3522,13 @@ fn m514_paste_conflict_dialog_shows_key_hints() {
         }
     }
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(compact.contains("确认"), "{compact}");
+    assert!(
+        compact.contains("处理方式"),
+        "应提示选择处理方式: {compact}"
+    );
     assert!(compact.contains("取消"), "{compact}");
     assert!(compact.contains("j/k"), "{compact}");
+    assert!(compact.contains("rename"), "应列出选项: {compact}");
 }
 
 #[test]
@@ -15542,4 +15546,30 @@ fn m867_capital_v_no_longer_enters_visual() {
         KeyModifiers::NONE,
     );
     assert!(state.active_tab().visual.is_some(), "v 仍进入可视模式");
+}
+
+#[test]
+fn m868_paste_conflict_option_sets_by_path() {
+    let tmp = TempDir::new().unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut state = state;
+    state.pending_paste_same_dir = true;
+    assert_eq!(
+        state.paste_conflict_options(),
+        vec!["rename", "skip", "skip all"],
+        "同路径仅三项"
+    );
+    state.pending_paste_same_dir = false;
+    assert_eq!(
+        state.paste_conflict_options(),
+        vec![
+            "rename",
+            "skip",
+            "skip all",
+            "append the tail",
+            "overwrite",
+            "overwrite all"
+        ],
+        "异路径六项"
+    );
 }

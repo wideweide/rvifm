@@ -4677,6 +4677,12 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
             let n = conflicts.len();
             state.pending_paste_conflicts = conflicts;
             state.pending_paste_move = do_move;
+            // M86-8：同路径粘贴（源父目录 == 目标目录）时选项更少。
+            state.pending_paste_same_dir = buffer
+                .paths
+                .first()
+                .and_then(|p| p.parent())
+                .is_some_and(|parent| parent == base);
             *msg = Some(format!("{n} 个目标已存在：按 y 确认覆盖 / Esc 取消"));
             return;
         }
@@ -4752,6 +4758,8 @@ pub(crate) fn paste_yanked(state: &mut AppState, force_move: bool, msg: &mut Opt
 }
 
 /// M48-5：确认粘贴冲突——以临时 overwrite 策略重跑一次粘贴；确认后清空请求。
+/// M86-8 起 UI 走 `apply_paste_conflict_choice`，此函数仅保留给测试/兼容。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn confirm_paste_conflicts(state: &mut AppState, msg: &mut Option<String>) {
     if state.pending_paste_conflicts.is_empty() {
         return;
@@ -4762,6 +4770,54 @@ pub(crate) fn confirm_paste_conflicts(state: &mut AppState, msg: &mut Option<Str
     state.config.transfer.conflict_policy = "overwrite".to_owned();
     paste_yanked(state, move_mode, msg);
     state.config.transfer.conflict_policy = saved;
+}
+
+/// M86-8：按用户在冲突对话框中的选择执行粘贴。
+pub(crate) fn apply_paste_conflict_choice(
+    state: &mut AppState,
+    msg: &mut Option<String>,
+    choice: &str,
+) {
+    if state.pending_paste_conflicts.is_empty() {
+        return;
+    }
+    let conflicts = std::mem::take(&mut state.pending_paste_conflicts);
+    let move_mode = state.pending_paste_move;
+    let saved = state.config.transfer.conflict_policy.clone();
+    match choice {
+        "rename" => state.config.transfer.conflict_policy = "rename".to_owned(),
+        "skip" | "skip all" => state.config.transfer.conflict_policy = "skip".to_owned(),
+        "overwrite" | "overwrite all" => {
+            state.config.transfer.conflict_policy = "overwrite".to_owned()
+        }
+        "append the tail" => {
+            // 把同名源文件内容追加到已存在目标尾部，再按 skip 策略复制其余项。
+            let sources = state
+                .yank
+                .as_ref()
+                .map(|b| b.paths.clone())
+                .unwrap_or_default();
+            for dest in &conflicts {
+                let Some(name) = dest.file_name() else {
+                    continue;
+                };
+                let Some(src) = sources.iter().find(|p| p.file_name() == Some(name)) else {
+                    continue;
+                };
+                let data = std::fs::read(src).unwrap_or_default();
+                if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(dest) {
+                    use std::io::Write;
+                    let _ = file.write_all(&data);
+                }
+            }
+            state.config.transfer.conflict_policy = "skip".to_owned();
+            *msg = Some(format!("已向 {} 个同名目标追加源内容", conflicts.len()));
+        }
+        _ => {}
+    }
+    paste_yanked(state, move_mode, msg);
+    state.config.transfer.conflict_policy = saved;
+    state.pending_paste_same_dir = false;
 }
 
 /// M48-5：取消粘贴冲突——丢弃请求，不改动任何文件。

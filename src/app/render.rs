@@ -2066,15 +2066,30 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             return;
         }
         InputMode::ConfirmPaste { cursor, scroll } => {
-            // M48-5：复用删除确认窗口渲染冲突目标列表（覆盖标题为覆盖确认）。
-            let paths = state.pending_paste_conflicts.clone();
+            // M86-8：渲染可选择的冲突处理选项（同路径/异路径选项集不同）。
+            let options: Vec<String> = state
+                .paste_conflict_options()
+                .into_iter()
+                .enumerate()
+                .map(|(i, opt)| format!("{} {}", if i == *cursor { "▶" } else { " " }, opt))
+                .collect();
             let rect = confirm_rect(frame.area(), CONFIRM_LIST_HEIGHT + 3);
-            // M51-4：与删除确认同款，footer 必须单独渲染（原只画列表，
-            // 丢失 y/n/Esc/j/k 按键提示）。
-            let (_, footer, lines) =
-                confirm_dialog(false, &paths, None, *cursor, *scroll, rect.width);
+            let footer = Line::from("j/k=选择  y/Enter=应用  Esc=取消");
+            let lines: Vec<Line> = options
+                .iter()
+                .enumerate()
+                .skip(*scroll)
+                .take(CONFIRM_LIST_HEIGHT)
+                .map(|(i, opt)| {
+                    Line::from(opt.clone()).style(if i == *cursor {
+                        Style::new().add_modifier(Modifier::REVERSED)
+                    } else {
+                        Style::new()
+                    })
+                })
+                .collect();
             frame.render_widget(ratatui::widgets::Clear, rect);
-            let centered = Line::from("⚠ 是否覆盖同名文件")
+            let centered = Line::from("⚠ 同名冲突：请选择处理方式")
                 .style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD))
                 .centered();
             let border = Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);

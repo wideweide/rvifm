@@ -383,6 +383,8 @@ pub struct AppState {
     pub pending_paste_move: bool,
     /// M49-7：`v` 多选 `D` 永久删除确认标记（由 ConfirmTagDelete 消费）。
     pub pending_permanent_delete: bool,
+    /// M86-8：粘贴冲突选项列表（同路径/异路径选项集不同）。
+    pub pending_paste_same_dir: bool,
     /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
     /// M36-7：传输队列（粘贴入队；`:queue` 覆盖层消费/取消）。
@@ -804,6 +806,23 @@ impl AppState {
         });
     }
 
+    /// M86-8：粘贴冲突选项——同路径（原地粘贴）只给 rename/skip/skip all；
+    /// 跨路径追加 append the tail / overwrite / overwrite all。
+    pub fn paste_conflict_options(&self) -> Vec<&'static str> {
+        if self.pending_paste_same_dir {
+            vec!["rename", "skip", "skip all"]
+        } else {
+            vec![
+                "rename",
+                "skip",
+                "skip all",
+                "append the tail",
+                "overwrite",
+                "overwrite all",
+            ]
+        }
+    }
+
     /// M85：收割当前图片的 resize+encode 结果；失败时清空协议并节流重试。
     pub fn drain_image_resizes(&self) {
         while let Ok(mut guard) = self.thread_preview.try_borrow_mut()
@@ -935,6 +954,7 @@ impl AppState {
             pending_paste_conflicts: Vec::new(),
             pending_paste_move: false,
             pending_permanent_delete: false,
+            pending_paste_same_dir: false,
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
             history_commands: Vec::new(),

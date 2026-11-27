@@ -1891,7 +1891,8 @@ fn run_with_initial_mode(
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Char('j') | KeyCode::Down => {
-                                *cursor = cursor.saturating_add(1);
+                                let max = state.paste_conflict_options().len().saturating_sub(1);
+                                *cursor = cursor.saturating_add(1).min(max);
                                 if *cursor >= *scroll + crate::app::render::CONFIRM_LIST_HEIGHT {
                                     *scroll = *cursor - crate::app::render::CONFIRM_LIST_HEIGHT + 1;
                                 }
@@ -1903,13 +1904,19 @@ fn run_with_initial_mode(
                                 }
                             }
                             KeyCode::Char('y') | KeyCode::Enter => {
+                                let options = state.paste_conflict_options();
+                                let choice =
+                                    options.get(*cursor).copied().unwrap_or("overwrite all");
                                 mode = InputMode::Normal;
-                                confirm_paste_conflicts(&mut state, &mut msg);
+                                crate::app::exec::apply_paste_conflict_choice(
+                                    &mut state, &mut msg, choice,
+                                );
                             }
-                            _ => {
+                            KeyCode::Esc => {
                                 mode = InputMode::Normal;
                                 cancel_paste_conflicts(&mut state, &mut msg);
                             }
+                            _ => {}
                         }
                     }
                 }
