@@ -361,6 +361,35 @@ fn frec_state_with(entries: Vec<crate::frecency::ScoredEntry>, query: &str) -> A
 }
 
 #[test]
+fn m781_default_config_has_vim_text_opener() {
+    let cfg = Config::default();
+    assert_eq!(
+        cfg.opener.get("edit_text").map(|d| d.run.as_str()),
+        Some("vim %s")
+    );
+    let parsed: Config = toml::from_str(crate::config::DEFAULT_CONFIG_TEMPLATE).unwrap();
+    assert_eq!(
+        parsed.opener.get("edit_text").map(|d| d.run.as_str()),
+        Some("vim %s")
+    );
+}
+
+#[test]
+fn m783_command_descriptions_not_path_fallback() {
+    let infos = crate::app::exec::command_infos();
+    for name in [
+        "tabname", "tabnew", "tabclose", "copy", "move", "mkdir", "touch",
+    ] {
+        let desc = infos
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, d)| d.as_str())
+            .unwrap_or("");
+        assert!(!desc.is_empty() && desc != "文件/路径", "{name}: {desc}");
+    }
+}
+
+#[test]
 fn m763_frecency_preview_defaults_off() {
     assert!(!Config::default().preview.frecency_preview);
     let parsed: Config = toml::from_str("[preview]\nfrecency_preview = true\n").unwrap();
@@ -3964,9 +3993,11 @@ fn m533_archive_member_preview_and_readonly_open() {
     // `l`/Enter 走 open_selected → 临时副本交系统 opener（cfg(test) 不真启动 GUI）。
     let mut msg = None;
     open_selected(&mut state, &mut msg);
+    // M78-1：默认文本 opener 为 block vim，可能转交 pending_external；两者皆可。
     assert!(
-        msg.as_deref().is_some_and(|m| m.contains("只读副本")),
-        "{msg:?}"
+        msg.as_deref().is_some_and(|m| m.contains("只读副本")) || state.pending_external.is_some(),
+        "{msg:?} pending={:?}",
+        state.pending_external
     );
     assert_eq!(fs::read(&zip).unwrap(), before, "归档未被修改");
 }

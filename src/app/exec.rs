@@ -2124,15 +2124,22 @@ pub(crate) fn command_infos() -> Vec<(String, String)> {
                         .lines()
                         .find_map(|line| {
                             let t = line.trim();
-                            if t.starts_with(&needle) {
+                            // M78-3：兼容同一行并列多个命令（如历史 :tabnew / :tabclose）。
+                            if t.starts_with(&needle) || t.contains(&format!("{needle} ")) {
                                 // 至少两个空格后才是描述（帮助文本固定格式）。
                                 t.split_once("  ").map(|(_, d)| d.trim())
                             } else {
                                 None
                             }
                         })
+                        // M78-3：内部命令即使缺说明也不落入路径候选的「文件/路径」兜底。
                         .unwrap_or("")
                         .to_owned();
+                    let desc = if desc.is_empty() {
+                        format!(":{name}")
+                    } else {
+                        desc
+                    };
                     ((*name).to_owned(), desc)
                 })
                 .collect()

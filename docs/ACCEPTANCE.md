@@ -1345,6 +1345,6 @@
 
 ## 83. M78 — 默认 opener / IME / 命令描述（见 SPEC M78 节）
 
-- [ ] M78-1 删除配置重启后文本走 vim 规则，缺失 vim 回退系统 opener。
-- [ ] M78-2 IME 输入模式/保存/恢复/suspend 缺口修复，有 trace 日志。
-- [ ] M78-3 tabname/tabnew/tabclose 描述正确，无「文件/路径」兜底。
+- [x] M78-1 删除配置重启后文本走 vim 规则，缺失 vim 回退系统 opener。（2026-11-27：m781）
+- [x] M78-2 IME 输入模式/保存/恢复/suspend 缺口修复，有 trace 日志。（2026-11-27：防御修复）
+- [x] M78-3 tabname/tabnew/tabclose 描述正确，无「文件/路径」兜底。（2026-11-27：m783）

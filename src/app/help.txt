@@ -65,9 +65,11 @@ rvifm 帮助（vim 风格文件管理器）
   :rename 新名    重命名当前条目
   :rename s/<pat>/<repl>/[i] | prefix=/suffix=/seq=<start>,<step>,<width>
                   结构化批量重命名（结果视图预览，y=应用整批 / Esc=取消）
-  :copy / :move <目录>
+  :copy <目录>   复制选中项到指定目录
+  :move <目录>   移动选中项到指定目录
   :link <dest>    创建符号链接（dest 为已存在目录时在其内批量建链；u 可逆）
-  :mkdir / :touch <名>   （:mkdir 后光标定位新目录）
+  :mkdir <名>    创建目录（光标定位新目录）
+  :touch <名>    创建空文件
   :mk <名>        创建并进入新目录
   :cd <目录>
   :file           显示当前条目详情（路径/大小/权限/修改时间/类型）
@@ -76,7 +78,8 @@ rvifm 帮助（vim 风格文件管理器）
   :!<cmd>         外部命令（$TMUX/$STY 下新窗口执行；[ui] terminal_in_new_window 可配）
 
 == 多标签 ==
-  :tabnew / :tabclose
+  :tabnew        新建标签
+  :tabclose      关闭当前标签（不可撤销）
   gt / gT / {N}gt 切换标签
   :tabmove {N}    调整标签顺序
   :tabname <名>   命名当前标签（无参清除；会话持久化，重启后保持）；标签显示 [序号:焦点栏全路径]，溢出自动滚动（‹ ›）

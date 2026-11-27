@@ -362,6 +362,7 @@ fn ime_editable_mode(mode: &InputMode) -> bool {
             | InputMode::Rename { .. }
             | InputMode::RemotePass { .. }
             | InputMode::FrecencyPreviewSearch { .. }
+            | InputMode::TutorListSearch { .. }
     )
 }
 
@@ -990,7 +991,10 @@ fn run_with_initial_mode(
         // AUDIT-7：block=true opener 的挂起执行（open_selected 经
         // state.pending_external 转交；与 :! 同款 TUI 挂起/恢复语义）。
         if let Some(cmd) = state.pending_external.take() {
+            // M78-2：跨外部命令成对 suspend/resume，避免周期强制切英文干扰外部程序。
+            crate::ime::suspend_ime();
             (terminal, msg) = suspend_execute(&cmd);
+            crate::ime::resume_ime();
         }
         // M13-8：收割后台作业更新（撤销栈入栈 + 状态刷新 + 提示）。
         while let Ok(update) = job_rx.try_recv() {
@@ -1115,8 +1119,8 @@ fn run_with_initial_mode(
         if matches!(key_ev, Some(Event::FocusGained)) {
             crate::ime::resume_ime();
         }
-        // 收到任意按键即视为用户已回到 rvifm，恢复 IME 强制。
-        if matches!(key_ev, Some(Event::Key(_))) {
+        // M78-2：按键或鼠标都视为用户已回到 rvifm（鼠标返回不再留下 suspend 残留）。
+        if matches!(key_ev, Some(Event::Key(_)) | Some(Event::Mouse(_))) {
             crate::ime::resume_ime();
         }
         // M47-6：切回终端窗口且不在可编辑模式时切英文；多数终端不发送此事件，

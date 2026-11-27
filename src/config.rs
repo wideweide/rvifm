@@ -296,6 +296,32 @@ impl Default for KeymapConfig {
     }
 }
 
+// M78-1：内建文本打开规则——删除配置/旧配置缺表时仍让文本走 vim；
+// 系统 opener 仍是最终回退（AGENTS §5.5）。
+fn default_opener() -> std::collections::BTreeMap<String, crate::opener::OpenerDef> {
+    let mut map = std::collections::BTreeMap::new();
+    map.insert(
+        "edit_text".to_owned(),
+        crate::opener::OpenerDef {
+            run: "vim %s".to_owned(),
+            block: true,
+            desc: Some("编辑文本".to_owned()),
+        },
+    );
+    map
+}
+
+fn default_open_layers() -> crate::opener::OpenLayers {
+    crate::opener::OpenLayers {
+        append_rules: vec![crate::opener::OpenRule {
+            mime: Some("text/*".to_owned()),
+            name: None,
+            use_rules: vec!["edit_text".to_owned(), "open".to_owned()],
+        }],
+        ..crate::opener::OpenLayers::default()
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -308,8 +334,8 @@ impl Default for Config {
             preview: PreviewConfig::default(),
             git: GitConfig::default(),
             transfer: TransferConfig::default(),
-            opener: std::collections::BTreeMap::new(),
-            open: crate::opener::OpenLayers::default(),
+            opener: default_opener(),
+            open: default_open_layers(),
             keymap: KeymapConfig::default(),
             ime: ImeConfig::default(),
             command: CommandConfig::default(),
@@ -334,7 +360,7 @@ pub fn config_path() -> PathBuf {
 }
 
 /// M46-6：首次启动写入的默认配置与示例模板（随二进制内嵌，零外部依赖）。
-const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../assets/config.default.toml");
+pub(crate) const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("../assets/config.default.toml");
 const KEYMAP_EXAMPLE_TEMPLATE: &str = include_str!("../assets/keymap.example.toml");
 const OPENER_EXAMPLE_TEMPLATE: &str = include_str!("../assets/opener.example.toml");
 

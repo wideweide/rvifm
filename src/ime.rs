@@ -10,11 +10,20 @@ use crate::config::ImeConfig;
 /// 瞬间切回英文；回到 rvifm 并收到按键/FocusGained 时清除。
 static IME_SUSPENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// M78-2：`RVIFM_IME_TRACE=1` 时输出状态迁移，便于定位偶发无法切中文。
+pub(crate) fn trace(message: impl AsRef<str>) {
+    if std::env::var_os("RVIFM_IME_TRACE").is_some() {
+        eprintln!("[ime] {}", message.as_ref());
+    }
+}
+
 pub fn suspend_ime() {
+    trace("suspend");
     IME_SUSPENDED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 pub fn resume_ime() {
+    trace("resume");
     IME_SUSPENDED.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -126,6 +135,10 @@ impl<R: CommandRunner> ImeManager<R> {
         ) {
             return;
         }
+        // M78-2：首次强制前保存用户当前输入法，否则恢复时无从得知中文状态。
+        if self.saved.is_none() {
+            self.enter_normal();
+        }
         const FORCE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(250);
         let now = std::time::Instant::now();
         if self
@@ -149,7 +162,9 @@ impl<R: CommandRunner> ImeManager<R> {
             let Some(status @ (1 | 2)) = parse_fcitx_status(&result.stdout) else {
                 continue;
             };
-            self.backend = Some(backend);
+            if self.backend.is_none() {
+                self.backend = Some(backend);
+            }
             if status == 2 && self.runner.run(program, &["-c"]).is_ok_and(|r| r.success) {
                 // 不写 saved：外部窗口切回时用户并未经过 rvifm 的可编辑模式。
             }
@@ -163,7 +178,9 @@ impl<R: CommandRunner> ImeManager<R> {
             return;
         }
         let engine = String::from_utf8_lossy(&current.stdout).trim().to_owned();
-        self.backend = Some(Backend::Ibus);
+        if self.backend.is_none() {
+            self.backend = Some(Backend::Ibus);
+        }
         if engine.is_empty() || engine == self.config.ibus_english_engine {
             return;
         }
@@ -222,7 +239,9 @@ impl<R: CommandRunner> ImeManager<R> {
         }
         let engine = String::from_utf8_lossy(&current.stdout).trim().to_owned();
         if engine.is_empty() || engine == self.config.ibus_english_engine {
-            self.backend = Some(Backend::Ibus);
+            if self.backend.is_none() {
+                self.backend = Some(Backend::Ibus);
+            }
             return;
         }
         if self
@@ -230,7 +249,9 @@ impl<R: CommandRunner> ImeManager<R> {
             .run("ibus", &["engine", &self.config.ibus_english_engine])
             .is_ok_and(|r| r.success)
         {
-            self.backend = Some(Backend::Ibus);
+            if self.backend.is_none() {
+                self.backend = Some(Backend::Ibus);
+            }
             self.saved = Some(SavedState::IbusEngine(engine));
         }
     }
@@ -478,7 +499,8 @@ mod tests {
         manager.force_english();
         manager.force_english(); // 节流窗口内直接返回
         let calls = manager.runner.calls.borrow();
-        assert_eq!(calls.len(), 4, "第二次调用被节流: {calls:?}");
+        // M78-2：首次 force 前先 enter_normal 保存状态（3 次探测），随后 4 次切换。
+        assert_eq!(calls.len(), 7, "第二次调用被节流: {calls:?}");
         assert_eq!(
             calls[3],
             ("ibus".into(), vec!["engine".into(), "xkb:us::eng".into()])

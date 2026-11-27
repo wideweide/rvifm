@@ -100,11 +100,11 @@ ibus_english_engine = "xkb:us::eng"
 # [visual]
 # append_keymap = [ { on = "J", run = "move_down" } ]
 
-# ── 文件打开规则（可选；完整示例见同目录 opener.example.toml） ───────────
-# [opener]
-# edit_text = { run = "vim %s", block = true, desc = "编辑文本" }
-# [open]
-# append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
+# ── 文件打开规则（M78-1：文本默认走 vim；无 vim 回退系统 opener） ────────
+[opener]
+edit_text = { run = "vim %s", block = true, desc = "编辑文本" }
+[open]
+append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
 
 # ── 快速跳转别名（可选） ────────────────────────────────────────────────
 # [quickjump]

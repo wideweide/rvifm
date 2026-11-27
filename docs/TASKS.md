@@ -945,6 +945,6 @@
 
 ## M78 — 默认 opener / IME / 命令描述（2026-11-27 蒸馏，见 SPEC M78 节）
 
-- [ ] M78-1 默认配置启用 vim 文本规则（见 SPEC M78）
-- [ ] M78-2 IME 防御修复 + trace（见 SPEC M78）
-- [ ] M78-3 命令描述解析与帮助行修正（见 SPEC M78）
+- [x] M78-1 默认配置启用 vim 文本规则（见 SPEC M78）；2026-11-27 完成：模板解注 + Config::default 内置 edit_text，m781 通过
+- [x] M78-2 IME 防御修复 + trace（见 SPEC M78）；2026-11-27 完成：补 TutorListSearch、force 前保存、backend 保留、鼠标/外部命令成对恢复、RVIFM_IME_TRACE
+- [x] M78-3 命令描述解析与帮助行修正（见 SPEC M78）；2026-11-27 完成：拆分并列命令帮助行、空描述不再落「文件/路径」，m783 通过
