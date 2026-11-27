@@ -52,16 +52,11 @@ pub(crate) fn render_view_path(
     let tab = state.active_tab();
     // M49-9/10：快速切换时只做轻量预览；预览获焦（Tab 进入）后才全量加载。
     let quick = !tab.preview_focus && tab.pane_frecency.as_ref().is_none_or(|p| !p.preview_focus);
-    // M59-7：焦点预览加蓝色边框并收缩内容区（与快速态明显区分）。
-    let area = if !quick {
-        let block = ratatui::widgets::Block::bordered()
-            .title("预览（Tab 返回列表）")
-            .border_style(Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD));
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        inner
+    // M73-3：不再叠加第二层蓝框——直接给现有 pane 边框上焦点色。
+    let border_style = if !quick {
+        Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD)
     } else {
-        area
+        pane_border_style(true)
     };
     let path = path.to_path_buf();
     // 图片：快速态只显示元数据；获焦后仍走 ImageEngine 全量渲染。
@@ -75,7 +70,7 @@ pub(crate) fn render_view_path(
                     "{} · 图片（快速预览）",
                     path.display().to_string().replace('\\', "/")
                 ))
-                .border_style(pane_border_style(true));
+                .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -94,7 +89,7 @@ pub(crate) fn render_view_path(
                 "{} · 图片预览",
                 path.display().to_string().replace('\\', "/")
             ))
-            .border_style(pane_border_style(true));
+            .border_style(border_style);
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
         // M60-3：UI 线程不再解码——后台解码完成后只做协议编码；未就绪先提示。
@@ -142,7 +137,7 @@ pub(crate) fn render_view_path(
                 "{} · 目录",
                 path.display().to_string().replace('\\', "/")
             ))
-            .border_style(pane_border_style(true));
+            .border_style(border_style);
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
         // M63-1：按 (目录, mtime) 缓存浅层树，超大目录不再每帧重扫。
@@ -230,7 +225,7 @@ pub(crate) fn render_view_path(
     };
     let pane = ratatui::widgets::Block::bordered()
         .title(title)
-        .border_style(pane_border_style(true));
+        .border_style(border_style);
     let inner = pane.inner(area);
     frame.render_widget(pane, area);
     // M21-F7：PDF/Office 分流——走共享 PreviewRenderer（pdf-inspector
@@ -240,7 +235,7 @@ pub(crate) fn render_view_path(
         crate::preview::PreviewKind::Office => {
             let pane = ratatui::widgets::Block::bordered()
                 .title(format!("{shown} · Office 预览"))
-                .border_style(pane_border_style(true));
+                .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             if let Some((_, lines)) = state.special_preview.as_ref().filter(|(p, _)| p == &path) {
@@ -261,7 +256,7 @@ pub(crate) fn render_view_path(
             // 优先命中）——缓存版同源渲染，损坏/.rar 回退信息面板。
             let pane = ratatui::widgets::Block::bordered()
                 .title(format!("{shown} · 归档成员（只读）"))
-                .border_style(pane_border_style(true));
+                .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             // M46-8：按 (路径, mtime, size) 缓存成员列表，同一归档预览不再
@@ -294,7 +289,7 @@ pub(crate) fn render_view_path(
                 let page = viewer.page;
                 let pane = ratatui::widgets::Block::bordered()
                     .title(format!("{shown} · PDF 第 {} 页（[ ] 翻页）", page + 1))
-                    .border_style(pane_border_style(true));
+                    .border_style(border_style);
                 let inner = pane.inner(area);
                 frame.render_widget(pane, area);
                 if let Some(png) = crate::pdf::cached_visual_page_png(&path, page, prefer) {
@@ -314,7 +309,7 @@ pub(crate) fn render_view_path(
             }
             let pane = ratatui::widgets::Block::bordered()
                 .title(format!("{shown} · PDF 预览"))
-                .border_style(pane_border_style(true));
+                .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
             let preview = crate::preview::render_preview(&path, inner.height.max(1) as usize);
@@ -672,12 +667,12 @@ pub(crate) fn render_right_pane(
             // M47-7：复用 row_reversed（含 !on_parent_row 守卫）——顶部 `..` 行
             // 高亮时第一条真实条目不得同时反显（原无条件 idx==cursor）。
             if row_reversed {
-                // M21-F2：焦点侧反显，非焦点侧 DIM 灰化。
-                modifiers |= if focused {
-                    Modifier::REVERSED
+                // M73-2：焦点侧反显，失焦侧浅灰底表达选中项。
+                if focused {
+                    modifiers |= Modifier::REVERSED;
                 } else {
-                    Modifier::DIM
-                };
+                    li = li.style(Style::new().bg(Color::Gray).fg(Color::Black));
+                }
             }
             if tab.right.tags.contains(&item.name) {
                 modifiers |= Modifier::BOLD;

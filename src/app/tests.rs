@@ -365,6 +365,18 @@ fn rank_progress(
 }
 
 #[test]
+fn m731_tab_background_differs_from_path_line() {
+    let (_tmp, mut state) = make_state(2);
+    state.new_tab_here();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    assert_ne!(buf[(1, 0)].bg, buf[(1, 1)].bg, "标签底色应与路径行不同");
+}
+
+#[test]
 fn m721_diff_status_bar_does_not_cover_borders() {
     let tmp = TempDir::new().unwrap();
     let run = |args: &[&str]| {
@@ -11966,25 +11978,25 @@ fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
     let lx = l_inner.x;
     let rx = r_inner.x;
 
-    // 焦点左：左当前行 REVERSED；右当前行 DIM 且非 REVERSED。
+    // M73-2：失焦侧当前行改为浅灰底，不再用 DIM/反显表达。
     let buf = draw(&state);
     assert!(
         buf[(lx, l_row)].modifier.contains(Modifier::REVERSED),
         "焦点左：左当前行反显"
     );
     assert!(
-        buf[(rx, r_row)].modifier.contains(Modifier::DIM)
+        buf[(rx, r_row)].bg == Color::Gray
             && !buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),
-        "焦点左：右当前行 DIM"
+        "焦点左：右当前行浅灰底"
     );
 
     // 焦点右：两侧互换。
     state.active_tab_mut().focus = crate::tab::Focus::Right;
     let buf = draw(&state);
     assert!(
-        buf[(lx, l_row)].modifier.contains(Modifier::DIM)
+        buf[(lx, l_row)].bg == Color::Gray
             && !buf[(lx, l_row)].modifier.contains(Modifier::REVERSED),
-        "焦点右：左当前行 DIM"
+        "焦点右：左当前行浅灰底"
     );
     assert!(
         buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),

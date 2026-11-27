@@ -229,6 +229,18 @@ pub(crate) fn tab_bar_hit_test(state: &AppState, width: u16, col: u16) -> Option
 /// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
 /// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
 /// CJK 全宽忽略——SIMPLIFIED）。
+/// M73-1：标签底色比路径行更深一档，避免标签栏与路径行连成一片。
+fn tab_background(active: bool) -> Color {
+    let base = crate::theme::style("TopLine").bg.unwrap_or(Color::White);
+    match base {
+        Color::Rgb(r, g, b) if active => Color::Rgb(r / 2, g / 2, b / 2),
+        Color::Rgb(r, g, b) => Color::Rgb(r * 2 / 3, g * 2 / 3, b * 2 / 3),
+        Color::White | Color::Gray => Color::DarkGray,
+        Color::DarkGray | Color::Black => Color::Black,
+        _ => Color::DarkGray,
+    }
+}
+
 pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<Span<'static>> {
     let (labels, visible) = tab_bar_labels_and_visible(state, width);
     let mut out: Vec<Span> = Vec::new();
@@ -239,10 +251,11 @@ pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<
         let label = labels[idx].clone();
         // M45-1c：标签样式独立于路径行（灰白底反色字），不再复用 TopLine/
         // TabLine 的主题 accent 色；borders 模式仍走 REVERSED。
-        out.push(Span::styled(
-            label,
-            tab_label_style(idx == state.active, borders),
-        ));
+        let mut style = tab_label_style(idx == state.active, borders);
+        if !borders {
+            style = style.patch(Style::new().bg(tab_background(idx == state.active)));
+        }
+        out.push(Span::styled(label, style));
     }
     if let Some(last) = visible.last()
         && *last + 1 < labels.len()
@@ -1831,7 +1844,12 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 let mut li = ListItem::new(Line::from(spans)).style(base_style);
                 let mut mods = Modifier::empty();
                 if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
-                    mods |= Modifier::REVERSED;
+                    // M73-2：失焦侧可视选区用 DIM，不再残留反显底色。
+                    mods |= if left_focused {
+                        Modifier::REVERSED
+                    } else {
+                        Modifier::DIM
+                    };
                 }
                 if tab.tags.contains(&item.name) {
                     mods |= Modifier::BOLD;
@@ -1855,7 +1873,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 if left_focused {
                     Style::new().add_modifier(Modifier::REVERSED)
                 } else {
-                    Style::new().add_modifier(Modifier::DIM)
+                    // M73-2：失焦选中项用浅灰底表达，而不是反显/暗化。
+                    Style::new().bg(Color::Gray).fg(Color::Black)
                 },
             ),
             parent_area,

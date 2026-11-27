@@ -1,11 +1,11 @@
 # rvifm
-1
+ 
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
 **当前状态：v1.4.0 发布（M0–M45 + FIX/REL-4 + FIX-7/8/9 + M46 全部完成；GitHub Release 仅 musl 归档——linux-x64-musl / linux-aarch64-musl（静态）/ windows-x64，crates.io 停在 1.0.0；见 CHANGELOG）。** M46 用户实测批次 2（12 子任务）已全部落地：图片预览不越界、搜索高亮仅焦点 pane、右栏整行背景一致、`h`→`l` 光标还原、extract 后刷新对侧、启动生成默认配置、`:help` 三修、归档预览提速、deb/rar VFS、yazi 删除确认（详见 CHANGELOG `[1.4.0]`）。M45 用户实测批次（28 子任务）已全部落地：HOME 路径缩写、标签栏点击、可配置分隔线、类型图标、删除确认弹窗、预览越界修复、焦点 pane 一致性、对侧解压与归档 `yy` 粘贴、tutor 进度展示等（详见 CHANGELOG `[1.3.0]`）。 已具备核心浏览/撤销/批量、归档浏览与创建（内建 zip/tar/tar.gz/7z + 外部 CLI rar/cab/lzh/tar.xz/tar.bz2/tar.zst + 校验文件）、frecency（`pick`/`record`/`o`/`:recent`）、marks/书签（`m<char>`/`'<char>`/`:bmark` 族）、键位 TOML 分层（含序列超时）、双栏/标签栏、预览查看器、递归搜索（`:find`/`:grep`）、鼠标、提权、SFTP 远端浏览/写、会话持久化、git 状态列与 `gi`。AUDIT 整改已接通：主题选择（`[ui] theme` / `:theme`）、opener TOML 分层（`[opener]`+`[open]`）、PDF 前 1–2 页图像预览（`[preview] pdf_image_pages` / `pdf_prefer_image`）、`pick` 预览与 `--topic`。双栏快捷键与目录/文件命令作用于焦点 pane，两侧均可显示并进入 `..` 父目录行（根目录隐藏）。M47 用户实测批次 3（10 任务）已落地：`=` 过滤与 `:archive`/`:extract` 焦点化、frecency 面板无边框融合、`=` 状态移入栏顶路径、目录预览图标分层缩进、右栏 `..` 单高亮、左右栏独立多选、列表左侧留白与整行高亮、切回窗口/Normal `Esc` 防御性切英文（本批次仅提交代码，未触发版本 bump/Release）。M48 用户实测批次 4（13 任务）已落地：外窗前台激活+焦点路径、文本编辑新窗优先、右栏文件打开、`v` 多选 yank 修复、粘贴冲突弹窗、归档粘贴路径/递归修复、外部列目录加速预览、`:archive` 参数与对话框、IME 周期探测、tutor 增强、删除确认真窗口、`rv help` 查看器（同样只提交代码，不 bump / tag / Release）。三平台 CI 绿。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**（快速上手/键位/命令速查）。执行协议见 [AGENTS.md](AGENTS.md)，实时进度见 [docs/STATE.md](docs/STATE.md)，评估报告见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 文档导航
-2
+ 
 | 文档 | 职责 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | 编码 Agent 的执行协议：每轮读什么、做什么、何时提交 |
@@ -32,7 +32,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 `rvifm` 的出发点很简单：**把 vifm 需要“装插件、配外部工具、写脚本”才能得到的能力，变成编译进二进制的默认行为。** 同时保留 vim 风格的操作范式，让 vifm 用户几乎不需要重新学习键位。
 
 这不是一次逐行移植。完整评估的结论是：vifm 约 **17 万行 C**，依赖 ncurses、GLib、libmagic，忠实重写预计需要 **12–18 个月**、**1.5 亿–4 亿 token**，投入产出比并不理想。因此 `rvifm` 改为**以官方文档的特性清单为规格来源、允许简化和重新设计**，优先保证核心链路可用，再逐步叠加增强能力。
-3
+ 
 ## 与 vifm 的对比
 
 | 能力 | vifm 的做法 | rvifm 的做法 |
