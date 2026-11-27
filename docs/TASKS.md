@@ -948,3 +948,9 @@
 - [x] M78-1 默认配置启用 vim 文本规则（见 SPEC M78）；2026-11-27 完成：模板解注 + Config::default 内置 edit_text，m781 通过
 - [x] M78-2 IME 防御修复 + trace（见 SPEC M78）；2026-11-27 完成：补 TutorListSearch、force 前保存、backend 保留、鼠标/外部命令成对恢复、RVIFM_IME_TRACE
 - [x] M78-3 命令描述解析与帮助行修正（见 SPEC M78）；2026-11-27 完成：拆分并列命令帮助行、空描述不再落「文件/路径」，m783 通过
+
+## M79 — git 状态列缓存失效修复（2026-11-27，见 SPEC M79 节）
+
+- [x] M79-1 git 写操作后清缓存（见 SPEC M79）；2026-11-27 完成：run_git_op + fs_dirty 统一 clear_git_cache，m791 通过
+- [x] M79-2 git 状态缓存 TTL（见 SPEC M79）；2026-11-27 完成：git_cache_at + 3s TTL + git_cache_fresh，m791 通过
+- [x] M79-3 文档/验收/门禁（见 SPEC M79）；2026-11-27 完成：GUIDE/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁

@@ -555,6 +555,8 @@ fn run_git_op(state: &mut AppState, op: &crate::state::GitOp, msg: &mut Option<S
             }
         }
     };
+    // M79-1：git 写操作后旧状态列标记必须立即失效（无论成功与否）。
+    crate::git::clear_git_cache(state);
     match result {
         Ok(out) => {
             *msg = Some(format!(
@@ -1034,14 +1036,14 @@ fn run_with_initial_mode(
             if let Some(e) = refresh_on_fs_change(&mut state) {
                 msg = Some(e);
             }
-            // M25-5：外部变更 → git 状态缓存整体失效（触发器按可见目录重查）。
-            state.git_cache.clear();
-            state.git_pending.clear();
+            // M25-5/M79-1：外部变更 → git 状态缓存整体失效（触发器按可见目录重查）。
+            crate::git::clear_git_cache(&mut state);
         }
         // M25-5：收割 git 状态查询结果（回填缓存）+ 按需触发新查询。
         while let Ok((dir, res)) = git_rx.try_recv() {
             state.git_pending.remove(&dir);
-            state.git_cache.insert(dir, res.ok());
+            state.git_cache.insert(dir.clone(), res.ok());
+            state.git_cache_at.insert(dir, std::time::Instant::now());
         }
         crate::git::sync_status_trigger(&mut state);
         // M60-1：收割后台预览载荷（只接受当前代次；快速导航不渲染中间预览）。

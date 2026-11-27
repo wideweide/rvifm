@@ -461,6 +461,21 @@ pub fn spawn_status_query(
     });
 }
 
+/// M79-2：git 状态缓存 TTL（覆盖外部终端提交，不依赖 watcher 感知 .git）。
+pub(crate) const GIT_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// M79-2：缓存是否仍在 TTL 内（纯函数便于测试）。
+pub(crate) fn git_cache_fresh(at: Option<&std::time::Instant>) -> bool {
+    at.is_some_and(|stamp| stamp.elapsed() < GIT_CACHE_TTL)
+}
+
+/// M79-1：统一清空 git 状态缓存（写操作后调用，旧状态列不得残留）。
+pub(crate) fn clear_git_cache(state: &mut crate::state::AppState) {
+    state.git_cache.clear();
+    state.git_pending.clear();
+    state.git_cache_at.clear();
+}
+
 /// M25-5：按需触发 git 状态查询（左右 pane 物理目录；缓存命中/在途跳过；
 /// 非仓库记空缓存避免重复探测）。
 pub fn sync_status_trigger(state: &mut crate::state::AppState) {
@@ -479,11 +494,13 @@ pub fn sync_status_trigger(state: &mut crate::state::AppState) {
         }
     }
     for dir in dirs {
-        if state.git_cache.contains_key(&dir) || state.git_pending.contains(&dir) {
+        let fresh = git_cache_fresh(state.git_cache_at.get(&dir));
+        if (state.git_cache.contains_key(&dir) && fresh) || state.git_pending.contains(&dir) {
             continue;
         }
         let Some(root) = repo_root(&dir) else {
-            state.git_cache.insert(dir, None); // 非仓库：无状态列
+            state.git_cache.insert(dir.clone(), None); // 非仓库：无状态列
+            state.git_cache_at.insert(dir, std::time::Instant::now());
             continue;
         };
         match &state.git_tx {

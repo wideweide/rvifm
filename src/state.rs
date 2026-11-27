@@ -435,6 +435,8 @@ pub struct AppState {
     pub cmd_history: Vec<String>,
     /// M25-5：git 状态缓存（目录 → Some(快照) 就绪 / None 在途或非仓库）。
     pub git_cache: std::collections::HashMap<PathBuf, Option<crate::git::GitDirStatus>>,
+    /// M79-2：git 缓存写入时刻（TTL 到期重新查询，覆盖外部终端提交）。
+    pub git_cache_at: std::collections::HashMap<PathBuf, std::time::Instant>,
     /// M25-5：在途查询目录（防重复 spawn）。
     pub git_pending: std::collections::HashSet<PathBuf>,
     /// M25-5：git 查询回传通道（后台线程 → run 循环）。
@@ -906,6 +908,7 @@ impl AppState {
             upload_tx: None,
             cmd_history: Vec::new(),
             git_cache: std::collections::HashMap::new(),
+            git_cache_at: std::collections::HashMap::new(),
             git_pending: std::collections::HashSet::new(),
             git_tx: None,
             pending_external: None,

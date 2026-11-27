@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-25
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：无待执行任务（M77/M78 全部关闭）。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前任务**：无待执行任务（M79 已关闭）。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -26,6 +26,7 @@
 
 ## 批次关闭记录
 
+- M79（2026-11-27，git 状态列缓存失效修复；3/3 全部落地，未发版）：写操作清缓存 + 3s TTL；外部终端提交后自动刷新。667 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M77–M78（2026-11-27，tutor 进度修正与默认行为修复；7/7 全部落地，未发版）：去徽章/满宽背景进度条/完整模块计数/错题+未学习入口；新配置默认 vim 文本 opener、IME 防御修复与 trace、命令描述不再落「文件/路径」。666 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M73–M76（2026-11-27，界面/向导/frecency 对齐；12/12 本地落地，未发版）：标签/失焦/预览边框、向导换行与对话框、frecency `/`/`c`/书签 grading/多选/输入框、`clean-tmp` 清理 195 条 /tmp 记录、跳转 record 与 u 同步、评分列与预览默认关。664 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M72（2026-11-27，`:diff` 实测修复；3/3 全部落地，未发版）：状态栏与 pane 边框解耦、打开即加载补丁、过期结果清 pending、标题不串状态消息；659 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。

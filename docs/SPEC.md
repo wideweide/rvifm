@@ -2090,6 +2090,13 @@ append_rules = [
 - IME 防御性修复：补齐输入模式、force 前保存、恢复失败保留 saved、所有事件恢复、`suspend_execute` 成对 suspend/resume，加 trace 日志。
 - 拆分 `:tabnew`/`:tabclose` 等合并帮助行，解析全部 `:name`；内部命令空描述不再回退「文件/路径」。
 
+## M79 — git 状态列缓存失效修复（2026-11-27 用户实测，已确认）
+
+**MUST**
+- git 写操作（a/A/d/c/p/P / hunk discard）后清空 `git_cache` / `git_pending` / 时间戳缓存。
+- git 目录状态缓存加 TTL（默认 3 秒）；超时由 `sync_status_trigger` 重新查询，不依赖 watcher 感知 `.git`。
+- 文档/验收/门禁，未发版。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

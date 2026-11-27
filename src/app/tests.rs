@@ -361,6 +361,30 @@ fn frec_state_with(entries: Vec<crate::frecency::ScoredEntry>, query: &str) -> A
 }
 
 #[test]
+fn m791_git_cache_ttl_and_clear() {
+    assert!(crate::git::git_cache_fresh(
+        Some(&std::time::Instant::now())
+    ));
+    let old = std::time::Instant::now()
+        - crate::git::GIT_CACHE_TTL
+        - std::time::Duration::from_millis(100);
+    assert!(!crate::git::git_cache_fresh(Some(&old)));
+    assert!(!crate::git::git_cache_fresh(None));
+    let mut state =
+        AppState::new(Tab::from_physical(&std::env::temp_dir(), Config::default()).unwrap());
+    let dir = PathBuf::from("/tmp/fake");
+    state.git_cache.insert(dir.clone(), None);
+    state
+        .git_cache_at
+        .insert(dir.clone(), std::time::Instant::now());
+    state.git_pending.insert(dir.clone());
+    crate::git::clear_git_cache(&mut state);
+    assert!(
+        state.git_cache.is_empty() && state.git_cache_at.is_empty() && state.git_pending.is_empty()
+    );
+}
+
+#[test]
 fn m781_default_config_has_vim_text_opener() {
     let cfg = Config::default();
     assert_eq!(
