@@ -1458,9 +1458,12 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     let Some(diff) = state.git_diff.as_ref() else {
         return;
     };
-    let [files_area, patch_area] =
-        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .areas(frame.area());
+    // M72-1：复用 pane_layout——标签栏 1 行、左右主区、状态栏 1 行，
+    // 快捷键提示放进 status_area，不再覆盖左右 pane 边框。
+    let [tab_bar_area, files_area, patch_area, status_area] =
+        pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
+    let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
+    frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
     let files_block = ratatui::widgets::Block::bordered()
         .title("diff · 变更文件")
         .border_style(if diff.focus == crate::state::DiffFocus::Files {
@@ -1501,12 +1504,12 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
         if diff.full { "·完整" } else { "" },
         if diff.wrap { "·换行" } else { "·不换行" },
     );
+    // M72-3：标题只显示路径与视图标记；状态消息只进状态栏。
     let patch_block = ratatui::widgets::Block::bordered()
         .title(format!(
-            "diff · {} · {}  {}",
+            "diff · {} · {}",
             diff.selected_path().unwrap_or("（无文件）"),
-            flags,
-            msg.unwrap_or("")
+            flags
         ))
         .border_style(if diff.focus == crate::state::DiffFocus::Patch {
             pane_border_style(true)
@@ -1526,20 +1529,11 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
         })
         .collect();
     frame.render_widget(Paragraph::new(shown), patch_inner);
-    frame.render_widget(
-        Paragraph::new(
-            "j/k 行 · J/K hunk · / 搜索 n/N · | 对照 · = 完整 · ^w 换行 · Tab 切栏 · Esc/q 退出",
-        ),
-        ratatui::layout::Rect {
-            x: frame.area().x,
-            y: frame
-                .area()
-                .y
-                .saturating_add(frame.area().height.saturating_sub(1)),
-            width: frame.area().width,
-            height: 1,
-        },
+    let hint = format!(
+        "j/k 行 · J/K hunk · / 搜索 n/N · | 对照 · = 完整 · ^w 换行 · Tab 切栏 · Esc/q 退出{}",
+        msg.map(|m| format!("  {m}")).unwrap_or_default()
     );
+    frame.render_widget(Paragraph::new(hint), status_area);
 }
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {

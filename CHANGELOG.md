@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### M72 :diff 实测修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 快捷键提示放回真正的状态栏，不再覆盖左右 pane 边框；打开 `:diff` 即异步加载当前文件补丁，过期 generation 结果不再把路径永久留在 pending；预览标题只显示路径与视图标记，状态消息仅进状态栏。
+
 ### M71 块级 hunk 丢弃（实验性；仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `:diff` 补丁面板 `D` 对当前 hunk 做反向 `git apply -R`：先显示预览与确认，丢弃后按 `u` 可从原文备份立即恢复。

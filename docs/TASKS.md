@@ -905,3 +905,9 @@
 
 - [x] M71-1 D 丢弃当前 hunk + 预览确认 + u 撤销（见 SPEC M71）；2026-11-27 完成：反向 `git apply -R` 单 hunk + 原文备份恢复，m711 通过；修复补丁解析器多 hunk 覆盖 bug
 - [x] M71-2 文档/验收/门禁（见 SPEC M71）；2026-11-27 完成：GUIDE/help/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁
+
+## M72 — :diff 实测修复（2026-11-27，见 SPEC M72 节）
+
+- [x] M72-1 状态栏提示不覆盖 pane 边框（见 SPEC M72）；2026-11-27 完成：diff overlay 复用 pane_layout，提示进 status_area，m721 通过
+- [x] M72-2 打开即加载 diff + 过期结果不锁 pending（见 SPEC M72）；2026-11-27 完成：无焦点门槛请求 + drain 先清 pending
+- [x] M72-3 标题去除状态消息串入（见 SPEC M72）；2026-11-27 完成：标题只留路径/视图标记，msg 只进状态栏

@@ -1045,15 +1045,14 @@ fn run_with_initial_mode(
         // M69-2：收割后台 diff 结果，按需为当前文件投递只读 diff 任务。
         if let Some(diff) = state.git_diff.as_mut() {
             diff.drain();
-            if diff.focus == crate::state::DiffFocus::Patch {
-                let target = diff.selected_path().map(str::to_owned);
-                let staged = diff
-                    .files
-                    .get(diff.cursor)
-                    .is_some_and(|(_, x, y)| *x != ' ' && *y == ' ');
-                if let Some(path) = target {
-                    diff.request(&path, staged);
-                }
+            // M72-2：打开 :diff 即加载当前光标文件的补丁（右栏无需先 Tab）。
+            let target = diff.selected_path().map(str::to_owned);
+            let staged = diff
+                .files
+                .get(diff.cursor)
+                .is_some_and(|(_, x, y)| *x != ' ' && *y == ' ');
+            if let Some(path) = target {
+                diff.request(&path, staged);
             }
         }
         // M55-2：抽干实时递归扫描结果（每帧限量，避免大量条目阻塞绘制）。

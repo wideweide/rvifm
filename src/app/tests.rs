@@ -365,6 +365,46 @@ fn rank_progress(
 }
 
 #[test]
+fn m721_diff_status_bar_does_not_cover_borders() {
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        let _ = std::process::Command::new("git")
+            .args(args)
+            .current_dir(tmp.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    };
+    run(&["init", "-q"]);
+    fs::write(tmp.path().join("a.txt"), "x\n").unwrap();
+    run(&["add", "a.txt"]);
+    let root = crate::git::require_repo_root(tmp.path()).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.git_diff = Some(crate::state::GitDiffSession::open(root).unwrap());
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 16)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::GitDiff, Some("旧消息 vim a.txt")))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row = |y: u16| -> String { (0..80u16).map(|x| buf[(x, y)].symbol()).collect() };
+    assert!(
+        row(15).contains("Esc/q"),
+        "状态栏应有快捷键提示: {}",
+        row(15)
+    );
+    assert!(
+        row(14).contains('─'),
+        "主区底边框不应被状态栏覆盖: {}",
+        row(14)
+    );
+    assert!(
+        !row(1).contains("vim"),
+        "状态消息不应串入预览标题: {}",
+        row(1)
+    );
+}
+
+#[test]
 fn m711_hunk_discard_and_undo() {
     let tmp = TempDir::new().unwrap();
     let run = |args: &[&str]| {

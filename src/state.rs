@@ -681,10 +681,11 @@ impl GitDiffSession {
 
     pub fn drain(&mut self) {
         while let Ok((generation, path, result)) = self.rx.try_recv() {
+            // M72-2：过期结果也必须清 pending，否则该路径永远停在「正在读取」。
+            self.pending.remove(&path);
             if generation != self.generation {
                 continue;
             }
-            self.pending.remove(&path);
             match result {
                 Ok(data) => {
                     self.data.insert(path, data);
