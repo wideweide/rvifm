@@ -1706,15 +1706,22 @@ impl Tab {
         v.scroll = next.clamp(0, max as isize) as usize;
     }
 
-    /// M17 VIEW-1：查看器跳顶/跳底（gg/G）。
-    pub fn viewer_goto(&mut self, top: bool) {
+    /// M17 VIEW-1/M83-2：查看器跳顶/跳底（gg/G）。`G` 定位到**末屏**
+    /// （`总行数 - 视口高度`），而不是把末行置顶只剩一行。
+    pub fn viewer_goto(&mut self, top: bool, viewport_h: usize) {
         let Some(v) = self.viewer.as_mut() else {
             return;
         };
         v.scroll = if top {
             0
         } else {
-            v.line_count.saturating_sub(1)
+            // 大文件视口没有精确行数，用估算总行数兜底。
+            let total = if v.line_count > 0 {
+                v.line_count
+            } else {
+                v.total_lines
+            };
+            total.saturating_sub(viewport_h.max(1))
         };
     }
 
@@ -2342,6 +2349,27 @@ mod tests {
     use super::*;
     use std::cmp::Ordering;
     use std::fs;
+
+    #[test]
+    fn m832_viewer_goto_end_lands_on_last_screen() {
+        // M83-2：G 定位末屏（总行数 - 视口高度），不是把末行置顶。
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut tab = Tab::from_physical(tmp.path(), Config::default()).unwrap();
+        tab.viewer = Some(ViewerState {
+            scroll: 0,
+            line_count: 100,
+            total_lines: 100,
+            query: None,
+            match_line: 0,
+            hex: false,
+            page: 0,
+            path: None,
+        });
+        tab.viewer_goto(false, 10);
+        assert_eq!(tab.viewer.as_ref().unwrap().scroll, 90);
+        tab.viewer_goto(true, 10);
+        assert_eq!(tab.viewer.as_ref().unwrap().scroll, 0);
+    }
 
     #[test]
     fn m40_3_natural_cmp_total_order_regression() {

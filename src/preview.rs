@@ -578,6 +578,10 @@ fn text_preview(body: &str) -> Preview {
 pub(crate) fn read_text_preview(path: &Path, max_lines: usize) -> String {
     let meta = match fs::metadata(path) {
         Ok(m) => m,
+        // M83-2：文件不存在的预览首行只给出明确提示，不再显示类型/二进制面板。
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return format!("文件不存在: {}", path.display());
+        }
         Err(e) => return format!("读取失败: {e}"),
     };
     if meta.len() > MAX_PREVIEW_BYTES {
@@ -590,6 +594,9 @@ pub(crate) fn read_text_preview(path: &Path, max_lines: usize) -> String {
     }
     let bytes = match fs::read(path) {
         Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return format!("文件不存在: {}", path.display());
+        }
         Err(e) => return format!("读取失败: {e}"),
     };
     // 二进制探测：首 1KB 含 NUL 即按二进制处理（M34-7：结构化信息面板）。
@@ -716,6 +723,10 @@ pub fn image_dimensions(path: &Path) -> Option<(u32, u32, &'static str)> {
 /// 单行错误提示与 lossy 乱码渲染；TUI 预览与 pick 同源（read_text_preview
 /// 与查看器读取失败分支共用）。M39-2：图像文件追加容器级尺寸摘要。
 pub fn file_info_text(path: &Path) -> String {
+    // M83-2：文件不存在时不给「类型/二进制/元数据」面板。
+    if !path.exists() {
+        return format!("文件不存在: {}", path.display());
+    }
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -1239,5 +1250,17 @@ mod tests {
             text.contains("按 l / Enter 进入虚拟目录浏览"),
             "text: {text}"
         );
+    }
+
+    #[test]
+    fn m832_missing_file_preview_has_single_hint_line() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("gone.txt");
+        let text = read_text_preview(&missing, 20);
+        assert_eq!(text.lines().count(), 1, "text: {text}");
+        assert!(text.starts_with("文件不存在"), "text: {text}");
+        let info = file_info_text(&missing);
+        assert_eq!(info.lines().count(), 1, "info: {info}");
+        assert!(info.starts_with("文件不存在"), "info: {info}");
     }
 }

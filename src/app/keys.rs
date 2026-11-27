@@ -1869,12 +1869,16 @@ pub(crate) fn handle_key(
             }
             KeyCode::Char('G') => {
                 input.count = None;
-                state.active_tab_mut().viewer_goto(false);
+                state
+                    .active_tab_mut()
+                    .viewer_goto(false, viewport_h as usize);
                 return Outcome::Continue;
             }
             KeyCode::Char('g') => {
                 input.count = None;
-                state.active_tab_mut().viewer_goto(true);
+                state
+                    .active_tab_mut()
+                    .viewer_goto(true, viewport_h as usize);
                 return Outcome::Continue;
             }
             KeyCode::Char('/') => {

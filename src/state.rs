@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use crate::config::Config;
 use crate::tab::Tab;
 
+/// M83：文本预览/高亮缓存键（路径 + mtime 秒 + 字节数）。
+pub type HighlightCacheKey = (PathBuf, u64, u64);
+
 /// 可逆操作记录（M2-1）。每条都携带所属 tab 与路径（ACCEPTANCE §4），
 /// 撤销栈全局共享，跨 tab 撤销据此定位。
 /// 各操作的构造与 `u` 执行逻辑随 M2-2～M2-5 接入，此前仅结构落地。
@@ -400,8 +403,10 @@ pub struct AppState {
     /// M63-1：目录树预览快照缓存（按目录 mtime 失效，避免每帧重扫）。
     pub directory_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64), Vec<crate::tab::FileItem>>>,
-    /// M61-4：同一路径跨帧复用 syntect 状态（视口推进，尽力而为）。
-    pub highlighter_cache: std::cell::RefCell<Option<(PathBuf, crate::highlight::Highlighter)>>,
+    /// M61-4/M83：同一文件跨帧复用 syntect 状态；key 含 mtime/size，内容
+    /// 变化即重建，避免"高亮闪一下消失"后一直用旧语法。
+    pub highlighter_cache:
+        std::cell::RefCell<Option<(HighlightCacheKey, crate::highlight::Highlighter)>>,
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
     pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
     pub image_pending: Option<PathBuf>,
@@ -416,9 +421,11 @@ pub struct AppState {
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
     pub special_preview: Option<(PathBuf, Vec<String>)>,
     pub special_pending: Option<PathBuf>,
-    /// M53-5：文本预览行缓存（key = path+mtime+size，避免每帧重读/重解析）。
-    pub text_preview_cache:
-        std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, u64), Vec<String>>>,
+    /// M53-5/M83：文本预览行缓存（key = path+mtime+size），`Arc` 让命中
+    /// 只克隆指针，避免每帧整文件 `Vec<String>` 拷贝。
+    pub text_preview_cache: std::cell::RefCell<
+        std::collections::HashMap<HighlightCacheKey, std::sync::Arc<Vec<String>>>,
+    >,
     /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,

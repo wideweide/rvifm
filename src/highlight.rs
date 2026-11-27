@@ -1,12 +1,11 @@
 //! 语法高亮（M21-E3）：syntect 5（fancy-regex 纯 Rust 后端，无 onig C 依赖）。
 //!
-//! 预览查看器按**可见行**逐行解析（每帧新建 `HighlightLines`——视口起点
-//! 可能处于多行注释中间，跨行状态从头重建是 SIMPLIFIED 取舍）。语法按
-//! 扩展名 → 首行 shebang 链查找（syntect 内建 100+ 语言与 Plain Text），
-//! 未命中返回 `None` 由调用方降级纯文本。主题随 opaline 明暗对齐。
+//! 预览查看器按**可见行**逐行解析；跨行状态随视口推进尽力而为。语法按
+//! 扩展名 → 首行 shebang 链查找（M83：扩展名优先，避免 `.md` 被首行正则
+//! 误判），未命中返回 `None` 由调用方降级纯文本。主题随 opaline 明暗对齐。
 //!
-//! 消费方：TUI 查看器（render_right_pane 文本分支）；搜索模式跳过高亮
-//! （查询子串黄底叠加与语法着色互斥，SIMPLIFIED）。
+//! 消费方：TUI 查看器与 `rvifm pick` 预览同源；查询子串以黄底**叠加**在
+//! 语法着色之上（M83，不再互斥）。
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -50,17 +49,20 @@ fn theme(dark: bool) -> &'static Theme {
         })
 }
 
-/// 查找语法：首行 shebang 优先（`.txt` 内容推断，对齐 syntect
-/// `find_syntax_for_file` 语义），扩展名兜底；未命中 None。
+/// 查找语法：M83 扩展名优先（`.md`/`.sh` 等不会被首行正则误判），
+/// 首行 shebang 兜底（`.txt` 脚本等无扩展名场景）；未命中 None。
 fn find_syntax(path: &Path, first_line: &str) -> Option<&'static SyntaxReference> {
     let ss = syntax_set();
-    ss.find_syntax_by_first_line(first_line).or_else(|| {
-        let ext = path
-            .extension()
-            .map(|e| e.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        ss.find_syntax_by_extension(&ext)
-    })
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let by_ext = ss.find_syntax_by_extension(&ext);
+    // `.txt` 等映射到 Plain Text 时仍让 shebang 推断生效。
+    if by_ext.is_some_and(|s| s.name != "Plain Text") {
+        return by_ext;
+    }
+    ss.find_syntax_by_first_line(first_line).or(by_ext)
 }
 
 /// 逐行高亮器（每帧新建；无语法时 `for_path` 返回 None → 调用方纯文本）。

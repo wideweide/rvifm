@@ -4,11 +4,6 @@ use std::fs;
 /// M34-4：查看器内容渲染（M17 VIEW-1 文本 + 图片/目录/PDF/Office 分流）——
 /// 对侧 pane 复用：render_right_pane（焦点左）与 render()（焦点右）分派到
 /// 非焦点 pane。预览目标 = preview_path()（M34-4 起焦点感知）。
-/// M59-5：快速预览行数——至少 36 行，且不低于视口高度 +10（保证充满预览区）。
-pub(crate) fn quick_preview_line_count(height: usize) -> usize {
-    36.max(height.saturating_add(10))
-}
-
 pub(crate) fn render_view_content(
     frame: &mut Frame,
     state: &AppState,
@@ -201,19 +196,19 @@ pub(crate) fn render_view_path(
     } else {
         String::new()
     };
-    let quick_mark = if quick { "快速 " } else { "" };
+    // M83：文本不再显示「快速」两段式标记。
     let title = if viewer_state.is_none() {
-        format!("{quick_mark}{shown} · 预览")
+        format!("{shown} · 预览")
     } else {
         match &viewer.query {
             Some(q) => format!(
-                "{quick_mark}{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
+                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
                 viewer.scroll + 1,
                 viewer.line_count,
                 q
             ),
             None => format!(
-                "{quick_mark}{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
+                "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
                 viewer.scroll + 1,
                 viewer.line_count
             ),
@@ -311,9 +306,9 @@ pub(crate) fn render_view_path(
     }
     let height = inner.height as usize;
     let width = inner.width as usize;
-    // M53-5：按 (path, mtime, size) 缓存行，避免快速 j/k 每帧重读/重解析。
+    // M53-5/M83：按 (path, mtime, size) 缓存行，`Arc` 命中零拷贝。
     let meta = std::fs::metadata(&path).ok();
-    let key = (
+    let key: crate::state::HighlightCacheKey = (
         path.clone(),
         meta.as_ref()
             .and_then(|m| m.modified().ok())
@@ -322,88 +317,67 @@ pub(crate) fn render_view_path(
             .unwrap_or(0),
         meta.as_ref().map(|m| m.len()).unwrap_or(0),
     );
-    let quick_n = quick_preview_line_count(height);
-    // M61-3：大文件从一开始就是视口读取——没有"快速截断→聚焦全量"两步。
-    let (all_lines, skip, base_line): (Vec<String>, usize, usize) = if let Some(view) = state
+    // M83-1：文本一律视口渲染，不再「快速截断 → 获焦全量」。
+    let (lines, base_line): (Vec<String>, usize) = if let Some(view) = state
         .viewport_text
         .as_ref()
         .filter(|v| v.path() == path.as_path())
     {
         (
             view.lines(viewer.scroll, height.saturating_add(1), width),
-            0,
             viewer.scroll,
         )
     } else {
-        // M59-6：命中缓存只克隆当前需要的行（旧实现克隆最多 10 万行，小文件也会卡）。
-        let needed = if quick {
-            quick_n
-        } else {
-            viewer.scroll.saturating_add(height)
-        };
-        let cached: Option<Vec<String>> =
-            state
-                .text_preview_cache
-                .try_borrow()
-                .ok()
-                .and_then(|cache| {
-                    cache
-                        .get(&key)
-                        .map(|lines| lines.iter().take(needed).cloned().collect())
-                });
+        let cached: Option<std::sync::Arc<Vec<String>>> = state
+            .text_preview_cache
+            .try_borrow()
+            .ok()
+            .and_then(|cache| cache.get(&key).cloned());
         let parsed = if let Some(hit) = cached {
             hit
         } else {
             let Ok(text) = std::fs::read_to_string(&path) else {
-                frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+                render_fallback_lines(frame, &path, inner);
                 return;
             };
             if text.contains('\0') {
-                frame.render_widget(Paragraph::new(crate::preview::file_info_text(&path)), inner);
+                render_fallback_lines(frame, &path, inner);
                 return;
             }
-            let parsed: Vec<String> = text
-                .lines()
-                .take(VIEWER_MAX_LINES)
-                .map(str::to_owned)
-                .collect();
+            let parsed: std::sync::Arc<Vec<String>> = std::sync::Arc::new(
+                text.lines()
+                    .take(VIEWER_MAX_LINES)
+                    .map(str::to_owned)
+                    .collect(),
+            );
             if let Ok(mut cache) = state.text_preview_cache.try_borrow_mut() {
                 if cache.len() >= 16 {
                     cache.clear();
                 }
-                cache.insert(key, parsed.clone());
+                cache.insert(key.clone(), parsed.clone());
             }
             parsed
         };
-        (parsed, viewer.scroll, 0)
+        // 只拷贝当前视口行（最多 height 行），不再整文件 clone。
+        let start = viewer.scroll.min(parsed.len());
+        let end = start.saturating_add(height).min(parsed.len());
+        (parsed[start..end].to_vec(), viewer.scroll)
     };
-    let lines: Vec<String> = if quick && skip > 0 && all_lines.len() > quick_n {
-        let n = quick_n;
-        let mut short: Vec<String> = all_lines.iter().take(n).cloned().collect();
-        short.push("…（快速预览仅前若干行，Tab 进入预览加载完整内容）".to_owned());
-        short
-    } else {
-        all_lines
-    };
-    // M21-E3：语法高亮——扩展名/shebang 推断，未命中或搜索模式下
-    // 降级纯文本（查询黄底叠加与语法着色互斥，SIMPLIFIED）。
+    // M83：语法高亮始终启用；查询命中改黄底叠加（不再互斥）。
+    // 缓存 key 含内容指纹，文件变化后自动重建高亮器。
     let dark = crate::theme::active_variant() != opaline::schema::ThemeVariant::Light;
-    // M61-4：同一路径跨帧复用状态机（视口推进）；换文件/进入搜索态时重建。
     let mut hl_cache = state.highlighter_cache.borrow_mut();
-    let mut highlighter = if viewer.query.is_none() {
-        let reuse = hl_cache.as_ref().is_some_and(|(p, _)| p == &path);
+    let mut highlighter = {
+        let reuse = hl_cache.as_ref().is_some_and(|(k, _)| k == &key);
         if !reuse {
             let first = lines.first().map(String::as_str).unwrap_or("");
             *hl_cache = crate::highlight::Highlighter::for_path(&path, first, dark)
-                .map(|h| (path.clone(), h));
+                .map(|h| (key.clone(), h));
         }
         hl_cache.as_mut().map(|(_, h)| h)
-    } else {
-        *hl_cache = None;
-        None
     };
-    let mut out: Vec<Line> = Vec::new();
-    for (i, line) in lines.iter().skip(skip).take(height).enumerate() {
+    let mut out: Vec<Line> = Vec::with_capacity(height);
+    for (i, line) in lines.iter().take(height).enumerate() {
         let lineno = base_line + i + 1;
         let is_current = viewer.query.is_some() && base_line + i == viewer.match_line;
         let gutter = if is_current {
@@ -415,42 +389,78 @@ pub(crate) fn render_view_path(
             gutter,
             Style::new().add_modifier(Modifier::DIM),
         )];
-        // 行内容按查询子串分段高亮（超宽截断由渲染器裁剪）。
         let display: String = line.chars().take(width).collect();
-        match viewer
+        let query_range = viewer
             .query
             .as_deref()
-            .and_then(|q| crate::tab::match_range(&display, q))
-        {
-            Some((start, end)) => {
-                if start > 0 {
-                    spans.push(Span::from(display[..start].to_owned()));
-                }
-                spans.push(Span::styled(
-                    display[start..end].to_owned(),
-                    Style::new().fg(Color::Black).bg(Color::LightYellow),
-                ));
-                spans.push(Span::from(display[end..].to_owned()));
-            }
-            None => {
-                if let Some(h) = highlighter.as_mut() {
-                    // 语法着色片段（宽超界由渲染器裁剪；解析失败降级纯文本）。
-                    let toks = h.highlight_line(line.as_str());
-                    if toks.is_empty() {
-                        spans.push(Span::from(display));
-                    } else {
-                        for (tok, st) in toks {
-                            spans.push(Span::styled(tok, st));
-                        }
-                    }
+            .and_then(|q| crate::tab::match_range(&display, q));
+        let mut content_spans: Vec<Span<'static>> = match highlighter.as_mut() {
+            Some(h) => {
+                let toks = h.highlight_line(line.as_str());
+                if toks.is_empty() {
+                    vec![Span::from(display)]
                 } else {
-                    spans.push(Span::from(display));
+                    toks.into_iter()
+                        .map(|(tok, st)| Span::styled(tok, st))
+                        .collect()
                 }
             }
+            None => vec![Span::from(display)],
+        };
+        if let Some((start, end)) = query_range {
+            content_spans = overlay_query_spans(content_spans, start, end);
         }
+        spans.extend(content_spans);
         out.push(Line::from(spans));
     }
     frame.render_widget(Paragraph::new(out), inner);
+}
+
+/// M83-2：缺失文件首行只显示「文件不存在」，其余情况沿用结构化信息面板。
+fn render_fallback_lines(frame: &mut Frame, path: &std::path::Path, area: ratatui::layout::Rect) {
+    let lines: Vec<Line<'static>> = if !path.exists() {
+        vec![Line::from(format!(
+            "文件不存在: {}",
+            path.display().to_string().replace('\\', "/")
+        ))]
+    } else {
+        crate::preview::file_info_text(path)
+            .lines()
+            .map(|l| Line::from(l.to_owned()))
+            .collect()
+    };
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// M83：查询命中字节区间叠加黄底到语法着色片段（保留前景色）。
+fn overlay_query_spans(spans: Vec<Span<'static>>, start: usize, end: usize) -> Vec<Span<'static>> {
+    let mut out = Vec::with_capacity(spans.len() + 2);
+    let mut pos = 0usize;
+    for span in spans {
+        let len = span.content.len();
+        let s = pos;
+        let e = pos + len;
+        pos = e;
+        if len == 0 || e <= start || s >= end {
+            out.push(span);
+            continue;
+        }
+        let a = start.saturating_sub(s).min(len);
+        let b = end.saturating_sub(s).min(len);
+        if a > 0 {
+            out.push(Span::styled(span.content[..a].to_owned(), span.style));
+        }
+        if b > a {
+            out.push(Span::styled(
+                span.content[a..b].to_owned(),
+                span.style.patch(Style::new().bg(Color::LightYellow)),
+            ));
+        }
+        if b < len {
+            out.push(Span::styled(span.content[b..].to_owned(), span.style));
+        }
+    }
+    out
 }
 
 /// 右 pane 渲染（M14-1；M21-F1 带路径标题与焦点边框）：M34-4 起预览渲染在

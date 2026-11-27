@@ -815,14 +815,6 @@ fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
 }
 
 #[test]
-fn m595_quick_preview_line_count_covers_viewport() {
-    // M59-5：小视口至少 36 行；大视口按可见行 +10。
-    assert_eq!(quick_preview_line_count(10), 36);
-    assert_eq!(quick_preview_line_count(30), 40);
-    assert_eq!(quick_preview_line_count(80), 90);
-}
-
-#[test]
 fn m592_archive_preview_viewer_navigates_and_highlights() {
     // M59-2/3：归档成员走临时副本路径，viewer 有真实行数且 j/k 可滚动；
     // 临时文件保留扩展名 → 同源语法高亮可用。
@@ -4138,8 +4130,8 @@ fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
             left.push_str(buf[(x, y)].symbol());
         }
     }
-    // M65-3：macOS 长临时路径把文件名挤出 40 列，断言快速标记即可定位左侧查看器。
-    assert!(left.contains('快'), "左侧查看器标题含快速标记: {left}");
+    // M83：文本不再显示快速标记，改用「行 N/M」定位左侧查看器标题。
+    assert!(left.contains('行'), "左侧查看器标题含行号: {left}");
 
     // Tab 进出预览焦点与侧别无关：焦点保持在右栏。
     state.active_tab_mut().view_mode = true;
@@ -4283,8 +4275,8 @@ fn m4915_frecency_dd_delete_and_u_restore() {
 }
 
 #[test]
-fn m4910_preview_focus_reloads_full_text() {
-    // M49-9/10：快速态只显示前 300 字；预览获焦后加载完整内容。
+fn m831_text_preview_has_no_quick_marker() {
+    // M83-1：文本不再两段式——未获焦与获焦都不显示「快速」标记。
     let tmp = TempDir::new().unwrap();
     // 单行 400 字符：快速态第二行会出现截断提示，全量态无此提示。
     let long: String = (0..60).map(|i| format!("line-{i:03}\n")).collect();
@@ -4304,17 +4296,16 @@ fn m4910_preview_focus_reloads_full_text() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let quick = dump(&terminal).replace(' ', "");
-    assert!(quick.contains("快速"), "快速态提示: {quick}");
+    assert!(!quick.contains("快速"), "未获焦也无快速标记: {quick}");
+    assert!(quick.contains("line-000"), "首行可见: {quick}");
 
     state.active_tab_mut().preview_focus = true;
     terminal
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let full = dump(&terminal).replace(' ', "");
-    assert!(
-        !full.contains("·快速") && !full.contains("快速"),
-        "获焦后无快速提示: {full}"
-    );
+    assert!(!full.contains("快速"), "获焦后无快速提示: {full}");
+    assert!(full.contains("line-000"), "获焦后首行仍可见: {full}");
 }
 
 #[test]

@@ -1674,3 +1674,13 @@ rvifm record  → 静默记录访问
 - **`|` 语义**：切换全屏左右对照（文件列表让位）；`fullscreen` 随 `side_by_side` 同开同关；`=`/`^w` 保留 ziggity 语义。
 - **上下文 -U1**：`[git] diff_context` 可配，默认 1；`git::diff_payload` 增 `context` 参数。
 - **工具链坑**：`cargo clippy` 默认走 clippy-driver 1.95 但默认 cargo/rustc 为 1.100，会因 rmeta 版本不匹配报 E0514；用 `cargo +1.95.0 clippy -- -D warnings` 通过（本机两工具链共存）。
+
+
+### 2026-11-27 — M83 决策（文本预览）
+
+- **两段式取消范围**：仅文本去掉「快速截断→获焦全量」；图片元数据态与 PDF 视觉页仍按焦点分级（`quick` 变量保留供二者与标题焦点样式使用）。去掉 `quick_preview_line_count` 与对应旧测试。
+- **查询与语法共存**：`/` 命中改黄底叠加在 syntect 片段之上（保留语法前景色）；缓存键统一为 `(path,mtime秒,size)`，文件变化即重建高亮器，修复"闪一下消失"。
+- **语法查找顺序**：扩展名优先、Plain Text 扩展名让位 shebang，避免 `.md` 被首行正则误判。
+- **`G` 语义**：`line_count - 视口高度`；大文件 `line_count=0` 时用估算 `total_lines` 兜底，避免跳到顶或只剩一行。
+- **小文件性能**：`text_preview_cache` 改 `Arc<Vec<String>>`，命中只克隆指针并仅取可视窗口行；仍有缓存未命中时整文件读取（SIMPLIFIED，后续按实测再优化）。
+- **工具链**：`cargo +1.95.0 clippy` 匹配 clippy-driver；一次全量测试出现偶发单测失败，连续两次重跑全绿，判为并行 flake（与既有 redb 锁重试历史一致）。
