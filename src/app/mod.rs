@@ -819,10 +819,12 @@ fn run_with_initial_mode(
     startup_step!("lazy_compact");
     // M10-5 GAP-1：加载 [normal] 键位分层（prepend/append/replace）。
     config::init_keymap_layers();
-    let mut state = AppState::new(Tab::from_physical(
-        &std::env::current_dir()?,
-        config.clone(),
-    )?);
+    // M85：配置在构造前决定协议查询，关闭时直接 halfblocks（零 2s 等待）。
+    let allow_image_query = config.preview.image_protocol_query;
+    let mut state = AppState::new_with_image_query(
+        Tab::from_physical(&std::env::current_dir()?, config.clone())?,
+        allow_image_query,
+    );
     state.config = config;
     // M50-3：shell 历史补全候选 + 增量记账（默认开，失败静默降级）。
     if state.config.command.scan_shell_history {
@@ -1048,6 +1050,8 @@ fn run_with_initial_mode(
         crate::git::sync_status_trigger(&mut state);
         // M60-1：收割后台预览载荷（只接受当前代次；快速导航不渲染中间预览）。
         state.drain_preview_results();
+        // M85：收割后台 resize+encode 结果（ThreadProtocol 更新）。
+        state.drain_image_resizes();
         // M69-2：收割后台 diff 结果，按需为当前文件投递只读 diff 任务。
         if let Some(diff) = state.git_diff.as_mut() {
             diff.drain();

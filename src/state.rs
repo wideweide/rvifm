@@ -410,12 +410,17 @@ pub struct AppState {
     /// M60-3：后台解码完成的图片（路径 + DynamicImage）与在途目标。
     pub decoded_preview: Option<(PathBuf, image::DynamicImage)>,
     pub image_pending: Option<PathBuf>,
-    /// M62-2：已编码图片协议缓存（path + 绘制区域尺寸 → Protocol）。
-    pub encoded_preview_cache: std::cell::RefCell<
+    /// M85：图片 job 独立代次——viewer job 递增不再丢弃在途图片结果。
+    pub image_generation: u64,
+    /// M85：resize+encode worker 通道（ThreadProtocol 用）。
+    pub image_resize_tx: std::sync::mpsc::Sender<ratatui_image::thread::ResizeRequest>,
+    pub image_resize_rx: std::sync::mpsc::Receiver<ratatui_image::thread::ResizeResponse>,
+    /// M85：当前图片的线程化协议（path + 完整绘制矩形 → ThreadProtocol）。
+    pub thread_preview: std::cell::RefCell<
         Option<(
             PathBuf,
             ratatui::layout::Rect,
-            ratatui_image::protocol::Protocol,
+            ratatui_image::thread::ThreadProtocol,
         )>,
     >,
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
@@ -759,7 +764,8 @@ impl AppState {
         });
     }
 
-    /// M60-3：图片解码投递后台；同路径已有解码或在途则跳过。
+    /// M60-3/M85：图片解码投递后台；同路径已有解码或在途则跳过。
+    /// M85：使用**独立代次**，viewer job 递增不会让图片结果被丢弃。
     pub fn ensure_image_preview(&mut self, path: &std::path::Path) {
         if self
             .decoded_preview
@@ -773,12 +779,12 @@ impl AppState {
         }
         self.image_pending = Some(path.to_path_buf());
         let target = path.to_path_buf();
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        let generation = self.preview_generation;
+        self.image_generation = self.image_generation.wrapping_add(1);
+        let generation = self.image_generation;
+        let max_side = self.config.preview.image_max_side.max(1);
         let tx = self.preview_tx.clone();
         std::thread::spawn(move || {
-            let image =
-                crate::image::decode_for_preview(&target, crate::image::PREVIEW_MAX_SIDE).ok();
+            let image = crate::image::decode_for_preview(&target, max_side).ok();
             let _ = tx.send(PreviewJobResult {
                 generation,
                 kind: PreviewJobKind::Image,
@@ -791,6 +797,17 @@ impl AppState {
                 image,
             });
         });
+    }
+
+    /// M85：收割后台 resize+encode 结果，交给 ThreadProtocol 更新。
+    pub fn drain_image_resizes(&self) {
+        while let Ok(response) = self.image_resize_rx.try_recv() {
+            if let Ok(mut guard) = self.thread_preview.try_borrow_mut()
+                && let Some((_, _, proto)) = guard.as_mut()
+            {
+                proto.update_resized_protocol(response);
+            }
+        }
     }
 
     /// M60-4：Office/归档/PDF 文本预览行后台计算（缓存未命中时）。
@@ -826,28 +843,36 @@ impl AppState {
         });
     }
 
-    /// M60-1/3/4：收割后台结果；只接受当前代次，按类型安装 viewer/图/特殊预览。
+    /// M60-1/3/4/M85：收割后台结果。图片用独立代次（`image_generation`），
+    /// viewer/特殊预览仍用 `preview_generation`；过期图片结果也会清 pending，
+    /// 避免「图片解码中…」永久卡住。
     pub fn drain_preview_results(&mut self) {
         while let Ok(result) = self.preview_rx.try_recv() {
-            if result.generation != self.preview_generation {
-                continue;
-            }
             match result.kind {
                 PreviewJobKind::Image => {
                     if self.image_pending.as_deref() == Some(result.payload.path.as_path()) {
                         self.image_pending = None;
+                    }
+                    if result.generation != self.image_generation {
+                        continue;
                     }
                     if let Some(img) = result.image {
                         self.decoded_preview = Some((result.payload.path, img));
                     }
                 }
                 PreviewJobKind::Special => {
+                    if result.generation != self.preview_generation {
+                        continue;
+                    }
                     if self.special_pending.as_deref() == Some(result.payload.path.as_path()) {
                         self.special_pending = None;
                     }
                     self.special_preview = Some((result.payload.path, result.payload.lines));
                 }
                 PreviewJobKind::Viewer => {
+                    if result.generation != self.preview_generation {
+                        continue;
+                    }
                     let Some(tab) = self.tabs.get_mut(self.active) else {
                         return;
                     };
@@ -869,10 +894,15 @@ impl AppState {
         }
     }
 
-    /// 以一个初始标签启动。
+    /// 以一个初始标签启动（默认允许图片协议查询）。
     pub fn new(initial: Tab) -> Self {
+        Self::new_with_image_query(initial, true)
+    }
+
+    /// M85：允许调用方在构造前按配置关闭图片协议查询（免去 2s 等待）。
+    pub fn new_with_image_query(initial: Tab, allow_image_query: bool) -> Self {
         let t0 = std::time::Instant::now();
-        let image_engine = crate::image::ImageEngine::detect();
+        let image_engine = crate::image::ImageEngine::detect_with(allow_image_query);
         if std::env::var_os("RVIFM_STARTUP_TRACE").is_some() {
             eprintln!("appstate image_engine: {:?}", t0.elapsed());
         }
@@ -881,6 +911,23 @@ impl AppState {
             eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
         }
         let preview_channel = std::sync::mpsc::channel();
+        // M85：一个常驻 worker 承担所有图片的 resize+encode（ThreadProtocol
+        // 把请求发进来，完成后回传 ResizeResponse），UI 线程只做 widget 渲染。
+        let (image_resize_tx, resize_rx): (
+            std::sync::mpsc::Sender<ratatui_image::thread::ResizeRequest>,
+            std::sync::mpsc::Receiver<ratatui_image::thread::ResizeRequest>,
+        ) = std::sync::mpsc::channel();
+        let (resize_resp_tx, image_resize_rx): (
+            std::sync::mpsc::Sender<ratatui_image::thread::ResizeResponse>,
+            std::sync::mpsc::Receiver<ratatui_image::thread::ResizeResponse>,
+        ) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while let Ok(request) = resize_rx.recv() {
+                if let Ok(response) = request.resize_encode() {
+                    let _ = resize_resp_tx.send(response);
+                }
+            }
+        });
         Self {
             tabs: vec![initial],
             active: 0,
@@ -907,7 +954,10 @@ impl AppState {
             highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,
             image_pending: None,
-            encoded_preview_cache: std::cell::RefCell::new(None),
+            image_generation: 0,
+            image_resize_tx,
+            image_resize_rx,
+            thread_preview: std::cell::RefCell::new(None),
             special_preview: None,
             special_pending: None,
             text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),

@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M85 图片流水线（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- resize+encode 移到后台 worker（ratatui-image `ThreadProtocol`），UI 线程不再每帧重复编码；图片解码用独立代次，避免被 viewer job 串扰，修复 pending 卡死。
+- 预缩放显式 Nearest、最长边 1600；新增 `[preview] image_max_side` / `image_protocol_query` 配置（关闭协议查询直接 halfblocks，免去 2s 等待）。
+- 磁盘已编码协议缓存暂缓（ratatui-image 不公开编码字节，见 NOTES）。
+
 ### M84 归档成员打开对齐（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 归档内文本成员 `l`/Enter 与物理文件同路径：`terminal_in_new_window` 时优先新终端窗口打开（起始目录取归档所在目录），否则挂起执行；打开完成后记录一次访问。

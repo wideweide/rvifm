@@ -89,42 +89,41 @@ pub(crate) fn render_view_path(
             );
             return;
         }
-        let inner = area;
-        // M60-3：UI 线程不再解码——后台解码完成后只做协议编码；未就绪先提示。
-        if let Some((_, img)) = state
-            .decoded_preview
-            .as_ref()
-            .filter(|(cached, _)| cached == &path)
-        {
-            // M62-2：同一路径+区域尺寸复用已编码协议，UI 线程不再重复 resize+encode。
-            let hit = state
-                .encoded_preview_cache
-                .borrow()
-                .as_ref()
-                .is_some_and(|(p, rect, _)| {
-                    p == &path && rect.width == inner.width && rect.height == inner.height
-                });
-            if !hit {
-                match state
-                    .image_engine
-                    .encode_for_area(img.clone(), inner, frame.area())
-                {
-                    Ok((protocol, rect)) => {
-                        frame.render_widget(ratatui_image::Image::new(&protocol), rect);
-                        *state.encoded_preview_cache.borrow_mut() =
-                            Some((path.clone(), rect, protocol));
-                    }
-                    Err(_) => {
-                        frame.render_widget(Paragraph::new("图片渲染失败（协议编码）"), inner);
-                    }
-                }
-            } else if let Some((_, rect, protocol)) = state.encoded_preview_cache.borrow().as_ref()
-            {
-                frame.render_widget(ratatui_image::Image::new(protocol), *rect);
-            }
+        let inner = area.intersection(frame.area());
+        if inner.width == 0 || inner.height == 0 {
             return;
         }
-        frame.render_widget(Paragraph::new("图片解码中…（后台加载）"), inner);
+        // M85：后台解码完成后只构造一次 ThreadProtocol；真正的 resize+encode
+        // 交给常驻 worker，UI 线程每帧只渲染已完成的协议（不再重复编码）。
+        let mut guard = match state.thread_preview.try_borrow_mut() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let path_changed = guard.as_ref().is_none_or(|(p, _, _)| p != &path);
+        if path_changed {
+            // 丢弃旧图尚未回传的 resize 结果，防止 id 复用后串图。
+            while state.image_resize_rx.try_recv().is_ok() {}
+            *guard = None;
+            if let Some((_, img)) = state.decoded_preview.as_ref().filter(|(p, _)| p == &path) {
+                let proto = state.image_engine.resize_protocol(img.clone());
+                let threaded = ratatui_image::thread::ThreadProtocol::new(
+                    state.image_resize_tx.clone(),
+                    Some(proto),
+                );
+                *guard = Some((path.clone(), inner, threaded));
+            }
+        }
+        if let Some((_, rect, proto)) = guard.as_mut() {
+            // 记录完整矩形（含坐标），布局移动后不再复用错误位置（旧 key 只比宽高）。
+            *rect = inner;
+            frame.render_stateful_widget(
+                ratatui_image::StatefulImage::new().resize(ratatui_image::Resize::Fit(None)),
+                inner,
+                proto,
+            );
+        } else {
+            frame.render_widget(Paragraph::new("图片解码中…（后台加载）"), inner);
+        }
         return;
     }
     // M21-F6：光标在目录上 → 浅层 tree（复用 M13-7 构建器，深度 2、

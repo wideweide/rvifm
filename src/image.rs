@@ -20,6 +20,7 @@ use std::path::Path;
 use ratatui::Frame;
 use ratatui::layout::{Rect, Size};
 use ratatui_image::picker::{Picker, ProtocolType};
+use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::{FontSize, Image, Resize};
 
 /// M45-4a：字体尺寸兜底/合理性钳制。原生协议查询失败时 ratatui-image 回退
@@ -111,10 +112,11 @@ pub fn decode(path: &Path) -> std::io::Result<image::DynamicImage> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
-/// M62-1：后台预缩放（默认 Nearest，速度优先）。把大图先缩到 `max_side`
-/// 以内，UI 线程再做精确视口编码时只处理小图。
-/// M62：后台预缩放的最大边长（预览区远小于此；再小则失真）。
-pub const PREVIEW_MAX_SIDE: u32 = 2048;
+/// M62-1/M85：后台预缩放（显式 Nearest，速度优先）。把大图先缩到
+/// `max_side` 以内，后台再做精确视口 resize+编码（M85 ThreadProtocol）。
+/// `fast_image_resize` 6.x 默认是 Lanczos3 卷积，旧的"默认 Nearest"注释
+/// 是错的；这里显式 `ResizeAlg::Nearest`，避免大图预缩放成为首帧瓶颈。
+pub const PREVIEW_MAX_SIDE: u32 = 1600;
 
 pub fn decode_for_preview(path: &Path, max_side: u32) -> std::io::Result<image::DynamicImage> {
     let img = decode(path)?;
@@ -136,8 +138,10 @@ pub fn decode_for_preview(path: &Path, max_side: u32) -> std::io::Result<image::
     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let mut dst_view =
         fast_image_resize::images::Image::new(width, height, fast_image_resize::PixelType::U8x4);
+    let options =
+        fast_image_resize::ResizeOptions::new().resize_alg(fast_image_resize::ResizeAlg::Nearest);
     resizer
-        .resize(&src_view, &mut dst_view, None)
+        .resize(&src_view, &mut dst_view, Some(&options))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let resized = image::RgbaImage::from_raw(width, height, dst_view.into_vec())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "缩放缓冲大小不符"))?;
@@ -190,8 +194,14 @@ impl ImageEngine {
     /// 非 TTY（CI、管道、测试）**不做 stdio 查询**——查询会向
     /// stdout 写转义序列并阻塞等待响应。
     pub fn detect() -> Self {
+        Self::detect_with(true)
+    }
+
+    /// M85：`[preview] image_protocol_query=false` 时直接 halfblocks，
+    /// 连 2s 协议查询都不发起（配置在 AppState 构造前即可决定）。
+    pub fn detect_with(config_allow: bool) -> Self {
         use ratatui::crossterm::tty::IsTty;
-        if !std::io::stdout().is_tty() {
+        if !config_allow || !std::io::stdout().is_tty() {
             return Self::halfblocks();
         }
         // 默认做一次协议查询（ratatui-image 内置 2s 超时），tmux/screen 下也查；
@@ -225,6 +235,17 @@ impl ImageEngine {
         Self {
             picker: Picker::halfblocks(),
         }
+    }
+
+    /// M85：配置关闭协议查询时立即切 halfblocks（无需重启）。
+    pub fn force_halfblocks(&mut self) {
+        self.picker = Picker::halfblocks();
+    }
+
+    /// M85：把已解码图包装为可后台 resize+编码的协议状态。构造本身不编码，
+    /// 真正的缩放/编码由 ThreadProtocol 交给 worker 线程。
+    pub(crate) fn resize_protocol(&self, img: image::DynamicImage) -> StatefulProtocol {
+        self.picker.new_resize_protocol(img)
     }
 
     /// 当前协议名（帮助页/调试用）。

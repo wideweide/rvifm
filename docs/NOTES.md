@@ -1691,3 +1691,13 @@ rvifm record  → 静默记录访问
 - 解出的临时副本保留成员扩展名，故 `is_text_like(&tmp)` 与物理文件同语义；新窗口起始目录用归档 `host.parent()`（虚拟 inner 不是真实目录），并经 `safe_external_dir` 回退。
 - `Ok(None)`（系统/非 block opener 已完成）与复用器新窗口成功均 `record_file_open`；`CurrentPane` 仍延后到 run 循环执行后才算完成，不提前记。
 - cfg(test) 下 `run_external_target_with_and_dir` 短路到 `CurrentPane`，新窗口 spawn 无法自动断言；新增单测验证 `Ok(None)` 完成路径确有一次 frecency 记录。
+
+
+### 2026-11-27 — M85 决策与范围收缩（图片流水线）
+
+- **ThreadProtocol**：`AppState::new` 起一个常驻 worker 收 `ResizeRequest`、回 `ResizeResponse`；事件循环 `drain_image_resizes()` 更新协议；预览用 `StatefulImage` 渲染。路径变化时清空旧协议并丢弃在途响应（避免 id 复用串图）。
+- **独立 generation**：图片解码用 `image_generation`，viewer job 递增 `preview_generation` 不再丢弃图片结果；过期图片结果仍清 `image_pending`，修复「图片解码中…」永久卡住。
+- **Nearest**：fast_image_resize 6.x 默认 Lanczos3（旧注释称 Nearest 有误），改 `ResizeOptions::resize_alg(Nearest)`；预缩放最长边由 2048 降到 1600（贴近本机 vifm 940×1600）。
+- **协议查询**：ratatui-image `STDIN_READ_TIMEOUT_MILLIS=2000` 是库内常量，不暴露配置；改为提供 `[preview] image_protocol_query` 开关（false 直接 halfblocks，零等待）替代「超时值可配」，环境变量仍优先。**范围收缩**：未实现可调超时数值。
+- **磁盘协议缓存 CUT/deferred**：ratatui-image 的 `StatefulProtocol`/`Protocol` 不公开已编码字节（仅内部 `data` 与 `render`），无法在不 fork 或不自写 Kitty/Sixel/halfblocks 编码器的前提下持久化；本次以 ThreadProtocol + 内存协议缓存替代，**不写磁盘缓存**。若要补做需单独批次并评估自写编码器的兼容风险。
+- **本机 vifm 证据**：`/mnt/shared-data/dlt/.config/vifm/vifmrc` 用 `fileviewer` → `scripts/img_preview.sh`（img2sixel + `~/.cache/vifm/sixel_cache` 磁盘缓存，940×1600 上限）；文本走 `batcat --color=always -n --line-range=:200`。rvifm 的差异不是语言问题，而是编码线程与缓存层。

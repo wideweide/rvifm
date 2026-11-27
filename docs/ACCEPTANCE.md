@@ -1387,6 +1387,7 @@
 
 ## 90. M85 — 图片流水线（见 SPEC M85 节）
 
-- [ ] M85-1 resize/encode 后台化 + 磁盘协议缓存命中即时显示。
-- [ ] M85-2 像素上限 960×1600、Nearest、协议查询超时可配，无 pending 卡死。
-- [ ] M85-3 文档/验收/门禁，未发版。
+- [x] M85-1 resize/encode 后台化（ThreadProtocol）+ 图片独立 generation + 绘制矩形缓存含坐标，无 pending 卡死。
+- [ ] M85-1b 磁盘已编码协议缓存（deferred：ratatui-image 不公开编码字节，需 fork/自写编码器；见 NOTES）。
+- [x] M85-2 预缩放最长边 1600（宽度由预览 pane 约束）、显式 Nearest、协议查询开关可配（超时值由库固定 2s 不暴露），无 pending 卡死。
+- [x] M85-3 文档/验收/门禁，未发版。

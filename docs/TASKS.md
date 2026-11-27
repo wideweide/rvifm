@@ -987,6 +987,7 @@
 
 ## M85 — 图片流水线（2026-11-27，见 SPEC M85 节）
 
-- [ ] M85-1 ThreadProtocol + 磁盘缓存 + 独立 generation（见 SPEC M85）
-- [ ] M85-2 像素上限/Nearest/超时配置（见 SPEC M85）
-- [ ] M85-3 文档/验收/门禁（见 SPEC M85）
+- [x] M85-1 ThreadProtocol + 独立 generation + 矩形缓存（见 SPEC M85）
+- [x] M85-2 像素上限/Nearest/超时配置（见 SPEC M85）
+- [x] M85-3 文档/验收/门禁（见 SPEC M85）
+- [ ] M85-1b 磁盘已编码协议缓存（deferred：ratatui-image 不公开编码字节；见 NOTES）

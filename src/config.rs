@@ -144,6 +144,11 @@ pub struct PreviewConfig {
     pub virtual_text_threshold: u64,
     /// M76：frecency 面板默认不渲染预览，`w` 显式开启。
     pub frecency_preview: bool,
+    /// M85：图片后台预缩放的最长边（默认 1600，贴近本机 vifm 的 1600 上限）。
+    pub image_max_side: u32,
+    /// M85：启动时是否查询原生图片协议；false 直接用 halfblocks（零等待）。
+    /// 环境变量 `RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off` 优先级更高。
+    pub image_protocol_query: bool,
 }
 
 impl Default for PreviewConfig {
@@ -155,6 +160,8 @@ impl Default for PreviewConfig {
             fixed_side: false,
             virtual_text_threshold: 1024 * 1024,
             frecency_preview: false,
+            image_max_side: 1600,
+            image_protocol_query: true,
         }
     }
 }
@@ -1122,5 +1129,12 @@ dl = "bad"
             std::fs::read_to_string(&cfg_file).unwrap(),
             "show_hidden = true\n"
         );
+    }
+
+    #[test]
+    fn m852_image_preview_defaults_match_vifm_caps() {
+        let cfg = Config::default();
+        assert_eq!(cfg.preview.image_max_side, 1600);
+        assert!(cfg.preview.image_protocol_query);
     }
 }

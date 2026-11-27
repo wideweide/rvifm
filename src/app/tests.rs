@@ -15199,3 +15199,37 @@ fn fix5_tutor_panel_is_opaque_but_background_visible() {
         "面板外标签栏仍可见（透明放行上下文保留）"
     );
 }
+
+#[test]
+fn m851_image_result_uses_independent_generation() {
+    // M85：viewer job 递增 preview_generation 不应丢弃在途图片解码结果。
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let path = tmp.path().join("pic.png");
+    state.image_pending = Some(path.clone());
+    state.image_generation = 7;
+    state.preview_generation = 99;
+    state
+        .preview_tx
+        .send(crate::state::PreviewJobResult {
+            generation: 7,
+            kind: crate::state::PreviewJobKind::Image,
+            payload: crate::preview::ViewerPayload {
+                path: path.clone(),
+                lines: Vec::new(),
+                total: 0,
+                hex: false,
+            },
+            image: Some(image::DynamicImage::new_rgba8(2, 2)),
+        })
+        .unwrap();
+    state.drain_preview_results();
+    assert!(state.image_pending.is_none(), "图片 pending 必须清除");
+    assert!(
+        state
+            .decoded_preview
+            .as_ref()
+            .is_some_and(|(p, _)| p == &path),
+        "图片结果应被接受"
+    );
+}
