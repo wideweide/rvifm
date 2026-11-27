@@ -769,8 +769,8 @@ fn m641_tutor_cultivation_ranks() {
 }
 
 #[test]
-fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
-    // M59-8：默认 fixed_side=false 下 Tab 也进预览，Shift+Tab 才切左右栏。
+fn m598_frecency_tab_enters_preview_and_backtab_is_disabled() {
+    // M86-2：Tab 进预览；frecency 打开期间 Shift+Tab 不再切左右栏。
     let tmp = TempDir::new().unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     assert!(!state.config.preview.fixed_side);
@@ -817,7 +817,16 @@ fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
         KeyCode::BackTab,
         KeyModifiers::NONE,
     );
-    assert_eq!(state.active_tab().focus, crate::tab::Focus::Right);
+    assert_eq!(state.active_tab().focus, crate::tab::Focus::Left);
+    assert!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .preview_focus,
+        "BackTab 不改变预览焦点"
+    );
 }
 
 #[test]
@@ -3847,16 +3856,25 @@ fn m551_search_input_line_has_border_and_caret() {
     terminal
         .draw(|f| crate::app::render::render_frecency_panes(f, &state))
         .unwrap();
-    // M75-4：搜索态无标题、无边框、无 j/k 提示。
+    // M86-2：搜索态无标题，改为带边框输入框（标题「搜索」+ 内容回显）。
     assert!(
         !row(&terminal, 1).contains("SEARCH"),
         "{:?}",
         row(&terminal, 1)
     );
-    let status = row(&terminal, 11);
-    assert!(!status.contains('│'), "输入框不应有边框: {status}");
-    assert!(status.contains('▋'), "输入框应有可见光标: {status}");
-    assert!(status.contains("/abc"), "输入框应回显 query: {status}");
+    let snapshot = terminal.backend().buffer().clone();
+    let mut all = String::new();
+    for y in 0..12u16 {
+        for x in 0..80u16 {
+            all.push_str(snapshot[(x, y)].symbol());
+        }
+    }
+    assert!(
+        all.replace(' ', "").contains("搜索"),
+        "输入框标题可见: {all}"
+    );
+    assert!(all.contains("/abc"), "输入框应回显 query: {all}");
+    assert!(all.contains('│'), "输入框应有边框: {all}");
 
     state.active_tab_mut().pane_frecency = Some(pane(true, "abc"));
     terminal
@@ -4242,8 +4260,13 @@ fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
     let top: String = (0..100).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
     assert!(!top.contains("SEARCH"), "搜索态不显示标题: {top}");
     assert!(!top.contains("filter"), "搜索态不显示 [filter]: {top}");
-    let bottom: String = (0..100).map(|x| buf[(x, 11)].symbol().to_owned()).collect();
-    assert!(bottom.contains("/alpha"), "输入框回显 query: {bottom}");
+    let mut all = String::new();
+    for y in 0..12u16 {
+        for x in 0..100u16 {
+            all.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(all.contains("/alpha"), "输入框回显 query: {all}");
 
     let mut input = crate::app::InputState::default();
     press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
@@ -15236,5 +15259,113 @@ fn m851_image_result_uses_independent_generation() {
             .as_ref()
             .is_some_and(|(p, _)| p == &path),
         "图片结果应被接受"
+    );
+}
+
+#[test]
+fn m862_frecency_d_batch_and_dd_current() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let entries: Vec<_> = (0..3)
+        .map(|i| crate::frecency::ScoredEntry {
+            path: format!("{}/f{i}.txt", tmp.path().display()),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 1.0,
+            grade: crate::frecency::Grade::None,
+            last_visit: 0,
+        })
+        .collect();
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries,
+        query: String::new(),
+        cursor: 1,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: Some(0),
+        last_deleted_many: Vec::new(),
+    });
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        1,
+        "v 多选后 d 应立即批量删除: {msg:?}"
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('u'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        3,
+        "u 应恢复批量删除的记录: {msg:?}"
+    );
+    // 无多选：dd 两键只删当前条目。
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        3
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        2,
+        "dd 仅删当前条目: {msg:?}"
     );
 }

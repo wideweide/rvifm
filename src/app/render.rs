@@ -1231,9 +1231,17 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
     // M34-5/M47-5/M49-12：标题随模式变化，`[filter xxx]` 用 :view 同款黄底高亮。
-    let [topline, inner] =
+    let [topline, pane_body] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frec_area);
     frame.render_widget(ratatui::widgets::Clear, topline);
+    // M86-2：SEARCH 态在列表底部留 3 行给带边框输入框；NORMAL 态沿用 1 行提示。
+    let input_height = if pane.normal {
+        0
+    } else {
+        3.min(pane_body.height)
+    };
+    let [inner, input_area] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(input_height)]).areas(pane_body);
     // M75-4：搜索态不显示标题与 [filter …]，只以底部输入框呈现关键词。
     if pane.normal {
         let title_spans = vec![Span::from("Frecency - 高频目录/文件搜索 - NORMAL 模式")];
@@ -1293,7 +1301,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     );
 
     // M76-3：默认不启动 frecency 预览，仅 w 开启后渲染。
-    if state.config.preview.frecency_preview
+    if (state.config.preview.frecency_preview || pane.preview_focus)
         && let Some(entry) = visible.get(pane.cursor)
     {
         let path = std::path::PathBuf::from(&entry.path);
@@ -1309,18 +1317,38 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         });
         crate::app::preview::render_view_path(frame, state, &path, preview_area, viewer.as_ref());
     }
-    // M55-1：Search 态绘制带边框的输入行 + 可见光标；Normal 态仍为纯提示行。
-    // j/k 在 Search 态是输入字符，提示中明确 ↑↓ 才是移动键。
+    // M86-2：SEARCH 用与其它组件同源焦点样式的带边框输入框 + 闪烁光标。
     frame.render_widget(ratatui::widgets::Clear, status_area);
     if pane.normal {
         let hint = format!(
-            "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 Tab=预览焦点 dd=删记录 u=恢复 r=清书签(y确认) yf/yn/yc=复制路径/名/内容 gi=git e=编辑 w=view Esc=关闭（{} 项）",
+            "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 d=批量删 dd=删当前 u=恢复 r=清书签(y确认) yf/yn/yc=复制 Tab=预览焦点 w=view Esc=关闭（{} 项）",
             visible.len()
         );
         frame.render_widget(Paragraph::new(hint), status_area);
-    } else {
-        // M75-4：无边框、无标题、无提示，只显示 `/{query}` 与光标。
-        frame.render_widget(Paragraph::new(format!("/{}▋", pane.query)), status_area);
+    } else if input_area.height >= 3 {
+        let blink = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() % 1000 < 500)
+            .unwrap_or(true);
+        let caret = if blink { "▋" } else { " " };
+        let block = ratatui::widgets::Block::bordered()
+            .title("搜索")
+            .border_style(pane_border_style(true));
+        frame.render_widget(ratatui::widgets::Clear, input_area);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("/", Style::new().fg(Color::LightYellow)),
+                Span::from(pane.query.clone()),
+                Span::styled(
+                    caret,
+                    Style::new()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]))
+            .block(block),
+            input_area,
+        );
     }
 }
 
@@ -1657,11 +1685,6 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         height: right_area.height.saturating_sub(panel_h),
         ..right_area
     };
-    // M23-6：Frecency Pane 模式——焦点 pane 显示搜索 UI，对侧显示快速预览。
-    if state.active_tab().pane_frecency.is_some() {
-        render_frecency_panes(frame, state);
-        return;
-    }
     // M27-2：vifm 风格（pane_borders=false，默认）与旧整框外观（true）双模式。
     let borders = state.config.ui.pane_borders;
     // M39-6：标签栏 spans 共享（命名标签 + 溢出滚动）。
@@ -2841,6 +2864,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         Paragraph::new(status).style(vifm_style("StatusLine"))
     };
     frame.render_widget(status_para, status_area);
+    // M86-2：frecency 覆盖层最后绘制——对侧目录面板保持原样，不被空白遮罩覆盖；
+    // 焦点栏由搜索 UI 接管，popup 始终置顶。
+    if state.active_tab().pane_frecency.is_some() {
+        render_frecency_panes(frame, state);
+    }
     // M50-1：命令补全浮层（复用 frecency overlay 的 List/选中样式语义）。
     if let InputMode::Command {
         comp: Some(comp), ..

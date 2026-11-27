@@ -1675,6 +1675,8 @@ fn pick_interactive(
     let mut query = initial_query.to_owned();
     let mut cursor: usize = 0;
     let mut scroll: usize = 0;
+    // M86-2：独立 pick 默认单栏；w 激活阅览模式后切双栏。
+    let mut preview = false;
 
     let matches = |q: &str, candidates: &[(String, String, f64)]| -> Vec<(String, String, f64)> {
         let mut hit: Vec<(String, String, f64)> = candidates
@@ -1697,7 +1699,15 @@ fn pick_interactive(
             cursor = hits.len().saturating_sub(1);
         }
         let draw_result = terminal.draw(|frame| {
-            draw_pick_ui(frame, &query, cursor, &hits, &mut scroll, &mut image_engine);
+            draw_pick_ui(
+                frame,
+                &query,
+                cursor,
+                &hits,
+                &mut scroll,
+                &mut image_engine,
+                preview,
+            );
         });
         if let Err(e) = draw_result {
             eprintln!("rvifm pick: 渲染失败: {e}");
@@ -1729,6 +1739,9 @@ fn pick_interactive(
                 KeyCode::Up | KeyCode::Char('k') if !hits.is_empty() => {
                     cursor = cursor.saturating_sub(1);
                 }
+                KeyCode::Char('w') => {
+                    preview = !preview;
+                }
                 KeyCode::Char(c) => {
                     query.push(c);
                 }
@@ -1759,13 +1772,19 @@ fn draw_pick_ui(
     hits: &[(String, String, f64)],
     scroll: &mut usize,
     image_engine: &mut crate::image::ImageEngine,
+    preview: bool,
 ) {
     use ratatui::layout::Constraint;
     let [query_area, body] =
-        ratatui::layout::Layout::vertical([Constraint::Length(1), Constraint::Min(0)])
+        ratatui::layout::Layout::vertical([Constraint::Length(3), Constraint::Min(0)])
             .areas(frame.area());
-    frame.render_widget(Paragraph::new(format!("/{query}")), query_area);
-    let (list_area, preview_area) = if body.width >= 60 {
+    // M86-2：搜索框占满弹层宽度并带边框；w 之前为单栏，之后才分出预览栏。
+    let search_box = ratatui::widgets::Block::bordered().title("搜索");
+    frame.render_widget(
+        Paragraph::new(format!("/{query}▋")).block(search_box),
+        query_area,
+    );
+    let (list_area, preview_area) = if preview && body.width >= 60 {
         let [l, p] = ratatui::layout::Layout::horizontal([
             Constraint::Percentage(50),
             Constraint::Percentage(50),
@@ -2835,7 +2854,7 @@ mod tests {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(200, 20)).unwrap();
         terminal
-            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine))
+            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine, true))
             .unwrap();
         let text = compact(terminal.backend(), 200, 20);
         assert!(text.contains("预览"), "预览窗格标题: {text}");
@@ -2848,7 +2867,7 @@ mod tests {
         let mut narrow =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 12)).unwrap();
         narrow
-            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine))
+            .draw(|f| draw_pick_ui(f, "", 0, &hits, &mut scroll, &mut engine, true))
             .unwrap();
         let text2 = compact(narrow.backend(), 40, 12);
         assert!(!text2.contains("预览"), "窄终端单栏无预览: {text2}");

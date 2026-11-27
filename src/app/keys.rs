@@ -589,13 +589,37 @@ pub(crate) fn live_find_key(state: &mut AppState, msg: &mut Option<String>, key:
     false
 }
 
+/// M86-2：删除指定下标的 frecency 记录（仅数据，不删文件）；`u` 可恢复。
+fn frecency_delete_indices(
+    pane: &mut crate::tab::FrecencyPane,
+    indices: Vec<usize>,
+    msg: &mut Option<String>,
+) {
+    let visible = filter_jump(&pane.entries, &pane.query);
+    let targets: Vec<_> = indices
+        .iter()
+        .filter_map(|i| visible.get(*i).cloned())
+        .collect();
+    let count = targets.len();
+    for entry in targets {
+        let topic = entry.topic.clone();
+        let path = entry.path.clone();
+        let _ = crate::frecency::remove_entry(&topic, &path);
+        pane.last_deleted_many.push((topic, path));
+        pane.entries.retain(|e| e.path != entry.path);
+    }
+    let remain = filter_jump(&pane.entries, &pane.query).len();
+    pane.cursor = pane.cursor.min(remain.saturating_sub(1));
+    *msg = Some(format!("已删除 {count} 条 frecency 记录（u 恢复）"));
+}
+
 pub(crate) fn frec_pane_key(
     state: &mut AppState,
     _input: &mut InputState,
     msg: &mut Option<String>,
     key: KeyEvent,
 ) -> Outcome {
-    let fixed_side = state.config.preview.fixed_side;
+    let _fixed_side = state.config.preview.fixed_side;
     let Some(pane) = state.active_tab_mut().pane_frecency.as_mut() else {
         return Outcome::Continue;
     };
@@ -637,13 +661,8 @@ pub(crate) fn frec_pane_key(
             }
             KeyCode::Char('w') | KeyCode::Char('q') => pane.preview_focus = false,
             KeyCode::BackTab => {
-                // M59-8：预览中 Shift+Tab 退出预览并切到另一侧栏。
-                pane.preview_focus = false;
-                let tab = state.active_tab_mut();
-                tab.focus = match tab.focus {
-                    crate::tab::Focus::Left => crate::tab::Focus::Right,
-                    crate::tab::Focus::Right => crate::tab::Focus::Left,
-                };
+                // M86-2：frecency 打开期间原 tab 焦点切换快捷键失效。
+                *msg = Some("frecency 面板打开期间不可切换标签焦点".to_owned());
             }
             _ => {}
         }
@@ -670,17 +689,19 @@ pub(crate) fn frec_pane_key(
                 state.active_tab_mut().pane_frecency = None;
                 match picked {
                     Some(entry) => {
-                        // M76-2：真实跳转成功后按 topic 记为一次访问（record 唯一写入链）。
+                        // M86-2：文件条目在打开/定位前即异步记一次访问（用户口径：
+                        // 无可靠返回状态时，执行前记录），避免 l/Enter 后漏记。
                         let (topic, path) = (entry.topic.clone(), entry.path.clone());
+                        if topic == "file" {
+                            crate::app::exec::record_file_open(
+                                state,
+                                state.active,
+                                std::path::Path::new(&path),
+                            );
+                        }
                         match jump_to(state, &entry) {
                             Ok(m) => {
-                                if topic == "file" {
-                                    crate::app::exec::record_file_open(
-                                        state,
-                                        state.active,
-                                        std::path::Path::new(&path),
-                                    );
-                                } else {
+                                if topic != "file" {
                                     crate::app::exec::record_live_visit(state, state.active, 'L');
                                 }
                                 *msg = Some(m);
@@ -715,12 +736,8 @@ pub(crate) fn frec_pane_key(
                 pane.preview_focus = !pane.preview_focus;
             }
             KeyCode::BackTab => {
-                // M59-8：Shift+Tab 切换左右栏（原 Tab 的切 pane 语义）。
-                let tab = state.active_tab_mut();
-                tab.focus = match tab.focus {
-                    crate::tab::Focus::Left => crate::tab::Focus::Right,
-                    crate::tab::Focus::Right => crate::tab::Focus::Left,
-                };
+                // M86-2：frecency 打开期间原 tab 焦点切换快捷键失效。
+                *msg = Some("frecency 面板打开期间不可切换标签焦点".to_owned());
             }
             KeyCode::Char('y') if pane.r_pending => {
                 // M59-9：确认清除 keyword（保留条目/分数），供 u 精确恢复。
@@ -764,37 +781,18 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('d') => {
-                // M49-15：删除记录（非文件）改为 dd 两键（原单键 d 易误触）。
-                if !pane.d_pending {
+                // M86-2：v 多选后单键 d 立即批量删除（与目录列表一致）；
+                // 无多选时保持 dd 两键，dd 仅删当前条目。
+                let visible = filter_jump(&pane.entries, &pane.query);
+                if let Some(anchor) = pane.visual.take() {
+                    pane.d_pending = false;
+                    let hi = pane.cursor.max(anchor).min(visible.len().saturating_sub(1));
+                    frecency_delete_indices(pane, (pane.cursor.min(anchor)..=hi).collect(), msg);
+                } else if !pane.d_pending {
                     pane.d_pending = true;
                 } else {
                     pane.d_pending = false;
-                    let visible = filter_jump(&pane.entries, &pane.query);
-                    // M75-3：v 可视选择范围内批量删除，否则只删当前条目。
-                    let indices: Vec<usize> = if let Some(anchor) = pane.visual.take() {
-                        let hi = pane.cursor.max(anchor).min(visible.len().saturating_sub(1));
-                        (pane.cursor.min(anchor)..=hi).collect()
-                    } else {
-                        vec![pane.cursor]
-                    };
-                    let targets: Vec<_> = indices
-                        .iter()
-                        .filter_map(|i| visible.get(*i).cloned())
-                        .collect();
-                    let count = targets.len();
-                    for entry in targets {
-                        let topic = entry.topic.clone();
-                        let path = entry.path.clone();
-                        let _ = crate::frecency::remove_entry(&topic, &path);
-                        pane.last_deleted_many.push((topic, path));
-                        pane.entries.retain(|e| e.path != entry.path);
-                    }
-                    pane.cursor = pane.cursor.min(
-                        filter_jump(&pane.entries, &pane.query)
-                            .len()
-                            .saturating_sub(1),
-                    );
-                    *msg = Some(format!("已删除 {count} 条 frecency 记录（u 恢复）"));
+                    frecency_delete_indices(pane, vec![pane.cursor], msg);
                 }
             }
             KeyCode::Char('r') => {
@@ -915,16 +913,9 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('w') => {
-                // w：对侧进入 View 模式（预览/查看光标条目）；M76-3 同时显式开启 frecency 预览。
-                state.config.preview.frecency_preview = !state.config.preview.frecency_preview;
-                state.active_tab_mut().view_mode = !state.active_tab_mut().view_mode;
-                if !fixed_side {
-                    let tab = state.active_tab_mut();
-                    tab.focus = match tab.focus {
-                        crate::tab::Focus::Left => crate::tab::Focus::Right,
-                        crate::tab::Focus::Right => crate::tab::Focus::Left,
-                    };
-                }
+                // M86-2：w 只激活 frecency 预览栏；不再改焦点/进入 view 模式。
+                pane.preview_focus = true;
+                *msg = Some("已进入 frecency 预览栏（Tab/Esc 返回）".to_owned());
             }
             // M75-3：v 切换可视选择（锚点=当前可见结果下标）。
             KeyCode::Char('v') => {
@@ -1034,11 +1025,7 @@ pub(crate) fn frec_pane_key(
             pane.preview_focus = !pane.preview_focus;
         }
         KeyCode::BackTab => {
-            let tab = state.active_tab_mut();
-            tab.focus = match tab.focus {
-                crate::tab::Focus::Left => crate::tab::Focus::Right,
-                crate::tab::Focus::Right => crate::tab::Focus::Left,
-            };
+            *msg = Some("frecency 面板打开期间不可切换标签焦点".to_owned());
         }
         KeyCode::Char(c) => {
             pane.query.push(c);
