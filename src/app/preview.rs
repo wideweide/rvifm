@@ -220,30 +220,10 @@ pub(crate) fn render_view_path(
     let shown = path.display().to_string().replace('\\', "/");
     // M21-E3：大文件截断提示前置（路径长会被 pane 宽度裁掉，放行尾不可见）。
     const VIEWER_MAX_LINES: usize = 100_000;
-    let trunc_hint = if viewer.total_lines > viewer.line_count {
-        format!("〔已截断 共 {} 行〕", viewer.total_lines)
-    } else {
-        String::new()
-    };
-    // M83：文本不再显示「快速」两段式标记。
-    let title = if viewer_state.is_none() {
-        format!("{shown} · 预览")
-    } else {
-        match &viewer.query {
-            Some(q) => format!(
-                "{trunc_hint}{shown} · 行 {}/{}  /{}（n/N 跳转）",
-                viewer.scroll + 1,
-                viewer.line_count,
-                q
-            ),
-            None => format!(
-                "{trunc_hint}{shown} · 行 {}/{}（Tab 进入 / w/Esc 退出 / 搜索）",
-                viewer.scroll + 1,
-                viewer.line_count
-            ),
-        }
-    };
-    // M81：文本分支标题栏带快速标记与截断提示（覆盖上方通用标题）。
+    // M86-1：`:view` 标题改清爽模式——只显示「路径 · 预览」，不再塞入
+    // 行号计数/「已截断」（二进制 zip 的 size/80 或 size/16 估算会给出
+    // `1/11692098` 这类无意义数字）。
+    let title = format!("{shown} · 预览");
     frame.render_widget(
         ratatui::widgets::Paragraph::new(ratatui::text::Line::from(title)).style(title_style),
         title_area,
@@ -365,14 +345,13 @@ pub(crate) fn render_view_path(
         let parsed = if let Some(hit) = cached {
             hit
         } else {
-            let Ok(text) = std::fs::read_to_string(&path) else {
+            let text = std::fs::read(&path)
+                .ok()
+                .and_then(|bytes| crate::preview::decode_preview_text(&path, bytes));
+            let Some(text) = text else {
                 render_fallback_lines(frame, &path, inner);
                 return;
             };
-            if text.contains('\0') {
-                render_fallback_lines(frame, &path, inner);
-                return;
-            }
             let parsed: std::sync::Arc<Vec<String>> = std::sync::Arc::new(
                 text.lines()
                     .take(VIEWER_MAX_LINES)

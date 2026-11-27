@@ -13425,12 +13425,11 @@ fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
     let buf = draw_with(&mut state, "data.bincode");
     assert_eq!(rgb_cells(&buf), 0, "无语法应降级纯文本");
     assert!(pane_text(&buf).contains("randombytes"), "降级内容可见");
-    // 大文件：标题截断提示（CJK 全角"字+空格"渲染，去空格比对）。
+    // M86-1：标题清爽化为「路径 · 预览」，不再塞入行号/「已截断」。
     let buf = draw_with(&mut state, "big.txt");
-    assert!(
-        pane_text(&buf).replace(' ', "").contains("已截断"),
-        "截断提示可见"
-    );
+    let text = pane_text(&buf).replace(' ', "");
+    assert!(text.contains("big.txt·预览"), "清爽标题可见: {text}");
+    assert!(!text.contains("已截断"), "不再显示截断提示: {text}");
 }
 
 #[test]

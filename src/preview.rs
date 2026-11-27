@@ -31,6 +31,24 @@ pub fn load_viewer_payload_at(path: &Path, threshold: u64) -> ViewerPayload {
     load_viewer_payload(path)
 }
 
+/// M86-1：文本解码共享入口。已知文本扩展名（对齐 vifm `text/*`）即使含
+/// 非 UTF-8 字节也用 lossy 解码，不再误判为二进制；其它类型仍严格 UTF-8。
+pub(crate) fn decode_preview_text(path: &Path, bytes: Vec<u8>) -> Option<String> {
+    if bytes.iter().take(1024).any(|b| *b == 0) {
+        return None;
+    }
+    if crate::opener::is_text_like(path) {
+        // 丢掉 UTF-8 无效字节产生的 U+FFFD，避免"乱码方块"。
+        return Some(
+            String::from_utf8_lossy(&bytes)
+                .chars()
+                .filter(|c| *c != '\u{fffd}')
+                .collect(),
+        );
+    }
+    String::from_utf8(bytes).ok()
+}
+
 /// M60-1：后台 viewer 载荷（路径 + 行 + 完整行数 + hex 判定）。
 #[derive(Debug, Clone)]
 pub struct ViewerPayload {
@@ -53,7 +71,10 @@ pub fn load_viewer_payload(path: &Path) -> ViewerPayload {
             hex: true,
         };
     }
-    let text = fs::read_to_string(path).unwrap_or_default();
+    let text = fs::read(path)
+        .ok()
+        .and_then(|bytes| decode_preview_text(path, bytes))
+        .unwrap_or_default();
     let total = text.lines().count();
     let lines = text.lines().take(100_000).map(str::to_owned).collect();
     ViewerPayload {
@@ -599,15 +620,10 @@ pub(crate) fn read_text_preview(path: &Path, max_lines: usize) -> String {
         }
         Err(e) => return format!("读取失败: {e}"),
     };
-    // 二进制探测：首 1KB 含 NUL 即按二进制处理（M34-7：结构化信息面板）。
-    let probe = &bytes[..bytes.len().min(1024)];
-    if probe.contains(&0) {
-        return file_info_text(path);
-    }
-    // M34-7：非 UTF-8（无 NUL）同样面板化——替代 lossy 乱码渲染。
-    let text = match String::from_utf8(bytes) {
-        Ok(t) => t,
-        Err(_) => return file_info_text(path),
+    // M86-1：已知文本类型统一 lossy 解码，避免 `.json` 等非 UTF-8 文本误判二进制。
+    let text = match decode_preview_text(path, bytes) {
+        Some(t) => t,
+        None => return file_info_text(path),
     };
     let mut kept: Vec<&str> = text.lines().take(max_lines).collect();
     if kept.is_empty() {
@@ -987,11 +1003,15 @@ mod tests {
     #[test]
     fn m34_7_non_utf8_panel_and_magic_sniff() {
         let tmp = TempDir::new().unwrap();
-        // 非 UTF-8（无 NUL）→ 信息面板，不渲染 lossy 乱码。
+        // M86-1：已知文本类型（含 .txt/.json）非 UTF-8 字节按文本 lossy 解码，
+        // 并丢弃 U+FFFD，不再整文件误判二进制，也不显示乱码方块。
         let bad = tmp.path().join("bad.txt");
         fs::write(&bad, [0xff, 0xfe, b'a', b'b']).unwrap();
         let texts = render_preview(&bad, 10).line_texts();
-        assert!(texts.iter().any(|t| t.contains("二进制/不可读预览")));
+        assert!(
+            texts.iter().any(|t| t.contains("ab")),
+            "文本内容可见: {texts:?}"
+        );
         assert!(texts.iter().all(|t| !t.contains('\u{fffd}')), "无乱码");
         // NUL 二进制 + PDF 魔数 → 类型嗅探。
         let pdf = tmp.path().join("doc.bin");
@@ -1262,5 +1282,20 @@ mod tests {
         let info = file_info_text(&missing);
         assert_eq!(info.lines().count(), 1, "info: {info}");
         assert!(info.starts_with("文件不存在"), "info: {info}");
+    }
+
+    #[test]
+    fn m861_json_non_utf8_is_text_not_binary() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("data.json");
+        fs::write(&path, [b'{', b'"', 0xff, b'"', b':', b'1', b'}']).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let text = decode_preview_text(&path, bytes).expect("已知文本类型应解码为文本");
+        assert!(text.contains(":1"), "文本内容可见: {text}");
+        let rendered = render_preview(&path, 10).line_texts().join("\n");
+        assert!(
+            !rendered.contains("二进制/不可读预览"),
+            "不再误判二进制: {rendered}"
+        );
     }
 }

@@ -1000,7 +1000,7 @@
 
 ## M86 — test.md 实测反馈批次（2026-11-28，见 SPEC M86 节）
 
-- [ ] M86-1 预览文本识别 + :view 标题/行数修正（见 SPEC M86）
+- [x] M86-1 预览文本识别 + :view 标题/行数修正（见 SPEC M86；2026-11-28 完成：文本类型扩展 + lossy 解码去 U+FFFD、清爽标题）
 - [ ] M86-2 frecency 搜索框/预览布局/d 与 dd/record 与 u 核实修复（见 SPEC M86）
 - [ ] M86-3 git `|` 全屏对照复核或 popup 方案（见 SPEC M86）
 - [ ] M86-4 tutor 视觉重排与进度条移除（见 SPEC M86）

@@ -1605,7 +1605,8 @@ impl Tab {
     /// 查看器内容行（封顶 100,000 行）与完整行数（M21-E3 截断提示）。
     pub fn viewer_lines(&self) -> Option<(Vec<String>, usize)> {
         let path = self.preview_target()?;
-        let text = std::fs::read_to_string(path).ok()?;
+        let bytes = std::fs::read(&path).ok()?;
+        let text = crate::preview::decode_preview_text(path.as_path(), bytes)?;
         let total = text.lines().count();
         let lines = text.lines().take(100_000).map(|l| l.to_owned()).collect();
         Some((lines, total))
