@@ -292,10 +292,7 @@ pub fn changed_files(root: &Path) -> std::io::Result<Vec<(String, char, char)>> 
     .stderr(std::process::Stdio::null());
     let out = cmd.output()?;
     if !out.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "git status 失败",
-        ));
+        return Err(std::io::Error::other("git status 失败"));
     }
     let mut files = Vec::new();
     for record in out.stdout.split(|b| *b == 0) {
