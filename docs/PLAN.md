@@ -265,3 +265,4 @@
 | M84 | 归档成员打开对齐（2026-11-27 蒸馏） | 新窗口 opener + record | M48, M53, M59 | 已完成 | 随 1.5.0 发布 |
 | M85 | 图片流水线（2026-11-27 蒸馏） | ThreadProtocol · 独立 generation · Nearest · 配置（磁盘缓存 deferred） | M53, M60, M62 | 已完成（磁盘缓存 deferred） | 随 1.5.0 发布 |
 | M86 | test.md 实测反馈批次（2026-11-28 蒸馏） | 预览/frecency/git/tutor/archive/多选/粘贴冲突 | M13, M23, M24, M42, M48, M69, M83 | 待执行（蒸馏登记，待用户确认） | **不发布** |
+| M87 | 命令补全对齐 fzf/frecency（2026-11-28 蒸馏） | : 直达补全 · SEARCH/Normal · ! 外部源 · fzf 导航 | M30, M50, M58 | 待执行（蒸馏登记，待用户确认） | **不发布** |

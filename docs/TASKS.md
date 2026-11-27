@@ -1009,3 +1009,12 @@
 - [ ] M86-7 删除 V 快捷键并修正 M24-3 口径（见 SPEC M86）
 - [ ] M86-8 粘贴冲突选项扩展（见 SPEC M86）
 - [ ] M86-9 文档/验收/门禁（见 SPEC M86）
+
+## M87 — 命令补全对齐 fzf/frecency（2026-11-28，见 SPEC M87 节）
+
+- [ ] M87-1 `:` 直达补全模式 + 顶部输入框 + SEARCH/Normal 双模式（见 SPEC M87）
+- [ ] M87-2 `!` 外部数据源 + 实时过滤默认首项（见 SPEC M87）
+- [ ] M87-3 导航对齐 fzf：移除 Tab、↑↓/Ctrl+j/k、Normal 导航补全（见 SPEC M87）
+- [ ] M87-4 Normal 态评估 + 成功命令记录核实 + 外部 dd/u（见 SPEC M87）
+- [ ] M87-5 Enter/Ctrl+Enter 填充语义（待用户拍板，见 SPEC M87）
+- [ ] M87-6 文档/验收/门禁（见 SPEC M87）
