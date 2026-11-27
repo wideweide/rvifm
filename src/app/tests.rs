@@ -365,6 +365,37 @@ fn rank_progress(
 }
 
 #[test]
+fn m692_diff_payload_from_real_repo() {
+    // M69-2：用真实 git 仓库验证 porcelain 列表 + 统一补丁解析链路。
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(tmp.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test"]);
+    fs::write(tmp.path().join("f.txt"), "one\ntwo\nthree\n").unwrap();
+    run(&["add", "f.txt"]);
+    run(&["commit", "-q", "-m", "init"]);
+    fs::write(tmp.path().join("f.txt"), "one\nTWO\nthree\n").unwrap();
+    let root = crate::git::require_repo_root(tmp.path()).unwrap();
+    let session = crate::state::GitDiffSession::open(root.clone()).unwrap();
+    assert!(!session.files.is_empty());
+    let data = crate::git::diff_payload(&root, &session.files[0].0, false).unwrap();
+    assert!(!data.hunks.is_empty(), "应解析出差异块");
+    assert!(data.new_full.iter().any(|l| l == "TWO"));
+}
+
+#[test]
 fn m683_filter_marker_survives_long_paths() {
     // M68-3：长临时路径下过滤标记仍可见（macOS 实测漂移）。
     let long = "/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/.tmpABCDEF";

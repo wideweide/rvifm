@@ -255,6 +255,108 @@ pub fn parse_status(rel_dir: &str, raw: &[u8]) -> GitDirStatus {
     status
 }
 
+/// M69：仓库根目录（只读 `git rev-parse`）。
+pub fn require_repo_root(path: &Path) -> std::io::Result<PathBuf> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args([
+        "-C",
+        &path.to_string_lossy(),
+        "rev-parse",
+        "--show-toplevel",
+    ])
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null());
+    let out = cmd.output()?;
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if !out.status.success() || text.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "不是 git 仓库",
+        ));
+    }
+    Ok(PathBuf::from(text))
+}
+
+/// M69：变更文件列表（只读 porcelain，保留 index/worktree 两列 X/Y）。
+pub fn changed_files(root: &Path) -> std::io::Result<Vec<(String, char, char)>> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args([
+        "--no-optional-locks",
+        "status",
+        "--porcelain",
+        "-z",
+        "--untracked-files=normal",
+    ])
+    .current_dir(root)
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null());
+    let out = cmd.output()?;
+    if !out.status.success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "git status 失败",
+        ));
+    }
+    let mut files = Vec::new();
+    for record in out.stdout.split(|b| *b == 0) {
+        if record.len() < 4 {
+            continue;
+        }
+        let (x, y) = (record[0] as char, record[1] as char);
+        let rest = String::from_utf8_lossy(&record[3..]).into_owned();
+        let path = rest
+            .split_once(" -> ")
+            .map(|(_, new)| new.to_owned())
+            .unwrap_or(rest);
+        if !path.is_empty() {
+            files.push((path.replace('\\', "/"), x, y));
+        }
+    }
+    Ok(files)
+}
+
+/// M69：工作区/暂存区 diff 与文件全文（全部只读命令，无 shell）。
+pub fn diff_payload(
+    root: &Path,
+    path: &str,
+    staged: bool,
+) -> std::io::Result<crate::gitdiff::DiffFileData> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["--no-optional-locks", "diff", "--no-color", "-U3"]);
+    if staged {
+        cmd.arg("--cached").arg(path);
+    } else {
+        cmd.arg("--").arg(path);
+    }
+    cmd.current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let diff = String::from_utf8_lossy(&cmd.output()?.stdout).into_owned();
+
+    let mut old_cmd = std::process::Command::new("git");
+    old_cmd
+        .args(["--no-optional-locks", "show", &format!("HEAD:{path}")])
+        .current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let old_full = String::from_utf8_lossy(&old_cmd.output()?.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let new_full = std::fs::read_to_string(root.join(path))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    Ok(crate::gitdiff::DiffFileData {
+        path: path.to_owned(),
+        hunks: crate::gitdiff::parse_unified(&diff),
+        old_full,
+        new_full,
+        staged,
+    })
+}
+
 /// 异步查询（gitui 同款：后台线程 + mpsc 回传；UI 不等待）。
 pub fn spawn_status_query(
     tx: &std::sync::mpsc::Sender<(PathBuf, std::io::Result<GitDirStatus>)>,

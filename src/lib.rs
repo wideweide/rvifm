@@ -10,6 +10,7 @@ pub mod archive;
 pub mod config;
 pub mod frecency;
 pub mod git;
+pub mod gitdiff;
 pub mod highlight;
 pub mod icons;
 pub mod image;

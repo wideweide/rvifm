@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### M69 :diff 只读 Git 差异浏览（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 新增 `:diff` overlay：左栏变更文件、右栏统一补丁/左右对照，复用 git CLI 零编译期依赖路线（自解析 `git diff`，不引第三方 diff 库）。
+- 异步 worker + generation 防过期；j/k 逐行、J/K 跳 hunk、gg/G、`/`+n/N、`h/l`、`|` 对照、`=` 完整文件、`^w` 换行、Tab 切栏、Esc/q 退出；不写仓库，不替代 `gi`/`:gitui`。
+
 ### M66–M68 向导安全提示、沙箱与全面审计（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - tutor_meta 前三条按「重要的事说三遍」提示真实操作风险，`Ctrl+Q` 明确 `:tutor` 可重进；14 个 TOML 统一「向导模式」。

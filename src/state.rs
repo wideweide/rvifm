@@ -393,6 +393,8 @@ pub struct AppState {
     pub preview_generation: u64,
     /// M61：当前大文件的只读 mmap 视口读取器（路径变化时重建）。
     pub viewport_text: Option<crate::viewport::ViewportText>,
+    /// M69：`:diff` 只读 diff overlay 会话（仅内存，退出即丢弃）。
+    pub git_diff: Option<GitDiffSession>,
     /// M63-1：目录树预览快照缓存（按目录 mtime 失效，避免每帧重扫）。
     pub directory_preview_cache:
         std::cell::RefCell<std::collections::HashMap<(PathBuf, u64), Vec<crate::tab::FileItem>>>,
@@ -587,6 +589,124 @@ pub struct PreviewJobResult {
     pub image: Option<image::DynamicImage>,
 }
 
+/// M69：diff overlay 的面板焦点。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffFocus {
+    Files,
+    Patch,
+}
+
+/// M69：diff overlay 会话（只读 git 命令 + 异步解析结果）。
+#[derive(Debug)]
+pub struct GitDiffSession {
+    pub root: PathBuf,
+    pub files: Vec<(String, char, char)>,
+    pub cursor: usize,
+    pub focus: DiffFocus,
+    pub data: std::collections::HashMap<String, crate::gitdiff::DiffFileData>,
+    pub side_by_side: bool,
+    pub full: bool,
+    pub wrap: bool,
+    pub patch_scroll: usize,
+    pub hunk: usize,
+    pub hscroll: usize,
+    pub query: Option<String>,
+    pub generation: u64,
+    pub tx: std::sync::mpsc::Sender<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
+    pub rx: std::sync::mpsc::Receiver<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
+    pub pending: std::collections::HashSet<String>,
+    pub last_error: Option<String>,
+}
+
+impl GitDiffSession {
+    pub fn open(root: PathBuf) -> std::io::Result<Self> {
+        let files = crate::git::changed_files(&root)?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        Ok(Self {
+            root,
+            files,
+            cursor: 0,
+            focus: DiffFocus::Files,
+            data: std::collections::HashMap::new(),
+            side_by_side: false,
+            full: false,
+            wrap: true,
+            patch_scroll: 0,
+            hunk: 0,
+            hscroll: 0,
+            query: None,
+            generation: 0,
+            tx,
+            rx,
+            pending: std::collections::HashSet::new(),
+            last_error: None,
+        })
+    }
+
+    pub fn selected_path(&self) -> Option<&str> {
+        self.files.get(self.cursor).map(|(p, _, _)| p.as_str())
+    }
+
+    /// M69-2：投递后台 diff 任务（staged = index 版本 vs HEAD）。
+    pub fn request(&mut self, path: &str, staged: bool) {
+        if self.data.contains_key(path) || self.pending.contains(path) {
+            return;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        let generation = self.generation;
+        self.pending.insert(path.to_owned());
+        let root = self.root.clone();
+        let target = path.to_owned();
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let result = crate::git::diff_payload(&root, &target, staged);
+            let _ = tx.send((generation, target, result));
+        });
+    }
+
+    pub fn drain(&mut self) {
+        while let Ok((generation, path, result)) = self.rx.try_recv() {
+            if generation != self.generation {
+                continue;
+            }
+            self.pending.remove(&path);
+            match result {
+                Ok(data) => {
+                    self.data.insert(path, data);
+                }
+                Err(e) => self.last_error = Some(e.to_string()),
+            }
+        }
+    }
+
+    pub fn selected(&self) -> Option<&crate::gitdiff::DiffFileData> {
+        self.selected_path().and_then(|p| self.data.get(p))
+    }
+
+    /// 当前补丁面板的渲染行与 hunk 起始行（供滚动、搜索与 J/K 共用）。
+    pub fn rows(&self, width: usize) -> (Vec<String>, Vec<usize>) {
+        let Some(data) = self.selected() else {
+            return (vec!["（正在读取 diff…）".to_owned()], Vec::new());
+        };
+        if self.side_by_side {
+            let (pairs, starts) = crate::gitdiff::render_side_by_side(
+                data,
+                self.full,
+                self.wrap,
+                width.saturating_sub(2),
+            );
+            let half = width / 2;
+            let rows = pairs
+                .into_iter()
+                .map(|(l, r)| format!("{:<w$}│{}", l, r, w = half.saturating_sub(1)))
+                .collect();
+            (rows, starts)
+        } else {
+            crate::gitdiff::render_unified(&data.hunks, self.wrap, width)
+        }
+    }
+}
+
 impl AppState {
     /// M60-1：目标稳定后投递后台预览任务（不阻塞 UI 线程）。
     pub fn refresh_viewer_async(&mut self) {
@@ -753,6 +873,7 @@ impl AppState {
             preview_rx: preview_channel.1,
             preview_generation: 0,
             viewport_text: None,
+            git_diff: None,
             directory_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             highlighter_cache: std::cell::RefCell::new(None),
             decoded_preview: None,

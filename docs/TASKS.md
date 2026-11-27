@@ -887,3 +887,21 @@
 - [x] M68-2 映射表更新 + harness 规则 9（见 SPEC M68-2）；2026-11-27 完成：tutor_meta 映射至 §71–73，规则 9 校验过期数字/错误 vifm 表述，九条规则绿
 - [x] M68-3 功能/快捷键/手册/tutor 一致性扫描（见 SPEC M68-3）；2026-11-27 完成：README/GUIDE/help 同步；Windows 路径分隔符断言、macOS 长路径过滤标记渲染漂移修复，m683 通过
 - [x] M68-4 文档/验收/门禁 + CI（见 SPEC M68-4）；本地 652 单测 + 14 集成 + 九条 harness 绿；CI 由推送后新 run 验证，不声称绿
+
+## M69 — :diff 只读浏览（Git P1，2026-11-27 蒸馏，见 SPEC M69 节）
+
+- [x] M69-1 gitdiff 补丁解析与渲染纯函数（见 SPEC M69-1）；2026-11-27 完成：gitdiff.rs 解析 hunks + 统一/左右对照渲染，单测通过
+- [x] M69-2 :diff overlay + 文件列表 + 异步 worker（见 SPEC M69-2）；2026-11-27 完成：GitDiffSession + git CLI 只读命令 + generation 收割，m692 真实仓库端到端通过
+- [x] M69-3 右栏导航/搜索/对照/换行快捷键（见 SPEC M69-3）；2026-11-27 完成：j/k、J/K、gg/G、/ n/N、h/l、|、=、^w、Tab、Esc/q 局部键位
+- [x] M69-4 文档/验收/门禁（见 SPEC M69-4）；2026-11-27 完成：GUIDE/help/CHANGELOG/NOTES/STATE/PLAN 同步 + 全门禁
+
+## M70 — Git 文件级写操作（Git P2，2026-11-27 蒸馏，见 SPEC M70 节）
+
+- [ ] M70-1 a/A/d/c/p/P 写操作 + 确认 + 结果回显（见 SPEC M70）
+- [ ] M70-2 `[git] confirm_destructive` 配置（见 SPEC M70）
+- [ ] M70-3 文档/验收/门禁（见 SPEC M70）
+
+## M71 — 块级 hunk 丢弃（Git P3，2026-11-27 蒸馏，见 SPEC M71 节）
+
+- [ ] M71-1 D 丢弃当前 hunk + 预览确认 + u 撤销（见 SPEC M71）
+- [ ] M71-2 文档/验收/门禁（见 SPEC M71）

@@ -1500,6 +1500,13 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-27 — M69 Git diff 技术取舍
+
+- 沿用 M23-12「零编译期 git 依赖」路线：diff 由 `git diff --no-color -U3` 产出，`src/gitdiff.rs` 自解析 hunks；不引入 `similar`/`diffs-rs`/`gix`，避免新的 C/构建链风险。
+- overlay 局部接管 lazygit 键位：Normal 全局 `A/p/P/=` 已占用，故所有写键只在 `:diff` 模式内解释；`A` 按 lazygit 语义为 Amend，不复用其全局 RenameAppend 含义。
+- `J/K` 采用用户判断（单键优于 `]c/[c` 双键）跳 hunk；`j/k` 仍逐行。`=` 对照完整文件、`^w` 软换行默认开启，均对齐 ziggity。
+- 只读边界：worker 只用 `git status`/`git diff`/`git show`，无 `--no-optional-locks` 之外的写参数；不替代 `gi`/`:gitui`。
+
 ### 2026-11-27 — M66–M68 向导安全/沙箱/审计取舍
 
 - 安全提示选择改写 `tutor_meta` 现有 3 项而非新增：保持 102 项与境界阈值稳定，进度按稳定 ID 自动兼容；三遍提示分别落在不同条目，避免单条过长。

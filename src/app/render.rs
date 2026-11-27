@@ -1414,7 +1414,102 @@ fn render_tutor_list(
     }
 }
 
+/// M69：git diff 只读 overlay——左栏变更文件，右栏统一补丁/左右对照。
+fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
+    frame.render_widget(ratatui::widgets::Clear, frame.area());
+    let Some(diff) = state.git_diff.as_ref() else {
+        return;
+    };
+    let [files_area, patch_area] =
+        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .areas(frame.area());
+    let files_block = ratatui::widgets::Block::bordered()
+        .title("diff · 变更文件")
+        .border_style(if diff.focus == crate::state::DiffFocus::Files {
+            pane_border_style(true)
+        } else {
+            pane_border_style(false)
+        });
+    let files_inner = files_block.inner(files_area);
+    frame.render_widget(files_block, files_area);
+    let items: Vec<ListItem> = diff
+        .files
+        .iter()
+        .map(|(path, x, y)| {
+            let label = format!("{x}{y} {path}");
+            ListItem::new(Line::from(label)).style(
+                if diff.focus == crate::state::DiffFocus::Files {
+                    vifm_style("TopLineSel")
+                } else {
+                    Style::new()
+                },
+            )
+        })
+        .collect();
+    let mut file_state = ListState::default().with_selected(Some(diff.cursor));
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        files_inner,
+        &mut file_state,
+    );
+
+    let flags = format!(
+        "{}{}{}",
+        if diff.side_by_side {
+            "对照"
+        } else {
+            "补丁"
+        },
+        if diff.full { "·完整" } else { "" },
+        if diff.wrap { "·换行" } else { "·不换行" },
+    );
+    let patch_block = ratatui::widgets::Block::bordered()
+        .title(format!(
+            "diff · {} · {}  {}",
+            diff.selected_path().unwrap_or("（无文件）"),
+            flags,
+            msg.unwrap_or("")
+        ))
+        .border_style(if diff.focus == crate::state::DiffFocus::Patch {
+            pane_border_style(true)
+        } else {
+            pane_border_style(false)
+        });
+    let patch_inner = patch_block.inner(patch_area);
+    frame.render_widget(patch_block, patch_area);
+    let (rows, _) = diff.rows(patch_inner.width as usize);
+    let shown: Vec<Line> = rows
+        .iter()
+        .skip(diff.patch_scroll)
+        .take(patch_inner.height as usize)
+        .map(|r| {
+            let start = diff.hscroll.min(r.chars().count());
+            Line::from(r.chars().skip(start).collect::<String>())
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(shown), patch_inner);
+    frame.render_widget(
+        Paragraph::new(
+            "j/k 行 · J/K hunk · / 搜索 n/N · | 对照 · = 完整 · ^w 换行 · Tab 切栏 · Esc/q 退出",
+        ),
+        ratatui::layout::Rect {
+            x: frame.area().x,
+            y: frame
+                .area()
+                .y
+                .saturating_add(frame.area().height.saturating_sub(1)),
+            width: frame.area().width,
+            height: 1,
+        },
+    );
+}
+
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
+    // M69：git diff overlay（早于普通目录列表渲染）。
+    if matches!(mode, InputMode::GitDiff | InputMode::GitDiffSearch { .. }) {
+        render_git_diff(frame, state, msg);
+        return;
+    }
     // M55-2：`O` 实时递归查找覆盖整屏（与目录列表共用几何/图标/主题）。
     if matches!(mode, InputMode::LiveFind) && state.live_find.is_some() {
         render_live_find(frame, state, msg);
@@ -2376,6 +2471,9 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     let status = match mode {
         InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
+        InputMode::GitDiff | InputMode::GitDiffSearch { .. } => {
+            Line::from(String::new()) // diff overlay 提前 return（M69）
+        }
         InputMode::TutorResetConfirm { .. } => {
             Line::from(String::new()) // 确认框提前 return，不可达（M56-8）
         }

@@ -2542,6 +2542,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
+        // M69：`:diff` 只读 git 差异浏览（不替代 gi/:gitui）。
+        Some("diff") => Ok(ExecOutcome::EnterGitDiff),
         Some("tutor") => {
             // M42-1/M42-2：向导模式——无参列出模块；<module_id> 直接进入；
             // `tutor reset <module_id>` 清空该模块错题本进度。

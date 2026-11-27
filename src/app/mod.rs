@@ -195,6 +195,10 @@ pub(crate) enum InputMode {
     Normal,
     /// M55-2：`O` 实时递归查找（输入实时过滤，j/k 为输入字符，↑↓ 移动）。
     LiveFind,
+    /// M69：git diff 只读 overlay（数据存于 AppState.git_diff）。
+    GitDiff,
+    /// M69：diff 补丁内搜索输入。
+    GitDiffSearch { input: String },
     /// M56-8：100% 模块重入时的重置确认（from_list 决定取消后回列表还是 Normal）。
     TutorResetConfirm { module_id: String, from_list: bool },
     /// 命令行模式：正在输入 `:` 后的内容。M24-6 增历史浏览游标（模式局部）
@@ -341,6 +345,7 @@ fn ime_editable_mode(mode: &InputMode) -> bool {
     matches!(
         mode,
         InputMode::LiveFind
+            | InputMode::GitDiffSearch { .. }
             | InputMode::Command { .. }
             | InputMode::Search { .. }
             | InputMode::Filter { .. }
@@ -383,6 +388,8 @@ pub(crate) enum ExecOutcome {
     Quit,
     /// 打开帮助覆盖层（`:help`，M5-3；完整帮助页在 M6-2）。
     EnterHelp,
+    /// M69：打开 git diff 只读 overlay。
+    EnterGitDiff,
     /// 命令完成，可携带状态栏提示。
     Done {
         msg: Option<String>,
@@ -982,6 +989,20 @@ fn run_with_initial_mode(
         crate::git::sync_status_trigger(&mut state);
         // M60-1：收割后台预览载荷（只接受当前代次；快速导航不渲染中间预览）。
         state.drain_preview_results();
+        // M69-2：收割后台 diff 结果，按需为当前文件投递只读 diff 任务。
+        if let Some(diff) = state.git_diff.as_mut() {
+            diff.drain();
+            if diff.focus == crate::state::DiffFocus::Patch {
+                let target = diff.selected_path().map(str::to_owned);
+                let staged = diff
+                    .files
+                    .get(diff.cursor)
+                    .is_some_and(|(_, x, y)| *x != ' ' && *y == ' ');
+                if let Some(path) = target {
+                    diff.request(&path, staged);
+                }
+            }
+        }
         // M55-2：抽干实时递归扫描结果（每帧限量，避免大量条目阻塞绘制）。
         if let Some(lf) = state.live_find.as_mut() {
             lf.drain(256);
@@ -1321,6 +1342,21 @@ fn run_with_initial_mode(
                                 }
                                 Ok(ExecOutcome::EnterQueue { cursor }) => {
                                     mode = InputMode::Queue { cursor };
+                                }
+                                Ok(ExecOutcome::EnterGitDiff) => {
+                                    // M69：只在本地 git 仓库打开；失败给可读提示并保持原状态。
+                                    let base = state.active_tab().focus_base().to_path_buf();
+                                    match crate::git::require_repo_root(&base)
+                                        .and_then(crate::state::GitDiffSession::open)
+                                    {
+                                        Ok(session) => {
+                                            state.git_diff = Some(session);
+                                            mode = InputMode::GitDiff;
+                                        }
+                                        Err(e) => {
+                                            msg = Some(format!("diff: {e}"));
+                                        }
+                                    }
                                 }
                                 Ok(ExecOutcome::EnterTutorList) => {
                                     // M42-1：:tutor 无参 → 模块列表覆盖层。
@@ -2131,6 +2167,147 @@ fn run_with_initial_mode(
                                         })
                                         .count();
                                     *cursor = (*cursor).min(len.saturating_sub(1));
+                                }
+                            }
+                        }
+                    }
+                }
+                InputMode::GitDiff => {
+                    // M69：只读 diff overlay 的局部键位（不触发 Normal 全局绑定）。
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    let n = input.count.take().unwrap_or(1).max(1);
+                    let mut exit = false;
+                    if let Some(diff) = state.git_diff.as_mut() {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => exit = true,
+                            KeyCode::Tab => {
+                                diff.focus = match diff.focus {
+                                    crate::state::DiffFocus::Files => {
+                                        crate::state::DiffFocus::Patch
+                                    }
+                                    crate::state::DiffFocus::Patch => {
+                                        crate::state::DiffFocus::Files
+                                    }
+                                };
+                            }
+                            KeyCode::Char('j') | KeyCode::Down
+                                if diff.focus == crate::state::DiffFocus::Files =>
+                            {
+                                diff.cursor =
+                                    (diff.cursor + n).min(diff.files.len().saturating_sub(1));
+                            }
+                            KeyCode::Char('k') | KeyCode::Up
+                                if diff.focus == crate::state::DiffFocus::Files =>
+                            {
+                                diff.cursor = diff.cursor.saturating_sub(n);
+                            }
+                            KeyCode::Char('g') | KeyCode::Char('G')
+                                if diff.focus == crate::state::DiffFocus::Files =>
+                            {
+                                diff.cursor = if key.code == KeyCode::Char('g') {
+                                    0
+                                } else {
+                                    diff.files.len().saturating_sub(1)
+                                };
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let (rows, _) = diff.rows(100);
+                                diff.patch_scroll =
+                                    (diff.patch_scroll + n).min(rows.len().saturating_sub(1));
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                diff.patch_scroll = diff.patch_scroll.saturating_sub(n);
+                            }
+                            KeyCode::Char('g') | KeyCode::Char('G') => {
+                                let (rows, _) = diff.rows(100);
+                                diff.patch_scroll = if key.code == KeyCode::Char('g') {
+                                    0
+                                } else {
+                                    rows.len().saturating_sub(1)
+                                };
+                            }
+                            KeyCode::Char('J') => {
+                                let (_, starts) = diff.rows(100);
+                                if !starts.is_empty() {
+                                    diff.hunk = (diff.hunk + 1).min(starts.len() - 1);
+                                    diff.patch_scroll = starts[diff.hunk];
+                                }
+                            }
+                            KeyCode::Char('K') => {
+                                diff.hunk = diff.hunk.saturating_sub(1);
+                                let (_, starts) = diff.rows(100);
+                                if let Some(row) = starts.get(diff.hunk) {
+                                    diff.patch_scroll = *row;
+                                }
+                            }
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                diff.hscroll = diff.hscroll.saturating_sub(2);
+                            }
+                            KeyCode::Char('l') | KeyCode::Right => {
+                                diff.hscroll = diff.hscroll.saturating_add(2);
+                            }
+                            KeyCode::Char('|') => diff.side_by_side = !diff.side_by_side,
+                            KeyCode::Char('=') if diff.side_by_side => diff.full = !diff.full,
+                            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                diff.wrap = !diff.wrap;
+                            }
+                            KeyCode::Char('/') => {
+                                mode = InputMode::GitDiffSearch {
+                                    input: String::new(),
+                                };
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                if let Some(q) = diff.query.clone() {
+                                    let (rows, _) = diff.rows(100);
+                                    let lower = q.to_lowercase();
+                                    let hits: Vec<usize> = rows
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, r)| r.to_lowercase().contains(&lower))
+                                        .map(|(i, _)| i)
+                                        .collect();
+                                    if !hits.is_empty() {
+                                        let cur = hits
+                                            .iter()
+                                            .position(|p| *p == diff.patch_scroll)
+                                            .unwrap_or(0);
+                                        let next = if key.code == KeyCode::Char('n') {
+                                            (cur + 1) % hits.len()
+                                        } else {
+                                            cur.checked_sub(1).unwrap_or(hits.len() - 1)
+                                        };
+                                        diff.patch_scroll = hits[next];
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if exit {
+                        state.git_diff = None;
+                        mode = InputMode::Normal;
+                    }
+                }
+                InputMode::GitDiffSearch {
+                    input: search_input,
+                } => {
+                    if key.kind == KeyEventKind::Press {
+                        match command_input(search_input, key) {
+                            CmdInput::Submit => {
+                                let q = search_input.trim().to_owned();
+                                if let Some(diff) = state.git_diff.as_mut() {
+                                    diff.query = (!q.is_empty()).then_some(q);
+                                    diff.patch_scroll = 0;
+                                }
+                                mode = InputMode::GitDiff;
+                            }
+                            CmdInput::Cancel => mode = InputMode::GitDiff,
+                            CmdInput::Continue => {
+                                if let Some(diff) = state.git_diff.as_mut() {
+                                    diff.query =
+                                        (!search_input.is_empty()).then(|| search_input.clone());
                                 }
                             }
                         }
