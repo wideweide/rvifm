@@ -385,6 +385,12 @@ pub(crate) struct CmdComp {
     descs: Vec<String>,
     /// M58-4：当前视口首行偏移（Tab 循环时自动滚动使选中项可见）。
     offset: usize,
+    /// M87-1：SEARCH（输入实时过滤）/ Normal（j/k 导航）模式。
+    pub(crate) normal: bool,
+    /// M87-2：数据源为 `!` 外部命令历史。
+    pub(crate) external: bool,
+    /// M87-4：Normal 态 dd 两键删除待确认。
+    pub(crate) d_pending: bool,
 }
 
 /// `:` 命令执行结果（M2-6）：退出请求或完成（可携带提示）。
@@ -1203,10 +1209,111 @@ fn run_with_initial_mode(
                     // M24-6：↑/↓ 浏览会话命令历史（内存 Vec，无持久化）；
                     // M24-7：Tab 补全焦点 pane 条目名（前缀循环，>10 候选
                     // 显示计数）；其余按键走原有单键处理。
+                    // M87：`:` 直达命令补全（SEARCH 默认，Esc 进 Normal，
+                    // Normal Esc 退出）；↑↓/Ctrl+j/k 导航；Tab 不再是导航键；
+                    // Enter 填充选中项、Ctrl+Enter 直接执行；`!` 切外部命令源。
+                    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                    let normal = comp.as_ref().is_some_and(|c| c.normal);
+                    let move_sel = |c: &mut Option<CmdComp>, delta: isize| {
+                        if let Some(c) = c.as_mut()
+                            && !c.candidates.is_empty()
+                        {
+                            let n = c.candidates.len() as isize;
+                            c.index = (((c.index as isize + delta) % n) + n) as usize % n as usize;
+                            c.offset = c.offset.min(c.index);
+                        }
+                    };
                     let handled = if key.kind == KeyEventKind::Press {
                         match key.code {
-                            // M30-4：' 置位 tag 等待态（字面回显）；
-                            // tag 字符消费展开为书签命令；Esc 取消还原。
+                            KeyCode::Up | KeyCode::Char('k') if ctrl || normal => {
+                                move_sel(comp, -1);
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Down | KeyCode::Char('j') if ctrl || normal => {
+                                move_sel(comp, 1);
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Char('g') if normal => {
+                                if let Some(c) = comp.as_mut() {
+                                    c.index = 0;
+                                    c.offset = 0;
+                                }
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Char('G') if normal => {
+                                if let Some(c) = comp.as_mut() {
+                                    c.index = c.candidates.len().saturating_sub(1);
+                                }
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Char('d')
+                                if normal && comp.as_ref().is_some_and(|c| c.external) =>
+                            {
+                                let remove = comp.as_ref().is_some_and(|c| c.d_pending);
+                                if remove {
+                                    if let Some(cmd) = comp
+                                        .as_ref()
+                                        .and_then(|c| c.candidates.get(c.index))
+                                        .cloned()
+                                    {
+                                        let bare = cmd.trim_start_matches('!').to_owned();
+                                        state
+                                            .history_commands
+                                            .retain(|l| l.trim_start() != bare.as_str());
+                                        state.cmd_history.retain(|l| l != &bare);
+                                        state.last_removed_external = Some(bare);
+                                        *comp = Some(crate::app::exec::build_command_list_comp(
+                                            &state, input,
+                                        ));
+                                        if let Some(c) = comp.as_mut() {
+                                            c.normal = true;
+                                        }
+                                        msg = Some("已删除外部命令记录（u 恢复）".to_owned());
+                                    }
+                                } else if let Some(c) = comp.as_mut() {
+                                    c.d_pending = true;
+                                }
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Char('u')
+                                if normal && comp.as_ref().is_some_and(|c| c.external) =>
+                            {
+                                if let Some(cmd) = state.last_removed_external.take() {
+                                    state.history_commands.push(cmd);
+                                    *comp = Some(crate::app::exec::build_command_list_comp(
+                                        &state, input,
+                                    ));
+                                    if let Some(c) = comp.as_mut() {
+                                        c.normal = true;
+                                    }
+                                    msg = Some("已恢复外部命令记录".to_owned());
+                                }
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Esc if comp.is_some() && !normal => {
+                                if let Some(c) = comp.as_mut() {
+                                    c.normal = true;
+                                }
+                                Some(CmdInput::Continue)
+                            }
+                            KeyCode::Enter
+                                if comp.as_ref().is_some_and(|c| !c.candidates.is_empty()) =>
+                            {
+                                let selected = comp
+                                    .as_ref()
+                                    .and_then(|c| c.candidates.get(c.index))
+                                    .cloned()
+                                    .unwrap_or_default();
+                                *input = selected;
+                                if ctrl {
+                                    Some(CmdInput::Submit)
+                                } else {
+                                    // 填充后可继续编辑，下一次 Enter 才执行。
+                                    *comp = None;
+                                    Some(CmdInput::Continue)
+                                }
+                            }
+                            KeyCode::Tab => Some(CmdInput::Continue),
                             KeyCode::Char('\'') if !*cmd_mark_pending => {
                                 *cmd_mark_pending = true;
                                 input.push('\'');
@@ -1219,13 +1326,10 @@ fn run_with_initial_mode(
                                     Some(cmd) => {
                                         *input = cmd;
                                         *hist_pos = None;
-                                        Some(CmdInput::Continue)
                                     }
-                                    None => {
-                                        msg = Some(format!("无命令书签 {c}"));
-                                        Some(CmdInput::Continue)
-                                    }
+                                    None => msg = Some(format!("无命令书签 {c}")),
                                 }
+                                Some(CmdInput::Continue)
                             }
                             KeyCode::Up => {
                                 hist_prev(ranked, hist_pos, input, draft);
@@ -1235,61 +1339,16 @@ fn run_with_initial_mode(
                                 hist_next(ranked, hist_pos, input, draft);
                                 Some(CmdInput::Continue)
                             }
-                            KeyCode::Char(' ') if comp.is_some() => {
-                                // M58-3：Space=选定当前候选到输入栏（可继续编辑参数）。
-                                if let Some(next) = comp
-                                    .as_ref()
-                                    .and_then(|c| crate::app::keys::completion_accept(input, c))
-                                {
-                                    *input = next;
+                            KeyCode::Char(_) | KeyCode::Backspace => {
+                                let result = command_input(input, key);
+                                if comp.is_some() && result != CmdInput::Cancel {
+                                    *comp = Some(crate::app::exec::build_command_list_comp(
+                                        &state, input,
+                                    ));
                                 }
-                                *comp = None;
-                                Some(CmdInput::Continue)
+                                Some(result)
                             }
-                            KeyCode::Tab => {
-                                // M58-4：仅在候选池尚未建立时重建；循环时沿用同一池，
-                                // 否则 descs 会来自更窄的新前缀、与 index 脱节。
-                                let names = if comp.is_none() {
-                                    let (names, descs) =
-                                        crate::app::exec::command_completion_pool(&state, input);
-                                    let n = tab_complete(input, comp, &names);
-                                    if let Some(c) = comp.as_mut() {
-                                        c.descs = descs;
-                                        c.offset = 0;
-                                    }
-                                    n
-                                } else {
-                                    let names = comp
-                                        .as_ref()
-                                        .map(|c| c.candidates.clone())
-                                        .unwrap_or_default();
-                                    tab_complete(input, comp, &names)
-                                };
-                                if names > 0 {
-                                    comp.as_mut().expect("comp 已建立").offset = 0;
-                                }
-                                Some(CmdInput::Continue)
-                            }
-                            _ => {
-                                // M58-1：键入时按新输入实时重建候选（描述同源）。
-                                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                                    && comp.is_some()
-                                {
-                                    let result = command_input(input, key);
-                                    let (names, descs) =
-                                        crate::app::exec::command_completion_pool(&state, input);
-                                    let n = tab_complete(input, comp, &names);
-                                    if n == 0 {
-                                        *comp = None;
-                                    } else if let Some(c) = comp.as_mut() {
-                                        c.descs = descs;
-                                        c.offset = 0;
-                                    }
-                                    Some(result)
-                                } else {
-                                    None
-                                }
-                            }
+                            _ => None,
                         }
                     } else {
                         None
@@ -1949,11 +2008,12 @@ fn run_with_initial_mode(
                             return Ok(());
                         }
                         Outcome::EnterCommand => {
+                            let comp = crate::app::exec::build_command_list_comp(&state, "");
                             mode = InputMode::Command {
                                 input: String::new(),
                                 hist_pos: None,
                                 draft: String::new(),
-                                comp: None,
+                                comp: Some(comp),
                                 ranked: crate::frecency::cmd_history_ranked(
                                     &state.cmd_history,
                                     CMD_RANKED_LIMIT,
@@ -1963,11 +2023,12 @@ fn run_with_initial_mode(
                         }
                         Outcome::EnterExternalCommandLine => {
                             // M50-4：预填 `!`，用户可直接输入外部命令（无默认键位）。
+                            let comp = crate::app::exec::build_command_list_comp(&state, "!");
                             mode = InputMode::Command {
                                 input: "!".to_owned(),
                                 hist_pos: None,
                                 draft: String::new(),
-                                comp: None,
+                                comp: Some(comp),
                                 ranked: crate::frecency::cmd_history_ranked(
                                     &state.cmd_history,
                                     CMD_RANKED_LIMIT,

@@ -385,6 +385,8 @@ pub struct AppState {
     pub pending_permanent_delete: bool,
     /// M86-8：粘贴冲突选项列表（同路径/异路径选项集不同）。
     pub pending_paste_same_dir: bool,
+    /// M87-4：外部命令 Normal 态 dd 删除后供 u 恢复。
+    pub last_removed_external: Option<String>,
     /// M19-2：远端会话表（会话名 → 协议后端；`Box<dyn RemoteFs>`）。
     pub remote_sessions: std::collections::BTreeMap<String, Box<dyn crate::remote::RemoteFs>>,
     /// M36-7：传输队列（粘贴入队；`:queue` 覆盖层消费/取消）。
@@ -955,6 +957,7 @@ impl AppState {
             pending_paste_move: false,
             pending_permanent_delete: false,
             pending_paste_same_dir: false,
+            last_removed_external: None,
             remote_sessions: std::collections::BTreeMap::new(),
             transfer_queue: Vec::new(),
             history_commands: Vec::new(),

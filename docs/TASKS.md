@@ -1012,12 +1012,12 @@
 
 ## M87 — 命令补全对齐 fzf/frecency（2026-11-28，见 SPEC M87 节）
 
-- [ ] M87-1 `:` 直达补全模式 + 顶部输入框 + SEARCH/Normal 双模式（见 SPEC M87）
-- [ ] M87-2 `!` 外部数据源 + 实时过滤默认首项（见 SPEC M87）
-- [ ] M87-3 导航对齐 fzf：移除 Tab、↑↓/Ctrl+j/k、Normal 导航补全（见 SPEC M87）
-- [ ] M87-4 Normal 态评估 + 成功命令记录核实 + 外部 dd/u（见 SPEC M87）
-- [ ] M87-5 Enter/Ctrl+Enter 填充语义（待用户拍板，见 SPEC M87）
-- [ ] M87-6 文档/验收/门禁（见 SPEC M87）
+- [x] M87-1 `:` 直达补全模式 + 顶部输入框 + SEARCH/Normal 双模式（见 SPEC M87）；2026-11-28 完成：M87-1..M87-5 同批落地，m871 单测
+- [x] M87-2 `!` 外部数据源 + 实时过滤默认首项（见 SPEC M87）；2026-11-28 完成
+- [x] M87-3 导航对齐 fzf：移除 Tab、↑↓/Ctrl+j/k、Normal 导航补全（见 SPEC M87）；2026-11-28 完成
+- [x] M87-4 Normal 态评估 + 成功命令记录核实 + 外部 dd/u（见 SPEC M87）；2026-11-28 完成：m874 + 外部 dd/u
+- [x] M87-5 Enter/Ctrl+Enter 填充语义（待用户拍板，见 SPEC M87）；2026-11-28 按用户拍板落地
+- [x] M87-6 文档/验收/门禁（见 SPEC M87）；2026-11-28 完成：GUIDE/help/CHANGELOG + 全门禁
 
 ## M88 — 长文件名省略策略（2026-11-28，见 SPEC M88 节）
 

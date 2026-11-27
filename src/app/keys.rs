@@ -116,6 +116,7 @@ pub(crate) fn hist_next(
 
 /// 取输入最后一个空白分隔词；返回（词前部分, 词）。字符边界按 char_indices
 /// 处理，多字节安全。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn split_last_word(s: &str) -> (String, String) {
     match s.char_indices().rfind(|&(_, c)| c.is_whitespace()) {
         Some((i, _)) => (s[..=i].to_owned(), s[i + 1..].to_owned()),
@@ -127,6 +128,7 @@ pub(crate) fn split_last_word(s: &str) -> (String, String) {
 /// （焦点 pane 条目，M21-E1 同源）；输入自上次补全后未改动则循环到下一
 /// 候选（尾→首环绕），否则重建候选列表。返回候选总数（调用方超 10 个
 /// 时显示计数）。无候选时不改输入。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn tab_complete(
     input: &mut String,
     comp: &mut Option<CmdComp>,
@@ -161,6 +163,9 @@ pub(crate) fn tab_complete(
             index: 0,
             descs: Vec::new(),
             offset: 0,
+            normal: false,
+            external: false,
+            d_pending: false,
         });
     }
     // AUDIT-8：去 expect——comp 缺失（不可达）时安全返回 0（无候选补全）。
@@ -172,6 +177,7 @@ pub(crate) fn tab_complete(
 }
 
 /// M58-3：Space 选定——把当前候选写回输入（替换最后一个词），保留头部参数。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn completion_accept(input: &str, comp: &CmdComp) -> Option<String> {
     let candidate = comp.candidates.get(comp.index)?;
     let (head, _) = split_last_word(input);

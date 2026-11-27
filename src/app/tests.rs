@@ -3394,6 +3394,9 @@ fn m583_space_accept_keeps_command_head() {
         index: 1,
         descs: Vec::new(),
         offset: 0,
+        normal: false,
+        external: false,
+        d_pending: false,
     };
     assert_eq!(
         crate::app::keys::completion_accept("ls b", &comp).as_deref(),
@@ -15489,7 +15492,7 @@ fn m881_clip_name_middle_ellipsis_keeps_extension_chain() {
 }
 
 #[test]
-fn m866_tagged_d_and_D_trigger_batch_delete() {
+fn m866_tagged_d_and_d_trigger_batch_delete() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
@@ -15572,4 +15575,36 @@ fn m868_paste_conflict_option_sets_by_path() {
         ],
         "异路径六项"
     );
+}
+
+#[test]
+fn m871_command_completion_defaults_to_internal_and_bang_to_external() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.history_commands.push("git status".to_owned());
+    let internal = crate::app::exec::build_command_list_comp(&state, "");
+    assert!(!internal.external, "默认内部命令源");
+    assert!(!internal.normal, "默认 SEARCH 模式");
+    assert!(internal.candidates.contains(&"cd".to_owned()), "含内建命令");
+    assert_eq!(internal.index, 0, "默认选中首项");
+
+    let external = crate::app::exec::build_command_list_comp(&state, "!git");
+    assert!(external.external, "! 前缀切外部命令源");
+    assert!(
+        external.candidates.iter().any(|c| c == "!git status"),
+        "过滤外部历史: {:?}",
+        external.candidates
+    );
+}
+
+#[test]
+fn m874_failed_command_is_not_recorded() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    assert!(
+        crate::app::exec::exec_command_impl(&mut state, "no_such_builtin_command").is_err(),
+        "未知命令应报错"
+    );
+    assert!(state.cmd_history.is_empty(), "失败命令不入会话历史");
+    assert!(state.history_commands.is_empty(), "失败命令不入外部历史");
 }

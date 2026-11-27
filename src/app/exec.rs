@@ -663,8 +663,29 @@ pub(crate) fn command_completion_candidates(
     }
 }
 
+/// M87-1：进入 `:` 命令模式即构造补全状态；默认 SEARCH、内部命令数据源，
+/// 输入以 `!` 开头则切换外部命令历史。
+pub(crate) fn build_command_list_comp(
+    state: &crate::app::AppState,
+    input: &str,
+) -> crate::app::CmdComp {
+    let external = input.starts_with('!');
+    let (candidates, descs) = command_completion_candidates(input, state);
+    crate::app::CmdComp {
+        head: String::new(),
+        candidates,
+        index: 0,
+        descs,
+        offset: 0,
+        normal: false,
+        external,
+        d_pending: false,
+    }
+}
+
 /// M58-1：命令行补全候选池（名称 + 同源描述），供首次 Tab 与键入实时过滤共用。
 /// 描述与候选在**同一次快照**中生成，避免索引与描述漂移（M58-4）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn command_completion_pool(
     state: &crate::app::AppState,
     input: &str,
@@ -683,6 +704,7 @@ pub(crate) fn command_completion_pool(
     (completion_candidates(&base, &items, &scores), Vec::new())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn completion_candidates(
     base: &Path,
     items: &[crate::tab::FileItem],
@@ -2211,6 +2233,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
 
 /// M45-5c：输入是否处于「命令名」位置（首词，无空白前缀）——此时 Tab
 /// 补全命令名而非文件路径。纯函数便于测试。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn command_name_position(input: &str) -> bool {
     !input.is_empty() && !input.chars().any(char::is_whitespace)
 }

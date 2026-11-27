@@ -17,6 +17,10 @@
 
 - 按 Unicode 单元格宽度在名称列内以 `…` 中间省略，保留 `.pdf.md5`/`.tar.gz` 等尾部扩展链；大小/时间列不再被挤压。
 
+### M87 命令补全对齐 fzf/frecency（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `:` 直达补全（SEARCH/Normal 双模式），`!` 切外部命令源，实时过滤默认首项；↑↓/Ctrl+j/k 导航，移除 Tab；有匹配 Enter 填充 / Ctrl+Enter 执行，无匹配均执行输入内容；外部命令 Normal 态 dd/u；仅记录成功命令。
+
 ## [1.5.0] — 2026-11-27
 
 > M47–M85 共 39 个批次随 **1.5.0** 发布。增量功能与修复：异步预览流水线、git `:diff` 浏览与写操作、tutor 全功能覆盖、frecency 对齐、焦点样式与归档 opener 修复、图片后台编码。crates.io 不发布（沿用用户决策，仍停 1.0.0）。人工终端项保持 deferred。

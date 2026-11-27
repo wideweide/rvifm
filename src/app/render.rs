@@ -2810,15 +2810,23 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         InputMode::SortDialog { .. } => Line::from(String::new()), // 排序对话框提前 return，不可达
         InputMode::ContextMenu { .. } => Line::from(String::new()), // 菜单覆盖层提前 return，不可达
         InputMode::HistoryMenu { .. } => Line::from(String::new()), // 历史菜单提前 return，不可达
-        InputMode::Command { input, .. } => {
-            // M58-2：500ms 翻转的可见光标（复用事件循环 tick，无额外线程）。
+        InputMode::Command { input, comp, .. } => {
+            // M58-2：500ms 翻转的可见光标；M87-1 标注 SEARCH/NORMAL/EDIT。
             let blink = (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis()
                 / 500)
                 .is_multiple_of(2);
-            Line::from(format!(":{input}{}", if blink { "▋" } else { " " }))
+            let phase = match comp {
+                Some(c) if c.normal => "NORMAL",
+                Some(_) => "SEARCH",
+                None => "EDIT",
+            };
+            Line::from(format!(
+                ":{input} [{phase}]{}",
+                if blink { "▋" } else { " " }
+            ))
         }
         InputMode::Search { input, .. } => {
             // FIX-1：输入期实时匹配计数；无匹配 0/0 并提示。
@@ -3015,7 +3023,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                             .map(Line::from)
                             .collect::<Vec<_>>(),
                     )
-                    .block(ratatui::widgets::Block::bordered().title("外部命令预览（Tab 选定）")),
+                    .block(
+                        ratatui::widgets::Block::bordered()
+                            .title("命令补全（Enter 填充 / Ctrl+Enter 执行）"),
+                    ),
                     preview,
                 );
             }
