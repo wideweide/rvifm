@@ -355,6 +355,24 @@ pub fn reset_module(progress: TutorProgress, module_id: &str) -> TutorProgress {
         .collect()
 }
 
+/// M77-4：进入模块时只显示错题 + 未学习项（排除已掌握），保持原顺序与编号。
+pub fn pending_items(
+    progress: &TutorProgress,
+    module_id: &str,
+    items: &[TutorItem],
+) -> Option<Vec<TutorItem>> {
+    let entry = progress.get(module_id)?;
+    let pending: Vec<TutorItem> = items
+        .iter()
+        .filter(|it| {
+            // 错题 + 未学习（两者都不在 mastered 中），编号/顺序保持原模块。
+            !entry.mastered.iter().any(|id| id == &it.id)
+        })
+        .cloned()
+        .collect();
+    (!pending.is_empty()).then_some(pending)
+}
+
 /// 复习排序（纯函数）：skipped（原序）→ 未见过（原序）→ mastered（原序）。
 /// 无 skipped 记录时返回 None（非复习模式，保持原顺序）。
 pub fn review_order(
@@ -429,6 +447,38 @@ mod tests {
         assert_eq!(entry.mastered[0], core.items[0].id);
         assert_eq!(entry.skipped.len(), 1);
         assert_eq!(progress[&other.id].mastered.len(), 1, "其它进度不得丢失");
+    }
+
+    #[test]
+    fn m774_pending_items_include_unseen_and_keep_ids() {
+        let module = module_by_id("core_nav").unwrap();
+        let mut progress = TutorProgress::new();
+        let mut entry = ModuleProgress::default();
+        entry.mastered.push(module.items[0].id.clone());
+        entry.skipped.push(module.items[1].id.clone());
+        progress.insert(module.id.clone(), entry);
+        let pending = pending_items(&progress, &module.id, &module.items).unwrap();
+        assert!(
+            pending.iter().any(|i| i.id == module.items[1].id),
+            "错题应保留"
+        );
+        assert!(
+            pending.iter().any(|i| i.id == module.items[2].id),
+            "未学习应出现"
+        );
+        assert!(
+            !pending.iter().any(|i| i.id == module.items[0].id),
+            "已掌握应排除"
+        );
+        let ids: Vec<_> = module.items.iter().map(|i| i.id.clone()).collect();
+        let positions: Vec<_> = pending
+            .iter()
+            .map(|i| ids.iter().position(|x| x == &i.id).unwrap())
+            .collect();
+        assert!(
+            positions.windows(2).all(|w| w[0] < w[1]),
+            "保持原顺序与编号"
+        );
     }
 
     #[test]

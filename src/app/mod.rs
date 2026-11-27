@@ -1435,7 +1435,7 @@ fn run_with_initial_mode(
                                             } else {
                                                 // M56-6：与列表 l/Enter 同源——有记录模块只显示错题。
                                                 let (module, review) =
-                                                    match crate::tutor::wrong_items_only(
+                                                    match crate::tutor::pending_items(
                                                         &progress,
                                                         &base.id,
                                                         &base.items,
@@ -2572,7 +2572,7 @@ fn run_with_initial_mode(
                                         from_list: true,
                                     };
                                 } else {
-                                    let (module, review) = match crate::tutor::wrong_items_only(
+                                    let (module, review) = match crate::tutor::pending_items(
                                         &progress,
                                         &base.id,
                                         &base.items,

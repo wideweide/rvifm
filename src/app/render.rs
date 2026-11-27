@@ -766,47 +766,23 @@ pub(crate) fn tutor_rank(progress: &crate::tutor::TutorProgress) -> TutorRank {
 
 /// M56-11：成就徽章——完成首模块 🏅 / 全模块 100% 🏆 / 零错题通过 ⭐。
 /// 纯函数：按稳定 item id 判定，与进度文件版本无关。
-pub(crate) fn tutor_badges(progress: &crate::tutor::TutorProgress) -> String {
-    let modules = crate::tutor::builtin_modules();
-    let mut done = 0usize;
-    let mut perfect = false;
-    for module in &modules {
-        let Some(entry) = progress.get(&module.id) else {
-            continue;
-        };
-        let mastered_all = !module.items.is_empty()
-            && module
-                .items
-                .iter()
-                .all(|i| entry.mastered.iter().any(|id| id == &i.id));
-        if mastered_all {
-            done += 1;
-            perfect |= entry.skipped.is_empty();
-        }
+/// M77-2：满宽进度条色块（已掌握深色 / 未掌握浅色），仅作文字背景。
+pub(crate) fn tutor_bar_spans(pct: usize, width: usize) -> Vec<Span<'static>> {
+    let filled = width.saturating_mul(pct.min(100)) / 100;
+    let mut spans = Vec::with_capacity(2);
+    if filled > 0 {
+        spans.push(Span::styled(
+            " ".repeat(filled),
+            Style::new().bg(Color::DarkGray),
+        ));
     }
-    let mut badges = String::new();
-    if done > 0 {
-        badges.push('🏅');
+    if filled < width {
+        spans.push(Span::styled(
+            " ".repeat(width - filled),
+            Style::new().bg(Color::Black),
+        ));
     }
-    if done > 0 && done == modules.len() {
-        badges.push('🏆');
-    }
-    if perfect {
-        badges.push('⭐');
-    }
-    badges
-}
-
-/// M56-4：带边框的单条文本进度条（█/░，不引入新绘图引擎）。
-pub(crate) fn tutor_progress_bar(pct: usize, width: u16) -> String {
-    let w = width.max(4) as usize;
-    let filled = (w * pct.min(100)) / 100;
-    format!(
-        "[{}{}] {:>3}%",
-        "█".repeat(filled),
-        "░".repeat(w - filled),
-        pct.min(100)
-    )
+    spans
 }
 
 /// M45-3c：删除确认居中弹窗矩形——宽取终端减边距（24–72），高按正文行数
@@ -1398,29 +1374,21 @@ fn render_tutor_list(
     frame.render_stateful_widget(list, list_area, &mut list_state);
     if status_area.height >= 2 {
         let (done, mods, mastered, total, pct) = tutor_overall_progress(&state.tutor_progress);
-        let bar = tutor_progress_bar(pct, status_area.width.saturating_sub(2).min(24));
+        let rank = tutor_rank(&state.tutor_progress);
+        let block =
+            ratatui::widgets::Block::bordered().title(format!("学习进度 · {}", rank.label()));
+        let inner = block.inner(status_area);
+        frame.render_widget(&block, status_area);
+        // M77-2：进度条充满容器并作为文字背景，右侧不再重复数字。
+        let bar = tutor_bar_spans(pct, inner.width as usize);
+        frame.render_widget(Paragraph::new(vec![Line::from(bar)]), inner);
         let lines = vec![
             Line::from("欢迎使用 rvifm！可通过本向导学习全部功能；随时输入 :tutor 再次进入。"),
             Line::from(format!(
                 "模块 {done}/{mods}  功能点 {mastered}/{total}  已掌握本系统 {pct}% 的功能"
             )),
-            Line::from(bar),
         ];
-        // M64-2：境界只在学习进度栏显示（符号 + 中文 + 小阶段）。
-        let rank = tutor_rank(&state.tutor_progress);
-        let badges = tutor_badges(&state.tutor_progress);
-        frame.render_widget(
-            Paragraph::new(lines).block(ratatui::widgets::Block::bordered().title(format!(
-                "学习进度 · {} · {pct}%{}",
-                rank.label(),
-                if badges.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {badges}")
-                }
-            ))),
-            status_area,
-        );
+        frame.render_widget(Paragraph::new(lines), inner);
     }
 }
 
@@ -2463,11 +2431,27 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         // FIX-5-2：仅清除面板区域的下层内容——目录列表文字不得从面板空白
         // 行透出干扰 prompt/expected 可读性（面板之外主 TUI 仍可见）。
         frame.render_widget(ratatui::widgets::Clear, panel_area);
-        let total = module.items.len();
-        let mastered = marks.iter().filter(|(_, ok)| *ok).count();
-        let skipped = marks.len() - mastered;
-        // M56-6：错题过滤后仍显示**原模块编号**——按稳定 item id 回查完整模块。
+        // M77-3：面板计数用完整模块的持久化进度，不再用本次 session 子集/本次作答。
         let base = crate::tutor::module_by_id(&module.id);
+        let total = base
+            .as_ref()
+            .map(|b| b.items.len())
+            .unwrap_or(module.items.len());
+        let session_mastered = marks.iter().filter(|(_, ok)| *ok).count();
+        let progress_entry = state.tutor_progress.get(&module.id);
+        let mastered = progress_entry
+            .map(|p| {
+                base.as_ref().map_or(p.mastered.len(), |b| {
+                    p.mastered
+                        .iter()
+                        .filter(|id| b.items.iter().any(|i| &i.id == *id))
+                        .count()
+                })
+            })
+            .unwrap_or(session_mastered);
+        let skipped = progress_entry
+            .map(|p| p.skipped.len())
+            .unwrap_or(marks.len().saturating_sub(session_mastered));
         let display_total = base.as_ref().map(|b| b.items.len()).unwrap_or(total);
         let display_idx = module
             .items

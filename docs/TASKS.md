@@ -935,3 +935,16 @@
 - [x] M76-1 清理 frecency 存储中 /tmp/ 记录（见 SPEC M76）；2026-11-27 完成：`maintenance clean-tmp` 移除 195 条 /tmp/ 记录，未删本地文件
 - [x] M76-2 真实跳转 record + r/u 同步恢复（见 SPEC M76）；2026-11-27 完成：frecency l/Enter 成功后按 topic record，restore_entry 直写 redb
 - [x] M76-3 显示评分 + frecency_preview 默认关闭（见 SPEC M76）；2026-11-27 完成：行尾评分列 + `[preview] frecency_preview=false` + w 开启，m763 通过
+
+## M77 — tutor 进度与徽章修正（2026-11-27 蒸馏，见 SPEC M77 节）
+
+- [x] M77-1 移除徽章只留境界（见 SPEC M77）；2026-11-27 完成：删除 tutor_badges 与 m570，标题只留境界
+- [x] M77-2 进度条充满容器作文字背景 + 去掉右侧数字（见 SPEC M77）；2026-11-27 完成：tutor_bar_spans + 文字覆盖层，m563 更新
+- [x] M77-3 面板计数用完整模块持久化进度（见 SPEC M77）；2026-11-27 完成：面板改用 state.tutor_progress + 完整模块条目数
+- [x] M77-4 入口错题+未学习、编号保持（见 SPEC M77）；2026-11-27 完成：pending_items + 入口改用，m774 通过
+
+## M78 — 默认 opener / IME / 命令描述（2026-11-27 蒸馏，见 SPEC M78 节）
+
+- [ ] M78-1 默认配置启用 vim 文本规则（见 SPEC M78）
+- [ ] M78-2 IME 防御修复 + trace（见 SPEC M78）
+- [ ] M78-3 命令描述解析与帮助行修正（见 SPEC M78）

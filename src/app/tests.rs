@@ -15,40 +15,12 @@ fn m563_tutor_dialog_geometry_and_progress_bar() {
         tutor_dialog_rect(ratatui::layout::Rect::new(0, 0, 100, 10)).height,
         10
     );
-    let bar = tutor_progress_bar(42, 10);
-    assert!(bar.starts_with('[') && bar.ends_with("42%"), "{bar}");
-    assert!(bar.contains('█') && bar.contains('░'), "{bar}");
-}
-
-#[test]
-fn m570_tutor_badges_from_progress() {
-    // M56-11：首模块 🏅、全模块 🏆、零错题 ⭐（按稳定 item id 判定）。
-    let mut progress = crate::tutor::TutorProgress::new();
-    let core = crate::tutor::module_by_id("core_nav").unwrap();
-    let mut mp = crate::tutor::ModuleProgress::default();
-    for item in &core.items {
-        mp.mastered.push(item.id.clone());
-    }
-    progress.insert(core.id.clone(), mp);
-    let badges = tutor_badges(&progress);
-    assert!(badges.contains('🏅'), "{badges}");
-    assert!(badges.contains('⭐'), "{badges}");
-    assert!(!badges.contains('🏆'), "{badges}");
-    // 全部模块 100%（其中一个有错题 → 无 ⭐）
-    let mut all = crate::tutor::TutorProgress::new();
-    for (idx, module) in crate::tutor::builtin_modules().iter().enumerate() {
-        let mut p = crate::tutor::ModuleProgress::default();
-        for item in &module.items {
-            p.mastered.push(item.id.clone());
-        }
-        let _ = idx;
-        // 每个模块都有错题记录 → 不发「完美通关」。
-        p.skipped.push(format!("wrong_for_{}", module.id));
-        all.insert(module.id.clone(), p);
-    }
-    let badges = tutor_badges(&all);
-    assert!(badges.contains('🏆'), "{badges}");
-    assert!(!badges.contains('⭐'), "{badges}");
+    // M77-2：进度条色块充满给定宽度，无右侧数字。
+    let bar = tutor_bar_spans(42, 10);
+    let filled: usize = bar.iter().map(|s| s.content.len()).sum();
+    assert_eq!(filled, 10);
+    assert!(bar.iter().any(|s| s.style.bg == Some(Color::DarkGray)));
+    assert!(bar.iter().any(|s| s.style.bg == Some(Color::Black)));
 }
 
 #[test]
@@ -14790,6 +14762,8 @@ fn m42_1_tutor_render_list_and_panel() {
         .map(|(i, item)| (item.id.clone(), i % 2 == 0))
         .collect();
     let skipped = marks.iter().filter(|(_, ok)| !*ok).count();
+    // M77-3：面板计数读持久化进度；测试需隔离宿主进度文件。
+    state.tutor_progress = crate::tutor::TutorProgress::new();
     let mode = InputMode::Normal;
     state.tutor = Some(crate::tutor::TutorSession {
         module,
