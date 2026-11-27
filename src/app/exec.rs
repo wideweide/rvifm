@@ -3844,7 +3844,9 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     // M24-7：目标目录 `~` 展开为 HOME。
                     let target = PathBuf::from(expand_home_arg(dir_arg));
                     let base = physical_base(state)?;
-                    let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
+                    // M86-6：取焦点栏的 t 标记（原固定左栏，右栏标记会删错对象）。
+                    let names: Vec<String> =
+                        state.active_tab().focused_tags().iter().cloned().collect();
                     if names.is_empty() {
                         return Ok(ExecOutcome::Done {
                             msg: Some("tag: 无标记文件".to_owned()),

@@ -2014,7 +2014,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     li = li.style(selected_row_style(left_focused));
                 }
                 if tab.tags.contains(&item.name) {
-                    mods |= Modifier::BOLD;
+                    // M86-6：单独 BOLD 在部分主题下不明显，叠加下划线让 t 标记可见。
+                    mods |= Modifier::BOLD | Modifier::UNDERLINED;
                 }
                 if mods != Modifier::empty() {
                     li = li.style(Style::new().add_modifier(mods));

@@ -666,7 +666,8 @@ pub(crate) fn render_right_pane(
                 li = li.style(crate::app::render::selected_row_style(focused));
             }
             if tab.right.tags.contains(&item.name) {
-                modifiers |= Modifier::BOLD;
+                // M86-6：与左栏同款可见高亮。
+                modifiers |= Modifier::BOLD | Modifier::UNDERLINED;
             }
             if modifiers != Modifier::empty() {
                 li = li.style(Style::new().add_modifier(modifiers));

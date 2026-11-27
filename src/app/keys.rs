@@ -2139,6 +2139,20 @@ pub(crate) fn handle_key(
         return Outcome::Continue;
     }
 
+    // M86-6：有 t 标记时单键 d/D 立即触发批量删除（与目录列表一致）；
+    // 无标记时 d 仍是 dd 前缀，保持既有语义。
+    if !ctrl
+        && matches!(key.code, KeyCode::Char('d') | KeyCode::Char('D'))
+        && state.active_tab().tagged_count_focused() > 0
+    {
+        input.count = None;
+        input.seq.clear();
+        if key.code == KeyCode::Char('D') {
+            state.pending_permanent_delete = true;
+        }
+        return Outcome::ConfirmTagDelete;
+    }
+
     // M41-2：方向键 ↑↓←→ 与 k/j/l/h 别名进同款臂——环绕、计数前缀、
     // `..` 行、M21-F4 返回定位等行为完全一致。
     match key.code {

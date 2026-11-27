@@ -5637,6 +5637,8 @@ fn fix7_2_right_pane_uses_shared_yank_and_paste_dispatch() {
         state.active_tab().right.tags.contains("item.txt"),
         "右栏 t 标记焦点条目"
     );
+    // M86-6：有标记时单键 d 即走批量删除；清除标记后继续验证 dd 共用管线。
+    state.active_tab_mut().right.tags.clear();
     press_msg(
         &mut state,
         &mut input,
@@ -15480,4 +15482,37 @@ fn m881_clip_name_middle_ellipsis_keeps_extension_chain() {
     );
     assert_eq!(clip_name("short.txt", 20), "short.txt", "短名不变");
     assert!(clip_name("abcdefghij", 1).len() <= 1, "极小预算退化尾部");
+}
+
+#[test]
+fn m866_tagged_d_and_D_trigger_batch_delete() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().tags.insert("a.txt".to_owned());
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+    let outcome = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    assert!(
+        matches!(outcome, Outcome::ConfirmTagDelete),
+        "t 标记后单键 d 触发批量删除: {outcome:?}"
+    );
+    state.pending_permanent_delete = false;
+    let outcome = press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('D'),
+        KeyModifiers::NONE,
+    );
+    assert!(matches!(outcome, Outcome::ConfirmTagDelete));
+    assert!(state.pending_permanent_delete, "D 走永久删除");
 }
