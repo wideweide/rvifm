@@ -1236,27 +1236,14 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     let [topline, inner] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frec_area);
     frame.render_widget(ratatui::widgets::Clear, topline);
-    let mut title_spans = vec![Span::from(format!(
-        "Frecency - 高频目录/文件搜索 - {} 模式",
-        if pane.normal { "NORMAL" } else { "SEARCH" }
-    ))];
-    if !pane.query.is_empty() {
-        title_spans.extend(highlight_query_spans(
-            &format!("[filter {}]", pane.query),
-            &pane.query,
-        ));
+    // M75-4：搜索态不显示标题与 [filter …]，只以底部输入框呈现关键词。
+    if pane.normal {
+        let title_spans = vec![Span::from("Frecency - 高频目录/文件搜索 - NORMAL 模式")];
+        frame.render_widget(
+            Paragraph::new(Line::from(title_spans)).style(vifm_style("TopLineSel")),
+            topline,
+        );
     }
-    // M55-1：Normal / Search 标题样式区分——Search 用焦点边框色 + 加粗，
-    // 配合状态栏边框输入框，避免用户在 Search 态误按 j/k 导航。
-    let title_style = if pane.normal {
-        vifm_style("TopLineSel")
-    } else {
-        pane_border_style(true).add_modifier(Modifier::BOLD)
-    };
-    frame.render_widget(
-        Paragraph::new(Line::from(title_spans)).style(title_style),
-        topline,
-    );
     let frec_items: Vec<ListItem> = visible
         .iter()
         .enumerate()
@@ -1280,7 +1267,11 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             ];
             spans.extend(highlight_query_spans(&e.path, &pane.query));
             spans.extend(highlight_query_spans(&bm, &pane.query));
-            ListItem::new(Line::from(spans)).style(if idx == pane.cursor {
+            // M75-3：v 可视选择范围与当前光标同样反显。
+            let in_visual = pane
+                .visual
+                .is_some_and(|a| (a.min(pane.cursor)..=a.max(pane.cursor)).contains(&idx));
+            ListItem::new(Line::from(spans)).style(if idx == pane.cursor || in_visual {
                 Style::new().add_modifier(Modifier::REVERSED)
             } else {
                 Style::new()
@@ -1323,11 +1314,8 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         );
         frame.render_widget(Paragraph::new(hint), status_area);
     } else {
-        let hint = format!(
-            " ↑↓/Ctrl+J/K=移动（j/k 为输入） Enter=跳转 Esc=Normal（{} 项）",
-            visible.len()
-        );
-        render_input_line(frame, status_area, &pane.query, hint);
+        // M75-4：无边框、无标题、无提示，只显示 `/{query}` 与光标。
+        frame.render_widget(Paragraph::new(format!("/{}▋", pane.query)), status_area);
     }
 }
 

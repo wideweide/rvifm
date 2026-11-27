@@ -124,12 +124,9 @@ fn ci_starts_with(haystack: &str, needle: &str) -> bool {
 /// 分级匹配（M8-1）。`query` 为空 → 0 档（纯按 aging 分数排序，书签除外）。
 pub fn grade_for(entry: &SnapshotEntry, query: &str) -> Grade {
     let is_bookmark = !entry.keyword.is_empty();
+    // M75-2：空查询不置顶书签（上游无查询只按分数排序）；filter_jump 会直接返回全部。
     if query.is_empty() {
-        return if is_bookmark {
-            Grade::BookmarkOnly
-        } else {
-            Grade::None
-        };
+        return Grade::None;
     }
     // 7：书签关键字命中（前缀，ci）。
     if is_bookmark && ci_starts_with(&entry.keyword, query) {
@@ -164,10 +161,9 @@ pub fn grade_for(entry: &SnapshotEntry, query: &str) -> Grade {
     if ci_contains(&entry.path, query) {
         return Grade::Substring;
     }
-    // 6：书签未命中查询——降级但仍在有查询排序中高于无匹配。
-    if is_bookmark {
-        return Grade::BookmarkOnly;
-    }
+    // M75-2：删除 BookmarkOnly 兜底——书签也必须与查询真实匹配才显示，
+    // 与上游 frecency 的「书签不置顶、不靠兜底混入」对齐。
+    let _ = is_bookmark;
     Grade::None
 }
 
@@ -1813,16 +1809,12 @@ mod tests {
             grade_for(&snap("/w/proj", "proj", 10.0), "pro"),
             Grade::BookmarkKeyword
         );
-        // 6：书签未命中（有查询降级）。
+        // M75-2：删除 BookmarkOnly 兜底——未命中查询的书签不再混入结果。
         assert_eq!(
             grade_for(&snap("/w/proj", "proj", 10.0), "zzz"),
-            Grade::BookmarkOnly
+            Grade::None
         );
-        // 空查询：书签置顶档位 6，非书签 0。
-        assert_eq!(
-            grade_for(&snap("/w/proj", "proj", 10.0), ""),
-            Grade::BookmarkOnly
-        );
+        assert_eq!(grade_for(&snap("/w/proj", "proj", 10.0), ""), Grade::None);
         assert_eq!(grade_for(&snap("/w/other", "", 10.0), ""), Grade::None);
 
         // 5/4/3：文件名精确 / 前缀 / 包含。

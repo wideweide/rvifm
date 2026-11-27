@@ -364,6 +364,120 @@ fn rank_progress(
     progress
 }
 
+fn frec_state_with(entries: Vec<crate::frecency::ScoredEntry>, query: &str) -> AppState {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries,
+        query: query.to_owned(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
+    });
+    state
+}
+
+#[test]
+fn m751_slash_and_clear_query() {
+    let entry = crate::frecency::ScoredEntry {
+        path: "alpha.txt".to_owned(),
+        topic: "file".to_owned(),
+        keyword: String::new(),
+        score: 1.0,
+        grade: crate::frecency::Grade::None,
+        last_visit: 0,
+    };
+    let mut state = frec_state_with(vec![entry], "alpha");
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('/'),
+        KeyModifiers::NONE,
+    );
+    let pane = state.active_tab().pane_frecency.as_ref().unwrap();
+    assert!(!pane.normal, "/ 应进入搜索态");
+    assert_eq!(pane.query, "alpha", "/ 不应改写已有 query");
+    // c 只在 NORMAL 生效，先按 Esc 返回 NORMAL（保留 query）。
+    press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('c'),
+        KeyModifiers::NONE,
+    );
+    let pane = state.active_tab().pane_frecency.as_ref().unwrap();
+    assert!(pane.query.is_empty(), "c 应清空 query");
+}
+
+#[test]
+fn m753_visual_multi_delete_and_restore() {
+    let mk = |name: &str| crate::frecency::ScoredEntry {
+        path: name.to_owned(),
+        topic: "file".to_owned(),
+        keyword: String::new(),
+        score: 1.0,
+        grade: crate::frecency::Grade::None,
+        last_visit: 0,
+    };
+    let mut state = frec_state_with(vec![mk("a.txt"), mk("b.txt"), mk("c.txt")], "");
+    let mut input = crate::app::InputState::default();
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('v'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('j'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('d'),
+        KeyModifiers::NONE,
+    );
+    let pane = state.active_tab().pane_frecency.as_ref().unwrap();
+    assert_eq!(pane.entries.len(), 1, "v 范围 dd 应删除两项");
+    press(
+        &mut state,
+        &mut input,
+        KeyCode::Char('u'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state
+            .active_tab()
+            .pane_frecency
+            .as_ref()
+            .unwrap()
+            .entries
+            .len(),
+        3,
+        "u 应批量恢复"
+    );
+}
+
 #[test]
 fn m742_tutor_dialog_keeps_pane_context() {
     let (_tmp, mut state) = make_state(3);
@@ -628,6 +742,8 @@ fn m598_frecency_tab_enters_preview_and_backtab_switches_pane() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let mut input = crate::app::InputState::default();
     let mut msg = None;
@@ -3674,6 +3790,8 @@ fn m551_search_input_line_has_border_and_caret() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     };
     let row = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>, y: u16| -> String {
         let buf = terminal.backend().buffer().clone();
@@ -3690,16 +3808,16 @@ fn m551_search_input_line_has_border_and_caret() {
     terminal
         .draw(|f| crate::app::render::render_frecency_panes(f, &state))
         .unwrap();
+    // M75-4：搜索态无标题、无边框、无 j/k 提示。
     assert!(
-        row(&terminal, 1).contains("SEARCH"),
+        !row(&terminal, 1).contains("SEARCH"),
         "{:?}",
         row(&terminal, 1)
     );
     let status = row(&terminal, 11);
-    assert!(status.contains('│'), "输入框应有边框: {status}");
+    assert!(!status.contains('│'), "输入框不应有边框: {status}");
     assert!(status.contains('▋'), "输入框应有可见光标: {status}");
     assert!(status.contains("/abc"), "输入框应回显 query: {status}");
-    assert!(status.contains("j/k为输入"), "应提示 j/k 是输入: {status}");
 
     state.active_tab_mut().pane_frecency = Some(pane(true, "abc"));
     terminal
@@ -3779,6 +3897,8 @@ fn m534_frecency_r_removes_record_not_file() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     // M59-9：r 仅清 keyword/mark（保留条目与分数），y 二次确认，u 连 keyword 恢复。
     state
@@ -3934,6 +4054,8 @@ fn m521_frecency_default_opposite_preview_and_view_always_opposite() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -4018,6 +4140,8 @@ fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let backend = ratatui::backend::TestBackend::new(100, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -4026,8 +4150,10 @@ fn m4912_frecency_title_filter_and_search_esc_keeps_query() {
         .unwrap();
     let buf = terminal.backend().buffer().clone();
     let top: String = (0..100).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
-    assert!(top.contains("SEARCH"), "标题含模式: {top}");
-    assert!(top.contains("filter"), "标题含过滤: {top}");
+    assert!(!top.contains("SEARCH"), "搜索态不显示标题: {top}");
+    assert!(!top.contains("filter"), "搜索态不显示 [filter]: {top}");
+    let bottom: String = (0..100).map(|x| buf[(x, 11)].symbol().to_owned()).collect();
+    assert!(bottom.contains("/alpha"), "输入框回显 query: {bottom}");
 
     let mut input = crate::app::InputState::default();
     press(&mut state, &mut input, KeyCode::Esc, KeyModifiers::NONE);
@@ -4064,6 +4190,8 @@ fn m4915_frecency_dd_delete_and_u_restore() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let mut input = crate::app::InputState::default();
     press(
@@ -4091,7 +4219,7 @@ fn m4915_frecency_dd_delete_and_u_restore() {
     );
     let pane = state.active_tab().pane_frecency.as_ref().unwrap();
     assert!(pane.entries.is_empty(), "dd 删除记录");
-    assert!(pane.last_deleted.is_some(), "记录可恢复项");
+    assert!(!pane.last_deleted_many.is_empty(), "记录可恢复项");
     press(
         &mut state,
         &mut input,
@@ -4202,6 +4330,8 @@ fn m491_frecency_preview_fixed_on_right() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -4993,6 +5123,8 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let backend = ratatui::backend::TestBackend::new(80, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -5010,8 +5142,8 @@ fn m34_5_frecency_pane_title_icons_and_query_echo() {
     // CJK 占 2 格、缓冲区按格插空格 → 去空白后断言（标题/回显为连续文案）。
     let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(
-        compact.contains("Frecency-高频目录/文件搜索-SEARCH"),
-        "标题: {s}"
+        !compact.contains("Frecency-高频目录/文件搜索-SEARCH"),
+        "搜索态不显示标题: {s}"
     );
     assert!(compact.contains("/ma"), "query 回显: {s}");
     assert!(compact.contains("✦rs"), "keyword 标记: {s}");
@@ -5047,6 +5179,8 @@ fn m475_frecency_pane_is_borderless_and_click_matches_list() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let area = ratatui::layout::Rect::new(0, 0, 80, 12);
     let backend = ratatui::backend::TestBackend::new(80, 12);
@@ -11558,6 +11692,8 @@ fn fix8_mouse_click_in_frecency_pane_jumps_focused_right_pane() {
         last_deleted: None,
         r_pending: false,
         last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
     });
     let area = ratatui::layout::Rect::new(0, 0, 100, 30);
     let [_, _, right, _] = pane_layout(area, crate::config::LayoutMode::Dual, false);
@@ -11609,6 +11745,8 @@ fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
             last_deleted: None,
             r_pending: false,
             last_keyword: None,
+            visual: None,
+            last_deleted_many: Vec::new(),
         });
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();

@@ -1361,6 +1361,8 @@ fn run_with_initial_mode(
                                             last_deleted: None,
                                             r_pending: false,
                                             last_keyword: None,
+                                            visual: None,
+                                            last_deleted_many: Vec::new(),
                                         });
                                     mode = InputMode::Normal;
                                 }
@@ -2054,6 +2056,8 @@ fn run_with_initial_mode(
                                 last_deleted: None,
                                 r_pending: false,
                                 last_keyword: None,
+                                visual: None,
+                                last_deleted_many: Vec::new(),
                             });
                         }
                         Outcome::EditFile { path } => {

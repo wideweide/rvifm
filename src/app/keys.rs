@@ -755,19 +755,31 @@ pub(crate) fn frec_pane_key(
                 } else {
                     pane.d_pending = false;
                     let visible = filter_jump(&pane.entries, &pane.query);
-                    if let Some(entry) = visible.get(pane.cursor).cloned() {
+                    // M75-3：v 可视选择范围内批量删除，否则只删当前条目。
+                    let indices: Vec<usize> = if let Some(anchor) = pane.visual.take() {
+                        let hi = pane.cursor.max(anchor).min(visible.len().saturating_sub(1));
+                        (pane.cursor.min(anchor)..=hi).collect()
+                    } else {
+                        vec![pane.cursor]
+                    };
+                    let targets: Vec<_> = indices
+                        .iter()
+                        .filter_map(|i| visible.get(*i).cloned())
+                        .collect();
+                    let count = targets.len();
+                    for entry in targets {
                         let topic = entry.topic.clone();
                         let path = entry.path.clone();
                         let _ = crate::frecency::remove_entry(&topic, &path);
-                        pane.last_deleted = Some((topic, path.clone()));
+                        pane.last_deleted_many.push((topic, path));
                         pane.entries.retain(|e| e.path != entry.path);
-                        pane.cursor = pane.cursor.min(
-                            filter_jump(&pane.entries, &pane.query)
-                                .len()
-                                .saturating_sub(1),
-                        );
-                        *msg = Some(format!("已删除 frecency 条目: {path}（u 恢复）"));
                     }
+                    pane.cursor = pane.cursor.min(
+                        filter_jump(&pane.entries, &pane.query)
+                            .len()
+                            .saturating_sub(1),
+                    );
+                    *msg = Some(format!("已删除 {count} 条 frecency 记录（u 恢复）"));
                 }
             }
             KeyCode::Char('r') => {
@@ -797,6 +809,26 @@ pub(crate) fn frec_pane_key(
                     return Outcome::Continue;
                 }
                 // M49-15：u 恢复最近被删的记录（追加 Navigate 事件）。
+                // M75-3：批量 dd 删除的记录优先整批恢复。
+                if !pane.last_deleted_many.is_empty() {
+                    let batch = std::mem::take(&mut pane.last_deleted_many);
+                    let mut restored = 0usize;
+                    for (topic, path) in batch {
+                        if crate::frecency::restore_entry(&topic, &path).is_ok() {
+                            pane.entries.push(crate::frecency::ScoredEntry {
+                                path: path.clone(),
+                                topic: topic.clone(),
+                                keyword: String::new(),
+                                score: 1.0,
+                                grade: crate::frecency::Grade::None,
+                                last_visit: 0,
+                            });
+                            restored += 1;
+                        }
+                    }
+                    *msg = Some(format!("已恢复 {restored} 条 frecency 记录"));
+                    return Outcome::Continue;
+                }
                 if let Some((topic, path)) = pane.last_deleted.take() {
                     match crate::frecency::restore_entry(&topic, &path) {
                         Ok(()) => {
@@ -877,6 +909,40 @@ pub(crate) fn frec_pane_key(
                         crate::tab::Focus::Right => crate::tab::Focus::Left,
                     };
                 }
+            }
+            // M75-3：v 切换可视选择（锚点=当前可见结果下标）。
+            KeyCode::Char('v') => {
+                pane.visual = if pane.visual.is_some() {
+                    None
+                } else {
+                    Some(pane.cursor)
+                };
+                *msg = Some(if pane.visual.is_some() {
+                    "frecency 可视选择已开启（j/k 选择，dd 批量删除）".to_owned()
+                } else {
+                    "frecency 可视选择已取消".to_owned()
+                });
+                return Outcome::Continue;
+            }
+            // M75-1：`/` 只进入搜索态，不把斜杠写进 query（保留原输入）。
+            KeyCode::Char('/') => {
+                pane.d_pending = false;
+                pane.y_pending = false;
+                pane.normal = false;
+                pane.cursor = 0;
+                pane.g_pending = false;
+                return Outcome::Continue;
+            }
+            // M75-1：`c` 清空查询并进入搜索态。
+            KeyCode::Char('c') => {
+                pane.d_pending = false;
+                pane.y_pending = false;
+                pane.normal = false;
+                pane.query.clear();
+                pane.cursor = 0;
+                pane.g_pending = false;
+                *msg = Some("已清空 frecency 搜索词".to_owned());
+                return Outcome::Continue;
             }
             KeyCode::Char(c) => {
                 // 可打印字符回搜索态（携带字符重新筛选）。

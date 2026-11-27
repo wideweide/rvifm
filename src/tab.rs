@@ -700,6 +700,10 @@ pub struct FrecencyPane {
     /// M59-9：`r` 待确认（两键序列 r→y）；last_keyword 保存被清的 keyword 供 u 恢复。
     pub r_pending: bool,
     pub last_keyword: Option<(String, String, String)>,
+    /// M75-3：Normal 态可视选择锚点（对可见结果下标）。
+    pub visual: Option<usize>,
+    /// M75-3：批量 dd 删除的记录，供 u 批量恢复。
+    pub last_deleted_many: Vec<(String, String)>,
 }
 
 /// M18-1：运行时排序字段。

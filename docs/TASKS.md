@@ -925,10 +925,10 @@
 
 ## M75 — frecency 交互与算法对齐（2026-11-27 蒸馏，见 SPEC M75 节）
 
-- [ ] M75-1 `/` 保留查询 + `c` 清空 + 单斜杠提示（见 SPEC M75）
-- [ ] M75-2 删除 BookmarkOnly 兜底（见 SPEC M75）
-- [ ] M75-3 Normal `v` 多选与批量删除（见 SPEC M75）
-- [ ] M75-4 搜索输入框无边框/无标题（见 SPEC M75）
+- [x] M75-1 `/` 保留查询 + `c` 清空 + 单斜杠提示（见 SPEC M75）；2026-11-27 完成：显式 / 与 c 分支，m751 通过
+- [x] M75-2 删除 BookmarkOnly 兜底（见 SPEC M75）；2026-11-27 完成：grade_for 空查询/未命中不再置顶书签，grade_matrix 更新
+- [x] M75-3 Normal `v` 多选与批量删除（见 SPEC M75）；2026-11-27 完成：FrecencyPane.visual + 可视高亮 + 批量 dd/u，m753 通过
+- [x] M75-4 搜索输入框无边框/无标题（见 SPEC M75）；2026-11-27 完成：仅 `/{query}▋`，标题与 [filter] 不再显示
 
 ## M76 — frecency 数据与预览策略（2026-11-27 蒸馏，见 SPEC M76 节）
 
