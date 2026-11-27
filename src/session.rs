@@ -485,7 +485,8 @@ mod tests {
         // 旧会话（无新字段）仍可解析（serde default）。
         let legacy = format!(
             "active = 0\n[[tabs]]\npath = \"{}\"\ncursor = 0\non_parent_row = false\nfocus = \"left\"\nkind = \"physical\"\n",
-            left.path().display()
+            // M65-补：TOML 基本字符串中的 `\` 是转义符，统一写 `/`（Windows 亦可解析）。
+            left.path().to_string_lossy().replace('\\', "/")
         );
         assert!(parse_session(&legacy).is_some());
     }

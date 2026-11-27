@@ -282,13 +282,21 @@ pub(crate) fn pane_gap_area(area: ratatui::layout::Rect) -> ratatui::layout::Rec
     gap
 }
 
-/// M47-2：pane 顶部路径行文本——在路径后追加当前 pane 的过滤状态；状态栏
-/// 不再显示过滤指示，左右 pane 各自显示自己的状态。
-pub(crate) fn path_line_text(path: String, filter: Option<&str>) -> String {
-    match filter {
-        Some(f) => format!("{path}  [filter: {f}]"),
-        None => path,
+/// M47-2/M65-补：pane 顶部路径行文本——路径后追加当前 pane 的过滤状态；
+/// 按可用宽度从左侧省略路径，保证过滤标记不会被挤出视口。
+pub(crate) fn path_line_text_fit(path: String, filter: Option<&str>, width: u16) -> String {
+    let Some(f) = filter else {
+        return path;
+    };
+    let suffix = format!("  [filter: {f}]");
+    let max = (width as usize).saturating_sub(suffix.chars().count());
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() <= max {
+        return format!("{path}{suffix}");
     }
+    let keep = max.saturating_sub(1);
+    let tail: String = chars[chars.len().saturating_sub(keep)..].iter().collect();
+    format!("…{tail}{suffix}")
 }
 
 /// M27-2：vifm 命名样式（TabLine/TopLine/StatusLine/Border/Selected…）——
@@ -1482,9 +1490,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     } else {
         let left_inner = if borders {
             let left_pane = ratatui::widgets::Block::bordered()
-                .title(path_line_text(
+                .title(path_line_text_fit(
                     tab.location.display_path().replace('\\', "/"),
                     tab.filter.as_deref(),
+                    left_area.width,
                 ))
                 .border_style(pane_border_style(left_focused));
             let inner = left_pane.inner(left_area);
@@ -1499,9 +1508,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 vifm_style("TopLine")
             };
             frame.render_widget(
-                Paragraph::new(Line::from(path_line_text(
+                Paragraph::new(Line::from(path_line_text_fit(
                     tab.location.display_path().replace('\\', "/"),
                     tab.filter.as_deref(),
+                    left_area.width,
                 )))
                 .style(path_style),
                 topline,

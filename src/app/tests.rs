@@ -365,6 +365,17 @@ fn rank_progress(
 }
 
 #[test]
+fn m683_filter_marker_survives_long_paths() {
+    // M68-3：长临时路径下过滤标记仍可见（macOS 实测漂移）。
+    let long = "/var/folders/q2/p1t6rgxj5fj32g1dc7dmd49r0000gn/T/.tmpABCDEF";
+    let line = path_line_text_fit(long.to_owned(), Some("*.txt"), 40);
+    assert!(line.contains("[filter:"), "{line}");
+    assert!(line.chars().count() <= 40, "{line}");
+    let plain = path_line_text_fit("short".to_owned(), None, 10);
+    assert_eq!(plain, "short");
+}
+
+#[test]
 fn m674_sandbox_visits_are_not_recorded() {
     // M67-4：沙箱内的真实练习不写 frecency 记账（撤销栈不受影响）。
     let mut state =
@@ -3685,15 +3696,22 @@ fn m531_tab_label_is_focus_aware_full_path() {
     state.active_tab_mut().right =
         crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
     let (labels, _) = crate::app::render::tab_bar_labels_and_visible(&state, 120);
+    // M65-补：标签内部统一用 `/`，Windows 测试需归一化反斜杠。
     assert!(
-        labels[0].contains(&format!("[1:{}", left.path().display())),
+        labels[0].contains(&format!(
+            "[1:{}",
+            left.path().display().to_string().replace('\\', "/")
+        )),
         "{labels:?}"
     );
 
     state.active_tab_mut().focus = crate::tab::Focus::Right;
     let (labels, _) = crate::app::render::tab_bar_labels_and_visible(&state, 120);
     assert!(
-        labels[0].contains(&format!("[1:{}", right.path().display())),
+        labels[0].contains(&format!(
+            "[1:{}",
+            right.path().display().to_string().replace('\\', "/")
+        )),
         "{labels:?}"
     );
     let label = labels[0].trim_end();

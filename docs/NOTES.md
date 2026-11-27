@@ -1500,6 +1500,13 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-27 — M66–M68 向导安全/沙箱/审计取舍
+
+- 安全提示选择改写 `tutor_meta` 现有 3 项而非新增：保持 102 项与境界阈值稳定，进度按稳定 ID 自动兼容；三遍提示分别落在不同条目，避免单条过长。
+- 沙箱使用 `std::env::temp_dir()/rvifm-tutor`（Windows 自动适配），不是字面 `/tmp/tutor`；进入向导时重建目录并把左右栏定位到 `left/`、`right/`。
+- 沙箱内操作按路径前缀排除 frecency 记账（用户确认），但保留撤销栈以便练 `u`；会话恢复遇已清理路径时重建。
+- README 的 vifm 表述已核实：`:view` 内建读取文本/目录，PDF/图片/Office 才靠 `fileviewer` + 外部工具；「无内建能力」为错误陈述。harness 规则 9 固化该事实与 14/102 数字。
+
 ### 2026-11-27 — M65 CI 失败根因与处理
 
 - Windows `test` 失败：`src/app/tests.rs` 的 `m482` 未 gate 就 `use std::os::unix::fs::PermissionsExt` / `Permissions::from_mode`，Windows std 无该模块 → E0433/E0599。已加 `#[cfg(unix)]`，CI 不再编译 POSIX 专测。
@@ -1567,7 +1574,7 @@ rvifm record  → 静默记录访问
 | archive_ops | 归档操作 | §9 | 只读 VFS、创建/解压 |
 | remote_sftp | 远端 SFTP | §21 | 远端浏览/上传下载 |
 | maintenance | 运维操作 | §10, §38 | frecency compaction、shell 集成 |
-| tutor_meta | 向导模式用法 | §42, §43, §62 | 向导自身（本批 M56） |
+| tutor_meta | 向导模式用法 | §42, §43, §62, §71, §72, §73 | 向导自身（M56/M64/M66–M68：安全提醒、境界、沙箱） |
 <!-- TUTOR-ACCEPTANCE-MAP:END -->
 
 ### 2026-11-26 — M55 实时递归模式（`O`）实现决策

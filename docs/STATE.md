@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-25
 - **当前阶段**：**M0–M46 + FIX/REL-4 + FIX-7/8/9 + REL-6 全部完成；v1.4.0 GitHub Release 已发布**（2026-11-25；tag run 45452618998 九 job 全绿；Release 三 musl 归档 + SHA256SUMS 3 行，`sha256sum -c` 实测通过，aarch64 静态 ELF + x64-musl `--version = rvifm 1.4.0`；crates.io 停在 1.0.0）。M47 用户实测批次 3 已蒸馏登记（10 任务，逐条勾选落地；不 bump 版本、不触发 Release）。
-- **当前任务**：M66 tutor_meta 安全提示批次已登记（4 任务）；从 M66-1 开始，之后 M67（沙箱）→ M68（审计）。M65-4 仍待 CI run 45867166976 结论。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
+- **当前任务**：无本地待执行任务（M66/M67/M68 均已落地并推送）；M65-4 与本次改动的 CI 结论待新 run 确认，不声称绿。沿用「不 bump / 不 tag / 不 GitHub Release」口径（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。人工项沿用既有 deferred：FIX-9-M1 真实桌面 IME、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball、M46-9 rar 工具环境。**本批次沿用不 bump 版本 / 不 tag / 不 GitHub Release 口径**（覆盖 AGENTS §3 自动发布规则；crates.io 仍停 1.0.0）。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 tarball 实测与 M46-9 rar 工具环境验证为 deferred。FIX-9-M1 真实桌面测试、FIX-9-CI 跨平台编译、M11-6/C6 大图、M46-8 用户机 tarball 实测与 M46-9 rar 工具环境验证为 deferred。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（450 单测 + 9 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -26,6 +26,7 @@
 
 ## 批次关闭记录
 
+- M66–M68（2026-11-27，tutor_meta 安全提示、沙箱与全面审计；14/14 本地落地，未发版）：三遍安全提示、`:tutor` 重进提示、14 TOML 向导称谓、跨平台沙箱（真实操作但不写 frecency、保留撤销栈）、README vifm 预览事实与 14/102 数字修正、NOTES 映射表 + harness 规则 9、Windows/macOS 平台断言漂移修复。652 单测 + 14 集成 + 九条 harness_check 本地全绿；CI 以新 run 结论为准，**不触发版本 bump/tag/GitHub Release**。
 - M64（2026-11-27，向导修仙境界分级；4/4 全部落地，未发版）：11 级境界 + 四小阶段、进度栏中文符号、筑基绑 core_nav、真仙零错题；tutor_meta 置顶。647 单测 + 14 集成 + fmt/clippy/build + 八条 harness_check 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M63（2026-11-26/27，其它预览增强；5/5 全部落地，未发版）：目录树快照缓存、非默认 `pdf-rust` feature（karet-pdf，文本先行）、JSON/Markdown 结构化预览；二进制 hex 语义注释 deferred。646 单测 + 14 集成 + 八条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M62（2026-11-26/27，图片缩放与编码流水线；2/2 全部落地，未发版）：fast_image_resize SIMD 预缩放 + 已编码协议缓存，645 单测 + 14 集成 + 八条 harness 全绿；未发版。

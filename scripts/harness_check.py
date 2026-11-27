@@ -130,10 +130,27 @@ bad_refs = [ref for ref in re.findall(r"§(\d+)", map_text) if ref not in sectio
 check("R8-TUTOR-MAP", not bad_refs,
       f"向导映射表引用了不存在的 ACCEPTANCE 章节: {bad_refs}")
 
+# ── 规则 9：README/GUIDE/help 无过期 tutor 数字与 vifm 预览错误表述 ──
+readme_text = readme
+guide_text = read("docs", "GUIDE.md")
+help_text = read("src", "app", "help.txt")
+stale_docs = [
+    name
+    for name, text in (
+        ("README.md", readme_text),
+        ("docs/GUIDE.md", guide_text),
+        ("src/app/help.txt", help_text),
+    )
+    if "13 模块 100 项" in text or "13个模块100项" in text
+]
+check("R9-DOCS", not stale_docs, f"过期 tutor 条目数（应为 14 模块 102 项）: {stale_docs}")
+check("R9-README", "无内建能力" not in readme_text,
+      "README 仍称 vifm 文档预览『无内建能力』（实际 :view 内建文本/目录预览）")
+
 # ── 结果 ─────────────────────────────────────────────────────────────
 if problems:
     print(f"harness_check: {len(problems)} 项不一致")
     for p in problems:
         print("  " + p)
     sys.exit(1)
-print("harness_check: OK（八条规则全部通过）")
+print("harness_check: OK（九条规则全部通过）")

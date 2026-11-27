@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M66–M68 向导安全提示、沙箱与全面审计（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- tutor_meta 前三条按「重要的事说三遍」提示真实操作风险，`Ctrl+Q` 明确 `:tutor` 可重进；14 个 TOML 统一「向导模式」。
+- 新增跨平台向导沙箱 `temp_dir()/rvifm-tutor/{left,right}`，进入向导自动定位左右栏；沙箱操作不写 frecency、保留撤销栈、临时目录被清理时重建。
+- README 修正 vifm `:view` 内建文本/目录预览事实与 14 模块 102 项数字；NOTES 映射表更新，harness 规则 9 校验过期数字/错误表述；修正 Windows 路径分隔符与 macOS 长路径过滤标记漂移。
+
 ### M65 境界起点改名与 CI 跨平台修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 境界第 0 级由「凡人」改为「入门」（能打开软件即算入门），符号 `○` 不变。
