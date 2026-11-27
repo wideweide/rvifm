@@ -389,6 +389,13 @@ fn frec_state_with(entries: Vec<crate::frecency::ScoredEntry>, query: &str) -> A
 }
 
 #[test]
+fn m763_frecency_preview_defaults_off() {
+    assert!(!Config::default().preview.frecency_preview);
+    let parsed: Config = toml::from_str("[preview]\nfrecency_preview = true\n").unwrap();
+    assert!(parsed.preview.frecency_preview);
+}
+
+#[test]
 fn m751_slash_and_clear_query() {
     let entry = crate::frecency::ScoredEntry {
         path: "alpha.txt".to_owned(),
@@ -11748,6 +11755,7 @@ fn fix8_frecency_preview_uses_view_renderer_for_images_and_text() {
             visual: None,
             last_deleted_many: Vec::new(),
         });
+        state.config.preview.frecency_preview = true;
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal

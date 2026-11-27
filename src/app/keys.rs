@@ -669,10 +669,25 @@ pub(crate) fn frec_pane_key(
                 let picked = visible.get(pane.cursor).cloned();
                 state.active_tab_mut().pane_frecency = None;
                 match picked {
-                    Some(entry) => match jump_to(state, &entry) {
-                        Ok(m) => *msg = Some(m),
-                        Err(e) => *msg = Some(e),
-                    },
+                    Some(entry) => {
+                        // M76-2：真实跳转成功后按 topic 记为一次访问（record 唯一写入链）。
+                        let (topic, path) = (entry.topic.clone(), entry.path.clone());
+                        match jump_to(state, &entry) {
+                            Ok(m) => {
+                                if topic == "file" {
+                                    crate::app::exec::record_file_open(
+                                        state,
+                                        state.active,
+                                        std::path::Path::new(&path),
+                                    );
+                                } else {
+                                    crate::app::exec::record_live_visit(state, state.active, 'L');
+                                }
+                                *msg = Some(m);
+                            }
+                            Err(e) => *msg = Some(e),
+                        }
+                    }
                     None => *msg = Some("跳转: 无选定条目".to_owned()),
                 }
                 return Outcome::Continue;
@@ -900,7 +915,8 @@ pub(crate) fn frec_pane_key(
                 }
             }
             KeyCode::Char('w') => {
-                // w：对侧进入 View 模式（预览/查看光标条目）。
+                // w：对侧进入 View 模式（预览/查看光标条目）；M76-3 同时显式开启 frecency 预览。
+                state.config.preview.frecency_preview = !state.config.preview.frecency_preview;
                 state.active_tab_mut().view_mode = !state.active_tab_mut().view_mode;
                 if !fixed_side {
                     let tab = state.active_tab_mut();
@@ -971,10 +987,24 @@ pub(crate) fn frec_pane_key(
             let picked = visible.get(pane.cursor).cloned();
             state.active_tab_mut().pane_frecency = None;
             match picked {
-                Some(entry) => match jump_to(state, &entry) {
-                    Ok(m) => *msg = Some(m),
-                    Err(e) => *msg = Some(e),
-                },
+                Some(entry) => {
+                    let (topic, path) = (entry.topic.clone(), entry.path.clone());
+                    match jump_to(state, &entry) {
+                        Ok(m) => {
+                            if topic == "file" {
+                                crate::app::exec::record_file_open(
+                                    state,
+                                    state.active,
+                                    std::path::Path::new(&path),
+                                );
+                            } else {
+                                crate::app::exec::record_live_visit(state, state.active, 'L');
+                            }
+                            *msg = Some(m);
+                        }
+                        Err(e) => *msg = Some(e),
+                    }
+                }
                 None => *msg = Some("跳转: 无选定条目".to_owned()),
             }
         }

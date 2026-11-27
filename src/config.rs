@@ -139,6 +139,8 @@ pub struct PreviewConfig {
     pub fixed_side: bool,
     /// M61：超过该字节数的本地文本文件改用 mmap 视口读取（默认 1 MiB）。
     pub virtual_text_threshold: u64,
+    /// M76：frecency 面板默认不渲染预览，`w` 显式开启。
+    pub frecency_preview: bool,
 }
 
 impl Default for PreviewConfig {
@@ -149,6 +151,7 @@ impl Default for PreviewConfig {
             archive_external_listing: true,
             fixed_side: false,
             virtual_text_threshold: 1024 * 1024,
+            frecency_preview: false,
         }
     }
 }

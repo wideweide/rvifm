@@ -1190,9 +1190,11 @@ pub fn restore_entry(topic: &str, path: &str) -> std::io::Result<()> {
             .unwrap_or_default()
             .as_secs(),
     };
-    // 只写 events.pending（不打开 redb）——避免与并发测试/记录事务争锁；
-    // 下次 record/TUI 启动按既有降级合并链写回三表（AUDIT-1 口径不变）。
-    degraded_write_at(&pending_path(), &record, "frecency 记录恢复")
+    // M76-2：立即写 redb（失败再降级 pending），否则 o/:j 的只读 handle
+    // 看不到恢复结果，用户会误以为 u 无效。
+    let db_path = crate::config::frecency_db_path();
+    let pending = pending_path();
+    record_impl(&db_path, &pending, &record)
 }
 
 /// M23-4：IGNORE_PATTERNS——路径命中任一 glob 模式则不记录（静默跳过）。
@@ -1295,6 +1297,41 @@ fn arg_err(msg: &'static str) -> std::io::Error {
 
 /// `rvifm maintenance compact`（M8-5）：合并 `last_compaction` 之后的
 /// 事件进 snapshot 表，推进标记并裁剪已合并事件。幂等：无新事件时为 no-op。
+/// M76-1：清理 frecency 记录中 path 以 `/tmp/` 开头的条目（只读扫描 + Remove 墓碑）。
+/// 只改 frecency 存储，不删除本机任何临时文件。
+pub fn cmd_clean_tmp() -> std::io::Result<()> {
+    let targets: Vec<(String, String)> = {
+        let Some(store) = open_store_readonly()? else {
+            println!("已清理 0 条 /tmp/ 前缀记录");
+            return Ok(());
+        };
+        let snapshot = store.snapshot_all()?;
+        let events = store
+            .last_compaction()
+            .and_then(|s| store.events_since(s))
+            .unwrap_or_default();
+        replay(
+            &snapshot,
+            &events,
+            store.type_tick("dir").unwrap_or(0),
+            store.type_tick("file").unwrap_or(0),
+            store.type_tick("cmd").unwrap_or(0),
+        )
+        .into_iter()
+        .filter(|e| e.path.starts_with("/tmp/"))
+        .map(|e| (e.topic, e.path))
+        .collect()
+    };
+    let mut cleaned = 0usize;
+    for (topic, path) in targets {
+        if remove_entry(&topic, &path).is_ok() {
+            cleaned += 1;
+        }
+    }
+    println!("已清理 {cleaned} 条 /tmp/ 前缀记录（未删除本地文件）");
+    Ok(())
+}
+
 pub fn cmd_compact() -> std::io::Result<()> {
     // 维护写命令：读写打开（负责建表）+ 先合并降级 pending，再压实。
     let store = Store::open(&crate::config::frecency_db_path())?;

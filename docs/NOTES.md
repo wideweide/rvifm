@@ -1500,6 +1500,13 @@ rvifm record  → 静默记录访问
 - **变更**：M49 刚落地的「默认固定右侧」被反转。新口径：`[preview] fixed_side` 默认 `false`、**仅作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式**；`:view`（`w`）恢复对侧预览（M34-4/M39-6 语义，焦点左→右、焦点右→左）；`rvifm pick` 恒左候选/右预览（本就如此，不变）。
 - **WHY**：固定右侧牺牲了 `:view` 的对侧视线一致性；用户决定把布局选择权缩小到 frecency 一个场景，其余恢复 vifm 习惯。M49 的「空间稳定性优先」理由不再适用，但 M49 历史条目与提交保留（在 SPEC/ACCEPTANCE/CHANGELOG 标注被 M52 取代），便于追溯。
 - **兼容**：保留 `fixed_side` 键（显式 `true` 仍可用，仅新会话生效）；已有 `config.toml` 若显式写了 `fixed_side = true` 不会被默认值改变，需用户手动移除/改 false。
+### 2026-11-27 — M73–M76 对齐裁决
+
+- 标签底色以主题 `TopLine` 派生再调暗（而非直接复用 `TabLineSel`），避免与路径行同色；失焦选中项用显式浅灰底替代 DIM/反显。
+- frecency 对齐上游 `wideweide/frecency`：无查询按分数、书签不置顶；有查询 keyword 命中优先但必须真实匹配；选择器选中不记录，只有真实导航/打开才 record（本地 `record` 仍是唯一写入链）。
+- `clean-tmp` 只清 frecency 存储里 `/tmp/` 前缀记录，不删本机临时文件（用户澄清后的口径）。
+- `restore_entry` 改为直写 redb，避免只读 selector 看不到 u 的恢复结果；frecency 预览默认关闭以减轻卡顿，`w` 显式开启。
+
 ### 2026-11-27 — M71 块级丢弃边界
 
 - 用 `git apply -R` 对单个 hunk 做反向应用（临时补丁文件 + 固定参数，不经 shell），比自行改文本更贴近 git 语义；仅作用工作区，未暂存内容。

@@ -932,6 +932,6 @@
 
 ## M76 — frecency 数据与预览策略（2026-11-27 蒸馏，见 SPEC M76 节）
 
-- [ ] M76-1 清理 frecency 存储中 /tmp/ 记录（见 SPEC M76）
-- [ ] M76-2 真实跳转 record + r/u 同步恢复（见 SPEC M76）
-- [ ] M76-3 显示评分 + frecency_preview 默认关闭（见 SPEC M76）
+- [x] M76-1 清理 frecency 存储中 /tmp/ 记录（见 SPEC M76）；2026-11-27 完成：`maintenance clean-tmp` 移除 195 条 /tmp/ 记录，未删本地文件
+- [x] M76-2 真实跳转 record + r/u 同步恢复（见 SPEC M76）；2026-11-27 完成：frecency l/Enter 成功后按 topic record，restore_entry 直写 redb
+- [x] M76-3 显示评分 + frecency_preview 默认关闭（见 SPEC M76）；2026-11-27 完成：行尾评分列 + `[preview] frecency_preview=false` + w 开启，m763 通过

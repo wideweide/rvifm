@@ -1267,6 +1267,11 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             ];
             spans.extend(highlight_query_spans(&e.path, &pane.query));
             spans.extend(highlight_query_spans(&bm, &pane.query));
+            // M76-3：行尾右对齐显示评分，便于对比命中质量。
+            spans.push(Span::styled(
+                format!("{:>7.1}", e.score),
+                Style::new().fg(Color::DarkGray),
+            ));
             // M75-3：v 可视选择范围与当前光标同样反显。
             let in_visual = pane
                 .visual
@@ -1289,8 +1294,10 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         &mut list_state,
     );
 
-    // M49-1：预览固定右侧；焦点进入预览时复用 viewer 状态（滚动/搜索/高亮）。
-    if let Some(entry) = visible.get(pane.cursor) {
+    // M76-3：默认不启动 frecency 预览，仅 w 开启后渲染。
+    if state.config.preview.frecency_preview
+        && let Some(entry) = visible.get(pane.cursor)
+    {
         let path = std::path::PathBuf::from(&entry.path);
         let viewer = pane.preview_focus.then(|| crate::tab::ViewerState {
             scroll: pane.preview_scroll,

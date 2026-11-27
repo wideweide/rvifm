@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M73–M76 界面、向导与 frecency 对齐（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 标签底色比路径行更深、失焦选中项浅灰底、预览焦点直接给现有边框上色（不叠加第二层框）。
+- 向导长提示自动换行、对话框不再整帧清除；frecency `/` 保留查询、`c` 清空、书签不靠兜底混入、`v` 多选、输入框无边框。
+- 新增 `rvifm maintenance clean-tmp` 清理 frecency 中 `/tmp/` 前缀记录（已清理 195 条，未删本地文件）；真实跳转写 record、`u` 同步恢复、行尾评分、`[preview] frecency_preview=false`（`w` 开启）。
+
 ### M72 :diff 实测修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 快捷键提示放回真正的状态栏，不再覆盖左右 pane 边框；打开 `:diff` 即异步加载当前文件补丁，过期 generation 结果不再把路径永久留在 pending；预览标题只显示路径与视图标记，状态消息仅进状态栏。

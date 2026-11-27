@@ -1332,6 +1332,6 @@
 
 ## 81. M76 — frecency 数据与预览策略（见 SPEC M76 节）
 
-- [ ] M76-1 frecency 存储中 /tmp/ 前缀记录被清理（本地临时文件不受影响）。
-- [ ] M76-2 l/Enter 真实跳转被 record；r/u 同步恢复 keyword/条目且分数保留。
-- [ ] M76-3 条目右侧显示评分；`frecency_preview` 默认 false，w 开启。
+- [x] M76-1 frecency 存储中 /tmp/ 前缀记录被清理（本地临时文件不受影响）。（2026-11-27：clean-tmp 清理 195 条）
+- [x] M76-2 l/Enter 真实跳转被 record；r/u 同步恢复 keyword/条目且分数保留。（2026-11-27：keys.rs + restore_entry 直写 redb）
+- [x] M76-3 条目右侧显示评分；`frecency_preview` 默认 false，w 开启。（2026-11-27：m763）

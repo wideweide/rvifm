@@ -44,6 +44,8 @@ archive_external_listing = true
 # M52-1：仅作用于 rvifm 内 o/:j/:J 的 frecency 模式；false（默认）= 对侧预览，
 # true = 搜索/列表固定左栏、预览固定右栏。:view 始终对侧预览，不受此开关影响。
 fixed_side = false
+# M76：frecency 面板默认不渲染预览，按 w 显式开启
+frecency_preview = false
 # M61：超过 1MiB 的本地文本文件用 mmap 视口读取（不整文件加载）
 virtual_text_threshold = 1048576
 
