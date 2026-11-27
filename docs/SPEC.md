@@ -2137,8 +2137,9 @@ append_rules = [
 ## M85 — 图片流水线（2026-11-27 蒸馏，用户已确认）
 
 **MUST**
-- `ThreadProtocol` 把 resize+encode 移出 UI 线程；磁盘缓存已编码协议（path+mtime/size+视口+协议）；命中直接输出缓存。
-- 像素上限默认贴近 vifm（960×1600）；显式 `Nearest`；图片 job 独立 generation；修复缓存 key 坐标与 pending 卡死；协议查询超时可配。
+- `ThreadProtocol` 把 resize+encode 移出 UI 线程；图片 job 独立 generation；缓存矩形含坐标；修复 pending 卡死。
+- 像素上限默认贴近 vifm（预缩放最长边 1600，宽度由预览 pane 约束）；显式 `Nearest`；协议查询提供开关（`image_protocol_query`，超时数值由 ratatui-image 固定不暴露）。
+- **OUT_OF_SCOPE（2026-11-27 范围收缩，见 NOTES）**：磁盘缓存已编码协议——ratatui-image 不公开编码字节，除非 fork 或自写编码器；登记为 M85-1b deferred。
 
 ## 6. 待定事项
 
