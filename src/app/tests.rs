@@ -15369,3 +15369,42 @@ fn m862_frecency_d_batch_and_dd_current() {
         "dd 仅删当前条目: {msg:?}"
     );
 }
+
+#[test]
+fn m863_diff_fullscreen_uses_left_pane_origin() {
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(tmp.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    run(&["init", "-q"]);
+    fs::write(tmp.path().join("a.txt"), "x\n").unwrap();
+    run(&["add", "a.txt"]);
+    let root = crate::git::require_repo_root(tmp.path()).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut diff = crate::state::GitDiffSession::open(root).unwrap();
+    diff.side_by_side = true;
+    diff.fullscreen = true;
+    state.git_diff = Some(diff);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 16)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::GitDiff, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let row: String = (0..80u16)
+        .map(|x| buf[(x, 2)].symbol().to_owned())
+        .collect();
+    assert!(
+        row.starts_with('┌') || row.starts_with('│'),
+        "全屏对照应从最左列开始: {row}"
+    );
+    assert!(!row[..40].trim().is_empty(), "左半侧不再留白: {row}");
+}

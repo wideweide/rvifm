@@ -1490,6 +1490,9 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     let [tab_bar_area, mut files_area, mut patch_area, status_area] =
         pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
     if diff.fullscreen {
+        // M86-3：补丁区必须**移动**到文件列表的起点 x，而不是只扩宽——
+        // 否则右半栏从原 x 起绘制并溢出屏幕，左半侧留白（用户实测）。
+        patch_area.x = files_area.x;
         patch_area.width = files_area.width.saturating_add(patch_area.width);
         files_area.width = 0;
     }
