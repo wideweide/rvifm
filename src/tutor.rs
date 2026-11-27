@@ -517,6 +517,15 @@ mod tests {
 
     /// 内嵌内容必须全部可解析且 id 唯一（内嵌内容为编译期事实，测试固化）。
     #[test]
+    fn builtin_modules_count_is_current() {
+        // M46-12/M82–M85：14 模块 105 项（M68-1 修正 14/102，本批次 +3）。
+        let modules = builtin_modules();
+        assert_eq!(modules.len(), 14, "模块数应为 14");
+        let total: usize = modules.iter().map(|m| m.items.len()).sum();
+        assert_eq!(total, 105, "导师条目总数应为 105");
+    }
+
+    #[test]
     fn builtin_modules_parse_and_unique() {
         let modules = builtin_modules();
         assert!(!modules.is_empty(), "至少内嵌一个导师模块");

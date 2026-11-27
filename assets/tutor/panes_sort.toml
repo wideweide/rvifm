@@ -47,3 +47,8 @@ expected = "dp=另一侧覆盖当前侧、do=删除当前侧多出项（可恢�
 id = "tree_view"
 prompt = "输入 `:tree` 进入树视图。"
 expected = "静态快照只读浏览（目录优先缩进、depth 上限 1 万条）；写/导航命令被拒绝，再执行 `:tree` 恢复平铺。"
+
+[[items]]
+id = "viewer_end_screen"
+prompt = "查看器内按 `G`。"
+expected = "跳到末屏（不是末行置顶只剩一行）；文本始终语法高亮，`/` 查询命中叠加黄底而不关闭高亮。"

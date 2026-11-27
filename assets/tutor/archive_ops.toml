@@ -37,3 +37,8 @@ expected = "源取焦点 pane 的归档，缺省解压到**对侧 pane** 物理�
 id = "archive_member_paste"
 prompt = "进入归档虚拟目录，`yy` 标记一个成员，切到对侧物理目录按 `p`。"
 expected = "按成员解压到焦点 pane 物理目录（不写归档内）；逐成员 `u` 可逆。"
+
+[[items]]
+id = "archive_member_open"
+prompt = "进入归档虚拟目录，把光标停在 `.md`/`.txt` 成员上按 `l`/Enter。"
+expected = "成员解到临时只读副本再交 opener；文本成员在 `terminal_in_new_window=true` 时优先新终端窗口打开并记录一次访问，归档本身不被修改。"

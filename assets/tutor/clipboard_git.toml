@@ -34,3 +34,9 @@ id = "git_ui"
 prompt = "在仓库内按 `gi`（或输入 `:gi`）。"
 requires = "git"
 expected = "探测 gitui→ziggity→lazygit 顺序挂起 TUI 启动外部 git TUI；均未安装时给出可读提示。"
+
+[[items]]
+id = "git_diff_fullscreen"
+prompt = "在 git 仓库内输入 `:diff`，再按 `|`。"
+requires = "git"
+expected = "补丁按文件类型语法高亮；`|` 进全屏左右对照（连续分隔线 + 增删行/词级差异高亮），`=` 完整文件、`^w` 换行、`J/K` 跳 hunk。"
