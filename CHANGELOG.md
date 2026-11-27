@@ -3,144 +3,165 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.5.0] — 2026-11-27
 
-### M85 图片流水线（仅提交代码，不触发版本 bump / tag / GitHub Release）
+> M47–M85 共 39 个批次随 **1.5.0** 发布。增量功能与修复：异步预览流水线、git `:diff` 浏览与写操作、tutor 全功能覆盖、frecency 对齐、焦点样式与归档 opener 修复、图片后台编码。crates.io 不发布（沿用用户决策，仍停 1.0.0）。人工终端项保持 deferred。
+
+### M85 图片流水线
 
 - resize+encode 移到后台 worker（ratatui-image `ThreadProtocol`），UI 线程不再每帧重复编码；图片解码用独立代次，避免被 viewer job 串扰，修复 pending 卡死。
 - 预缩放显式 Nearest、最长边 1600；新增 `[preview] image_max_side` / `image_protocol_query` 配置（关闭协议查询直接 halfblocks，免去 2s 等待）。
 - 磁盘已编码协议缓存暂缓（ratatui-image 不公开编码字节，见 NOTES）。
 
-### M84 归档成员打开对齐（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M84 归档成员打开对齐
 
 - 归档内文本成员 `l`/Enter 与物理文件同路径：`terminal_in_new_window` 时优先新终端窗口打开（起始目录取归档所在目录），否则挂起执行；打开完成后记录一次访问。
 
-### M83 文本预览两段式消除（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M83 文本预览两段式消除
 
 - 文本预览不再「快速截断→获焦全量」：始终视口渲染 + 始终语法高亮；`/` 查询改黄底叠加而不关闭高亮。
 - 高亮/行缓存 key 含 mtime+size，内容变化即失效；行缓存改 `Arc`，每帧只拷贝可视行。
 - `G` 定位末屏而非末行置顶；缺失文件预览首行只显示「文件不存在」。
 
-### M82 git diff 体验（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M82 git diff 体验
 
 - 补丁与左右对照视图按路径做 syntect 语法高亮，统一视图与对照视图同源。
 - `|` 切换全屏左右对照：文件列表让位，两个相邻 Block + 连续分隔线；增删行底色 + 词级差异高亮（纯 Rust `similar`）。
 - `git diff` 上下文改为 `-U1`，可用 `[git] diff_context` 配置。
 
-### M81 焦点样式细调（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M81 焦点样式细调
 
 - 非焦点标签统一白字无背景、焦点标签白底反色；预览获焦时对侧标题栏按失焦显示；预览标题栏下方改完整方框，边框与 :diff 弹窗同源（失焦灰色）。
 
-### M80 焦点样式重做（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M80 焦点样式重做
 
 - 撤销 M73 的标签调暗与失焦固定灰底：焦点标签改用主题选中背景 + 反色文字；选中项背景同源，失焦侧更浅。
 - 预览区改为与目录栏同源的标题栏 + U 型边框（左/右/下），边框与标题同色，焦点仅改明暗，不再叠加蓝色第二层框。
 
-### M79 git 状态列缓存失效修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M79 git 状态列缓存失效修复
 
 - git 写操作后统一清空状态缓存；目录状态缓存加 3 秒 TTL，外部终端提交后自动刷新，不再残留旧 M 标记。
 
-### M77–M78 tutor 进度修正与默认行为修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M77–M78 tutor 进度修正与默认行为修复
 
 - 移除向导徽章，只保留修仙境界；进度条满宽作为文字背景；面板计数取完整模块持久化进度；入口只显示错题+未学习并保持编号。
 - 新配置默认启用 vim 文本 opener（缺失回退系统 opener）；IME 补齐输入模式/保存恢复/鼠标与外部命令 suspend；并列命令帮助行拆分，内部命令不再显示「文件/路径」。
 
-### M73–M76 界面、向导与 frecency 对齐（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M73–M76 界面、向导与 frecency 对齐
 
 - 标签底色比路径行更深、失焦选中项浅灰底、预览焦点直接给现有边框上色（不叠加第二层框）。
 - 向导长提示自动换行、对话框不再整帧清除；frecency `/` 保留查询、`c` 清空、书签不靠兜底混入、`v` 多选、输入框无边框。
 - 新增 `rvifm maintenance clean-tmp` 清理 frecency 中 `/tmp/` 前缀记录（已清理 195 条，未删本地文件）；真实跳转写 record、`u` 同步恢复、行尾评分、`[preview] frecency_preview=false`（`w` 开启）。
 
-### M72 :diff 实测修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M72 :diff 实测修复
 
 - 快捷键提示放回真正的状态栏，不再覆盖左右 pane 边框；打开 `:diff` 即异步加载当前文件补丁，过期 generation 结果不再把路径永久留在 pending；预览标题只显示路径与视图标记，状态消息仅进状态栏。
 
-### M71 块级 hunk 丢弃（实验性；仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M71 块级 hunk 丢弃
 
 - `:diff` 补丁面板 `D` 对当前 hunk 做反向 `git apply -R`：先显示预览与确认，丢弃后按 `u` 可从原文备份立即恢复。
 - 修复统一补丁解析器中多个 `@@` hunk 只保留最后一个的 bug。
 
-### M70 Git 文件级写操作（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M70 Git 文件级写操作
 
 - `:diff` overlay 内对齐 lazygit：`a` 暂存/取消暂存全部、`A` 修补提交、`d` 放弃文件、`c` 提交、`p` 拉取、`P` 推送；写操作弹确认并回显结果，完成后刷新 diff。
 - 新增 `[git] confirm_destructive`（默认 true）。
 
-### M69 :diff 只读 Git 差异浏览（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M69 :diff 只读 Git 差异浏览
 
 - 新增 `:diff` overlay：左栏变更文件、右栏统一补丁/左右对照，复用 git CLI 零编译期依赖路线（自解析 `git diff`，不引第三方 diff 库）。
 - 异步 worker + generation 防过期；j/k 逐行、J/K 跳 hunk、gg/G、`/`+n/N、`h/l`、`|` 对照、`=` 完整文件、`^w` 换行、Tab 切栏、Esc/q 退出；不写仓库，不替代 `gi`/`:gitui`。
 
-### M66–M68 向导安全提示、沙箱与全面审计（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M66–M68 向导安全提示、沙箱与全面审计
 
 - tutor_meta 前三条按「重要的事说三遍」提示真实操作风险，`Ctrl+Q` 明确 `:tutor` 可重进；14 个 TOML 统一「向导模式」。
 - 新增跨平台向导沙箱 `temp_dir()/rvifm-tutor/{left,right}`，进入向导自动定位左右栏；沙箱操作不写 frecency、保留撤销栈、临时目录被清理时重建。
 - README 修正 vifm `:view` 内建文本/目录预览事实与 14 模块 102 项数字；NOTES 映射表更新，harness 规则 9 校验过期数字/错误表述；修正 Windows 路径分隔符与 macOS 长路径过滤标记漂移。
 
-### M65 境界起点改名与 CI 跨平台修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M65 境界起点改名与 CI 跨平台修复
 
 - 境界第 0 级由「凡人」改为「入门」（能打开软件即算入门），符号 `○` 不变。
 - 修复 Windows CI 测试编译：`m482` 的 POSIX 执行位测试加 `#[cfg(unix)]`；修正 macOS 4 处长临时路径导致的平台相关渲染断言。
 
-### M64 向导修仙境界分级（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M64 向导修仙境界分级
 
 - 向导新增 11 级修仙境界（入门 ○→真仙 ★）与初期/中期/后期/圆满小阶段，只在学习进度栏显示符号+中文；筑基绑定核心导航完成，真仙需 100% 且零错题。
 - `tutor_meta`（向导用法）移到模块列表首位，首次打开先学使用方法。
 
-### M63 其它预览增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M63 其它预览增强
 
 - 目录树预览按目录 mtime 缓存，不再每帧重扫；JSON 缩进 / Markdown 弱化标记的轻量结构化预览。
 - 新增非默认 `pdf-rust` feature（`karet-pdf` 纯 Rust 栅格化）：文本提取仍先行，视觉路径优先纯 Rust；默认构建不含该依赖。二进制已有 hex dump，语义注释延后。
 
-### M62 图片缩放与编码流水线（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M62 图片缩放与编码流水线
 
 - 后台 worker 用 `fast_image_resize`（SIMD/Nearest，默认最快）把解码图预缩到 2048px 以内；UI 线程复用已编码协议缓存，不再每帧 resize+encode。
 
-### M61 大文本视口虚拟化（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M61 大文本视口虚拟化
 
 - 新增 `memmap2` 视口读取器与 `[preview] virtual_text_threshold`（默认 1MiB）；超阈值本地文件不再整文件读取/内存驻留，只渲染视口行，聚焦不再触发全量加载。
 - 高亮状态按路径跨帧复用（尽力而为，流畅优先）；远端 Location 不产生本地预览路径，保持仅元数据。
 
-### M60 真异步预览架构（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M60 真异步预览架构
 
 - 引入预览后台 worker + generation token：快速 j/k 的中间目标被丢弃，文本读取/hex 判定、图片解码、Office/归档/PDF 文本行解析均不在 UI 线程完成。
 - UI 线程只做协议编码与文本高亮；PDF 视觉页因依赖 `Frame` 仍在 UI 线程（SIMPLIFIED）。
 - 图片协议默认做一次带超时查询（tmux/screen 下也查），失败回退 halfblocks；`RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off` 可显式关闭。
 
-### M59 预览与归档 VFS 体验修复（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M59 预览与归档 VFS 体验修复
 
 - `rvifm pick` 文本预览与 TUI 查看器共用 `highlight::styled_lines`（同源语法高亮，仍纯只读）。
 - 归档成员 `w` 预览恢复 j/k 滚动与 Tab 进/出（viewer 走临时副本路径）、语法高亮保留；`l`/Enter 改走 `[opener]`/`[open]` 分层而非硬编码系统 opener。
 - 快速文本预览行数改为 `max(36, 视口+10)`；渲染 committed viewer 路径消除「先二进制后文本」闪现，缓存命中只克隆所需行；预览获焦蓝色边框。
 - frecency `Tab` 固定进/出预览、`Shift+Tab` 切左右栏；`r` 改为两键确认仅清 bookmark/mark（保留条目与分数），`u` 连 keyword 恢复。
 
-### M58 命令补全增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M58 命令补全增强
 
 - 补全浮层标题提示 `Space=选定到输入栏`，描述常显、输入即实时过滤；命令行 500ms 闪烁光标；Space 选定替换最后一个词。
 - 修复 Tab 循环三处问题：尽量全显候选+滚动条、自动滚动使选中项可见、索引与描述同源；浮层不再固定 ≤40%/15 行。
 - shell 历史补全与 frecency `cmd` 改为整行（含参数/路径），推翻 M50「仅命令名入库」边界；多行命令顶部预览；外部命令成功也显示返回码。
 - 新增只读 `rvifm cmd [query]`（fzf Ctrl+R 同款）；`rvifm pick` 仍保持纯只读。
 
-### M56 向导模式（tutor 重构；仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M57 帮助外部入口收敛
+
+- 移除 `rvifm help` 外部子命令；`:help` 只在应用内以不透明覆盖层打开（页内 `/` 搜索、Esc/q 返回），不再新开终端窗口。
+- `[ui] help_in_new_window` 配置键保留以兼容旧配置，但不再生效。
+
+### M56 向导模式
 
 - tutor 统一更名为「向导模式」；首次无配置文件时自动进入；欢迎对话框占屏 80%（≤40×10 降级全屏），底部带边框进度状态栏显示模块/功能点/百分比。
 - `/` 输入实时过滤、有记录模块仅显示错题且保持原编号、模块完成 `Enter` 回列表、100% 模块重入重置确认。
 - 进度按稳定 ID 忽略未知/改名条目；NOTES 建立向导↔ACCEPTANCE 映射表并由 harness_check 规则 8 守护；🏅/🏆/⭐ 成就徽章在状态栏角落显示。
 
-### M55 frecency 搜索态区分与实时递归查找（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M55 frecency 搜索态区分与实时递归查找
 
 - frecency SEARCH 态标题改为焦点边框色+加粗，底部绘制带边框输入框 + 可见光标；列表保持无边框，NORMAL/SEARCH 明确区分。
 - 新增 `O` 实时递归查找：后台线程流式扫描（复用 `:find` ignore 规则，深度 20/条目 5 万护栏），输入实时子串过滤、scanning 计数、`Enter` 定位选中（走 record）、`Esc` 退出；不写 redb、不替代 `:find`。
 
-### M57 帮助外部入口收敛（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M53 标签栏对齐、归档 VFS 预览与预览性能
 
-- 移除 `rvifm help` 外部子命令；`:help` 只在应用内以不透明覆盖层打开（页内 `/` 搜索、Esc/q 返回），不再新开终端窗口。
-- `[ui] help_in_new_window` 配置键保留以兼容旧配置，但不再生效。
+- 标签显示 `[序号:焦点栏全路径]` 且随焦点切换；`:tabname` 与右栏活动项写入 session.toml，重启后保持（旧会话兼容）。
+- 归档成员 `w` 预览、`l`/Enter 解临时只读副本交系统 opener；frecency NORMAL 全键位提示与 `r` 删记录。
+- 文本快速预览 ≥36 行 + 行缓存；150ms 防抖跳过快速 j/k 的中间预览；tmux passthrough 下恢复 foot 原生图片协议；`.deb` 用 dpkg-deb -c 列成员。
 
-### M48 用户实测批次 4（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M52 预览布局策略反转
 
-- 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
+- `[preview] fixed_side` 默认改为 `false`，且只作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式；`:view` 恢复对侧预览（焦点左→右、焦点右→左），`rvifm pick` 恒左候选/右预览。已显式配置 `fixed_side = true` 的用户需手动移除才能回到默认对侧。
+- 右栏能力审计：Normal 键位与冒号命令与左栏基本一致（焦点投影 + `focused_*` 分派），预览焦点 `Tab` 进出与侧别无关；全量文档一致性收尾。
+- 稳定性：frecency 只读打开 redb 增加 10×20ms 有限重试，消除并行测试/双开实例偶发 `Database already open`。
 
-### M50 命令补全增强（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M51 用户实测批次 6
+
+- IME：打开外部窗口/失焦期间暂停周期性切英文，避免干扰 vim 等程序的中文输入法；回焦或按键后恢复。
+- 配置：默认 `edit_text` 改为 `vim %s`；`.vifm`/`.vim` 与 `LICENSE` 等无扩展名文本通过有界内容嗅探识别为 text/plain，走 vim 打开。
+- 粘贴同名冲突弹窗补上 `y`/Enter、n/Esc、j/k 按键提示（与删除确认底栏一致）。
+- 外窗：`s`/`:!`/`gi`/`:help` 新窗口前台激活，起始目录取焦点 pane（tmux 去 `-d` + `-c`；screen cd + next）。文本编辑类 opener 优先新窗口，`.md5` MIME 补齐，`.sh` 执行位文本优先。
+- 浏览：右栏文件 `l`/Enter/再击走共享 opener；`v` 多选 `y` 写 yank 缓冲；粘贴冲突改阻塞式确认弹窗。
+- 归档：成员粘贴剥离公共 inner 前缀（不重建上级目录）、目录递归解压、多选混合正确；`w` 预览可选外部 `unzip -Z1`/`tar -tf`/`7z l -ba` 快速列目录（4MB 输出护栏，缺工具回退内置）。
+- 命令：`:archive` 无参直接执行（zip + `.zip` 名）、`-i` 交互；对话框任意字段回车执行、`Tab` 高亮当前字段、只清弹窗矩形。
+- IME：Normal 模式 1s 周期切英文兜底；tutor 列表 `/` 搜索 / `d` 重置 / 仅错题 / 结束 Ctrl+N 回列表；删除确认真窗口化；`rvifm help` 改为可搜索/高亮查看器（无 TTY 回退纯文本）。
+
+### M50 命令补全增强
 
 - `:` 键入补全内部命令（名+描述，按 frecency 频率排序），`:!` 补全 shell 历史完整命令行；底部两列浮层 ≤40% 终端高，Tab 循环、Enter 执行。
 - shell 历史读取默认开、增量记账；完整命令行仅内存候选，只有命令名进 frecency；不扫描 PATH、不做 execve 守护、不补参数。
@@ -148,45 +169,29 @@
 - 测试隔离：单测不再调用真实系统 opener（避免残留 cosmic-edit 进程）；命令补全读 frecency 改只读句柄，避免并发测试锁冲突。
 - 启动性能：debug 二进制 461M→152M（关闭依赖 debuginfo）；tmux/screen 内跳过阻塞的终端协议查询；shell 历史改单事务批量导入 + 字节偏移增量（首次 0.26s / 常规 0.18s）。诊断开关 `RVIFM_STARTUP_TRACE=1`。
 
-### M53 标签栏对齐、归档 VFS 预览与预览性能（仅提交代码，不触发版本 bump / tag / GitHub Release）
-
-- 标签显示 `[序号:焦点栏全路径]` 且随焦点切换；`:tabname` 与右栏活动项写入 session.toml，重启后保持（旧会话兼容）。
-- 归档成员 `w` 预览、`l`/Enter 解临时只读副本交系统 opener；frecency NORMAL 全键位提示与 `r` 删记录。
-- 文本快速预览 ≥36 行 + 行缓存；150ms 防抖跳过快速 j/k 的中间预览；tmux passthrough 下恢复 foot 原生图片协议；`.deb` 用 dpkg-deb -c 列成员。
-
-### M52 预览布局策略反转（仅提交代码，不触发版本 bump / tag / GitHub Release）
-
-- `[preview] fixed_side` 默认改为 `false`，且只作用于 rvifm 内 `o`/`:j`/`:J` 的 frecency 模式；`:view` 恢复对侧预览（焦点左→右、焦点右→左），`rvifm pick` 恒左候选/右预览。已显式配置 `fixed_side = true` 的用户需手动移除才能回到默认对侧。
-- 右栏能力审计：Normal 键位与冒号命令与左栏基本一致（焦点投影 + `focused_*` 分派），预览焦点 `Tab` 进出与侧别无关；全量文档一致性收尾。
-- 稳定性：frecency 只读打开 redb 增加 10×20ms 有限重试，消除并行测试/双开实例偶发 `Database already open`。
-
-### M51 用户实测批次 6（仅提交代码，不触发版本 bump / tag / GitHub Release）
-
-- IME：打开外部窗口/失焦期间暂停周期性切英文，避免干扰 vim 等程序的中文输入法；回焦或按键后恢复。
-- 配置：默认 `edit_text` 改为 `vim %s`；`.vifm`/`.vim` 与 `LICENSE` 等无扩展名文本通过有界内容嗅探识别为 text/plain，走 vim 打开。
-- 粘贴同名冲突弹窗补上 `y`/Enter、n/Esc、j/k 按键提示（与删除确认底栏一致）。
-
-### M49 用户实测批次 5（仅提交代码，不触发版本 bump / tag / GitHub Release）
+### M49 用户实测批次 5
 
 - 布局：frecency 与 `:view` 默认搜索/列表固定左侧、预览固定右侧（共享 `preview_layout_areas`）；`Tab` 仅切换预览焦点，位置不随焦点移动；`[preview] fixed_side = false` 恢复旧动态对侧（仅新会话生效）。**（此策略随后被 M52 反转：默认改为对侧预览，且开关仅作用于 frecency；历史条目保留供追溯。）**
 - 命令/编辑：`:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目解压出真实文件；列表左侧留白收窄为 1 空格。
 - 预览：快速切换时图片/PDF 仅元数据、文本仅前 300 字；`Tab` 进入预览后全量加载。
 - frecency：标题动态 `NORMAL/SEARCH` + `[filter]` 黄底高亮；SEARCH 提示方向键并支持 `Ctrl+J/K`；Esc 保留过滤；`dd` 删记录 / `u` 恢复 / `yf`·`yn`·`yc` / `gi`。
 
+### M48 用户实测批次 4
+
+- 外窗修复：新窗口起始目录先校验存在（失效时回退），避免 `getcwd() failed` 刷屏；`gi`/`:gitui` 非 git 仓库不再启动并循环提示。
 - 外窗：`s`/`:!`/`gi`/`:help` 新窗口前台激活，起始目录取焦点 pane（tmux 去 `-d` + `-c`；screen cd + next）。文本编辑类 opener 优先新窗口，`.md5` MIME 补齐，`.sh` 执行位文本优先。
 - 浏览：右栏文件 `l`/Enter/再击走共享 opener；`v` 多选 `y` 写 yank 缓冲；粘贴冲突改阻塞式确认弹窗。
 - 归档：成员粘贴剥离公共 inner 前缀（不重建上级目录）、目录递归解压、多选混合正确；`w` 预览可选外部 `unzip -Z1`/`tar -tf`/`7z l -ba` 快速列目录（4MB 输出护栏，缺工具回退内置）。
 - 命令：`:archive` 无参直接执行（zip + `.zip` 名）、`-i` 交互；对话框任意字段回车执行、`Tab` 高亮当前字段、只清弹窗矩形。
 - IME：Normal 模式 1s 周期切英文兜底；tutor 列表 `/` 搜索 / `d` 重置 / 仅错题 / 结束 Ctrl+N 回列表；删除确认真窗口化；`rvifm help` 改为可搜索/高亮查看器（无 TTY 回退纯文本）。
 
-
-### M47 用户实测批次 3（10 任务；仅提交代码，不触发版本 bump / GitHub Release）
+### M47 用户实测批次 3
 
 - 焦点化收尾：`=` glob 过滤作用于焦点 pane，状态从状态栏移入该栏顶部路径行、Esc 清除；`:archive` 源取焦点栏文件、产物落在对侧栏；`:extract` 源归档取焦点栏、缺省解压到对侧；批量选集、变量替换 `%d/%f/%F`、`:file`、marks、`:sort`、`:select`/`:unselect` 均按焦点栏分派。
 - Frecency：`o`/`:j`/`:J` 面板去掉边框、背景/几何融合焦点栏，标题为「Frecency - 高频目录/文件搜索 - Normal 模式」，点击命中与渲染同源。
 - 视觉：目录/归档成员预览图标按层级缩进；左右列表增加前导留白且整行高亮覆盖留白；右栏 `gg` 到顶部只高亮 `..` 行；左右栏 `v` 多选状态各自独立。
 - IME：Linux 下切回终端窗口（FocusGained）与 Normal 模式按 `Esc` 防御性切英文，不覆盖已保存输入法状态、250ms 内重复触发节流；既有模式边界切换/恢复语义保留。
-- 文档：README / GUIDE / 内置 help / tutor 条目同步；本批次不发布版本、不推送 tag。
+- 文档：README / GUIDE / 内置 help / tutor 条目同步。
 
 ## [1.4.0] — 2026-11-25
 

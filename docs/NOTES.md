@@ -1715,3 +1715,5 @@ rvifm record  → 静默记录访问
 - H1/H2：补丁/对照的语法高亮不得吞掉 diff 标记；`=` 完整视图与软换行同源（新增 `styled_chunks`/`token_slice`）。
 - H3/H4：图片 ThreadProtocol 改为每图独立通道（避免 id 重置串图），编码失败节流 1s 重试；文本高亮器每帧新建，避免跨帧状态漂移。
 - M1：`clean-tmp` 同时匹配 `/tmp/` 与 `std::env::temp_dir()`（Windows 归档临时副本死记录可清理）；M3 `image_max_side` 钳制 1..4096；M5 配置关闭协议查询时接线 `force_halfblocks`。
+
+- **版本选择 1.5.0**：M47–M85 均为增量功能/修复，按项目惯例用 semver minor；虽然 M57 移除了 `rvifm help` 子命令，但 CLI 非稳定 API 且历史版本均以 minor 记录用户可见变化，故不升 2.0.0。
