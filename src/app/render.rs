@@ -708,12 +708,26 @@ pub(crate) struct TutorRank {
 }
 
 impl TutorRank {
+    #[allow(dead_code)]
     pub fn label(&self) -> String {
         if self.stage.is_empty() {
             format!("{} {}", self.symbol, self.name)
         } else {
             format!("{} {}{}", self.symbol, self.name, self.stage)
         }
+    }
+}
+
+/// M86-4：境界图标按级别着色（低阶冷色 → 高阶暖色），不引入新依赖。
+pub(crate) fn tutor_rank_color(name: &str) -> Color {
+    match name {
+        "入门" | "炼气" => Color::DarkGray,
+        "筑基" | "金丹" => Color::LightCyan,
+        "元婴" | "化神" => Color::LightGreen,
+        "炼虚" | "合体" => Color::LightYellow,
+        "大乘" | "渡劫" => Color::LightRed,
+        "真仙" => Color::LightMagenta,
+        _ => Color::Reset,
     }
 }
 
@@ -788,7 +802,9 @@ pub(crate) fn tutor_rank(progress: &crate::tutor::TutorProgress) -> TutorRank {
 
 /// M56-11：成就徽章——完成首模块 🏅 / 全模块 100% 🏆 / 零错题通过 ⭐。
 /// 纯函数：按稳定 item id 判定，与进度文件版本无关。
-/// M77-2：满宽进度条色块（已掌握深色 / 未掌握浅色），仅作文字背景。
+/// M77-2/M86-4：满宽进度条色块。M86-4 起 UI 不再渲染进度条，保留纯函数供
+/// 历史测试与主题对照使用。
+#[allow(dead_code)]
 pub(crate) fn tutor_bar_spans(pct: usize, width: usize) -> Vec<Span<'static>> {
     let filled = width.saturating_mul(pct.min(100)) / 100;
     let mut spans = Vec::with_capacity(2);
@@ -1425,20 +1441,40 @@ fn render_tutor_list(
     if status_area.height >= 2 {
         let (done, mods, mastered, total, pct) = tutor_overall_progress(&state.tutor_progress);
         let rank = tutor_rank(&state.tutor_progress);
-        let block =
-            ratatui::widgets::Block::bordered().title(format!("学习进度 · {}", rank.label()));
-        let inner = block.inner(status_area);
-        frame.render_widget(&block, status_area);
-        // M77-2：进度条充满容器并作为文字背景，右侧不再重复数字。
-        let bar = tutor_bar_spans(pct, inner.width as usize);
-        frame.render_widget(Paragraph::new(vec![Line::from(bar)]), inner);
+        // M86-4：去掉方框与「·」小圆点，顶部一条分割线与上方分隔；
+        // 获奖标题放在分割线下方左对齐，境界图标按级别着色。
+        frame.render_widget(ratatui::widgets::Clear, status_area);
+        let divider = ratatui::layout::Rect {
+            height: 1,
+            ..status_area
+        };
+        frame.render_widget(
+            Paragraph::new("─".repeat(status_area.width as usize)),
+            divider,
+        );
+        let body = ratatui::layout::Rect {
+            y: status_area.y + 1,
+            height: status_area.height.saturating_sub(1),
+            ..status_area
+        };
+        let title = Line::from(vec![
+            Span::from("学习进度  "),
+            Span::styled(
+                rank.symbol,
+                Style::new()
+                    .fg(tutor_rank_color(rank.name))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::from(format!(" {}  ", rank.name)),
+            Span::from(rank.stage.to_owned()),
+        ]);
         let lines = vec![
-            Line::from("欢迎使用 rvifm！可通过本向导学习全部功能；随时输入 :tutor 再次进入。"),
+            title,
             Line::from(format!(
                 "模块 {done}/{mods}  功能点 {mastered}/{total}  已掌握本系统 {pct}% 的功能"
             )),
         ];
-        frame.render_widget(Paragraph::new(lines), inner);
+        frame.render_widget(Paragraph::new(lines), body);
     }
 }
 
@@ -2570,7 +2606,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             display_total,
             review = if *review { "（复习）" } else { "" }
         );
-        let block = ratatui::widgets::Block::bordered().title(title);
+        // M86-4：tutor 面板外框统一用焦点样式（与其它 pane 同源）。
+        let block = ratatui::widgets::Block::bordered()
+            .title(title)
+            .border_style(pane_border_style(true));
         if *done {
             let lines = vec![
                 Line::from(format!(
@@ -2582,11 +2621,17 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             frame.render_widget(Paragraph::new(lines).block(block), panel_area);
         } else if let Some(item) = module.items.get(*idx) {
             let inner = block.inner(panel_area);
-            let [left, right] = ratatui::layout::Layout::horizontal([
-                ratatui::layout::Constraint::Percentage(70),
-                ratatui::layout::Constraint::Percentage(30),
+            let [body, hint_line] = ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Min(0),
+                ratatui::layout::Constraint::Length(1),
             ])
             .areas(inner);
+            let [left, separator, right] = ratatui::layout::Layout::horizontal([
+                ratatui::layout::Constraint::Percentage(68),
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Min(0),
+            ])
+            .areas(body);
             let mut left_lines = vec![
                 Line::from(Span::styled(
                     format!("💡 {}", item.prompt),
@@ -2603,29 +2648,29 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     "🔧 环境依赖（{req}）——无此环境可 Ctrl+N 跳过"
                 )));
             }
-            let filled = mastered * 8 / total.max(1);
+            // M86-4：去掉进度条；右侧仅保留计数，按键提示移到面板底部，
+            // 提示与操作区之间用竖线分隔，长提示换行不再压住按键提示。
             let right_lines = vec![
-                Line::from(format!(
-                    "[{}{}] {}/{total}",
-                    "█".repeat(filled),
-                    "░".repeat(8 - filled),
-                    mastered
-                )),
-                Line::from(String::new()),
-                // M45-8b：实际标记键为 Ctrl+Y/N/Q（M43-1），提示须带 Ctrl 避免歧义。
-                Line::from("[Ctrl+Y] 掌握"),
-                Line::from("[Ctrl+N] 未掌握"),
-                Line::from("[Ctrl+Q] 退出"),
+                Line::from(format!("掌握 {mastered}/{total}")),
+                Line::from(format!("未掌握 {skipped}")),
             ];
+            let sep_lines: Vec<Line> = (0..body.height).map(|_| Line::from("│")).collect();
             frame.render_widget(block, panel_area);
-            // M74-1：长 prompt/expected 自动换行，不再被底部键位提示截断/覆盖。
             frame.render_widget(
                 Paragraph::new(left_lines).wrap(ratatui::widgets::Wrap { trim: true }),
                 left,
             );
+            frame.render_widget(Paragraph::new(sep_lines), separator);
             frame.render_widget(
                 Paragraph::new(right_lines).wrap(ratatui::widgets::Wrap { trim: true }),
                 right,
+            );
+            frame.render_widget(
+                Paragraph::new(Line::from(
+                    "[Ctrl+Y] 掌握   [Ctrl+N] 未掌握   [Ctrl+Q] 退出",
+                ))
+                .alignment(ratatui::layout::Alignment::Right),
+                hint_line,
             );
         } else {
             // idx 越界兜底（正常不可达：done 先于越界成立）。

@@ -15408,3 +15408,41 @@ fn m863_diff_fullscreen_uses_left_pane_origin() {
     );
     assert!(!row[..40].trim().is_empty(), "左半侧不再留白: {row}");
 }
+
+#[test]
+fn m864_tutor_progress_has_divider_and_no_bar() {
+    assert_eq!(tutor_rank_color("真仙"), Color::LightMagenta);
+    assert_ne!(tutor_rank_color("入门"), tutor_rank_color("真仙"));
+    let mut state =
+        AppState::new(Tab::from_physical(std::path::Path::new("."), Config::default()).unwrap());
+    state.tutor = None;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(90, 20)).unwrap();
+    terminal
+        .draw(|f| {
+            render(
+                f,
+                &state,
+                &InputMode::TutorList {
+                    cursor: 0,
+                    search: None,
+                },
+                None,
+            )
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..90u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("学习进度"), "标题仍在: {compact}");
+    assert!(
+        !compact.contains("学习进度·"),
+        "不再有分隔小圆点: {compact}"
+    );
+    assert!(text.contains('─'), "顶部有分割线");
+    assert!(!text.contains('█'), "进度条已移除");
+}
