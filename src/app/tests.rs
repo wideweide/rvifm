@@ -15467,3 +15467,17 @@ fn m865_archive_plan_focus_left_dest_is_right() {
     assert_eq!(base, left.path());
     assert_eq!(target, right.path().join("out.zip"), "产物落在右栏");
 }
+
+#[test]
+fn m881_clip_name_middle_ellipsis_keeps_extension_chain() {
+    let long = "学习观 从感觉懂了到真正学会 B5.pdf.md5";
+    let clipped = clip_name(long, 24);
+    assert!(clipped.contains('…'), "应有省略号: {clipped}");
+    assert!(clipped.ends_with(".pdf.md5"), "保留扩展链: {clipped}");
+    assert!(
+        unicode_width::UnicodeWidthStr::width(clipped.as_str()) <= 24,
+        "按单元格宽度不超预算: {clipped}"
+    );
+    assert_eq!(clip_name("short.txt", 20), "short.txt", "短名不变");
+    assert!(clip_name("abcdefghij", 1).len() <= 1, "极小预算退化尾部");
+}

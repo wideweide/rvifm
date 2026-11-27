@@ -406,10 +406,65 @@ pub(crate) fn git_status_span(st: crate::git::GitStatus) -> Span<'static> {
 /// M21-E1：按显示预算截断名称（字符数近似；CJK 全角按 1 计——与查看器
 /// 显示口径一致，SIMPLIFIED）。搜索/定位逻辑不受影响（仅显示层裁剪）。
 pub(crate) fn clip_name(name: &str, budget: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
     if budget == 0 {
         return String::new();
     }
-    name.chars().take(budget).collect()
+    let chars: Vec<char> = name.chars().collect();
+    let width = |cs: &[char]| -> usize { cs.iter().map(|c| c.width().unwrap_or(0)).sum() };
+    if width(&chars) <= budget {
+        return name.to_owned();
+    }
+    if budget <= 1 {
+        return chars.into_iter().take(budget).collect();
+    }
+    // M88：保留尾部最多两段扩展名链（.pdf.md5 / .tar.gz）。
+    let n = chars.len();
+    let mut ext_start = n;
+    let mut pos = n;
+    for _ in 0..2 {
+        let mut j = pos;
+        while j > 0 && chars[j - 1].is_ascii_alphanumeric() {
+            j -= 1;
+        }
+        if j == pos || j == 0 || chars[j - 1] != '.' {
+            break;
+        }
+        ext_start = j - 1;
+        pos = j - 1;
+    }
+    let ext: Vec<char> = chars[ext_start..].to_vec();
+    let ext_w = width(&ext);
+    if ext_w + 1 >= budget {
+        // 扩展名本身放不下 → 从右往左按宽度保留尾部字符。
+        let mut out = Vec::new();
+        let mut used = 0usize;
+        for c in chars.iter().rev() {
+            let w = c.width().unwrap_or(0);
+            if used + w > budget {
+                break;
+            }
+            out.push(*c);
+            used += w;
+        }
+        out.reverse();
+        return out.into_iter().collect();
+    }
+    let head_budget = budget - 1 - ext_w;
+    let mut head = Vec::new();
+    let mut used = 0usize;
+    for c in &chars[..ext_start] {
+        let w = c.width().unwrap_or(0);
+        if used + w > head_budget {
+            break;
+        }
+        head.push(*c);
+        used += w;
+    }
+    let mut out: String = head.into_iter().collect();
+    out.push('…');
+    out.extend(ext);
+    out
 }
 
 /// M21-F1：类型着色——主题命名样式（`ft_dir` 等）优先，缺失时回落 16 色
