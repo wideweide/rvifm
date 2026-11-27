@@ -139,11 +139,12 @@ pub(crate) fn tab_label_style(active: bool, borders: bool) -> Style {
     }
     if active {
         Style::new()
-            .bg(Color::Gray)
+            .bg(Color::White)
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::new().bg(Color::DarkGray).fg(Color::White)
+        // M81：非焦点标签无背景色，文字统一白色。
+        Style::new().fg(Color::White)
     }
 }
 
@@ -229,11 +230,10 @@ pub(crate) fn tab_bar_hit_test(state: &AppState, width: u16, col: u16) -> Option
 /// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
 /// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
 /// CJK 全宽忽略——SIMPLIFIED）。
-/// M80-1：焦点标签用主题选中背景（偏白）+ 反色文字，与路径行背景区分。
+/// M81：焦点标签白色背景 + 反色文字。
 fn focused_tab_style() -> Style {
-    let bg = crate::theme::style("selected").bg.unwrap_or(Color::White);
     Style::new()
-        .bg(bg)
+        .bg(Color::White)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD)
 }
@@ -377,7 +377,8 @@ pub(crate) fn pane_border_style(focused: bool) -> Style {
     } else if focused {
         Style::new().add_modifier(Modifier::BOLD)
     } else {
-        Style::new().add_modifier(Modifier::DIM)
+        // M81：失焦边框用灰色（与 :diff 弹出框同源）。
+        Style::new().fg(Color::Gray)
     }
 }
 
@@ -1610,7 +1611,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // M21-F1：左右 pane——pane_borders=true 走旧整框外观（焦点边框高亮）；
     // false（默认，M27-2）为 vifm 式：无整框、pane 顶部路径行（TopLine/
     // TopLineSel 背景色区分焦点）、间隔列 Border 分隔线。
-    let left_focused = tab.focus == crate::tab::Focus::Left;
+    // M81：预览获焦时左右目录栏都不是焦点，路径标题统一走失焦样式。
+    let preview_focused =
+        tab.preview_focus || tab.pane_frecency.as_ref().is_some_and(|p| p.preview_focus);
+    let left_focused = tab.focus == crate::tab::Focus::Left && !preview_focused;
     // M3-1：可视范围（状态栏指示 + 列表高亮共用；M34-4 提升至 pane 分派
     // 之前——查看器占左 pane 时其后置公共段仍在作用域内）。
     // M47-8：左栏始终展示自己的可视选区（切焦点后仍保持，非焦点侧 DIM）。

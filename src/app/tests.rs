@@ -535,7 +535,7 @@ fn m742_tutor_dialog_keeps_pane_context() {
 }
 
 #[test]
-fn m731_tab_background_differs_from_path_line() {
+fn m731_focused_tab_uses_white_background() {
     let (_tmp, mut state) = make_state(2);
     state.new_tab_here();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).unwrap();
@@ -543,7 +543,8 @@ fn m731_tab_background_differs_from_path_line() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let buf = terminal.backend().buffer().clone();
-    assert_ne!(buf[(1, 0)].bg, buf[(1, 1)].bg, "标签底色应与路径行不同");
+    let white_tab = (0..80u16).any(|x| buf[(x, 0)].bg == Color::White);
+    assert!(white_tab, "焦点标签白底");
 }
 
 #[test]
@@ -9195,13 +9196,13 @@ fn m463_right_pane_cursor_row_has_uniform_background() {
 
 #[test]
 fn m451c_tab_label_style_decoupled_from_path() {
-    // M45-1c：激活标签灰白底黑字加粗；非激活深灰底白字；borders 模式 REVERSED。
+    // M81：激活标签白底黑字加粗；非激活标签无背景、白字；borders 模式 REVERSED。
     let active = crate::app::render::tab_label_style(true, false);
     let inactive = crate::app::render::tab_label_style(false, false);
-    assert_eq!(active.bg, Some(Color::Gray), "灰白底");
+    assert_eq!(active.bg, Some(Color::White), "白底");
     assert_eq!(active.fg, Some(Color::Black), "字体反色");
     assert!(active.add_modifier.contains(Modifier::BOLD));
-    assert_eq!(inactive.bg, Some(Color::DarkGray));
+    assert_eq!(inactive.bg, None, "非焦点标签无背景");
     assert_eq!(inactive.fg, Some(Color::White));
     let bordered = crate::app::render::tab_label_style(true, true);
     assert!(bordered.add_modifier.contains(Modifier::REVERSED));
