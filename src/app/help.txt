@@ -230,7 +230,7 @@ M47 实测批次 3（焦点化收尾 + 视觉间距 + 防御性 IME）：
 
 M49 实测批次 5（命令/预览效率/frecency 键位；布局策略随后被 M52 反转）：
   `o`/`:j`/`:J` 原固定右侧预览（M52 起默认改为对侧，fixed_side=true 可恢复固定右侧）；
-  快速切换时图片/PDF 仅元数据、文本至少 36 行（视口+10），Tab 进入预览后全量加载；
+  快速切换时图片/PDF 仅元数据；M83 起文本始终视口渲染+始终高亮（无两段式），`G` 定位末屏；
   `:gi` 为主命令（`:gitui` 兼容别名）；`v` 多选 `D` 永久删除；`:extract` 显式目录条目修复；
   frecency：标题含 NORMAL/SEARCH 与 [filter]、Esc 保留过滤、dd 删记录/u 恢复、yf/yn/yc、gi；
   r→y 两键确认仅清 bookmark/mark（保留条目与分数），u 连 keyword 恢复；Tab 进预览、Shift+Tab 切栏。
@@ -260,7 +260,7 @@ M64 向导境界：进度栏显示修仙境界（○入门→★真仙，11 级�
   筑基需完成 core_nav，真仙需 100% 且零错题；模块首项为向导用法。
 
 M60 异步预览：后台 worker + generation，快速 j/k 不渲染中间目标；文本/图片/归档解析后台化，
-  获焦预览蓝色边框；PDF 视觉页仍在 UI 线程（需 Frame）。
+  获焦预览沿用目录栏焦点边框（M80/M81）；PDF 视觉页仍在 UI 线程（需 Frame）。
 M61 大文本：超过 1MiB 用 mmap 视口读取（只渲染可见行），远端大文件仅元数据。
 M62 图片：后台 SIMD 预缩放 + 已编码协议缓存；M63：目录树缓存、JSON/Markdown 结构化，
   pdf-rust feature 提供纯 Rust PDF 栅格化（文本先行）。
@@ -275,5 +275,10 @@ M53 标签栏对齐与预览提升：
   标签显示 `[序号:焦点栏全路径]`（随焦点变）；`:tabname` 与右栏活动项随会话持久化（重启保持）。
   归档虚拟目录内 `w` 可预览；`l`/Enter 解临时只读副本交系统 opener（不写归档内）。
   frecency NORMAL 提示列出全部键位；`r` 删除当前条目的 frecency 书签/mark 记录（`u` 可恢复）。
-  快速预览至少 36 行；文本行缓存避免卡顿；快速 j/k 150ms 防抖，不生成中间预览。
-  tmux passthrough 开启（或 RVIFM_IMAGE_PROTOCOL_QUERY=1）时恢复 foot 原生图片协议；`.deb` 用 dpkg-deb -c 列成员。
+  文本按视口渲染+始终高亮（M83）；行缓存按 (path,mtime,size) 失效；快速 j/k 150ms 防抖。
+  图片协议查询用 `[preview] image_protocol_query`（false 直接 halfblocks）或 RVIFM_IMAGE_PROTOCOL_QUERY=0 关闭；`.deb` 用 dpkg-deb -c 列成员。
+
+M82–M85（git diff 体验 / 文本预览 / 归档打开 / 图片流水线）：
+  `:diff` 补丁语法高亮，`|` 全屏左右对照（词级差异高亮），`=` 完整文件，`J/K` 跳 hunk；
+  文本预览始终高亮、`/` 黄底叠加、缺失文件首行「文件不存在」；
+  归档文本成员 `l`/Enter 优先新窗口打开；图片 resize+encode 后台化（ThreadProtocol）。

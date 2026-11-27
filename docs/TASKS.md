@@ -991,3 +991,9 @@
 - [x] M85-2 像素上限/Nearest/超时配置（见 SPEC M85）
 - [x] M85-3 文档/验收/门禁（见 SPEC M85）
 - [ ] M85-1b 磁盘已编码协议缓存（deferred：ratatui-image 不公开编码字节；见 NOTES）
+
+## REL-7 — v1.5.0 发布（2026-11-27 用户授权，覆盖此前「不发布」口径）
+
+- [ ] REL-7-1 全面审计 + 文档同步 + tutor 验证条款（见 SPEC REL / ACCEPTANCE M46-12）
+- [ ] REL-7-2 版本 bump 至 1.5.0 并推送 main，CI 全绿
+- [ ] REL-7-3 tag v1.5.0 → GitHub Release 三 musl 归档 + SHA256SUMS，验证产物

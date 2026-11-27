@@ -143,7 +143,7 @@ stale_docs = [
     )
     if "13 模块 100 项" in text or "13个模块100项" in text
 ]
-check("R9-DOCS", not stale_docs, f"过期 tutor 条目数（应为 14 模块 102 项）: {stale_docs}")
+check("R9-DOCS", not stale_docs, f"过期 tutor 条目数（应为 14 模块 105 项）: {stale_docs}")
 check("R9-README", "无内建能力" not in readme_text,
       "README 仍称 vifm 文档预览『无内建能力』（实际 :view 内建文本/目录预览）")
 

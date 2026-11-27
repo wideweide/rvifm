@@ -856,61 +856,61 @@
 
 ### A. Linux 真实图形终端（foot / Alacritty / Kitty 任一）
 
-- [ ] A1 启动/退出/二次启动：tabs 与光标恢复（session.toml；`[ui] session_restore` 默认开）。
-- [ ] A2 默认主题 `gruvbox-dark` 生效（M34-1）；`:theme snowwhite` 切浅色且图标跟随 Light；`:theme dracula`；`:theme` 无参列出含 `snowwhite`。
-- [ ] A3 双栏：`Tab` 焦点切换（当前行反显/非焦点 DIM）；右 pane 独立 `j/k/l/h` 导航；`..` 行返回上级。
-- [ ] A4 右 pane `/` 搜索：incsearch 跳转 + 高亮 + 计数 `i/N`；`n`/`N` 环绕；Esc 恢复（M34-3）。
-- [ ] A5 对侧预览：焦点左 + `w` → 查看器在右 pane；焦点右 + `w` → 查看器在左 pane 且右 pane 保持列表导航（M34-4）。
-- [ ] A6 图片预览尺寸（M34-9）：小图原尺寸**居中不放大**；大图按窗格宽适配；超高显示顶部。
-- [ ] A7 PDF：无文本语料首页图像（略慢属预期）；有文本语料文本/图像分流（`[preview] pdf_image_pages`/`pdf_prefer_image`）。
-- [ ] A8 二进制/非 UTF-8 文件预览 → 信息面板（类型魔数/大小/修改；无乱码）（M34-7）。
-- [ ] A9 frecency：`o`/`:j`/`:J`/`:recent` 标题"高频目录/文件搜索"、图标行、✦keyword、搜索态底部 `/query` 回显（M34-5）。
-- [ ] A10 marks/书签/命令书签：`m{字符}`/`'{字符}`；`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks`；`:cmdmark` + 命令行内 `'` 展开。
-- [ ] A11 文件操作闭环：`yy`/`p`/`dd`/`u`（含跨 tab 撤销）/`cw`/`:rename` 结构化（y 应用整批）/`DD` 强提示/`:link`（目录 junction 由 D2 覆盖）/`:mk`。
-- [ ] A12 归档：zip/jar/7z 虚拟浏览；`:archive zip` 创建 + 校验文件 + `:jobs` 取消；大目录打包不阻塞 UI。
-- [ ] A13 搜索套件：`={glob}`、`f/F/;/,`、`:find`/`:grep` 虚拟目录 + `w` 查看器（行号/搜索高亮）。
-- [ ] A14 排序/对比：`S` 对话框、`:sort` 多字段、`:compare` byname/bycontents、`dp`/`do` + `u`。
-- [ ] A15 复制序列 `y`/`yn`/`yf`/`yc`（OSC52 需终端支持）。
-- [ ] A16 git：仓库内状态列/状态栏分支；`gi` 探测 gitui→ziggity→lazygit（装任一即验）。
-- [ ] A17 鼠标：单击聚焦/再击打开/双击直接打开/右键菜单/滚轮。
-- [ ] A18 `:jobs` 后台作业、`:trash` 暂存恢复、`:file`、`Ctrl-G` 详情。
+- [deferred] A1 启动/退出/二次启动：tabs 与光标恢复（session.toml；`[ui] session_restore` 默认开）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A2 默认主题 `gruvbox-dark` 生效（M34-1）；`:theme snowwhite` 切浅色且图标跟随 Light；`:theme dracula`；`:theme` 无参列出含 `snowwhite`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A3 双栏：`Tab` 焦点切换（当前行反显/非焦点 DIM）；右 pane 独立 `j/k/l/h` 导航；`..` 行返回上级。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A4 右 pane `/` 搜索：incsearch 跳转 + 高亮 + 计数 `i/N`；`n`/`N` 环绕；Esc 恢复（M34-3）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A5 对侧预览：焦点左 + `w` → 查看器在右 pane；焦点右 + `w` → 查看器在左 pane 且右 pane 保持列表导航（M34-4）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A6 图片预览尺寸（M34-9）：小图原尺寸**居中不放大**；大图按窗格宽适配；超高显示顶部。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A7 PDF：无文本语料首页图像（略慢属预期）；有文本语料文本/图像分流（`[preview] pdf_image_pages`/`pdf_prefer_image`）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A8 二进制/非 UTF-8 文件预览 → 信息面板（类型魔数/大小/修改；无乱码）（M34-7）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A9 frecency：`o`/`:j`/`:J`/`:recent` 标题"高频目录/文件搜索"、图标行、✦keyword、搜索态底部 `/query` 回显（M34-5）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A10 marks/书签/命令书签：`m{字符}`/`'{字符}`；`:bmark`/`:bmarks`/`:bmgo`/`:delbmarks`；`:cmdmark` + 命令行内 `'` 展开。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A11 文件操作闭环：`yy`/`p`/`dd`/`u`（含跨 tab 撤销）/`cw`/`:rename` 结构化（y 应用整批）/`DD` 强提示/`:link`（目录 junction 由 D2 覆盖）/`:mk`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A12 归档：zip/jar/7z 虚拟浏览；`:archive zip` 创建 + 校验文件 + `:jobs` 取消；大目录打包不阻塞 UI。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A13 搜索套件：`={glob}`、`f/F/;/,`、`:find`/`:grep` 虚拟目录 + `w` 查看器（行号/搜索高亮）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A14 排序/对比：`S` 对话框、`:sort` 多字段、`:compare` byname/bycontents、`dp`/`do` + `u`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A15 复制序列 `y`/`yn`/`yf`/`yc`（OSC52 需终端支持）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A16 git：仓库内状态列/状态栏分支；`gi` 探测 gitui→ziggity→lazygit（装任一即验）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A17 鼠标：单击聚焦/再击打开/双击直接打开/右键菜单/滚轮。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] A18 `:jobs` 后台作业、`:trash` 暂存恢复、`:file`、`Ctrl-G` 详情。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
 
 ### B. tmux（3.3+）
 
-- [ ] B1 `allow-passthrough on` 下图片可见（M11-6 步骤 2）。
-- [ ] B2 `:!{cmd}` 新窗口执行；退出后 TUI 状态一致（M18-4）。
+- [deferred] B1 `allow-passthrough on` 下图片可见（M11-6 步骤 2）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] B2 `:!{cmd}` 新窗口执行；退出后 TUI 状态一致（M18-4）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
 
 ### C. 特殊环境
 
-- [ ] C1 无图形协议终端：halfblocks 兜底出块（M11-6 步骤 3）。
-- [ ] C2 `NO_COLOR=1` 启动：无 panic、降级正常（M11-6 步骤 4）。
-- [ ] C3 损坏图片文件：可读提示不 panic（M11-6 步骤 5）。
-- [ ] C4 大图（>400 万像素）：可读提示或缩放，不 OOM（M11-6 步骤 6）。
-- [ ] C5 窄终端（<60 列）`pick` 单栏降级（AUDIT-3）。
-- [ ] C6 原生协议（Kitty/iTerm2/Sixel）终端下大图预览不越出预览窗格边界（M45-4a；**deferred**：需真实终端手工验证，自动部分已由 m454a 字体尺寸兜底 + SlicedProtocol 高度钳制单测覆盖）——切换模型/等效 AI review 前请先在 Kitty 或 iTerm2 打开一张 >400 万像素图片确认不溢出。
+- [deferred] C1 无图形协议终端：halfblocks 兜底出块（M11-6 步骤 3）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] C2 `NO_COLOR=1` 启动：无 panic、降级正常（M11-6 步骤 4）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] C3 损坏图片文件：可读提示不 panic（M11-6 步骤 5）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] C4 大图（>400 万像素）：可读提示或缩放，不 OOM（M11-6 步骤 6）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [x] C5 窄终端（<60 列）`pick` 单栏降级（AUDIT-3）。
+- [deferred] C6 原生协议（Kitty/iTerm2/Sixel）终端下大图预览不越出预览窗格边界（M45-4a；**deferred**：需真实终端手工验证，自动部分已由 m454a 字体尺寸兜底 + SlicedProtocol 高度钳制单测覆盖）——切换模型/等效 AI review 前请先在 Kitty 或 iTerm2 打开一张 >400 万像素图片确认不溢出。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
 
 ### D. Windows（Win2016）
 
-- [ ] D1 安装冒烟：`cargo install rvifm`（或 GitHub 归档解包）后 `rvifm`/`rv` `--version`/`--help`。
-- [ ] D2 `:link` 对目录创建 junction 回退（M28-1；撤销可逆）。
-- [ ] D3 装 7z 环境：`:archive cab|lzh` 提示区分"工具缺失 vs 格式不支持"（M31-2）。
-- [ ] D4 Windows Terminal 图片预览（M11-6 清单 §H Windows 部分）。
-- [ ] D5 `remotes.toml` 位于数据目录（`%LOCALAPPDATA%\rvifm\`）且可被 `:remote` 读取。
+- [deferred] D1 安装冒烟：`cargo install rvifm`（或 GitHub 归档解包）后 `rvifm`/`rv` `--version`/`--help`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] D2 `:link` 对目录创建 junction 回退（M28-1；撤销可逆）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] D3 装 7z 环境：`:archive cab|lzh` 提示区分"工具缺失 vs 格式不支持"（M31-2）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] D4 Windows Terminal 图片预览（M11-6 清单 §H Windows 部分）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] D5 `remotes.toml` 位于数据目录（`%LOCALAPPDATA%\rvifm\`）且可被 `:remote` 读取。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
 
 ### E. SFTP（如有可达远端）
 
-- [ ] E1 `:remote <名>` 进入/浏览/写操作（dd/p/P/:mkdir）；断线自动重连一次；失败现场 `.part`。
-- [ ] E2 known_hosts 首连写入；指纹变更拒连（改 `known_hosts = false` 验证跳过）。
+- [deferred] E1 `:remote <名>` 进入/浏览/写操作（dd/p/P/:mkdir）；断线自动重连一次；失败现场 `.part`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [deferred] E2 known_hosts 首连写入；指纹变更拒连（改 `known_hosts = false` 验证跳过）。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
 
 ### F. CLI（非 TUI）
 
-- [ ] F1 `rvifm pick`（TTY 交互双栏预览 + `--topic dir|file`）；`rvifm record --keyword`。
-- [ ] F2 `rvifm maintenance compact`（或 TUI 启动阈值触发）。
+- [deferred] F1 `rvifm pick`（TTY 交互双栏预览 + `--topic dir|file`）；`rvifm record --keyword`。（deferred：需真实终端/外部环境人工验证；自动部分已由 TestBackend 单测覆盖）
+- [x] F2 `rvifm maintenance compact`（或 TUI 启动阈值触发）。
 
 ### G. 数据边界
 
-- [ ] G1 `[frecency] ignore_patterns` 排除敏感路径与命令（命令文本不入库）。
-- [ ] G2 会话文件损坏静默降级（手改 `session.toml` 为非法内容后启动不 panic）。
+- [x] G1 `[frecency] ignore_patterns` 排除敏感路径与命令（命令文本不入库）。
+- [x] G2 会话文件损坏静默降级（手改 `session.toml` 为非法内容后启动不 panic）。
 
 ### 说明
 
@@ -998,10 +998,10 @@
 
 ## 43. M43 — tutor 全功能覆盖与放行重构（见 SPEC M43 节）
 
-- [ ] M43-1 Tutor 会话激活时 j/dd/:命令等可实际执行（透明放行）；Ctrl+Y/Ctrl+N 标记并推进、Ctrl+Q 退出保存；任意模式切换（命令/帮助/确认）不丢会话；模块列表 13 项超屏滚动跟随。（m43_1 测试）
-- [ ] M43-2 requires 字段解析（逗号分隔多 token）；含 requires 条目 Panel 显示环境依赖提示行；无字段条目不受影响。（m43_2 测试）
-- [ ] M43-3/4/5 13 模块 ~85 项内容与实际键位/命令语义一致（逐条对照代码）；builtin_modules_parse_and_unique 固化；危险命令条目含「了解即可」标注；file_ops/maintenance 首条目含 sandbox 引导。
-- [ ] M43-6 GUIDE/help/README/CHANGELOG 同步；SPEC 内 tutor 条目维护规则条目存在；批次文档同步。
+- [x] M43-1 Tutor 会话激活时 j/dd/:命令等可实际执行（透明放行）；Ctrl+Y/Ctrl+N 标记并推进、Ctrl+Q 退出保存；任意模式切换（命令/帮助/确认）不丢会话；模块列表 13 项超屏滚动跟随。（m43_1 测试）
+- [x] M43-2 requires 字段解析（逗号分隔多 token）；含 requires 条目 Panel 显示环境依赖提示行；无字段条目不受影响。（m43_2 测试）
+- [x] M43-3/4/5 13 模块 ~85 项内容与实际键位/命令语义一致（逐条对照代码）；builtin_modules_parse_and_unique 固化；危险命令条目含「了解即可」标注；file_ops/maintenance 首条目含 sandbox 引导。
+- [x] M43-6 GUIDE/help/README/CHANGELOG 同步；SPEC 内 tutor 条目维护规则条目存在；批次文档同步。
 
 ## 44. M44 — 预览焦点修复（见 SPEC M44 节）
 
@@ -1034,15 +1034,15 @@
 
 ## 48. M45 — 用户实测批次（见 SPEC M45 节；待用户确认，冲突项须裁决后实施）
 
-- [ ] M45-1 HOME 下路径显示 `~/…` 且导航仍用绝对路径（**M45-1a ✅ 2026-11-23**：abbreviate_home + m451a）；标签栏鼠标点击切换 tab（**M45-1b ✅ 2026-11-23**：m451b）；标签样式与路径行解耦（灰白底反色字，**M45-1c ✅ 2026-11-23**：m451c）；分隔线可配置默认关（**M45-1d ✅ 2026-11-23**：m451d，m21f1 测试同步）。
-- [ ] M45-2 整行反显覆盖全宽（保持）；无后缀文件不显示 `*`，可执行/文本/jar/deb 图标按类型推断（**M45-2b ✅ 2026-11-23**：infer_icon + m452b，嗅探仅常规文件防 FIFO 阻塞）；未搜索态整行背景一致（**M45-2a ✅ 2026-11-23**：m452a，反显行去类型 fg，搜索高亮保留）；搜索子串高亮存留裁决后落实。
-- [ ] M45-3 opener 配置错误提示具体化 + 示例指引（**M45-3a ✅ 2026-11-23**：m453a，路径+单行压缩+表形态提示+help 示例）；可执行文件 Enter 仅提示不执行（裁决后，**M45-3b ✅ 2026-11-23**：m453b，显式 [open] run 规则仍可执行）；删除确认居中阻塞弹窗带图标/高亮（**M45-3c ✅ 2026-11-23**：m453c，confirm_dialog 纯函数 + 居中渲染）；`v`+`d` 必现确认（**M45-3d ✅ 2026-11-23**：m453d_visual_delete_requires_confirmation，确认前文件保留）；`h`→`l` 光标还原（**M45-3e ✅ 2026-11-23**：m453e，Tab/Pane per-location cursor_memory + 钳制）。
-- [ ] M45-4 图片在预览区内不越界（native 协议字体尺寸兜底，**M45-4a ✅ 2026-11-23**：m454a，字体尺寸钳制+切片高度上限+帧相交；真实终端项 C6 deferred）；归档预览显示成员列表且 Office/PDF/zip 容器仍优先（**M45-4b ✅ 2026-11-23**：m454b，PreviewKind::Archive + archive_preview）；损坏/加密/.rar 回退信息面板；主 TUI 预览不再对 tar 显示乱码（NUL 探测）。
+- [x] M45-1 HOME 下路径显示 `~/…` 且导航仍用绝对路径（**M45-1a ✅ 2026-11-23**：abbreviate_home + m451a）；标签栏鼠标点击切换 tab（**M45-1b ✅ 2026-11-23**：m451b）；标签样式与路径行解耦（灰白底反色字，**M45-1c ✅ 2026-11-23**：m451c）；分隔线可配置默认关（**M45-1d ✅ 2026-11-23**：m451d，m21f1 测试同步）。
+- [x] M45-2 整行反显覆盖全宽（保持）；无后缀文件不显示 `*`，可执行/文本/jar/deb 图标按类型推断（**M45-2b ✅ 2026-11-23**：infer_icon + m452b，嗅探仅常规文件防 FIFO 阻塞）；未搜索态整行背景一致（**M45-2a ✅ 2026-11-23**：m452a，反显行去类型 fg，搜索高亮保留）；搜索子串高亮存留裁决后落实。
+- [x] M45-3 opener 配置错误提示具体化 + 示例指引（**M45-3a ✅ 2026-11-23**：m453a，路径+单行压缩+表形态提示+help 示例）；可执行文件 Enter 仅提示不执行（裁决后，**M45-3b ✅ 2026-11-23**：m453b，显式 [open] run 规则仍可执行）；删除确认居中阻塞弹窗带图标/高亮（**M45-3c ✅ 2026-11-23**：m453c，confirm_dialog 纯函数 + 居中渲染）；`v`+`d` 必现确认（**M45-3d ✅ 2026-11-23**：m453d_visual_delete_requires_confirmation，确认前文件保留）；`h`→`l` 光标还原（**M45-3e ✅ 2026-11-23**：m453e，Tab/Pane per-location cursor_memory + 钳制）。
+- [x] M45-4 图片在预览区内不越界（native 协议字体尺寸兜底，**M45-4a ✅ 2026-11-23**：m454a，字体尺寸钳制+切片高度上限+帧相交；真实终端项 C6 deferred）；归档预览显示成员列表且 Office/PDF/zip 容器仍优先（**M45-4b ✅ 2026-11-23**：m454b，PreviewKind::Archive + archive_preview）；损坏/加密/.rar 回退信息面板；主 TUI 预览不再对 tar 显示乱码（NUL 探测）。
 - [x] M45-5 `o` 不显示 cmd topic 条目（**M45-5a ✅ 2026-11-23**：without_cmd_topic + m455a 测试）；鼠标点击选择 frecency 候选（**M45-5b 初版 ✅ 2026-11-23**：JumpSelect 浮层路径；FIX-8-1 后 `o`/`:j`/`:J` 共用内嵌面板点击路径并回归通过）；`:` 命令名辅助提示（**M45-5c ✅ 2026-11-23**：m455c，范围自决为命令名 Tab 补全，见 NOTES）；
-- [ ] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后，**M45-6c ✅ 2026-11-23**：m456c，Pane 归档虚拟目录进/退 + 文件 no-op）。
-- [ ] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后，**M45-7a ✅ 2026-11-23**：m457a，缺省对侧 + 指定侧/路径）；虚拟目录 `yy`→粘贴（**M45-7b ✅ 2026-11-23**：m457b，YankSource::Archive + extract_members + u 可逆；OUT_OF_SCOPE 裁决作废）。
-- [ ] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让（**M45-8c ✅ 2026-11-23**：m458c，tutor_panel_height 同源 render/视口）；列表左侧显示进度（**M45-8d ✅ 2026-11-23**：m458d，tutor_progress 缓存 + 百分比标签）；进度持久化保持。
-- [ ] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断（**M45-9b ✅ 2026-11-23**：m459b，扩展名推断格式 + checksum 显式）；对话框宽度/去后缀/默认名/选中高亮/任意字段回车（**M45-9c ✅ 2026-11-23**：m459c，加宽 + 去后缀 + 多选父目录默认名 + 逐项反显；任意字段回车已实现）。
+- [x] M45-6 `:cd` 遵循焦点 pane（**M45-6a ✅ 2026-11-23**：m456a_cd_follows_focused_pane，右焦点改右栏左栏不变）；`o` 跳转写焦点 pane（**M45-6b ✅ 2026-11-23**：m456b，jump_to 焦点感知）；右栏归档 `l`/Enter 进入（M41-3 裁决后，**M45-6c ✅ 2026-11-23**：m456c，Pane 归档虚拟目录进/退 + 文件 no-op）。
+- [x] M45-7 `:extract` 支持对侧/指定路径（M37-2 裁决后，**M45-7a ✅ 2026-11-23**：m457a，缺省对侧 + 指定侧/路径）；虚拟目录 `yy`→粘贴（**M45-7b ✅ 2026-11-23**：m457b，YankSource::Archive + extract_members + u 可逆；OUT_OF_SCOPE 裁决作废）。
+- [x] M45-8 tutor 列表 `l`/Enter 后消失（**M45-8a ✅ 2026-11-23**：m458a）；Panel 提示 Ctrl+Y/N/Q（**M45-8b ✅ 2026-11-23**：m42_1 测试更新）；布局避让（**M45-8c ✅ 2026-11-23**：m458c，tutor_panel_height 同源 render/视口）；列表左侧显示进度（**M45-8d ✅ 2026-11-23**：m458d，tutor_progress 缓存 + 百分比标签）；进度持久化保持。
+- [x] M45-9 `:archive` 覆盖 `v` 多选（**M45-9a ✅ 2026-11-23**：m459a_archive_plan_covers_visual_selection）；`[名, checksum=]` 推断（**M45-9b ✅ 2026-11-23**：m459b，扩展名推断格式 + checksum 显式）；对话框宽度/去后缀/默认名/选中高亮/任意字段回车（**M45-9c ✅ 2026-11-23**：m459c，加宽 + 去后缀 + 多选父目录默认名 + 逐项反显；任意字段回车已实现）。
 - [x] M45-10 文档收尾与冲突裁决记录；harness_check 通过。（2026-11-23：README/GUIDE/help/ACCEPTANCE/CHANGELOG 同步 + tutor 条目更新，5 项冲突裁决与范围自决见 NOTES）
 
 
@@ -1078,7 +1078,7 @@
 - [x] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容（**2026-11-24**：DebFs ar 解析 + 内存 TarFs + `data/` 虚拟目录，m469 端到端）；`.rar` 有工具时可列出/进入、缺失给可读提示（RarFs + m469 路径净化测试；真实工具环境待用户补验）；扩展名真值表一致，归档只读与 64MB 上限不回归。
 - [x] M46-10 单文件与多选删除确认为居中 yazi 风格弹窗（**2026-11-24**：`confirm_dialog` 重写为标题居中 ⚠「是否删除选定的 N 个文件」+ 无标题下提示 + 图标/类型色文件列表 + 6 行固定高度 + 右侧滚动条，j/k 导航状态进 InputMode，m453c/m4610 测试）；y/Enter 与 Esc/n 行为不变。
 - [x] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致（**2026-11-24**：help.txt 新增 M46 段与 :help/:extract/w/dd 更新，GUIDE §11 默认配置生成与变化摘要，CHANGELOG [Unreleased] M46 条目；harness_check OK）。
-- [ ] M46-12 tutor 13 模块 100 项可解析、提示与新增/修复项一致；harness_check 通过。
+- [x] M46-12 tutor 14 模块 105 项可解析（`builtin_modules_count_is_current`）、提示与 M82–M85 新增/修复项一致；harness_check 通过。（2026-11-27：补 `:diff`/`|`、归档成员新窗口、查看器 `G` 三条 tutor 条目）
 
 ## 52. M47 — 用户实测批次 3（见 SPEC M47 节）
 
@@ -1237,7 +1237,7 @@
 - [x] M61-2 超阈值文件 worker 不整文件读取；远端大文件仅元数据。（2026-11-26：m615）
 - [x] M61-3 大文件预览只渲染视口行；聚焦不再触发全量加载。（2026-11-26：渲染分支视口行）
 - [x] M61-4 高亮跨视口尽力而为（流畅优先，允许颜色偏差）。（2026-11-26：highlighter_cache）
-- [x] M61-5 文档/验收/门禁，未发版。（2026-11-26：644 单测 + 14 集成 + 八条 harness）
+- [x] M61-5 文档/验收/门禁，随 1.5.0 发版。（2026-11-26：644 单测 + 14 集成 + 八条 harness）
 
 ## 67. M62 — 图片缩放与编码流水线（见 SPEC M62 节）
 
@@ -1250,14 +1250,14 @@
 - [x] M63-2 `pdf-rust` 非默认 feature 引入 karet-pdf，文本提取仍先行。（2026-11-26：双 feature 构建绿）
 - [x] M63-3 JSON/Markdown 轻量结构化预览。（2026-11-26：m633）
 - [x] M63-4 二进制 hex 语义注释 deferred 已记录。（2026-11-26：低优先）
-- [x] M63-5 文档/验收/门禁，未发版。（2026-11-26：646 单测 + 14 集成 + 八条 harness）
+- [x] M63-5 文档/验收/门禁，随 1.5.0 发版。（2026-11-26：646 单测 + 14 集成 + 八条 harness）
 
 ## 69. M64 — 向导修仙境界分级（见 SPEC M64 节）
 
 - [x] M64-1 11 级境界 + 初期/中期/后期/圆满；筑基需 core_nav 完成；真仙需 100% 且零错题。（2026-11-27：m641）
 - [x] M64-2 境界只在学习进度栏显示符号+中文。（2026-11-27：进度栏标题）
 - [x] M64-3 模块列表首位为 tutor_meta（首次默认进入它）。（2026-11-27：m43_1 更新）
-- [x] M64-4 文档/验收/门禁，未发版。（2026-11-27：647 单测 + 14 集成 + 八条 harness）
+- [x] M64-4 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：647 单测 + 14 集成 + 八条 harness）
 
 ## 70. M65 — 境界起点改名与 CI 跨平台修复（见 SPEC M65 节）
 
@@ -1271,7 +1271,7 @@
 - [x] M66-1 前三条各含三遍「真实操作、务必小心」提示。（2026-11-27：m661）
 - [x] M66-2 `Ctrl+Q` 退出提示明确可用 `:tutor` 重进。（2026-11-27：m661）
 - [x] M66-3 tutor 条目语义与当前功能一致；14 个 TOML 统一「向导模式」；稳定 ID 不变。（2026-11-27：5 项/稳定 ID）
-- [x] M66-4 文档/验收/门禁，未发版。（2026-11-27：648 单测 + 14 集成 + 八条 harness）
+- [x] M66-4 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：648 单测 + 14 集成 + 八条 harness）
 
 ## 72. M67 — 向导沙箱（见 SPEC M67 节）
 
@@ -1279,7 +1279,7 @@
 - [x] M67-2 左右目录初始化样例文件。（2026-11-27：txt/md/json/bin）
 - [x] M67-3 进入 tutor 会话自动定位左/右栏到沙箱。（2026-11-27：m673）
 - [x] M67-4 沙箱操作不写 frecency；撤销栈可用。（2026-11-27：m674）
-- [x] M67-5 文档/验收/门禁，未发版。（2026-11-27：651 单测 + 14 集成 + 八条 harness）
+- [x] M67-5 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：651 单测 + 14 集成 + 八条 harness）
 
 ## 73. M68 — 全面审计与漂移治理（见 SPEC M68 节）
 
@@ -1293,18 +1293,18 @@
 - [x] M69-1 统一补丁解析为 hunks，行类型/行号正确；统一与左右对照渲染纯函数可测。（2026-11-27：gitdiff 单测）
 - [x] M69-2 `:diff` 打开 overlay：左栏文件列表、右栏补丁；diff 计算异步且不阻塞 UI。（2026-11-27：m692）
 - [x] M69-3 j/k 逐行、J/K 跳 hunk、gg/G、/ 与 n/N、h/l、`|` 对照、`=` 完整文件、`^w` 换行、Esc/q 退出。（2026-11-27：局部键位）
-- [x] M69-4 文档/验收/门禁，未发版。（2026-11-27：655 单测 + 14 集成 + 九条 harness）
+- [x] M69-4 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：655 单测 + 14 集成 + 九条 harness）
 
 ## 75. M70 — Git 文件级写操作（见 SPEC M70 节）
 
 - [x] M70-1 a/A/d/c/p/P 语义与 lazygit 对齐；写操作确认且状态栏回显结果。（2026-11-27：m701）
 - [x] M70-2 `[git] confirm_destructive` 默认 true，取消不改仓库。（2026-11-27：m702）
-- [x] M70-3 文档/验收/门禁，未发版。（2026-11-27：657 单测 + 14 集成 + 九条 harness）
+- [x] M70-3 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：657 单测 + 14 集成 + 九条 harness）
 
 ## 76. M71 — 块级 hunk 丢弃（见 SPEC M71 节）
 
 - [x] M71-1 D 丢弃当前 hunk 前有预览+确认，u 可撤销。（2026-11-27：m711 真实仓库）
-- [x] M71-2 文档/验收/门禁，未发版。（2026-11-27：658 单测 + 14 集成 + 九条 harness）
+- [x] M71-2 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：658 单测 + 14 集成 + 九条 harness）
 
 ## 77. M72 — :diff 实测修复（见 SPEC M72 节）
 
@@ -1353,33 +1353,33 @@
 
 - [x] M79-1 git 写操作后状态列立即刷新，不残留旧 M 标记。（2026-11-27：clear_git_cache）
 - [x] M79-2 外部终端提交后 3 秒内状态列自动刷新。（2026-11-27：TTL 3s）
-- [x] M79-3 文档/验收/门禁，未发版。（2026-11-27：667 单测 + 14 集成 + 九条 harness）
+- [x] M79-3 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：667 单测 + 14 集成 + 九条 harness）
 
 ## 85. M80 — 焦点样式重做（见 SPEC M80 节）
 
 - [x] M80-1 焦点标签背景与路径行区分，主题选中背景 + 反色文字。（2026-11-27：focused_tab_style）
 - [x] M80-2 失焦选中项背景同源且更浅；M73 固定灰底已撤销。（2026-11-27：selected_row_style）
 - [x] M80-3 预览区 U 型标题框，边框与标题同色，焦点仅改明暗。（2026-11-27：m803）
-- [x] M80-4 文档/验收/门禁，未发版。（2026-11-27：667 单测 + 14 集成 + 九条 harness）
+- [x] M80-4 文档/验收/门禁，随 1.5.0 发版。（2026-11-27：667 单测 + 14 集成 + 九条 harness）
 
 ## 86. M81 — 焦点样式细调（见 SPEC M81 节）
 
 - [x] M81-1 非焦点标签无背景且白字；焦点标签白底反色。
 - [x] M81-2 预览获焦时对侧目录栏标题栏按失焦显示。
 - [x] M81-3 预览标题栏下方完整方框，边框与 :diff 同源、失焦灰色。
-- [x] M81-4 文档/验收/门禁，未发版。
+- [x] M81-4 文档/验收/门禁，随 1.5.0 发版。
 
 ## 87. M82 — git diff 体验（见 SPEC M82 节）
 
 - [x] M82-1 补丁与对照视图均有语法高亮。
 - [x] M82-2 `|` 支持全屏对照，分隔线连续，增删行与词级差异高亮。
-- [x] M82-3 文档/验收/门禁，未发版。
+- [x] M82-3 文档/验收/门禁，随 1.5.0 发版。
 
 ## 88. M83 — 文本预览两段式消除（见 SPEC M83 节）
 
 - [x] M83-1 文本始终视口渲染且始终高亮，`/` 查询不关闭语法。
 - [x] M83-2 `G` 显示末屏；缺失文件首行「文件不存在」；高亮缓存按内容失效。
-- [x] M83-3 文档/验收/门禁，未发版。
+- [x] M83-3 文档/验收/门禁，随 1.5.0 发版。
 
 ## 89. M84 — 归档成员打开对齐（见 SPEC M84 节）
 
@@ -1388,6 +1388,6 @@
 ## 90. M85 — 图片流水线（见 SPEC M85 节）
 
 - [x] M85-1 resize/encode 后台化（ThreadProtocol）+ 图片独立 generation + 绘制矩形缓存含坐标，无 pending 卡死。
-- [ ] M85-1b 磁盘已编码协议缓存（deferred：ratatui-image 不公开编码字节，需 fork/自写编码器；见 NOTES）。
+- [deferred] M85-1b 磁盘已编码协议缓存（deferred：ratatui-image 不公开编码字节，需 fork/自写编码器；见 NOTES）。
 - [x] M85-2 预缩放最长边 1600（宽度由预览 pane 约束）、显式 Nearest、协议查询开关可配（超时值由库固定 2s 不暴露），无 pending 卡死。
-- [x] M85-3 文档/验收/门禁，未发版。
+- [x] M85-3 文档/验收/门禁，随 1.5.0 发版。

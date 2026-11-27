@@ -1701,3 +1701,11 @@ rvifm record  → 静默记录访问
 - **协议查询**：ratatui-image `STDIN_READ_TIMEOUT_MILLIS=2000` 是库内常量，不暴露配置；改为提供 `[preview] image_protocol_query` 开关（false 直接 halfblocks，零等待）替代「超时值可配」，环境变量仍优先。**范围收缩**：未实现可调超时数值。
 - **磁盘协议缓存 CUT/deferred**：ratatui-image 的 `StatefulProtocol`/`Protocol` 不公开已编码字节（仅内部 `data` 与 `render`），无法在不 fork 或不自写 Kitty/Sixel/halfblocks 编码器的前提下持久化；本次以 ThreadProtocol + 内存协议缓存替代，**不写磁盘缓存**。若要补做需单独批次并评估自写编码器的兼容风险。
 - **本机 vifm 证据**：`/mnt/shared-data/dlt/.config/vifm/vifmrc` 用 `fileviewer` → `scripts/img_preview.sh`（img2sixel + `~/.cache/vifm/sixel_cache` 磁盘缓存，940×1600 上限）；文本走 `batcat --color=always -n --line-range=:200`。rvifm 的差异不是语言问题，而是编码线程与缓存层。
+
+### 2026-11-27 — 发布口径反转与全面审计决策（用户授权）
+
+- 用户 2026-11-27 明确要求「发布 GitHub Release」，**覆盖** M47–M85 期间「只提交代码、不 bump / 不 tag / 不 Release」的口径。执行版本 1.5.0（semver minor：M47–M85 均为增量功能/修复），tag `v1.5.0`。
+- crates.io 仍停 1.0.0，沿用用户 2026-11-23 决策；REL 两通道解耦不变。
+- 审计发现 CI 连续失败（Windows CRLF 断言 / macOS 长路径标题截断），已在 AUDIT-1 修复；发布前以 main CI 全绿为硬门禁。
+- tutor 维护规则（SPEC M43-6）落实：新增 3 条条目覆盖 `:diff`/`|`、归档成员新窗口、`G` 末屏；总条目 102 → 105，新增严格计数测试 `builtin_modules_count_is_current`，ACCEPTANCE M46-12 同步更新并勾选。
+- 历史 ACCEPTANCE 未勾项分诊：自动且已通过者勾选，真实终端/环境项统一标 `[deferred]` 并注明自动部分覆盖情况；M85-1b 同样标 `[deferred]`。
