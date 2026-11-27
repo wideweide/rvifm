@@ -246,7 +246,7 @@ fn m601_async_preview_discards_stale_generation() {
 }
 
 #[test]
-fn m597_focused_preview_has_blue_border() {
+fn m803_preview_uses_titled_frame_not_blue_border() {
     // M59-7：Tab 进入预览后用蓝色加粗边框标识焦点区。
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "hello").unwrap();
@@ -268,8 +268,16 @@ fn m597_focused_preview_has_blue_border() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let buf = terminal.backend().buffer().clone();
+    // M80-3：标题框与目录栏同源，不再用蓝色第二层边框。
     let blue = (0..80u16).any(|x| (0..20u16).any(|y| buf[(x, y)].fg == Color::Blue));
-    assert!(blue, "获焦预览边框应为蓝色");
+    assert!(!blue, "不应再叠加蓝色边框");
+    let mut all = String::new();
+    for y in 0..20u16 {
+        for x in 0..80u16 {
+            all.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(all.contains("a.txt"), "预览标题应显示文件路径: {all}");
 }
 
 #[test]
@@ -12174,7 +12182,7 @@ fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
         "焦点左：左当前行反显"
     );
     assert!(
-        buf[(rx, r_row)].bg == Color::Gray
+        buf[(rx, r_row)].bg == selected_row_style(false).bg.unwrap_or(Color::Reset)
             && !buf[(rx, r_row)].modifier.contains(Modifier::REVERSED),
         "焦点左：右当前行浅灰底"
     );
@@ -12183,7 +12191,7 @@ fn m21f2_focus_switch_dims_unfocused_pane_current_row() {
     state.active_tab_mut().focus = crate::tab::Focus::Right;
     let buf = draw(&state);
     assert!(
-        buf[(lx, l_row)].bg == Color::Gray
+        buf[(lx, l_row)].bg == selected_row_style(false).bg.unwrap_or(Color::Reset)
             && !buf[(lx, l_row)].modifier.contains(Modifier::REVERSED),
         "焦点右：左当前行浅灰底"
     );

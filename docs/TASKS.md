@@ -954,3 +954,10 @@
 - [x] M79-1 git 写操作后清缓存（见 SPEC M79）；2026-11-27 完成：run_git_op + fs_dirty 统一 clear_git_cache，m791 通过
 - [x] M79-2 git 状态缓存 TTL（见 SPEC M79）；2026-11-27 完成：git_cache_at + 3s TTL + git_cache_fresh，m791 通过
 - [x] M79-3 文档/验收/门禁（见 SPEC M79）；2026-11-27 完成：GUIDE/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁
+
+## M80 — 焦点样式重做（用户纠正，见 SPEC M80 节）
+
+- [x] M80-1 撤销 M73 标签调暗，焦点标签用主题选中背景+反色（见 SPEC M80）；2026-11-27 完成：focused_tab_style + 删除 tab_background
+- [x] M80-2 撤销失焦灰底，选中项背景同源且失焦更浅（见 SPEC M80）；2026-11-27 完成：selected_row_style（焦点 REVERSED、失焦同源浅色），m21f2 更新
+- [x] M80-3 预览区 U 型标题框 + 标题/边框同色明暗（见 SPEC M80）；2026-11-27 完成：左/右/下三边框 + title_style，m803 更新
+- [x] M80-4 文档/验收/门禁（见 SPEC M80）；2026-11-27 完成：GUIDE/CHANGELOG/STATE/PLAN/NOTES 同步 + 全门禁

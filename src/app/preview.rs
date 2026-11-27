@@ -52,12 +52,13 @@ pub(crate) fn render_view_path(
     let tab = state.active_tab();
     // M49-9/10：快速切换时只做轻量预览；预览获焦（Tab 进入）后才全量加载。
     let quick = !tab.preview_focus && tab.pane_frecency.as_ref().is_none_or(|p| !p.preview_focus);
-    // M73-3：不再叠加第二层蓝框——直接给现有 pane 边框上焦点色。
-    let border_style = if !quick {
-        Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD)
+    // M80-3：标题栏与 U 型边框同源明暗，焦点侧更亮；不再叠加蓝色第二层框。
+    let title_style = if !quick {
+        crate::app::render::vifm_style("TopLineSel")
     } else {
-        pane_border_style(true)
+        crate::app::render::vifm_style("TopLine")
     };
+    let border_style = Style::new().fg(title_style.fg.unwrap_or(Color::Gray));
     let path = path.to_path_buf();
     // 图片：快速态只显示元数据；获焦后仍走 ImageEngine 全量渲染。
     if matches!(
@@ -65,11 +66,17 @@ pub(crate) fn render_view_path(
         crate::preview::PreviewKind::Image
     ) {
         if quick {
-            let pane = ratatui::widgets::Block::bordered()
+            let pane = ratatui::widgets::Block::new()
+                .borders(
+                    ratatui::widgets::Borders::LEFT
+                        | ratatui::widgets::Borders::RIGHT
+                        | ratatui::widgets::Borders::BOTTOM,
+                )
                 .title(format!(
                     "{} · 图片（快速预览）",
                     path.display().to_string().replace('\\', "/")
                 ))
+                .title_style(title_style)
                 .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
@@ -84,11 +91,17 @@ pub(crate) fn render_view_path(
             );
             return;
         }
-        let pane = ratatui::widgets::Block::bordered()
+        let pane = ratatui::widgets::Block::new()
+            .borders(
+                ratatui::widgets::Borders::LEFT
+                    | ratatui::widgets::Borders::RIGHT
+                    | ratatui::widgets::Borders::BOTTOM,
+            )
             .title(format!(
                 "{} · 图片预览",
                 path.display().to_string().replace('\\', "/")
             ))
+            .title_style(title_style)
             .border_style(border_style);
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
@@ -132,11 +145,17 @@ pub(crate) fn render_view_path(
     // M21-F6：光标在目录上 → 浅层 tree（复用 M13-7 构建器，深度 2、
     // 只读快照）——不走文本读取路径，杜绝"无法读取/非 UTF-8"误报。
     if path.is_dir() {
-        let pane = ratatui::widgets::Block::bordered()
+        let pane = ratatui::widgets::Block::new()
+            .borders(
+                ratatui::widgets::Borders::LEFT
+                    | ratatui::widgets::Borders::RIGHT
+                    | ratatui::widgets::Borders::BOTTOM,
+            )
             .title(format!(
                 "{} · 目录",
                 path.display().to_string().replace('\\', "/")
             ))
+            .title_style(title_style)
             .border_style(border_style);
         let inner = pane.inner(area);
         frame.render_widget(pane, area);
@@ -223,8 +242,14 @@ pub(crate) fn render_view_path(
             ),
         }
     };
-    let pane = ratatui::widgets::Block::bordered()
+    let pane = ratatui::widgets::Block::new()
+        .borders(
+            ratatui::widgets::Borders::LEFT
+                | ratatui::widgets::Borders::RIGHT
+                | ratatui::widgets::Borders::BOTTOM,
+        )
         .title(title)
+        .title_style(title_style)
         .border_style(border_style);
     let inner = pane.inner(area);
     frame.render_widget(pane, area);
@@ -233,8 +258,14 @@ pub(crate) fn render_view_path(
     // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。
     match crate::preview::preview_kind(&path) {
         crate::preview::PreviewKind::Office => {
-            let pane = ratatui::widgets::Block::bordered()
+            let pane = ratatui::widgets::Block::new()
+                .borders(
+                    ratatui::widgets::Borders::LEFT
+                        | ratatui::widgets::Borders::RIGHT
+                        | ratatui::widgets::Borders::BOTTOM,
+                )
                 .title(format!("{shown} · Office 预览"))
+                .title_style(title_style)
                 .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
@@ -254,8 +285,14 @@ pub(crate) fn render_view_path(
         crate::preview::PreviewKind::Archive => {
             // M45-4b + M46-8：归档成员列表（Office/PDF 已在 preview_kind 中
             // 优先命中）——缓存版同源渲染，损坏/.rar 回退信息面板。
-            let pane = ratatui::widgets::Block::bordered()
+            let pane = ratatui::widgets::Block::new()
+                .borders(
+                    ratatui::widgets::Borders::LEFT
+                        | ratatui::widgets::Borders::RIGHT
+                        | ratatui::widgets::Borders::BOTTOM,
+                )
                 .title(format!("{shown} · 归档成员（只读）"))
+                .title_style(title_style)
                 .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
@@ -287,8 +324,14 @@ pub(crate) fn render_view_path(
             let prefer = state.config.preview.pdf_prefer_image;
             if pages_cfg > 0 && !quick {
                 let page = viewer.page;
-                let pane = ratatui::widgets::Block::bordered()
+                let pane = ratatui::widgets::Block::new()
+                    .borders(
+                        ratatui::widgets::Borders::LEFT
+                            | ratatui::widgets::Borders::RIGHT
+                            | ratatui::widgets::Borders::BOTTOM,
+                    )
                     .title(format!("{shown} · PDF 第 {} 页（[ ] 翻页）", page + 1))
+                    .title_style(title_style)
                     .border_style(border_style);
                 let inner = pane.inner(area);
                 frame.render_widget(pane, area);
@@ -307,8 +350,14 @@ pub(crate) fn render_view_path(
                 }
                 return;
             }
-            let pane = ratatui::widgets::Block::bordered()
+            let pane = ratatui::widgets::Block::new()
+                .borders(
+                    ratatui::widgets::Borders::LEFT
+                        | ratatui::widgets::Borders::RIGHT
+                        | ratatui::widgets::Borders::BOTTOM,
+                )
                 .title(format!("{shown} · PDF 预览"))
+                .title_style(title_style)
                 .border_style(border_style);
             let inner = pane.inner(area);
             frame.render_widget(pane, area);
@@ -668,11 +717,8 @@ pub(crate) fn render_right_pane(
             // 高亮时第一条真实条目不得同时反显（原无条件 idx==cursor）。
             if row_reversed {
                 // M73-2：焦点侧反显，失焦侧浅灰底表达选中项。
-                if focused {
-                    modifiers |= Modifier::REVERSED;
-                } else {
-                    li = li.style(Style::new().bg(Color::Gray).fg(Color::Black));
-                }
+                // M80-2：选中项背景同源明暗，失焦更浅。
+                li = li.style(crate::app::render::selected_row_style(focused));
             }
             if tab.right.tags.contains(&item.name) {
                 modifiers |= Modifier::BOLD;

@@ -229,16 +229,13 @@ pub(crate) fn tab_bar_hit_test(state: &AppState, width: u16, col: u16) -> Option
 /// M39-6：标签栏 spans——命名标签（Tab.name 覆盖目录名）+ 溢出滚动
 /// （宽度不足时显示活动标签附近窗口，两侧 ‹/› 指示；宽度按字符数近似，
 /// CJK 全宽忽略——SIMPLIFIED）。
-/// M73-1：标签底色比路径行更深一档，避免标签栏与路径行连成一片。
-fn tab_background(active: bool) -> Color {
-    let base = crate::theme::style("TopLine").bg.unwrap_or(Color::White);
-    match base {
-        Color::Rgb(r, g, b) if active => Color::Rgb(r / 2, g / 2, b / 2),
-        Color::Rgb(r, g, b) => Color::Rgb(r * 2 / 3, g * 2 / 3, b * 2 / 3),
-        Color::White | Color::Gray => Color::DarkGray,
-        Color::DarkGray | Color::Black => Color::Black,
-        _ => Color::DarkGray,
-    }
+/// M80-1：焦点标签用主题选中背景（偏白）+ 反色文字，与路径行背景区分。
+fn focused_tab_style() -> Style {
+    let bg = crate::theme::style("selected").bg.unwrap_or(Color::White);
+    Style::new()
+        .bg(bg)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<Span<'static>> {
@@ -251,10 +248,11 @@ pub(crate) fn tab_bar_spans(state: &AppState, width: u16, borders: bool) -> Vec<
         let label = labels[idx].clone();
         // M45-1c：标签样式独立于路径行（灰白底反色字），不再复用 TopLine/
         // TabLine 的主题 accent 色；borders 模式仍走 REVERSED。
-        let mut style = tab_label_style(idx == state.active, borders);
-        if !borders {
-            style = style.patch(Style::new().bg(tab_background(idx == state.active)));
-        }
+        let style = if !borders && idx == state.active {
+            focused_tab_style()
+        } else {
+            tab_label_style(idx == state.active, borders)
+        };
         out.push(Span::styled(label, style));
     }
     if let Some(last) = visible.last()
@@ -341,6 +339,29 @@ fn vifm_fallback(name: &str) -> Style {
         "Selected" => Style::new().fg(Color::Magenta).add_modifier(Modifier::BOLD),
         _ => Style::new(),
     }
+}
+
+/// M80-2：选中项背景同源——焦点用主题选中背景，失焦取更浅一档。
+pub(crate) fn selected_row_style(focused: bool) -> Style {
+    let base = crate::theme::style("selected")
+        .bg
+        .or_else(|| vifm_style("TopLineSel").bg)
+        .unwrap_or(Color::White);
+    if focused {
+        // 焦点侧保留反显语义（与既有列表/测试一致）。
+        return Style::new().add_modifier(Modifier::REVERSED);
+    }
+    let bg = match base {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            r.saturating_add(255) / 2,
+            g.saturating_add(255) / 2,
+            b.saturating_add(255) / 2,
+        ),
+        Color::Black | Color::DarkGray => Color::Gray,
+        Color::Gray => Color::White,
+        other => other,
+    };
+    Style::new().bg(bg)
 }
 
 /// M21-F1：pane 边框焦点态——主题命名样式（focused_border/unfocused_border）
@@ -1809,12 +1830,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 let mut li = ListItem::new(Line::from(spans)).style(base_style);
                 let mut mods = Modifier::empty();
                 if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
-                    // M73-2：失焦侧可视选区用 DIM，不再残留反显底色。
-                    mods |= if left_focused {
-                        Modifier::REVERSED
-                    } else {
-                        Modifier::DIM
-                    };
+                    // M80-2：可视选区与选中项同源明暗；失焦更浅。
+                    li = li.style(selected_row_style(left_focused));
                 }
                 if tab.tags.contains(&item.name) {
                     mods |= Modifier::BOLD;
@@ -1835,12 +1852,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             List::new(list_items).highlight_style(
                 // M21-F2：焦点 pane 当前行反显，非焦点侧当前行 DIM 灰化
                 // （vifm TopLineSel/TopLine 语义）。
-                if left_focused {
-                    Style::new().add_modifier(Modifier::REVERSED)
-                } else {
-                    // M73-2：失焦选中项用浅灰底表达，而不是反显/暗化。
-                    Style::new().bg(Color::Gray).fg(Color::Black)
-                },
+                selected_row_style(left_focused),
             ),
             parent_area,
             &mut list_state,
