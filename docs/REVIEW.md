@@ -65,3 +65,10 @@
 - 8 条新命令三处文档全缺；向导覆盖率按全命令口径 78%，非 93%。
 - 结论投递：CI/文档可信度 → M101；排序正确性 → M102；队列后台化 → M103；可发现性 → M104。发布建议因用户既有「不发布」决策不采纳（见 NOTES）。
 - 本轮仅蒸馏登记，等待用户确认后执行；报告原文见 [reviews/REVIEW-2026-11-28-rc.md](reviews/REVIEW-2026-11-28-rc.md)。
+
+## 发布闭环（2026-11-28，v1.6.0）
+
+- main CI run 46138557911：三平台 test + fuzz + supply-chain + harness consistency 全绿（自审修复 Windows 2s 加载阈值抖动后）。
+- tag `v1.6.0` → tag run 46140235498：三平台 test + supply-chain + 3 release 腿 + release-checksums 全绿；GitHub Release 含 3 musl 归档与 3 行 SHA256SUMS。
+- crates.io `rvifm 1.6.0` 已发布（API `max_version=1.6.0`），实现双渠道交付闭环。
+- 发布前自审修复：deny 许可证精确豁免、harness 入 CI + 阶段上界规则、排序补齐、传输队列 spawn/暂停边角、CI 性能阈值抖动。
