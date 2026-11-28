@@ -422,6 +422,8 @@ pub struct AppState {
     pub du_tx: std::sync::mpsc::Sender<DuResult>,
     pub du_rx: std::sync::mpsc::Receiver<DuResult>,
     pub du_result: Option<DuResult>,
+    /// M93-2：查重结果（复用 DuResult 的展示结构，entries 为重复组）。
+    pub dup_result: Option<DuResult>,
     /// M92-1：目录异步加载通道与代次（UI 线程不阻塞 read_dir/stat）。
     pub dir_load_tx: std::sync::mpsc::Sender<DirLoadResult>,
     pub dir_load_rx: std::sync::mpsc::Receiver<DirLoadResult>,
@@ -1145,6 +1147,7 @@ impl AppState {
             du_tx,
             du_rx,
             du_result: None,
+            dup_result: None,
             viewport_text: None,
             git_diff: None,
             git_undo: None,

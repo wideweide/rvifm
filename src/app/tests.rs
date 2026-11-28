@@ -16047,3 +16047,21 @@ fn m931_du_view_renders_scan_result() {
     assert!(compact.contains("磁盘占用"), "{compact}");
     assert!(compact.contains("a.bin"), "{compact}");
 }
+
+#[test]
+fn m932_dup_three_stage_finds_identical_files() {
+    let tmp = TempDir::new().unwrap();
+    let payload = vec![42u8; 300_000];
+    fs::write(tmp.path().join("a.bin"), &payload).unwrap();
+    fs::write(tmp.path().join("b.bin"), &payload).unwrap();
+    fs::write(tmp.path().join("c.bin"), vec![43u8; 300_000]).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let outcome = crate::app::exec::exec_command_impl(&mut state, "dup").unwrap();
+    assert!(
+        matches!(outcome, crate::app::ExecOutcome::EnterDupView),
+        "{outcome:?}"
+    );
+    let result = state.dup_result.as_ref().unwrap();
+    assert_eq!(result.entries.len(), 1, "一组重复: {:?}", result.entries);
+    assert_eq!(result.entries[0].1, 2);
+}

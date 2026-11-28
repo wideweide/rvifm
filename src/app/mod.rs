@@ -199,6 +199,8 @@ pub(crate) enum InputMode {
     GitDiff,
     /// M93-1：`:du` 后台扫描结果视图。
     DuView { cursor: usize },
+    /// M93-2：`:dup` 查重结果视图。
+    DupView { cursor: usize },
     /// M69：diff 补丁内搜索输入。
     GitDiffSearch { input: String },
     /// M70：git 写操作确认。
@@ -409,6 +411,8 @@ pub(crate) enum ExecOutcome {
     EnterHelp,
     /// M69：打开 git diff 只读 overlay。
     EnterGitDiff,
+    /// M93-2：打开查重结果视图。
+    EnterDupView,
     /// 命令完成，可携带状态栏提示。
     Done {
         msg: Option<String>,
@@ -1300,6 +1304,26 @@ fn run_with_initial_mode(
                 }
             }
             match &mut mode {
+                InputMode::DupView { cursor } => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let len = state
+                                    .dup_result
+                                    .as_ref()
+                                    .map(|r| r.entries.len())
+                                    .unwrap_or(0);
+                                if len > 0 {
+                                    *cursor = (*cursor + 1).min(len - 1);
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => *cursor = cursor.saturating_sub(1),
+                            _ => {}
+                        }
+                    }
+                    continue;
+                }
                 InputMode::DuView { cursor } => {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
@@ -1506,6 +1530,9 @@ fn run_with_initial_mode(
                                     // M27-3：退出清理 PDF 视觉预览临时 PNG。
                                     crate::pdf::cleanup_visual_temps();
                                     return Ok(());
+                                }
+                                Ok(ExecOutcome::EnterDupView) => {
+                                    mode = InputMode::DupView { cursor: 0 };
                                 }
                                 Ok(ExecOutcome::EnterHelp) => {
                                     mode = InputMode::HelpView {

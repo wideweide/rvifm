@@ -2996,9 +2996,9 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             })
         }
         Some("dup") => {
-            // M37-5：查重——size 分组 → 全文 SHA-256 精确比对（万条上限）。
+            // M93-2：三段式查重（size 分组 → 头 64KB → 全文流式哈希）+ inode 去重。
             let base = physical_base(state)?;
-            let mut files: Vec<(PathBuf, u64)> = Vec::new();
+            let mut files: Vec<(std::path::PathBuf, u64, u64)> = Vec::new();
             let mut stack = vec![base.clone()];
             let mut count = 0usize;
             while let Some(dir) = stack.pop() {
@@ -3014,41 +3014,86 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                         if meta.is_dir() {
                             stack.push(e.path());
                         } else if meta.len() > 0 {
-                            files.push((e.path(), meta.len()));
+                            #[cfg(unix)]
+                            let ino = {
+                                use std::os::unix::fs::MetadataExt;
+                                meta.ino()
+                            };
+                            #[cfg(not(unix))]
+                            let ino = 0u64;
+                            files.push((e.path(), meta.len(), ino));
                         }
                     }
                 }
             }
             use sha2::{Digest, Sha256};
-            let mut hash_map: std::collections::HashMap<Vec<u8>, Vec<String>> =
-                std::collections::HashMap::new();
-            for (path, _size) in &files {
-                let Ok(data) = std::fs::read(path) else {
-                    continue;
-                };
+            use std::io::Read as _;
+            let head_hash = |path: &std::path::Path| -> Vec<u8> {
                 let mut h = Sha256::new();
-                h.update(&data);
-                let key = h.finalize().to_vec();
-                hash_map
-                    .entry(key)
-                    .or_default()
-                    .push(path.display().to_string().replace('\\', "/"));
+                if let Ok(mut f) = std::fs::File::open(path) {
+                    let mut buf = vec![0u8; 64 * 1024];
+                    let n = f.read(&mut buf).unwrap_or(0);
+                    h.update(&buf[..n]);
+                }
+                h.finalize().to_vec()
+            };
+            let full_hash = |path: &std::path::Path| -> Option<Vec<u8>> {
+                let mut f = std::fs::File::open(path).ok()?;
+                let mut h = Sha256::new();
+                let mut buf = vec![0u8; 256 * 1024];
+                loop {
+                    let n = f.read(&mut buf).ok()?;
+                    if n == 0 {
+                        break;
+                    }
+                    h.update(&buf[..n]);
+                }
+                Some(h.finalize().to_vec())
+            };
+            let mut by_size: std::collections::HashMap<u64, Vec<usize>> =
+                std::collections::HashMap::new();
+            for (i, (_, size, _)) in files.iter().enumerate() {
+                by_size.entry(*size).or_default().push(i);
             }
-            let dups: Vec<&Vec<String>> = hash_map.values().filter(|v| v.len() > 1).collect();
-            let n_files: usize = dups.iter().map(|v| v.len()).sum();
-            let listing: Vec<String> = dups
-                .iter()
-                .take(5)
-                .map(|v| format!("  {} 份", v.len()))
-                .collect();
-            Ok(ExecOutcome::Done {
-                msg: Some(format!(
-                    "dup: {} 组重复（{} 个文件）\n{}",
-                    dups.len(),
-                    n_files,
-                    listing.join("\n")
-                )),
-            })
+            let mut groups: Vec<(String, u64)> = Vec::new();
+            let mut seen_ino: std::collections::HashSet<u64> = std::collections::HashSet::new();
+            for indices in by_size.values().filter(|v| v.len() > 1) {
+                let mut by_head: std::collections::HashMap<Vec<u8>, Vec<usize>> =
+                    std::collections::HashMap::new();
+                for &i in indices {
+                    let (path, _, ino) = &files[i];
+                    if *ino != 0 && !seen_ino.insert(*ino) {
+                        continue;
+                    }
+                    by_head.entry(head_hash(path)).or_default().push(i);
+                }
+                for cand in by_head.values().filter(|v| v.len() > 1) {
+                    let mut by_full: std::collections::HashMap<Vec<u8>, Vec<String>> =
+                        std::collections::HashMap::new();
+                    for &i in cand {
+                        let (path, _, _) = &files[i];
+                        if let Some(hash) = full_hash(path) {
+                            by_full.entry(hash).or_default().push(
+                                path.strip_prefix(&base)
+                                    .unwrap_or(path)
+                                    .display()
+                                    .to_string()
+                                    .replace('\\', "/"),
+                            );
+                        }
+                    }
+                    for paths in by_full.into_values().filter(|v| v.len() > 1) {
+                        groups.push((paths.join(" | "), paths.len() as u64));
+                    }
+                }
+            }
+            state.dup_result = Some(crate::state::DuResult {
+                base,
+                entries: groups,
+                total: 0,
+                scanned: count,
+            });
+            Ok(ExecOutcome::EnterDupView)
         }
         Some("checksum") => {
             // M37-6：校验和——选中项生成 sidecar（md5sum -c 兼容）。

@@ -2169,6 +2169,34 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
+    if let InputMode::DupView { cursor } = mode {
+        let lines: Vec<Line> = if let Some(result) = &state.dup_result {
+            let mut out = vec![Line::from(format!(
+                "{} 组重复（扫描 {} 项）",
+                result.entries.len(),
+                result.scanned
+            ))];
+            for (i, (label, count)) in result.entries.iter().enumerate() {
+                out.push(Line::styled(
+                    format!("{label}  ×{count}"),
+                    if i == *cursor {
+                        Style::new().add_modifier(Modifier::REVERSED)
+                    } else {
+                        Style::new()
+                    },
+                ));
+            }
+            out
+        } else {
+            vec![Line::from("扫描中…")]
+        };
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(ratatui::widgets::Block::bordered().title("查重结果（j/k 选择 Esc 关闭）")),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::DuView { cursor } = mode {
         let lines: Vec<Line> = if let Some(result) = &state.du_result {
             let mut out = vec![Line::from(format!(
@@ -2799,6 +2827,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     let status = match mode {
         InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
         InputMode::DuView { .. }
+        | InputMode::DupView { .. }
         | InputMode::GitDiff
         | InputMode::GitDiffSearch { .. }
         | InputMode::GitDiffConfirm { .. }
