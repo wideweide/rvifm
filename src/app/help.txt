@@ -292,3 +292,6 @@ M88 长文件名：名称列按 Unicode 宽度以 `…` 中间省略并保留尾
 
 M89 多选模型：v 选连续区间 → t 提交为持久标记（与 v 同背景高亮）；
   J/K 标记当前并移动，count=N+1；d/D 删除标记文件，:unselect 仅清标记。
+
+M99 窄屏适配：<80 列自动单栏并标注 [左]/[右]；[ui] narrow_list_mode=filename|detail；
+  极小终端给可读提示；[ui] icons=false 用 [D]/[F] 纯文本图标；Termux 可选 termux-open 规则。

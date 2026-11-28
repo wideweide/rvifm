@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### M99 Termux / 窄屏适配（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 宽度断点自动单栏 + 焦点侧标识；窄屏 filename/detail 列表密度；极小终端提示；图标纯文本降级；Termux `termux-open` 可选 opener 示例。
+
 ### M98 轻量扩展点 + 钩子化记录（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 移除 `:theme`，统一 `:colorscheme`（分组列出、切换、`--save` 持久化）。

@@ -1108,4 +1108,4 @@
 - [x] M99-2 窄屏列表密度 filename/detail（见 SPEC M99；2026-11-28 完成：左右栏第二行元数据 + m992）
 - [x] M99-3 极小终端提示 + 高度收缩（见 SPEC M99；2026-11-28 完成：30×6 守卫 + m993）
 - [x] M99-4 图标纯文本降级配置（见 SPEC M99；2026-11-28 完成：icons=false + [D]/[F] + m994）
-- [ ] M99-5 termux-open opener 示例 + 文档/验收/门禁（见 SPEC M99）
+- [x] M99-5 termux-open opener 示例 + 文档/验收/门禁（见 SPEC M99；2026-11-28 完成：opener.example/GUIDE/help + 全门禁）

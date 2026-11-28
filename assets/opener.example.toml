@@ -28,3 +28,10 @@
 # run_exec = { run = "%s", block = true }
 # [open]
 # append_rules = [ { name = "*.sh", use = ["run_exec"] } ]
+
+# M99：Termux 上让文件打开走 Android 系统 opener（可选，非编译期依赖）
+# 在 config.toml 中加入：
+# [opener]
+# termux_open = { run = "termux-open %s", block = false, desc = "Android 系统打开" }
+# [open]
+# prepend_rules = [ { mime = "*/*", use = ["termux_open"] } ]

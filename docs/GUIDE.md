@@ -394,3 +394,10 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 问题排查：预览不可用（图像）时确认终端图形协议与字体（§1）；PDF 图像预览
 按"文本提取 → 栅格化（`pdf-visual` feature）/外部工具 → 提示"顺序回退；
 提权仅作用于单次写操作（`sudo -A`，取消后状态不变）。
+
+## M99 移动端 / 窄屏适配
+
+- 宽度 < `[ui] narrow_threshold`（默认 80）自动单栏，旋转即时生效；单栏显示焦点侧内容，标题标注 `[左]`/`[右]`。
+- `[ui] narrow_list_mode = "filename"`（默认）窄屏只显示文件名；`"detail"` 第二行显示 `大小 · 日期`。
+- 极小终端（<30 列或 <6 行）显示可读提示；`[ui] icons = false` 把图标降级为 `[D]`/`[F]` 纯文本。
+- Termux 可选：在 `opener.example.toml` 中启用 `termux-open` 规则，让打开行为走 Android 系统流程。
