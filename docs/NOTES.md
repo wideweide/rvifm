@@ -1886,3 +1886,10 @@ rvifm record  → 静默记录访问
 - **执行口径**：本轮仅蒸馏登记，等待用户确认；不 bump / tag / Release。
 - M106-2：`diff.query` 此前只被用于 n/N 跳转，渲染完全未消费——搜索「不可用」的根因。现用 `highlight_diff_line` 在已着色行上叠加黄底命中高亮（保留增删配色）；`render_width` 以 Cell 记录每帧补丁宽度，n/N 与提交跳转改用同一宽度，避免固定 100 列与实际换行行错位。
 - M106-3：全屏对照时文件列表区宽度为 0，但 focus 仍可能是 Files，导致 j/k 改不可见的文件光标，表现为「快捷键失效」；现在按 `patch_only` 把导航键路由到补丁。`row_count`/`hunk_starts` 用 Cell/RefCell 缓存最近一帧结果，消除按键触发的 `diff.rows()` 重算。
+
+### 2026-11-29 — M106 批处理收尾
+
+- 5/5 完成；新增 m1061/m1062/m1063/m1064 四项回归测试。
+- 全门禁通过：fmt、clippy -D warnings、build、test（732 单元 + 14 集成）、cargo deny check、harness 十三条、rvifm --version 1.6.0。
+- 并行单测偶发临时目录竞态（`m791_git_cache_ttl_and_clear` 等），串行/CI `--test-threads=1` 复跑全绿。
+- 本批不 bump、不 tag、不发布；Release 仍为 v1.6.0。
