@@ -289,6 +289,6 @@
 
 - 历史起点：`M0-1`（初始化 Cargo 项目与目录结构）；M0 的 CI 双平台门禁已完成。
 - 当前阶段：**M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；v1.5.0 GitHub Release 已发布**（2026-11-27；M47–M85 增量批次全部落地；真实终端大图/rar 工具环境/真实 Linux IME 会话人工项 deferred）。
-- 当前任务：无（`docs/TASKS.md` 无未勾选任务，M85-1b 等为 deferred；仅 FIX-9-M1 真实桌面验收、FIX-9-CI 跨平台编译、M11-6/C6 大图与 M46-9 rar 工具环境人工项 deferred；后续变更走 FIX/FEAT 蒸馏批次）。
+- 当前任务：M90 可信度恢复进行中（以 `docs/TASKS.md` 第一个未勾任务为准；M85-1b 等为 deferred；FIX-9-M1、FIX-9-CI、M11-6/C6 大图与 M46-9 rar 工具环境人工项 deferred）。
 - 当前基线：不固化 commit hash，以执行时的 `HEAD` 为准；v1.5.0 仅 GitHub Release，crates.io 停在 1.0.0（用户 2026-11-23 决策）。
 - 预算优先保证核心闭环（M0–M2 的浏览、多标签、`u` 撤销）与 §5 硬约束（如 `pick` 只读、删除走可恢复路径保证 `u` 可逆）；增强批次可简化，但不得跳过 `docs/STATE.md` 更新。

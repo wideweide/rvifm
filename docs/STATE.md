@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-27
 - **当前阶段**：**M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；v1.5.0 GitHub Release 已发布**（2026-11-27；tag CI run 45996577565 全绿；三 musl 归档 + SHA256SUMS 3 行；人工项 deferred）。
-- **当前任务**：M89 多选模型统一已完成；`~/rvifm15.md` 评估报告已蒸馏为 M90–M95（编号顺延，见 NOTES），同样待确认。沿用「crates.io 不发布」口径；默认不 bump / tag / Release。
+- **当前任务**：M90 可信度恢复进行中（M90-1～M90-4 已完成，M90-5 措辞治理待办）；其后 M91–M95 已登记待执行。沿用「crates.io 不发布、不 bump 版本、不做 GitHub Release」口径。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（691 单测 + 14 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
@@ -26,6 +26,11 @@
 
 
 ## 批次关闭记录
+
+> 措辞约定（M90-5）：以下为**时点快照**。「本机 Linux 绿」= 本机 fmt/clippy/build/test/harness 通过；
+> 「CI 三平台绿」= 最近一次 main run 的 ubuntu/windows/macos test + fuzz + supply-chain 全绿；
+> 「tag 发布绿」= tag run 的 release + release-checksums 全绿。未显式标注 CI 的结论不代表当前 run 状态。
+
 - REL-7（2026-11-27，v1.5.0 发布；已关闭）：全面审计 + 文档同步 + tutor 验证条款（14 模块 105 项）+ 代码审计整改（diff 标记/完整视图高亮/图片 id 碰撞/高亮漂移）；版本 bump 至 1.5.0，main CI 45993907109 全绿；tag `v1.5.0` → tag CI 45996577565 全绿 → GitHub Release 三 musl 归档 + SHA256SUMS 3 行，校验通过；crates.io 不发布。
 - M85（2026-11-27，图片流水线；3/3 + 1 deferred，未发版）：ThreadProtocol 把 resize+encode 移出 UI 线程；图片 job 独立 generation；缓存矩形含坐标；预缩放显式 Nearest、最长边 1600；`[preview] image_max_side` / `image_protocol_query` 可配。**磁盘已编码协议缓存 deferred**（ratatui-image 不公开编码字节，见 NOTES）。671 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
 - M84（2026-11-27，归档成员打开对齐；1/1 完成，未发版）：文本成员按 `is_text_like` + `terminal_in_new_window` 走新终端窗口（起始目录取归档所在目录，带安全回退），完成后 `record_file_open`；其它成员保持 pending_external。669 单测 + 14 集成 + 九条 harness 全绿；**不触发版本 bump/tag/GitHub Release**。
