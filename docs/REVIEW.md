@@ -10,7 +10,8 @@
 |---|---|---|---|
 | 2026-11-19 | [REVIEW-2026-11-19.md](reviews/REVIEW-2026-11-19.md) | `9532cd0`（v0.8.x） | 已整改（AUDIT 18/18 闭环） |
 | 2026-11-21 | [REVIEW-2026-11-21.md](reviews/REVIEW-2026-11-21.md) | `ba7c995`（v0.11.0） | M35–M40 由本报告蒸馏登记 |
-| 2026-11-27 | [REVIEW-2026-11-27.md](reviews/REVIEW-2026-11-27.md) | `6cded08`（v1.4.0+） | **最新**——M47–M85 全面审计 + 发布门禁结论 |
+| 2026-11-27 | [REVIEW-2026-11-27.md](reviews/REVIEW-2026-11-27.md) | `6cded08`（v1.4.0+） | M47–M85 全面审计 + 发布门禁结论 |
+| 2026-11-28 | [REVIEW-2026-11-28.md](reviews/REVIEW-2026-11-28.md) | `0538dd5`（v1.5.0） | **最新**——用户复核报告；结论蒸馏为 M90–M95 |
 
 ## 历史评估（2026-11-21，v0.11.0 复核）结论摘要
 
@@ -30,7 +31,7 @@
 报告结论已按 AGENTS §8.2 蒸馏：M35–M40 → SPEC/TASKS/ACCEPTANCE/PLAN；
 核查记录与实现期决策 → NOTES；本文档此后只做索引与摘要更新。
 
-## 最新评估（2026-11-27，发布前全面审计）结论摘要
+## 历史评估（2026-11-27，发布前全面审计）结论摘要
 
 - M47–M85 实现与本地门禁全绿；CI 曾因 Windows CRLF / macOS 标题截断连续失败，已在 AUDIT-1 修复，以最新 main CI 为准。
 - harness 文档矛盾（「不发布」口径）与用户授权对齐；ACCEPTANCE 未勾项完成自动/manual 分诊；tutor 验证条款落实为 14 模块 105 项严格计数测试。
@@ -42,3 +43,10 @@
 - main CI run 45993907109：三平台 test + fuzz + supply-chain 全绿。
 - tag CI run 45996577565：release + release-checksums 全绿；GitHub Release 含 3 个 musl 归档与 3 行 SHA256SUMS，`sha256sum -c` 通过；aarch64 静态 ELF、x64-musl `--version = rvifm 1.5.0`。
 - crates.io 未发布（停 1.0.0）；人工终端项保持 deferred。
+
+## 最新评估（2026-11-28，v1.5.0 用户复核）结论摘要
+
+- 代码面合格：生产路径零 `unwrap`/`expect`/`panic!`，fuzz/proptest/deny 齐备；预览与渲染栈异步化是最大技术跃升。
+- 可信度是主要短板：main HEAD 三平台 CI 连红（Windows/macOS 主题与高亮断言）；crates.io 仍停 1.0.0 而 README 引导 `cargo install`；harness_check 三条正则退化且 R6 提前 `break`，实际给出假绿；100k 目录 6.83s 未优化。
+- 结论按类型投递：可信度恢复 → M90；传输补完 → M91；目录性能 → M92；运维深度 → M93；质量债 → M94；体验治理 → M95。原稿 M89–M94 因 M89 已占用而顺延（见 NOTES）。
+- 本轮仅蒸馏登记，等待用户确认后执行；报告原文见 [reviews/REVIEW-2026-11-28.md](reviews/REVIEW-2026-11-28.md)。

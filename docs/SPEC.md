@@ -2203,6 +2203,59 @@ append_rules = [
 - 不引入 vifm `av`/`Ctrl-G` 的 append/remove/invert 选区编辑状态机（用户选方案 2 的简洁路线，保留未来扩展空间）。
 - 不改 `Space` 的切 pane 语义。
 
+
+## M90 — 可信度恢复（2026-11-28 蒸馏；原评估稿 M89，因编号冲突顺延；目标 1.5.1）
+
+**MUST**
+- 修 Windows/macOS 主题与高亮测试：主题全局状态改为可注入（`ThemeCtx`）或 `TEST_LOCK` 覆盖所有颜色断言；排查 syntect 资源跨平台加载差异。main CI 三平台全绿，run 链接写入 TASKS。
+- 修 `scripts/harness_check.py` 正则（`\.` 退化、版本模式写死 `0.x`）与 R6 的提前 `break`；R1 覆盖全部 `Mxx/FIX-x/REL-x` 批次段；用故意制造的漂移逐条证伪。
+- 新增 R10（PLAN↔TASKS 状态一致）、R11（Release 资产集合 = CI 矩阵集合、SHA256SUMS 行数 = 归档数、crates `max_version` 与 Cargo 一致或文档显式标注滞后）、R12（main 最近 run 必须为 success 才能写「全绿」），在 CI 中为 required。
+- 分发对齐：发布 1.5.1 到 crates.io，**或**在 README/GUIDE 顶部标注「cargo 安装版本滞后，最新功能请用 Release 归档」（用户既有决策倾向后者，待执行时确认）。
+- 术语治理：批次记录区分「本机 Linux 绿 / CI 三平台绿 / tag 发布绿」三态；STATE 精简自相矛盾长句。
+
+## M91 — 传输补完（原评估稿 M90；目标 1.6.0）
+
+**MUST**
+- `TransferTask` 状态机（Pending/Running/Paused/Done/Failed/Cancelled）+ 每任务进度/速率/ETA/重试计数。
+- 上传流式化：`File::open` + 1MB 读块 + `write_range`，删除 `std::fs::read(src)`；下载 `read_range` 循环写 `.part`；全程内存 < 64MB。
+- 队列双向（Upload/Download/Recurse）+ `p` 暂停、`r` 重试、`x` 取消（运行中可中断）+ 进度/失败原因显示。
+- `[transfer] max_in_memory_bytes` 护栏与失败降级为重试队列项。
+- 验收：1GB 上传断网 3 次续传成功且内存峰值 < 64MB；队列 10 项混合上下传可暂停恢复。
+
+## M92 — 目录性能（原评估稿 M91；目标 1.6.0）
+
+**MUST**
+- `ListLoader`：工作线程 + 代数号丢弃过期结果 + 首屏先出（前 2k 条）。
+- 元数据分阶段：先名/类型，可见区再补 size/mtime；`[ui] lazy_attrs = true`。
+- 并行 stat（有界 rayon 或手写）+ 外部变更 refresh 去抖（150ms 合并窗口）。
+- bench 复跑写回 `docs/bench.md`，并入 nightly CI；100k 目录 < 1.0s（第一阶段），回归阈值 ±10%。
+
+## M93 — 运维深度（原评估稿 M92；目标 1.7.0）
+
+**MUST**
+- `:du` 作业化 + 结果虚拟视图（可 `dd`/`:tag`/排序/取消，目录聚合）。
+- `:dup` 三段式（size 分组 → 头部 64KB → 全文流式）+ inode 去重 + 结果视图可操作。
+- `:checksum sha256|md5` 生成 + **校验 sidecar** + 流式读取 + 进度。
+- `:sync` 三策略（缺失/较新/镜像）+ 计划视图 + 删除二次确认；`:sync --delete` 强制列出删除清单。
+- `:extract` job 化 + 空目录撤销 + 大归档进度。
+- Git 安全收口：hunk 丢弃加 `[git] hunk_discard = false`（缺省关），`:diff` 增加「工作区脏」提醒。
+
+## M94 — 质量债（原评估稿 M93；目标 1.7.x）
+
+**MUST**
+- 移除 10 个模块的文件级 `#![allow(dead_code)]`，改按符号标注或删除；CI 临时跑 `-D dead_code` 盘点。
+- sftp 覆盖率 ≥ 60%（CI sshd 容器或 mock server），收口 M40-4 `[~]`。
+- fuzz 24h 长跑并回填 NOTES；CI 保持 10 分钟。
+- 拆分 `app/tests.rs`（约 15.6k 行 → keys/render/exec/jobs/remote/tutor 六文件）。
+- 错误类型化 `AppError { kind, context, hint }`，状态栏区分「可重试/需确认/需提权」。
+
+## M95 — 体验治理与新能力（原评估稿 M94；目标 1.8.0）
+
+**MUST**
+- 行为冻结政策：键位/布局变更留兼容别名（如 `V` 至少保留一个大版本并提示新键），CHANGELOG 增加「行为变更」小节与迁移提示；视觉决策沉淀为 `docs/design-tokens.md`。
+- 向导命令覆盖率 ≥ 90%（补 `:view`/`:grep`/`:frecency`/`:link`/`:goto`/`:gitui`）。
+- 新增能力候选（按价值排序）：Git `:log`/`:blame`/`:stash`/`:branch`、`:split`/`:join`、`:du --tree`、`:undolist`、`rvifm doctor` + panic hook 环形日志、缩略图网格、包分发 manifest、向导 `:tutor --role ops|dev|new`、国际化 `[ui] language = en`。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

@@ -1030,3 +1030,54 @@
 - [ ] M89-2 Normal `J`/`K` 标记当前 + 移动（含 count，N+1 语义）（见 SPEC M89）
 - [ ] M89-3 tags 渲染统一为 v 的背景样式 + 状态栏计数保留（见 SPEC M89）
 - [ ] M89-4 文档/验收/门禁（见 SPEC M89）
+
+## M90 — 可信度恢复（2026-11-28 蒸馏，见 SPEC M90 节）
+
+- [ ] M90-1 修 Windows/macOS 主题与高亮测试，main CI 三平台绿（见 SPEC M90）
+- [ ] M90-2 harness_check 正则与 break 修复，R1/R2/R4/R5/R6 可证伪（见 SPEC M90）
+- [ ] M90-3 新增 R10 PLAN↔TASKS、R11 发布事实、R12 main CI 结论（见 SPEC M90）
+- [ ] M90-4 分发对齐：crates 1.5.1 或 README/GUIDE 标注版本滞后（见 SPEC M90）
+- [ ] M90-5 门禁措辞三态化 + STATE 长句精简（见 SPEC M90）
+
+## M91 — 传输补完（2026-11-28 蒸馏，见 SPEC M91 节）
+
+- [ ] M91-1 TransferTask 状态机（见 SPEC M91）
+- [ ] M91-2 上传流式化（见 SPEC M91）
+- [ ] M91-3 下载流式化（见 SPEC M91）
+- [ ] M91-4 队列双向 + 暂停/恢复/重试 + 进度（见 SPEC M91）
+- [ ] M91-5 max_in_memory_bytes 护栏与失败降级（见 SPEC M91）
+- [ ] M91-6 1GB 断网三次续传 + 内存 < 64MB 验收（见 SPEC M91）
+
+## M92 — 目录性能（2026-11-28 蒸馏，见 SPEC M92 节）
+
+- [ ] M92-1 ListLoader 工作线程 + 代数号 + 首屏先出（见 SPEC M92）
+- [ ] M92-2 元数据分阶段与可见区优先（见 SPEC M92）
+- [ ] M92-3 外部变更 refresh 去抖（见 SPEC M92）
+- [ ] M92-4 bench 复跑写回新基线（见 SPEC M92）
+- [ ] M92-5 bench 进 nightly CI，阈值 ±10%（见 SPEC M92）
+
+## M93 — 运维深度（2026-11-28 蒸馏，见 SPEC M93 节）
+
+- [ ] M93-1 :du 作业化 + 结果虚拟视图（见 SPEC M93）
+- [ ] M93-2 :dup 三段式哈希 + inode + 视图（见 SPEC M93）
+- [ ] M93-3 :checksum sha256 + sidecar 校验 + 流式（见 SPEC M93）
+- [ ] M93-4 :sync 三策略 + 计划视图 + 删除二次确认（见 SPEC M93）
+- [ ] M93-5 :extract job 化 + 目录撤销（见 SPEC M93）
+- [ ] M93-6 Git hunk 丢弃默认关闭 + 脏工作区提醒（见 SPEC M93）
+
+## M94 — 质量债（2026-11-28 蒸馏，见 SPEC M94 节）
+
+- [ ] M94-1 移除 10 个模块的文件级 allow(dead_code)（见 SPEC M94）
+- [ ] M94-2 sftp 覆盖率 ≥60%（见 SPEC M94）
+- [ ] M94-3 fuzz 24h 长跑回填结果（见 SPEC M94）
+- [ ] M94-4 拆分 app/tests.rs（见 SPEC M94）
+- [ ] M94-5 错误类型化 AppError（见 SPEC M94）
+
+## M95 — 体验治理与新能力（2026-11-28 蒸馏，见 SPEC M95 节）
+
+- [ ] M95-1 行为冻结政策 + 兼容别名 + CHANGELOG 行为变更小节（见 SPEC M95）
+- [ ] M95-2 design-tokens 文档（见 SPEC M95）
+- [ ] M95-3 向导命令覆盖率 ≥90%（见 SPEC M95）
+- [ ] M95-4 :log/:blame/:stash/:branch（见 SPEC M95）
+- [ ] M95-5 :split/:join 与 :du --tree（见 SPEC M95）
+- [ ] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95）
