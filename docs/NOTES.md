@@ -1876,3 +1876,11 @@ rvifm record  → 静默记录访问
 - 8/8 任务完成；新增 5 项回归测试（m1051/m1053/m1054/m1055/m1056/m1057，其中 m551 改版）。
 - 全门禁通过：fmt、clippy -D warnings、build、test（728 单元 + 14 集成）、cargo deny check、harness 十三条、rvifm --version 1.6.0。并行单测偶发 `m791_git_cache_ttl_and_clear`/`nav3_histprev_histnext_exec_and_tab_isolation` 临时目录竞态，串行复跑全绿（既有已知抖动，CI 以 --test-threads=1 为准）。
 - 本批不 bump、不 tag、不发布；Release 仍为 v1.6.0（M101–M104 批次）。
+
+### 2026-11-29 — M106 蒸馏决策（git diff 实测反馈）
+
+- **来源**：用户 3 条反馈（列表标题信息、补丁搜索 n/N、双栏对照退出/快捷键/卡顿、`=` 完整文件无高亮），按 §8.2 投递；原文不复制。
+- **编号**：TASKS 最大 M105，取 M106。
+- **证据**：`render_git_diff`（render.rs:1650）文件列表标题硬编码 `diff · 变更文件`；`InputMode::GitDiff`（mod.rs:2735 起）把 `Esc`/`q` 统一置 `exit=true`，未对 `diff.side_by_side` 分层；`/` 与 n/N 分支存在但需核实对双栏/完整视图的覆盖；j/k、n/N 分支每次调 `diff.rows(100)` 重算行，是卡顿嫌疑点。
+- **边界**：保持 git CLI 子进程（不引入 git2/gitoxide）、diff 只读与写操作确认流程不变。
+- **执行口径**：本轮仅蒸馏登记，等待用户确认；不 bump / tag / Release。
