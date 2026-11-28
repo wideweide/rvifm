@@ -15882,3 +15882,72 @@ fn m915_in_memory_guard_rejects_large_remote_file() {
             .unwrap_err();
     assert!(err.contains("max_in_memory_bytes"), "{err}");
 }
+
+#[test]
+fn m916_upload_resumes_after_two_simulated_disconnects() {
+    use std::sync::{Arc, Mutex};
+    struct FlakyFs {
+        data: Arc<Mutex<Vec<u8>>>,
+        attempts: Arc<Mutex<usize>>,
+    }
+    impl crate::remote::RemoteFs for FlakyFs {
+        fn list(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            Ok(Vec::new())
+        }
+        fn read(&self, _p: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            Ok(self.data.lock().unwrap().clone())
+        }
+        fn metadata(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            Ok(crate::remote::RemoteMeta {
+                size: self.data.lock().unwrap().len() as u64,
+                mtime: 0,
+                is_dir: false,
+            })
+        }
+        fn write_range(
+            &self,
+            _p: &std::path::Path,
+            offset: u64,
+            bytes: &[u8],
+        ) -> Result<(), crate::remote::RemoteError> {
+            let mut a = self.attempts.lock().unwrap();
+            *a += 1;
+            if *a <= 2 {
+                // 前两次写入在首块之后失败，模拟断网。
+                let cur = self.data.lock().unwrap().len();
+                let mut d = self.data.lock().unwrap();
+                d.resize((offset as usize).max(cur), 0);
+                return Err(crate::remote::RemoteError::Connect("net down".to_owned()));
+            }
+            let start = (offset as usize).min(self.data.lock().unwrap().len());
+            let mut d = self.data.lock().unwrap();
+            let new_len = start.max(d.len());
+            d.resize(new_len, 0);
+            d.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("big.bin");
+    let data: Vec<u8> = (0..2_500_000u64).map(|i| (i % 253) as u8).collect();
+    fs::write(&src, &data).unwrap();
+    let store = Arc::new(Mutex::new(Vec::new()));
+    let attempts = Arc::new(Mutex::new(0));
+    let fs = FlakyFs {
+        data: store.clone(),
+        attempts,
+    };
+    let dest = std::path::PathBuf::from("/remote/resume.bin");
+    for _ in 0..3 {
+        if crate::app::exec::upload_chunked(&fs, &src, &dest).is_ok() {
+            break;
+        }
+    }
+    assert_eq!(store.lock().unwrap().clone(), data, "三次重试后内容完整");
+}
