@@ -102,7 +102,9 @@ jobs:
   # needs 取其余 job 的聚合结论；本 job 自身不参与，避免自指。
   harness:
     name: harness consistency
-    if: always()
+    # M101-7：R12 只校验 main 的 CI 结论；tag run 不注入，避免 fuzz
+    # 超时/取消被误判为「文档写全绿」。
+    if: always() && github.ref == 'refs/heads/main'
     needs: [test, fuzz, supply-chain]
     runs-on: ubuntu-latest
     steps:
@@ -119,7 +121,9 @@ jobs:
   # 24h 本地长跑记录随 Linux 开发机，见 NOTES）。libFuzzer 需 nightly。
   fuzz:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # M101-7：安装 nightly + cargo-fuzz、构建 5 靶 + 480s 实测在慢 runner
+    # 上会超过 25m（tag run 46140235498 两次超时），放宽到 45m。
+    timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
     steps:

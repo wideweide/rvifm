@@ -1844,3 +1844,9 @@ rvifm record  → 静默记录访问
 - M102-1 的元数据补齐为**同步**执行（用户主动 `:sort size/mtime` 时可感知延迟），未实现异步进度/取消；全量基线 1.48s 即代价上界。规格中的异步选项留待后续，正确性优先。
 - M103 自审修复两处边角：worker `spawn` 失败时复位 `in_flight`/`Pending`（否则队列永久卡住）；暂停/取消的队首先轮转到队尾（否则阻塞后续条目）。
 - M103 非 SFTP 后端（测试 mock 等）仍走同步路径；暂停/取消只丢弃 worker 结果保持 UI 一致，不中断已在途 IO。
+
+### 2026-11-28 — v1.6.0 发布后 CI 自审（M101-7）
+
+- tag run 46140235498 的 fuzz job 两次超过 `timeout-minutes: 25`（安装 nightly/cargo-fuzz + 5 靶构建 + 480s fuzz 在慢 runner 上超预算），导致 tag 整条 run 取消。Workflow 放宽到 45m。
+- harness job 原在 tag run 也注入 `RVIFM_MAIN_CI`，fuzz 取消时 R12 误判文档「全绿」并失败；改为仅 main ref 运行，tag run 不再注入。
+- 重新打 tag v1.6.0 指向修正后的 main commit，触发全绿 tag run；已发布的 GitHub Release/crates.io 版本不变，归档由 `--clobber` 重传。
