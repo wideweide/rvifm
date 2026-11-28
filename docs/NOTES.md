@@ -1850,3 +1850,12 @@ rvifm record  → 静默记录访问
 - tag run 46140235498 的 fuzz job 两次超过 `timeout-minutes: 25`（安装 nightly/cargo-fuzz + 5 靶构建 + 480s fuzz 在慢 runner 上超预算），导致 tag 整条 run 取消。Workflow 放宽到 45m。
 - harness job 原在 tag run 也注入 `RVIFM_MAIN_CI`，fuzz 取消时 R12 误判文档「全绿」并失败；改为仅 main ref 运行，tag run 不再注入。
 - 重新打 tag v1.6.0 指向修正后的 main commit，触发全绿 tag run；已发布的 GitHub Release/crates.io 版本不变，归档由 `--clobber` 重传。
+
+### 2026-11-29 — M105 蒸馏决策（frecency 实测反馈）
+
+- **来源**：用户逐条反馈 9 项（覆盖/遮罩、搜索栏、首条得分、w 后 j/k、多选删除焦点、删除机制统一、文件打开检索、`r` 确认风格），按 §8.2 投递；原文不复制进职责文档。
+- **编号**：TASKS 现有最大 M104，取 **M105**；此前 `rc.md` 中的「可选 M105+」仅是标签、未登记任务，本次占用该号并以本批为准（见 REVIEW 摘要）。
+- **WHY/证据**：`render_frecency_panes`（render.rs:1319）搜索态用 3 行底部输入框、 Normal 态用标题行；`frec_pane_key`（keys.rs:665）在 `preview_focus` 下把 j/k 路由到预览滚动；多选删除（keys.rs:645 附近）用 `cursor.min(remain-1)` 保持行号而非跟随被删条目；`record_file_open` 经 M98-4 改走 `hooks::record_async`，需核对其退出 flush 覆盖所有退出路径。
+- **边界**：评分算法/事件 schema/marks 语义不变，`pick` 仍只读；不引入插件或新依赖。
+- **待决策**：`w` 后 j/k 的具体归属（移动列表光标 vs 预览滚动）在实现时按最小改动与 vifm 对齐自行裁决并记录。
+- **执行口径**：本轮仅蒸馏登记，等待用户确认；不 bump / tag / Release。
