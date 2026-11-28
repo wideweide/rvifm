@@ -29,7 +29,10 @@ spec = read("docs", "SPEC.md")
 
 # 批次段抽取：## Mxx — 标题（含 ✅/执行中）
 batch_heads = re.findall(
-    r"^## (M\d+) — [^\n]*?(✅ 已完成[^\n]*|执行中[^\n]*)$", tasks, re.M)
+    r"^## ((?:M\d+|FIX-[\d-]+|REL-\d+)) — [^\n]*?(✅ 已完成[^\n]*|执行中[^\n]*|待确认[^\n]*)?$",
+    tasks,
+    re.M,
+)
 # 每批次内未勾选任务数
 def unchecked_in_batch(batch_head_line):
     idx = tasks.find(batch_head_line)
@@ -55,8 +58,8 @@ for head, status in batch_heads:
               f"STATE 写 {mid} 执行中，但 TASKS 中该批次未勾任务 {n} 个")
 
 # ── 规则 2：AGENTS §10 当前阶段/任务/基线与 STATE 一致 ────────────────
-state_ver = re.search(r"(0\\.\d+\\.\d+) 已发布", state)
-agents_ver = re.search(r"(0\\.\d+\\.\d+) 已发布", agents)
+state_ver = re.search(r"(\d+\.\d+\.\d+)[^\n]{0,40}已发布", state)
+agents_ver = re.search(r"(\d+\.\d+\.\d+)[^\n]{0,40}已发布", agents)
 if state_ver and agents_ver:
     check("R2-AGENTS", state_ver.group(1) == agents_ver.group(1),
           f"AGENTS 基线版本 {agents_ver.group(1)} ≠ STATE {state_ver.group(1)}")
@@ -66,7 +69,7 @@ if "AUDIT-1" in agents and "AUDIT 18/18" in state:
 # ── 规则 3：TASKS 批次标题与勾选状态一致（已并入规则 1 循环） ─────────
 
 # ── 规则 4：PLAN 版本小节标题与正文一致 ──────────────────────────────
-for m in re.finditer(r"^### (0\d?\\.\d+\\.\d+)(（[^）]*）)\n", plan, re.M):
+for m in re.finditer(r"^### (\d+\.\d+\.\d+)(（[^）]*）)\n", plan, re.M):
     ver, paren = m.group(1), m.group(2)
     body = plan[m.end():m.end() + 800]
     head_ok = ("已发布" in paren) == bool(
@@ -82,7 +85,7 @@ whitelist = [
     (".7z", "M26-3"),
     ("虚拟浏览已由 M26-3", "M26-3"),
 ]
-for m in re.finditer(r"^(- `\\.[a-z0-9]+` /? ?(?:`\\.[a-z0-9]+` )?(?:不提供|不支持)虚拟浏览[^\n]*)$", spec, re.M):
+for m in re.finditer(r"^(- `\.[a-z0-9]+` /? ?(?:`\.[a-z0-9]+` )?(?:不提供|不支持)虚拟浏览[^\n]*)$", spec, re.M):
     line = m.group(1)
     if ".rar" in line and ".7z" not in line:
         continue  # 仅 rar 的提示与 README（rar 保持提示）一致
@@ -105,7 +108,6 @@ if n_tests:
                     check("R6-COUNT", False,
                           f"STATE 状态行写 {m.group(1)} 单测，实际 {n_tests}"
                           f"（口径：src/ 内 #[test] 计数）: {line[:60]}")
-            break
 
 # ── 规则 7：README 版本状态与 STATE 发布状态一致 ──────────────────────
 rm_publishing = "发布中" in readme[:600]

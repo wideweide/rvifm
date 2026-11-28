@@ -142,7 +142,7 @@
 
 ### 1.0.0（已发布 2026-11-22，双渠道闭环）
 
-- M36–M41 统一随 **1.0.0** 发布：CHANGELOG 批次并入 + tag v1.0.0 → CI 全绿
+- **GitHub Release 已发布**并验证：M36–M41 统一随 **1.0.0** 发布：CHANGELOG 批次并入 + tag v1.0.0 → CI 全绿
   （发布修红三层：aarch64 c_char E0308 / smoke ELF 断言 / 注解精确化，见 NOTES）
   → GitHub Release 四归档（windows-x64 / linux-x64-gnu / linux-x64-musl /
   linux-aarch64-gnu）+ SHA256SUMS；crates.io 本机凭据 publish + API 验证。
