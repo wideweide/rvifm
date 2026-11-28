@@ -1096,7 +1096,30 @@ pub(crate) fn remote_open_file(
     remote: &str,
     full: &std::path::Path,
 ) -> Result<Option<String>, String> {
-    let tmp = remote_download_copy(state, remote, full)?;
+    let tmp = match remote_download_copy(state, remote, full) {
+        Ok(tmp) => tmp,
+        Err(e) if e.contains("max_in_memory_bytes") => {
+            // M91-5：超大文件降级为流式下载队列项，避免整文件入内存。
+            let leaf = full
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "remote-file".to_owned());
+            let dest = std::env::temp_dir().join(format!("rvifm-queue-{leaf}"));
+            state.transfer_queue.push(crate::state::TransferQueueEntry {
+                direction: crate::app::jobs::TransferDirection::Download,
+                src: full.to_path_buf(),
+                dest,
+                tab_id: state.active,
+                remote: remote.to_owned(),
+                state: crate::state::TransferState::Pending,
+                transferred: 0,
+                retries: 0,
+                error: None,
+            });
+            return Ok(Some(format!("{e}（已加入流式下载队列，:queue 查看进度）")));
+        }
+        Err(e) => return Err(e),
+    };
     spawn_upload_watcher(state, remote, &tmp, full);
     match crate::opener::system_open(&tmp) {
         Ok(()) => Ok(Some(format!(
@@ -1183,6 +1206,17 @@ pub(crate) fn remote_download_copy(
         .remote_sessions
         .get(remote)
         .ok_or_else(|| "remote: 会话已断开".to_owned())?;
+    // M91-5：整文件读入护栏；超限不读入内存，调用方可降级为重试队列项。
+    let meta = backend
+        .metadata(full)
+        .map_err(|e| format!("元数据失败: {e}"))?;
+    let limit = state.config.transfer.max_in_memory_bytes;
+    if meta.size > limit {
+        return Err(format!(
+            "文件 {} 字节超过 [transfer] max_in_memory_bytes={limit}，请用队列流式下载",
+            meta.size
+        ));
+    }
     let bytes = backend.read(full).map_err(|e| format!("打开失败: {e}"))?;
     let leaf = full
         .file_name()

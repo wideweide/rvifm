@@ -287,6 +287,8 @@ pub struct TransferConfig {
     pub conflict_policy: String,
     /// M36-7：粘贴入队（true = 多选传输排队顺序执行；缺省 false = 同步直传）。
     pub queue: bool,
+    /// M91-5：单次整文件读入的内存上限（字节），超限拒绝并降级为重试队列项。
+    pub max_in_memory_bytes: u64,
 }
 
 impl Default for TransferConfig {
@@ -294,6 +296,7 @@ impl Default for TransferConfig {
         Self {
             conflict_policy: "ask".to_owned(),
             queue: false,
+            max_in_memory_bytes: 64 * 1024 * 1024,
         }
     }
 }

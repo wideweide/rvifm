@@ -15847,3 +15847,38 @@ fn m914_queue_overlay_shows_states_and_bidirectional_entries() {
         "双向条目: {compact}"
     );
 }
+
+#[test]
+fn m915_in_memory_guard_rejects_large_remote_file() {
+    struct LargeMetaFs;
+    impl crate::remote::RemoteFs for LargeMetaFs {
+        fn list(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            Ok(Vec::new())
+        }
+        fn read(&self, _p: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            panic!("不应整文件读取")
+        }
+        fn metadata(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            Ok(crate::remote::RemoteMeta {
+                size: 100 * 1024 * 1024,
+                mtime: 0,
+                is_dir: false,
+            })
+        }
+    }
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state
+        .remote_sessions
+        .insert("r".to_owned(), Box::new(LargeMetaFs));
+    let err =
+        crate::app::exec::remote_download_copy(&mut state, "r", std::path::Path::new("/big.bin"))
+            .unwrap_err();
+    assert!(err.contains("max_in_memory_bytes"), "{err}");
+}
