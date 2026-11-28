@@ -1154,6 +1154,50 @@ fn run_with_initial_mode(
                 state.transfer_queue.push(entry);
             }
         }
+        // M91-4：队列消费——Download 条目走流式下载（与 Upload 对称）。
+        if state
+            .transfer_queue
+            .first()
+            .map(|e| {
+                e.direction == crate::app::jobs::TransferDirection::Download
+                    && e.state == crate::state::TransferState::Pending
+            })
+            .unwrap_or(false)
+        {
+            let mut entry = state.transfer_queue.remove(0);
+            entry.state = crate::state::TransferState::Running;
+            let remote_name = entry.remote.clone();
+            let tab_id = entry.tab_id;
+            let src = entry.src.clone();
+            let dest = entry.dest.clone();
+            let downloaded = state
+                .remote_sessions
+                .get(&remote_name)
+                .map(|backend| crate::app::exec::download_chunked(backend.as_ref(), &src, &dest));
+            match downloaded {
+                Some(Ok(())) => {
+                    entry.state = crate::state::TransferState::Done;
+                    state.undo_stack.push(crate::state::UndoableOp::Create {
+                        tab_id,
+                        path: dest,
+                        recursive: false,
+                    });
+                }
+                Some(Err((offset, e))) => {
+                    entry.state = crate::state::TransferState::Failed;
+                    entry.transferred = offset;
+                    entry.error = Some(e);
+                }
+                None => {
+                    entry.state = crate::state::TransferState::Failed;
+                    entry.error = Some("远端会话不存在".to_owned());
+                }
+            }
+            refresh_tab_panes(&mut state, tab_id);
+            if entry.state != crate::state::TransferState::Done {
+                state.transfer_queue.push(entry);
+            }
+        }
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞；
         // 有待决序列时预算收缩到超时余量（AUDIT-6）。
         let polled = event::poll(std::time::Duration::from_millis(poll_ms))?;
@@ -2288,13 +2332,30 @@ fn run_with_initial_mode(
                             KeyCode::Char('k') | KeyCode::Up => {
                                 *cursor = cursor.saturating_sub(1);
                             }
-                            KeyCode::Char('x') if *cursor < state.transfer_queue.len() => {
-                                state.transfer_queue.remove(*cursor);
-                                if *cursor >= state.transfer_queue.len()
-                                    && !state.transfer_queue.is_empty()
-                                {
-                                    *cursor = state.transfer_queue.len() - 1;
+                            KeyCode::Char('p') if *cursor < state.transfer_queue.len() => {
+                                // M91-4：暂停/恢复切换。
+                                let e = &mut state.transfer_queue[*cursor];
+                                e.state = if e.state == crate::state::TransferState::Paused {
+                                    crate::state::TransferState::Pending
+                                } else {
+                                    crate::state::TransferState::Paused
+                                };
+                            }
+                            KeyCode::Char('r') if *cursor < state.transfer_queue.len() => {
+                                // M91-4：失败项重试（清空错误、回到 Pending）。
+                                let e = &mut state.transfer_queue[*cursor];
+                                if e.state == crate::state::TransferState::Failed {
+                                    e.state = crate::state::TransferState::Pending;
+                                    e.retries += 1;
+                                    e.error = None;
+                                    e.transferred = 0;
                                 }
+                            }
+                            KeyCode::Char('x') if *cursor < state.transfer_queue.len() => {
+                                // M91-4：取消标记留在队列可见，直到用户清理。
+                                state.transfer_queue[*cursor].state =
+                                    crate::state::TransferState::Cancelled;
+                                *cursor = cursor.saturating_sub(1);
                             }
                             _ => {}
                         }

@@ -2187,9 +2187,29 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 } else {
                     Style::new()
                 };
+                let status = match e.state {
+                    crate::state::TransferState::Pending => "待处理".to_owned(),
+                    crate::state::TransferState::Running => "传输中".to_owned(),
+                    crate::state::TransferState::Paused => "已暂停".to_owned(),
+                    crate::state::TransferState::Done => "完成".to_owned(),
+                    crate::state::TransferState::Failed => {
+                        format!(
+                            "失败(重试{}){}",
+                            e.retries,
+                            e.error.clone().unwrap_or_default()
+                        )
+                    }
+                    crate::state::TransferState::Cancelled => "已取消".to_owned(),
+                };
                 lines.push(Line::styled(
                     format!(
-                        "{dir_label} {src} → {dest}",
+                        "{dir_label} [{status}] {}/{} {src} → {dest}",
+                        e.transferred,
+                        if e.transferred > 0 {
+                            "已传"
+                        } else {
+                            "字节"
+                        },
                         src = e.src.display().to_string().replace('\\', "/"),
                         dest = e.dest.display().to_string().replace('\\', "/")
                     ),
@@ -2199,7 +2219,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         }
         frame.render_widget(
             Paragraph::new(lines).block(
-                ratatui::widgets::Block::bordered().title("传输队列（j/k=选择 x=取消 Esc=关闭）"),
+                ratatui::widgets::Block::bordered()
+                    .title("传输队列（j/k=选择 p=暂停/恢复 r=重试 x=取消 Esc=关闭）"),
             ),
             frame.area(),
         );

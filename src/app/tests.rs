@@ -15800,3 +15800,50 @@ fn m913_download_is_streamed_and_content_matches() {
     crate::app::exec::download_chunked(&fs, std::path::Path::new("/remote.bin"), &dest).unwrap();
     assert_eq!(fs::read(&dest).unwrap(), data);
 }
+
+#[test]
+fn m914_queue_overlay_shows_states_and_bidirectional_entries() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    for (i, dir) in [
+        crate::app::jobs::TransferDirection::Upload,
+        crate::app::jobs::TransferDirection::Download,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        state.transfer_queue.push(crate::state::TransferQueueEntry {
+            direction: dir,
+            src: PathBuf::from(format!("/src{i}")),
+            dest: PathBuf::from(format!("/dst{i}")),
+            tab_id: 0,
+            remote: "r".to_owned(),
+            state: if i == 0 {
+                crate::state::TransferState::Paused
+            } else {
+                crate::state::TransferState::Failed
+            },
+            transferred: 128,
+            retries: 1,
+            error: None,
+        });
+    }
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Queue { cursor: 0 }, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..10u16 {
+        for x in 0..100u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("已暂停"), "{compact}");
+    assert!(compact.contains("失败(重试1)"), "{compact}");
+    assert!(
+        compact.contains('↑') && compact.contains('↓'),
+        "双向条目: {compact}"
+    );
+}
