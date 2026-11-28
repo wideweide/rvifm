@@ -2319,6 +2319,26 @@ append_rules = [
 - 不引入 Lua/WASM/动态库插件；不做 Vim 脚本引擎；不改变 §5.1 边界。
 - 外部 provider/钩子不做应用内代码执行，不回写核心状态。
 
+## M99 — Termux / 窄屏适配（2026-11-28 蒸馏，待确认执行）
+
+**调研结论（来源：用户提供的 DeepSeek 分享对话）**
+- 关键事实：Termux 手机竖屏典型 45–60 列，双栏每栏不足 30 列不可读；TUI 通用准则是「<80 列提供单栏回退」。nnn 内建 1-column mode；yazi 通过 `auto-layout.yazi` 插件按宽度切 1/2/3 栏（断点约 50/100）；ranger 只靠用户手改 `column_ratios`，无自动回退。
+- 用户澄清：**Termux 支持 Esc 与 F1/F2 自定义映射**，所以键位体系无需为移动端做妥协；适配本质是「屏幕空间 + 渲染性能 + 字体兼容」。
+- rvifm 现状：`LayoutMode::Single` 已存在但仅由 `[ui] layout` 静态配置，未按宽度自动切换；单栏下焦点在右栏时仍呈现左栏内容（`pane_layout` 右区 width=0，`render_right_pane` 提前 return），需要按焦点投影；`devicons` glyph 无字体检测，仅保证不 panic，终端缺 Nerd Font 会显示豆腐块；异步预览/防抖/generation 已由 M60/M61/M83/M85/M96 落地，不是新增工作。
+
+**MUST**
+- `[ui] narrow_threshold`（默认 80，0 禁用）：每帧按 `frame.area().width` 判断，窄屏强制单栏；忽略静态 layout 配置，旋转屏幕即时生效，不为 Termux 写特殊分支。
+- 单栏必须渲染**当前焦点 pane** 的内容（Left/Right 投影），标题栏/状态栏明确显示 `[左]`/`[右]` + 路径，焦点样式沿用 `design-tokens.md`；`Tab`/空格切换焦点在单栏下直接替换所显示内容。
+- `[ui] narrow_list_mode = "filename" | "detail"`（默认 filename）：窄屏单行只显示文件名+图标；detail 用第二行较暗样式显示 `大小 · 日期（MM-DD HH:mm）`；≥阈值保持现有属性列不变。
+- 极小终端（宽 <30 或高 <6）显示「终端过小」提示，不渲染破碎布局；软键盘弹出导致高度骤降时状态栏/标签栏/标题栏不堆叠，列表优雅收缩。
+- `[ui] icons = true|false`（默认 true）：false 时降级纯文本标记（如 `[D]`）；缺字体时用户可一键关闭，不 panic。
+- `termux-open` 作为可选 opener 规则示例写入 `opener.example.toml` 与 GUIDE（纯配置，无编译期依赖）。
+- 文档/验收/门禁（仅提交代码，不 bump / tag / Release）。
+
+**OUT_OF_SCOPE**
+- 不新增键位/手势（Termux 已支持 Esc/F1/F2）；不改导航/文件操作/frecency 核心逻辑。
+- 不把宽度断点做成插件（维持 §5.1 不做插件系统边界）。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

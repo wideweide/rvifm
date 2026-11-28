@@ -1101,3 +1101,11 @@
 - [x] M98-3 钩子事件总线（pre 同步可取消 / post 异步）（见 SPEC M98；2026-11-28 完成：hooks 模块 + open/cmd/job 事件 + m983）
 - [x] M98-4 frecency 改为 post 钩子异步串行写入 + 去掉 file 前置记录（见 SPEC M98；2026-11-28 完成：hooks::record_async + flush + open_failed）
 - [x] M98-5 文档/验收/门禁（见 SPEC M98；2026-11-28 完成：GUIDE/help/CHANGELOG + 全门禁）
+
+## M99 — Termux / 窄屏适配（2026-11-28，见 SPEC M99 节）
+
+- [ ] M99-1 宽度断点自动单栏 + 焦点 pane 投影/标识（见 SPEC M99）
+- [ ] M99-2 窄屏列表密度 filename/detail（见 SPEC M99）
+- [ ] M99-3 极小终端提示 + 高度收缩（见 SPEC M99）
+- [ ] M99-4 图标纯文本降级配置（见 SPEC M99）
+- [ ] M99-5 termux-open opener 示例 + 文档/验收/门禁（见 SPEC M99）
