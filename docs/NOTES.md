@@ -1787,3 +1787,5 @@ rvifm record  → 静默记录访问
 - **选型**：用户选定 `pulldown-cmark-mdcat` 2.20.2 库模式（ratatui ^0.30 匹配；mpL-2.0 AND Apache-2.0），不引入 `MdcatWidget` 事件循环；`ratatui-markdown` 因 ratatui 0.29 冲突、`mdfrier` 因 GPL-3.0 冲突均排除。
 - **架构复用**：Markdown 样式行走 M60 special preview worker，结果进 M83 viewer —— 导航/检索/视口/黄底叠加全部复用，不新增键位。
 - **排队**：按 §8.3 登记为 M97，排在 M96 之后；当前执行指针仍是 M93-2（按顺序）。
+
+- **M97 完成记录**：`pulldown-cmark-mdcat =2.20.2`（ratatui feature）后台生成样式行；`[preview] markdown_render` 配置；结果走独立 md channel + generation + LRU。CI 本机全绿；并行测试偶发 flake（m791/nav4）连续两次全量重跑通过，属已知全局状态顺序依赖。

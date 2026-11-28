@@ -122,3 +122,6 @@ append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
 
 # M93-6：实验性 hunk 丢弃默认关闭（开启后 :diff 内 D 键可用）
 hunk_discard = false
+
+# M97：Markdown 预览渲染（false 回退纯文本近似预览）
+markdown_render = true

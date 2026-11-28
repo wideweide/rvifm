@@ -49,6 +49,8 @@ serde_json = "1.0.154"
 similar = "2.7"
 # M88：按终端单元格宽度截断文件名（CJK 宽度感知，纯 Rust）。
 unicode-width = "0.2"
+# M97：Markdown → ratatui 样式行（库模式，不用自带 widget）。
+pulldown-cmark-mdcat = { version = "=2.20.2", default-features = false, features = ["ratatui"] }
 tar = "0.4.46"
 toml = "1.2.1"
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }

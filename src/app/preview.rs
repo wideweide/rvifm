@@ -250,6 +250,27 @@ pub(crate) fn render_view_path(
         );
         return;
     }
+    // M97：Markdown 样式行（后台渲染，复用 viewer 的滚动/检索）。
+    let is_md = path.extension().is_some_and(|e| {
+        matches!(
+            e.to_string_lossy().to_ascii_lowercase().as_str(),
+            "md" | "markdown"
+        )
+    });
+    if is_md && state.config.preview.markdown_render {
+        if let Some((_, lines)) = state.md_preview.peek(&path) {
+            let shown: Vec<Line> = lines
+                .iter()
+                .skip(viewer.scroll)
+                .take(inner.height.max(1) as usize)
+                .cloned()
+                .collect();
+            frame.render_widget(Paragraph::new(shown), inner);
+        } else {
+            frame.render_widget(Paragraph::new("Markdown 渲染中…"), inner);
+        }
+        return;
+    }
     // M21-F7：PDF/Office 分流——走共享 PreviewRenderer（pdf-inspector
     // 文本提取先行 / office_oxide 提取），失败按类型提示；不落文本读取
     // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。

@@ -16281,3 +16281,24 @@ fn m962_preview_cache_evicts_least_recently_used() {
     assert!(cache.peek(&2).is_none(), "最久未用被淘汰");
     assert_eq!(cache.get_cloned(&3).as_deref(), Some("c"));
 }
+
+#[test]
+fn m971_markdown_preview_renders_heading() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("readme.md");
+    fs::write(&path, "# Title\n\n**bold** and `code`\n").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.ensure_special_preview(&path, false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while state.md_preview.peek(&path).is_none() && std::time::Instant::now() < deadline {
+        if let Ok((generation, p, lines)) = state.md_rx.try_recv() {
+            if generation == state.preview_generation {
+                state.md_preview.insert(p.clone(), (p, lines));
+            }
+        }
+    }
+    assert!(
+        state.md_preview.peek(&path).is_some(),
+        "Markdown 后台渲染完成"
+    );
+}

@@ -973,11 +973,18 @@ fn run_with_initial_mode(
         // M60-4：Office/归档/PDF 文本的重型解析走后台（PDF 视觉页仍需 Frame，留在 UI 线程）。
         if let Some(path) = state.active_tab().preview_target() {
             let kind = crate::preview::preview_kind(&path);
+            let is_md = path.extension().is_some_and(|e| {
+                matches!(
+                    e.to_string_lossy().to_ascii_lowercase().as_str(),
+                    "md" | "markdown"
+                )
+            });
             let special = matches!(
                 kind,
                 crate::preview::PreviewKind::Office | crate::preview::PreviewKind::Archive
-            ) || (kind == crate::preview::PreviewKind::Pdf
-                && state.config.preview.pdf_image_pages == 0);
+            ) || (is_md && state.config.preview.markdown_render)
+                || (kind == crate::preview::PreviewKind::Pdf
+                    && state.config.preview.pdf_image_pages == 0);
             if special {
                 let external = state.config.preview.archive_external_listing;
                 state.ensure_special_preview(&path, external);
@@ -1102,6 +1109,12 @@ fn run_with_initial_mode(
             state.git_cache_at.insert(dir, std::time::Instant::now());
         }
         crate::git::sync_status_trigger(&mut state);
+        // M97：收割 Markdown 渲染结果（generation 丢弃过期结果）。
+        while let Ok((generation, path, lines)) = state.md_rx.try_recv() {
+            if generation == state.preview_generation {
+                state.md_preview.insert(path.clone(), (path, lines));
+            }
+        }
         // M93-1：收割 `:du` 后台扫描结果并打开视图。
         if let Ok(result) = state.du_rx.try_recv() {
             state.du_result = Some(result);

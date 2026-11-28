@@ -1090,6 +1090,6 @@
 
 ## M97 — Markdown 预览渲染（2026-11-28，见 SPEC M97 节）
 
-- [ ] M97-1 接入 pulldown-cmark-mdcat 库模式 + 后台样式行生成（见 SPEC M97）
-- [ ] M97-2 viewer 导航/检索复用 + 缓存/防抖/视口对接（见 SPEC M97）
-- [ ] M97-3 配置项 + 文档/验收/门禁（见 SPEC M97）
+- [x] M97-1 接入 pulldown-cmark-mdcat 库模式 + 后台样式行生成（见 SPEC M97）
+- [x] M97-2 viewer 导航/检索复用 + 缓存/防抖/视口对接（见 SPEC M97）
+- [x] M97-3 配置项 + 文档/验收/门禁（见 SPEC M97）

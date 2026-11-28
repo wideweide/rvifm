@@ -152,6 +152,8 @@ pub struct PreviewConfig {
     /// M85：启动时是否查询原生图片协议；false 直接用 halfblocks（零等待）。
     /// 任一来源关闭即禁用（配置或环境变量 `RVIFM_IMAGE_PROTOCOL_QUERY=0/false/off`）。
     pub image_protocol_query: bool,
+    /// M97：`.md` 走完整 Markdown 渲染；false 回退纯文本近似预览。
+    pub markdown_render: bool,
 }
 
 impl Default for PreviewConfig {
@@ -165,6 +167,7 @@ impl Default for PreviewConfig {
             frecency_preview: false,
             image_max_side: 1600,
             image_protocol_query: true,
+            markdown_render: true,
         }
     }
 }

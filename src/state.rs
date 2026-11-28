@@ -455,6 +455,11 @@ pub struct AppState {
     pub thread_preview: std::cell::RefCell<Option<ThreadPreview>>,
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
     pub special_preview: PreviewCache<PathBuf, (PathBuf, Vec<String>)>,
+    /// M97：Markdown 样式行后台渲染结果（与 viewer 同源导航）。
+    pub md_preview: PreviewCache<PathBuf, (PathBuf, Vec<ratatui::text::Line<'static>>)>,
+    /// M97：Markdown 渲染结果通道（独立于 PreviewJobResult，避免改动所有构造点）。
+    pub md_tx: std::sync::mpsc::Sender<(u64, PathBuf, Vec<ratatui::text::Line<'static>>)>,
+    pub md_rx: std::sync::mpsc::Receiver<(u64, PathBuf, Vec<ratatui::text::Line<'static>>)>,
     pub special_pending: Option<PathBuf>,
     /// M53-5/M83：文本预览行缓存（key = path+mtime+size），`Arc` 让命中
     /// 只克隆指针，避免每帧整文件 `Vec<String>` 拷贝。
@@ -1122,7 +1127,17 @@ impl AppState {
 
     /// M60-4：Office/归档/PDF 文本预览行后台计算（缓存未命中时）。
     pub fn ensure_special_preview(&mut self, path: &std::path::Path, external_enabled: bool) {
-        if self.special_preview.peek(&path.to_path_buf()).is_some() {
+        let is_md = path.extension().is_some_and(|e| {
+            matches!(
+                e.to_string_lossy().to_ascii_lowercase().as_str(),
+                "md" | "markdown"
+            )
+        });
+        if is_md {
+            if self.md_preview.peek(&path.to_path_buf()).is_some() {
+                return;
+            }
+        } else if self.special_preview.peek(&path.to_path_buf()).is_some() {
             return;
         }
         if self.special_pending.as_deref() == Some(path) {
@@ -1132,6 +1147,18 @@ impl AppState {
         let target = path.to_path_buf();
         self.preview_generation = self.preview_generation.wrapping_add(1);
         let generation = self.preview_generation;
+        if is_md {
+            let md_tx = self.md_tx.clone();
+            std::thread::spawn(move || {
+                let lines = std::fs::read_to_string(&target)
+                    .ok()
+                    .and_then(|text| pulldown_cmark_mdcat::ratatui::text_from_str(&text, 100).ok())
+                    .map(|text| text.lines)
+                    .unwrap_or_default();
+                let _ = md_tx.send((generation, target, lines));
+            });
+            return;
+        }
         let tx = self.preview_tx.clone();
         std::thread::spawn(move || {
             let lines = crate::preview::load_special_preview_lines(&target, external_enabled);
@@ -1222,6 +1249,7 @@ impl AppState {
         let preview_channel = std::sync::mpsc::channel();
         let (dir_tx, dir_rx) = std::sync::mpsc::channel();
         let (du_tx, du_rx) = std::sync::mpsc::channel();
+        let (md_tx, md_rx) = std::sync::mpsc::channel();
         Self {
             tabs: vec![initial],
             active: 0,
@@ -1260,6 +1288,9 @@ impl AppState {
             image_generation: 0,
             thread_preview: std::cell::RefCell::new(None),
             special_preview: PreviewCache::new(8),
+            md_preview: PreviewCache::new(8),
+            md_tx,
+            md_rx,
             special_pending: None,
             text_preview_cache: std::cell::RefCell::new(PreviewCache::new(16)),
             watcher: None,
