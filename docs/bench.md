@@ -31,3 +31,21 @@ cargo bench --bench rvifm_bench -- copy_1gb # 单组
 - CI 不跑 bench（cargo test/build 不含 bench 运行；`cargo check --all-targets`
   覆盖 bench 编译门禁）。
 - 1.0 发布后如做 load_100k 优化，以本表为对照基线（同机同参复跑）。
+
+## 复跑基线（2026-11-28，M92-1/2/3 后）
+
+- **环境**：Linux（x86_64-unknown-linux-gnu）、rustc 1.95.0、bench profile、criterion 0.7
+  （`--measurement-time 3 --warm-up-time 1`，100k 组 sample_size=10）。
+- **口径变化**：`[ui] lazy_attrs = true` 让目录首屏跳过逐条 metadata；可见区由
+  `fill_visible_attrs` 按需补齐；目录加载移入后台 ListLoader（generation 丢弃过期结果）。
+  因此 `load_entries_100k` 测的是**首屏加载**（无全量 stat），不再是旧基线的全量元数据路径。
+
+| 基准 | 新结果 | 旧基线 | 变化 |
+|---|---|---|---|
+| `load_100k/load_entries_100k` | **450.97 ms** | 6.83 s | ≈15×（首屏不再逐条 stat） |
+| `natural_sort/sort_10k_natural` | 6.47 ms | 3.26 ms | ≈2× 慢（本机 Linux vs 旧 Windows，异平台不可直接对比） |
+| `natural_sort/sort_10k_lexical` | 451 µs | 588 µs | 略快 |
+| `frecency_replay/replay_100k_events` | 58.1 ms | 65.0 ms | 略快 |
+
+> 平台不同（Windows Server 2016 → Linux），除 `load_100k` 的架构性差异外，
+> 其余数字只作同机后续回归对照，不与旧基线做跨平台结论。
