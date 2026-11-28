@@ -1316,7 +1316,16 @@ pub(crate) fn render_live_find(frame: &mut Frame, state: &AppState, msg: Option<
 
 /// M23-6：Frecency Pane 渲染——焦点 pane 显示搜索+结果，对侧显示光标
 /// 条目的快速预览（PreviewRenderer，文本 100 行截断 + 标记）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
+    render_frecency_panes_with_msg(frame, state, None);
+}
+
+pub(crate) fn render_frecency_panes_with_msg(
+    frame: &mut Frame,
+    state: &AppState,
+    msg: Option<&str>,
+) {
     let tab = state.active_tab();
     let pane = match &tab.pane_frecency {
         Some(p) => p,
@@ -1450,8 +1459,19 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         crate::app::preview::render_view_path(frame, state, &path, preview_area, viewer.as_ref());
     }
     // M105-2：输入框已上移到标题行；状态行只给模式提示，不再画第二套输入框。
+    // M105-7：r→y 等确认提示此前被这里的状态提示覆盖，改为优先显示 msg。
     frame.render_widget(ratatui::widgets::Clear, status_area);
-    if pane.normal {
+    if let Some(m) = msg.filter(|m| !m.is_empty()) {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("⚠ {m}"),
+                Style::new()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            ))),
+            status_area,
+        );
+    } else if pane.normal {
         let hint = format!(
             "NORMAL 模式｜j/k/gg/G=移动 l/Enter=跳转 d=批量删 dd=删当前 u=恢复 r=清书签(y确认) yf/yn/yc=复制 Tab=预览焦点 w=view Esc=关闭（{} 项）",
             visible.len()
@@ -3214,7 +3234,7 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     // M86-2：frecency 覆盖层最后绘制——对侧目录面板保持原样，不被空白遮罩覆盖；
     // 焦点栏由搜索 UI 接管，popup 始终置顶。
     if state.active_tab().pane_frecency.is_some() {
-        render_frecency_panes(frame, state);
+        render_frecency_panes_with_msg(frame, state, msg);
     }
     // M50-1：命令补全浮层（复用 frecency overlay 的 List/选中样式语义）。
     if let InputMode::Command {

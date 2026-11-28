@@ -16863,3 +16863,49 @@ fn m1056_opener_rule_match_records_file_access() {
         state.live_recorded
     );
 }
+
+#[test]
+fn m1057_frecency_status_shows_confirmation_message() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: Vec::new(),
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: true,
+        last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal
+        .draw(|f| {
+            crate::app::render::render_frecency_panes_with_msg(
+                f,
+                &state,
+                Some("确认移除书签 rvifm ? y=确认 其它=取消"),
+            )
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let text: String = (0..12u16)
+        .flat_map(|y| {
+            (0..80u16)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        text.replace(' ', "").contains("确认移除书签"),
+        "确认提示须覆盖普通状态提示: {text}"
+    );
+}
