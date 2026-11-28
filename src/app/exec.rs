@@ -2931,6 +2931,29 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 msg: Some(format!("goto: 0x{off:x}（行 {}）", off / 16)),
             })
         }
+        // M95-6：撤销历史面板（只读，最近在后）。
+        Some("undolist") => {
+            let ops = state.undo_stack.list();
+            if ops.is_empty() {
+                return Ok(ExecOutcome::Done {
+                    msg: Some("undolist: 撤销栈为空".to_owned()),
+                });
+            }
+            let lines: Vec<String> = ops
+                .iter()
+                .enumerate()
+                .rev()
+                .take(20)
+                .map(|(i, op)| format!("{:>3}. {:?}", i + 1, op))
+                .collect();
+            Ok(ExecOutcome::Done {
+                msg: Some(format!(
+                    "undolist（最近 {} 项）:\n{}",
+                    lines.len(),
+                    lines.join("\n")
+                )),
+            })
+        }
         Some("queue") => {
             // M36-7：传输队列覆盖层（j/k 选择、x 取消、Esc 关闭）。
             Ok(ExecOutcome::EnterQueue { cursor: 0 })

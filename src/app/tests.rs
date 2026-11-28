@@ -16230,3 +16230,18 @@ fn m955_split_and_join_roundtrip() {
     assert!(format!("{j:?}").contains("join"), "{j:?}");
     assert_eq!(fs::read(tmp.path().join("joined.bin")).unwrap(), data);
 }
+
+#[test]
+fn m956_undolist_reports_stack() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let empty = crate::app::exec::exec_command_impl(&mut state, "undolist").unwrap();
+    assert!(format!("{empty:?}").contains("为空"), "{empty:?}");
+    state.undo_stack.push(crate::state::UndoableOp::Create {
+        tab_id: 0,
+        path: tmp.path().join("x"),
+        recursive: false,
+    });
+    let out = crate::app::exec::exec_command_impl(&mut state, "undolist").unwrap();
+    assert!(format!("{out:?}").contains("Create"), "{out:?}");
+}

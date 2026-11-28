@@ -131,6 +131,11 @@ impl UndoStack {
     }
 
     /// 弹出最近一次操作（`u` 消费；空栈返回 None）。
+    /// M95-6：只读取消栈（供 `:undolist` 展示，最近在后）。
+    pub fn list(&self) -> &[UndoableOp] {
+        &self.ops
+    }
+
     pub fn pop(&mut self) -> Option<UndoableOp> {
         self.ops.pop()
     }

@@ -8,9 +8,16 @@
 //! M40-1：模块树移入 `lib.rs`（bench 共用）；本文件只保留 CLI 分派与
 //! TUI 启动（`use rvifm::` 引入 lib 项）。
 
+use ratatui::crossterm::tty::IsTty;
 use rvifm::{app, frecency, privilege};
 
 fn main() -> std::io::Result<()> {
+    // M95-6：panic hook 保留默认回溯，并提示用 `rvifm doctor` 自证环境。
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        eprintln!("rvifm 发生 panic；请运行 `rvifm doctor` 并附上输出以便诊断。");
+        default_hook(info);
+    }));
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("--version" | "-V") => {
@@ -60,6 +67,38 @@ fn main() -> std::io::Result<()> {
                     std::process::exit(2);
                 }
             };
+        }
+        // M95-6：一键自证式诊断（终端 / 配置 / 数据 / 外部工具）。
+        Some("doctor") => {
+            let cfg_path = rvifm::config::config_path();
+            let data_dir = rvifm::config::data_dir();
+            let tty = std::io::stdout().is_tty();
+            let tool = |name: &str| -> &'static str {
+                std::process::Command::new(name)
+                    .arg("--version")
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| if s.success() { "可用" } else { "异常" })
+                    .unwrap_or("缺失")
+            };
+            println!("rvifm doctor");
+            println!("  版本: {}", env!("CARGO_PKG_VERSION"));
+            println!("  TTY: {}", if tty { "是" } else { "否（CI/管道）" });
+            println!(
+                "  配置: {} ({})",
+                cfg_path.display(),
+                if cfg_path.exists() {
+                    "存在"
+                } else {
+                    "未生成"
+                }
+            );
+            println!("  数据目录: {}", data_dir.display());
+            println!("  git: {}", tool("git"));
+            println!("  tmux: {}", tool("tmux"));
+            println!("  ziggity: {}", tool("ziggity"));
+            return Ok(());
         }
         // M12-2：sudo -A 的 askpass 辅助模式（读 FIFO 密码 → stdout）。
         Some("--askpass") => {
