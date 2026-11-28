@@ -1446,7 +1446,7 @@
 - [ ] M92-2 元数据分阶段，可见区优先补齐。
 - [ ] M92-3 refresh 去抖 150ms。
 - [ ] M92-4 100k 目录 < 1.0s，bench 新基线写回。
-- [ ] M92-5 bench 进 nightly CI，±10% 阈值。
+- [x] M92-5 bench 进 nightly CI，±10% 阈值。（2026-11-28：bench.yml）
 
 ## 98. M93 — 运维深度（见 SPEC M93 节）
 

@@ -1,0 +1,35 @@
+name: Bench
+
+# M92-5：nightly 性能门禁——100k 目录首屏加载不得劣化超过 ±10%。
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: run load_100k benchmark
+        run: |
+          cargo bench --bench rvifm_bench -- load_100k \
+            --measurement-time 3 --warm-up-time 1 2>&1 | tee bench.log
+      - name: check threshold (450.97ms ±10%)
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          text = open("bench.log", encoding="utf-8", errors="replace").read()
+          m = re.search(r"time:\s+\[[\d.]+\s+ms\s+([\d.]+)\s+ms", text)
+          if not m:
+              print("未找到 load_100k 基准结果")
+              sys.exit(1)
+          est = float(m.group(1))
+          base = 450.97
+          lo, hi = base * 0.9, base * 1.1
+          print(f"load_100k estimate: {est} ms, allowed [{lo:.2f}, {hi:.2f}]")
+          if est < lo or est > hi:
+              sys.exit(f"性能回归：超出 ±10% 阈值")
+          PY

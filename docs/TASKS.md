@@ -1054,7 +1054,7 @@
 - [x] M92-2 元数据分阶段与可见区优先（见 SPEC M92；2026-11-28 完成：lazy_attrs + fill_visible_attrs + m922）
 - [x] M92-3 外部变更 refresh 去抖（见 SPEC M92；2026-11-28 完成：m923 + 150ms 窗口）
 - [ ] M92-4 bench 复跑写回新基线（见 SPEC M92）
-- [ ] M92-5 bench 进 nightly CI，阈值 ±10%（见 SPEC M92）
+- [x] M92-5 bench 进 nightly CI，阈值 ±10%（见 SPEC M92；2026-11-28 完成：.github/workflows/bench.yml，450.97ms±10%）
 
 ## M93 — 运维深度（2026-11-28 蒸馏，见 SPEC M93 节）
 
