@@ -149,6 +149,40 @@ check("R9-DOCS", not stale_docs, f"过期 tutor 条目数（应为 14 模块 105
 check("R9-README", "无内建能力" not in readme_text,
       "README 仍称 vifm 文档预览『无内建能力』（实际 :view 内建文本/目录预览）")
 
+# ── R10：PLAN 批次行状态与 TASKS 未勾数一致 ───────────────────────────
+plan_rows = []
+for line in plan.splitlines():
+    if not line.startswith("| M") and not line.startswith("| FIX-") and not line.startswith("| REL-"):
+        continue
+    cols = [c.strip() for c in line.strip().strip("|").split("|")]
+    if len(cols) >= 4:
+        plan_rows.append((cols[0], cols[-2]))
+for mid, status in plan_rows:
+    if "待确认" not in status and "执行中" not in status:
+        continue
+    block = re.search(
+        r"^## " + re.escape(mid) + r" — .*?(?=^## |\Z)", tasks, re.M | re.S
+    )
+    if block and not re.search(r"^- \[ \]", block.group(0), re.M):
+        check("R10-PLAN", False, f"PLAN 写 {mid} {status}，但 TASKS 无未勾任务")
+
+# ── R11：发布事实（静态可核部分）─────────────────────────────────────
+changelog = read("CHANGELOG.md")
+manifest = (root / "Cargo.toml").read_text(encoding="utf-8", errors="replace")
+cargo_ver = re.search(r'^version = "([^"]+)"', manifest, re.M)
+if cargo_ver:
+    ver = cargo_ver.group(1)
+    if not re.search(r"^## \[" + re.escape(ver) + r"\]", changelog, re.M):
+        check("R11-RELEASE", False, f"Cargo 版本 {ver} 在 CHANGELOG 无对应发布段")
+    guide_text = read("docs", "GUIDE.md")
+    if ver != "1.0.0" and "cargo install rvifm" in readme and "版本滞后" not in (readme + guide_text):
+        check("R11-RELEASE", False, "cargo install 引导存在但 README/GUIDE 未标注版本滞后")
+
+# ── R12：CI 结论（CI 注入 RVIFM_MAIN_CI 时生效；本地缺省跳过）──────────
+ci_status = __import__("os").environ.get("RVIFM_MAIN_CI")
+if ci_status == "failure" and "全绿" in (readme + state):
+    check("R12-CI", False, "main CI 为 failure，但 README/STATE 仍写「全绿」")
+
 # ── 结果 ─────────────────────────────────────────────────────────────
 if problems:
     print(f"harness_check: {len(problems)} 项不一致")

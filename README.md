@@ -2,6 +2,9 @@
  
 > 用 Rust 编写的 vim 风格 TUI 文件管理器。参考 vifm 的交互范式，但不是 fork，也不追求行为级兼容。目标是**零配置就能好用，定制只是加分项**。
 
+> **安装说明**：crates.io 版本滞后（停留在 1.0.0），`cargo install rvifm` 拿到的是旧版；
+> 最新功能请下载 GitHub Release 归档（v1.5.0）。
+
 **当前状态：v1.5.0 已发布（M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部完成；GitHub Release 三 musl 归档 + SHA256SUMS（3 行），tag CI run 45996577565 全绿；crates.io 仍停 1.0.0；见 CHANGELOG）。** 本版本涵盖 M47–M85 共 39 个批次：异步预览与文本/图片流水线（ThreadProtocol/Nearest/独立代次）、git `:diff` 高亮与全屏对照及写操作、tutor 14 模块 105 项、frecency 算法对齐、焦点样式与归档 opener 修复；详见 CHANGELOG `[1.5.0]`。人工终端项（原生协议大图、rar 工具环境、真实 IME 桌面会话）保持 deferred。**用户手册见 [docs/GUIDE.md](docs/GUIDE.md)**，执行协议见 [AGENTS.md](AGENTS.md)，进度见 [docs/STATE.md](docs/STATE.md)。
 
 ## 文档导航

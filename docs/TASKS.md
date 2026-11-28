@@ -1035,7 +1035,7 @@
 
 - [x] M90-1 修 Windows/macOS 主题与高亮测试：TEST_LOCK 抗毒化 + m21e3 标题断言去平台依赖（见 SPEC M90；CI 待验证）
 - [x] M90-2 harness_check 正则与 break 修复，R1/R2/R4/R5/R6 可证伪（见 SPEC M90；2026-11-28 完成：制造漂移逐条验证）
-- [ ] M90-3 新增 R10 PLAN↔TASKS、R11 发布事实、R12 main CI 结论（见 SPEC M90）
+- [x] M90-3 新增 R10 PLAN↔TASKS、R11 发布事实、R12 main CI 结论（见 SPEC M90；2026-11-28 完成：漂移验证 R10/R11，R12 由 CI 注入 RVIFM_MAIN_CI 生效）
 - [ ] M90-4 分发对齐：README/GUIDE 标注 cargo 版本滞后（用户拍板不发布 crates）（见 SPEC M90）
 - [ ] M90-5 门禁措辞三态化 + STATE 长句精简（见 SPEC M90）
 
