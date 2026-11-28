@@ -1078,7 +1078,7 @@
 - [x] M46-9 `.apk` 保持可用；`.deb` 可 `w` 预览并 `l`/Enter 浏览 data.tar 内容（**2026-11-24**：DebFs ar 解析 + 内存 TarFs + `data/` 虚拟目录，m469 端到端）；`.rar` 有工具时可列出/进入、缺失给可读提示（RarFs + m469 路径净化测试；真实工具环境待用户补验）；扩展名真值表一致，归档只读与 64MB 上限不回归。
 - [x] M46-10 单文件与多选删除确认为居中 yazi 风格弹窗（**2026-11-24**：`confirm_dialog` 重写为标题居中 ⚠「是否删除选定的 N 个文件」+ 无标题下提示 + 图标/类型色文件列表 + 6 行固定高度 + 右侧滚动条，j/k 导航状态进 InputMode，m453c/m4610 测试）；y/Enter 与 Esc/n 行为不变。
 - [x] M46-11 help.txt / GUIDE / CHANGELOG 与本批次一致（**2026-11-24**：help.txt 新增 M46 段与 :help/:extract/w/dd 更新，GUIDE §11 默认配置生成与变化摘要，CHANGELOG [Unreleased] M46 条目；harness_check OK）。
-- [x] M46-12 tutor 14 模块 105 项可解析（`builtin_modules_count_is_current`）、提示与 M82–M85 新增/修复项一致；harness_check 通过。（2026-11-27：补 `:diff`/`|`、归档成员新窗口、查看器 `G` 三条 tutor 条目）
+- [x] M46-12 tutor 14 模块 114 项可解析（`builtin_modules_count_is_current`）、提示与 M82–M85 新增/修复项一致；harness_check 通过。（2026-11-27：补 `:diff`/`|`、归档成员新窗口、查看器 `G` 三条 tutor 条目）
 
 ## 52. M47 — 用户实测批次 3（见 SPEC M47 节）
 

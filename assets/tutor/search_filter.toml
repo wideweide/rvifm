@@ -41,3 +41,18 @@ expected = "光标跳到当前行之后第一个以该字母开头的条目（�
 id = "find_char_repeat"
 prompt = "按 `;` 重复同向首字母搜索，按 `,` 反向重复。"
 expected = "光标按上次 f/F 的方向继续跳转；; 同向、, 反向（环绕列表首尾）。"
+
+[[items]]
+id = "cmd_find"
+prompt = "输入 `:find` 回车（在样例目录）."
+expected = "进入递归文件名搜索结果虚拟目录；结果可 `l` 定位、`:view` 查看，操作权限由结果类型决定。"
+
+[[items]]
+id = "cmd_grep"
+prompt = "输入 `:grep 关键字` 回车（在样例目录）。"
+expected = "递归内容检索并生成结果虚拟目录；命中行带行号，`l` 定位后可用查看器与 `n/N` 在命中间跳转。"
+
+[[items]]
+id = "cmd_goto"
+prompt = "对二进制样例按 `w` 进入 hex 查看器，再输入 `:goto 0x10`."
+expected = "hex 查看器按字节偏移跳转（如 `0x10`），行号为 offset/16；非 hex 查看器会给出可读提示。"

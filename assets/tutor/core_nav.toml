@@ -46,3 +46,8 @@ expected = "焦点换到另一侧（当前行高亮样式随焦点变化），�
 id = "focus_switch_space"
 prompt = "按 `Space`（空格）切换活动窗格。"
 expected = "与 Tab 等效的窗格切换（vifm 语义，两键并存）。"
+
+[[items]]
+id = "cmd_quit"
+prompt = "输入 `:quit` 或按 `q`（了解即可）。"
+expected = "退出 rvifm；退出前保存会话/撤销现场，临时副本统一清理。与命令行的 `q` 别名一致。"

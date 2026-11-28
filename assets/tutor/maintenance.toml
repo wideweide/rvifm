@@ -54,3 +54,23 @@ id = "queue_view"
 prompt = "远端粘贴大文件产生队列后输入 `:queue`（无远端环境可 Ctrl+N 跳过）。"
 requires = "sftp"
 expected = "传输队列覆盖层（j/k 选择、x 取消条目、Esc 关闭）；头条目上传由 run 循环消费。"
+
+[[items]]
+id = "cmd_frecency_admin"
+prompt = "输入 `:frecency stats`、`:frecency export`、`:frecency purge` 或 `:frecency prune`（了解即可）。"
+expected = "数据管理命令：统计、导出、清理与容量裁剪；`purge`/`prune` 为维护操作，请在样例目录理解语义后于真实数据上谨慎执行。"
+
+[[items]]
+id = "cmd_link"
+prompt = "在样例文件上输入 `:link snapshot.txt` 创建链接（了解即可）。"
+expected = "创建符号链接；Windows 上目录链接走 junction 回退，`u` 可逆；链接目标按当前焦点 pane 解析。"
+
+[[items]]
+id = "cmd_view"
+prompt = "光标停在样例文本上输入 `:view`。"
+expected = "打开/关闭查看器（与 `w` 同语义）；`j/k` 滚动、`/` 搜索、`n/N` 跳转、`G` 到末屏；Tab 进入预览焦点。"
+
+[[items]]
+id = "cmd_gitui"
+prompt = "在 git 仓库内输入 `:gitui`（了解即可）。"
+expected = "按 gitui→ziggity→lazygit 优先级探测外部 git TUI 并挂起 rvifm；均未安装时给出可读错误，不改变仓库状态。"

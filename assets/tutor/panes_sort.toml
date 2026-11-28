@@ -52,3 +52,8 @@ expected = "静态快照只读浏览（目录优先缩进、depth 上限 1 万�
 id = "viewer_end_screen"
 prompt = "查看器内按 `G`。"
 expected = "跳到末屏（不是末行置顶只剩一行）；文本始终语法高亮，`/` 查询命中叠加黄底而不关闭高亮。"
+
+[[items]]
+id = "sort_dialog_keys"
+prompt = "按 `S` 打开排序对话框后，尝试 `:asc` / `:desc` / `:clear` / `:confirm` 语义对应的按键（了解即可）。"
+expected = "对话框内小写字段=升序、大写=降序（`asc`/`desc`），空格切换待定方向，`clear` 清空待定、回车 `confirm` 应用；Esc 取消。"

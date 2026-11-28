@@ -762,8 +762,9 @@ fn m641_tutor_cultivation_ranks() {
         .sum();
     assert_eq!(tutor_rank(&rank_progress(total, true, false)).name, "真仙");
     assert_eq!(tutor_rank(&rank_progress(total, true, true)).name, "渡劫");
-    // 小阶段：16/102 = 15% 进入金丹初期。
-    let jin = tutor_rank(&rank_progress(16, false, false));
+    // 小阶段：超过 15% 进入金丹初期（按当前条目总数换算，避免计数漂移）。
+    let at = total * 15 / 100 + 1;
+    let jin = tutor_rank(&rank_progress(at, false, false));
     assert_eq!(jin.name, "金丹");
     assert_eq!(jin.stage, "初期");
 }
@@ -16148,4 +16149,35 @@ fn m945_app_error_classifies_git_failures() {
     let e = AppError::from_git("connection timeout");
     assert_eq!(e.kind, AppErrorKind::Retryable);
     assert!(e.render().contains("重试"));
+}
+
+#[test]
+fn m953_tutor_command_coverage_at_least_90_percent() {
+    let infos = crate::app::exec::command_infos();
+    let mut text = String::new();
+    for module in crate::tutor::builtin_modules() {
+        for item in module.items {
+            text.push_str(&item.prompt);
+            text.push_str(&item.expected);
+            text.push_str(&item.id);
+        }
+    }
+    let covered = infos
+        .iter()
+        .filter(|(name, _)| text.contains(&format!(":{name}")))
+        .count();
+    let missing: Vec<&str> = infos
+        .iter()
+        .filter(|(n, _)| !text.contains(&format!(":{n}")))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    println!(
+        "tutor coverage {covered}/{} missing={missing:?}",
+        infos.len()
+    );
+    assert!(
+        covered * 100 >= infos.len() * 90,
+        "{covered}/{}",
+        infos.len()
+    );
 }

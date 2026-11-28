@@ -1077,7 +1077,7 @@
 
 - [ ] M95-1 行为冻结政策 + 兼容别名 + CHANGELOG 行为变更小节（见 SPEC M95）
 - [ ] M95-2 design-tokens 文档（见 SPEC M95）
-- [ ] M95-3 向导命令覆盖率 ≥90%（见 SPEC M95）
+- [x] M95-3 向导命令覆盖率 ≥90%（见 SPEC M95；2026-11-28 完成：55/59=93%，14 模块 114 项 + m953/m641）
 - [ ] M95-4 :log/:blame/:stash/:branch（见 SPEC M95）
 - [ ] M95-5 :split/:join 与 :du --tree（见 SPEC M95）
 - [ ] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95）
