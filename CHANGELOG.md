@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-28
+
+### M86–M104 汇总（GitHub Release + crates.io 双渠道）
+
+- 传输引擎流式化与内存护栏；目录异步加载 + 100k 首屏 450.97ms；运维深度（du/dup/checksum/sync/extract）；Git 扩展与 doctor/undolist/split/join。
+- Markdown 预览（pulldown-cmark-mdcat）、轻量扩展点（commands/providers/statusline/hooks）、frecency 成功后异步记录；Termux/窄屏与 tutor 窄屏适配。
+- 可信度收口：supply-chain 绿、harness 入 CI、STATE 阶段上界规则；排序正确性回归修复；传输队列后台化；新命令 100% 可发现（14 模块 127 项）。
+
 ### M101–M104 可信度与可发现性收口（仅提交代码，发布口径见下方用户决策）
 
 - supply-chain 修复：unicodeit 0.2.2 的 LPPL-1.3c 精确豁免；harness 接入 CI 并注入 main CI 结论；STATE 阶段上界规则 R13；README/GUIDE 安装口径统一为 Release 归档。

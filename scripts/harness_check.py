@@ -175,8 +175,12 @@ if cargo_ver:
     if not re.search(r"^## \[" + re.escape(ver) + r"\]", changelog, re.M):
         check("R11-RELEASE", False, f"Cargo 版本 {ver} 在 CHANGELOG 无对应发布段")
     guide_text = read("docs", "GUIDE.md")
-    if ver != "1.0.0" and "cargo install rvifm" in readme and "版本滞后" not in (readme + guide_text):
-        check("R11-RELEASE", False, "cargo install 引导存在但 README/GUIDE 未标注版本滞后")
+    if ver != "1.0.0" and "cargo install rvifm" in readme and not (
+        "版本滞后" in (readme + guide_text)
+        or f"已对齐 {ver}" in (readme + guide_text)
+        or f"均为 {ver}" in (readme + guide_text)
+    ):
+        check("R11-RELEASE", False, "cargo install 引导存在但 README/GUIDE 未标注版本状态")
 
 # ── R12：CI 结论（CI 注入 RVIFM_MAIN_CI 时生效；本地缺省跳过）──────────
 ci_status = __import__("os").environ.get("RVIFM_MAIN_CI")

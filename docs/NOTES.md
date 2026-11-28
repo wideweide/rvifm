@@ -1832,3 +1832,9 @@ rvifm record  → 静默记录访问
 - **M102**：`lazy_attrs` 下 size/mtime 排序前 `fill_all_attrs` 补齐全部条目；右栏入口同时投影 location。全量基线 `full_attrs_sort_100k` 本机中位 1.48s，与首屏 450.97ms 口径不同，不再混算加速比。
 - **M103（SIMPLIFIED）**：SFTP 后端用 `SftpBackend::clone_handle()`（克隆 mpsc 发送端共享 actor 线程）投递 worker，UI 只消费 `TransferDone` 并按 `.part.meta` 回传字节进度；非 SFTP（测试 mock 等）保留同步路径。暂停/取消通过丢弃 worker 结果保持 UI 状态一致，**不中断已在途 IO**（受 RemoteFs 无 Send 约束与会话所有权限制）；失败 3 次内重试 + 队尾轮转退避，1GB 真实实测保持 deferred。
 - **M104**：`:log/:blame/:stash/:branch/:split/:join/:undolist` 进入 `COMMAND_NAMES`（补全可见）+ help + GUIDE + 向导；`rvifm doctor` 补 help/GUIDE/向导。向导按「全部 `:` 命令」口径 66/66 = 100%（14 模块 127 项）；`V`/单键 `g` 的实际兼容别名仍未采纳，M95-1 的迁移说明已存在。
+
+### 2026-11-28 — 1.6.0 发布授权（覆盖旧口径）
+
+- 用户明确指令「完成后自行审计一遍，发布 GitHub Release、cargo」，覆盖 2026-11-23 起的「不 bump / 不 tag / 不发 Release / crates.io 停 1.0.0」口径。
+- 版本取 **1.6.0**（minor）：M86–M104 含新增命令与轻量扩展点，无破坏性配置变更；CHANGELOG 行为变更小节保留迁移提示。
+- 发布顺序：全部任务完成 → 自审（本地门禁 + CI 结论）→ bump + tag → tag CI 产物 → GitHub Release → `cargo publish`。

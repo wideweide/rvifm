@@ -6,11 +6,11 @@
 
 ## 1. 安装与启动
 
-> 推荐从 GitHub Release 归档安装（v1.5.0，含 `rvifm`/`rv` 与 SHA256SUMS）；
-> `cargo install rvifm` 对应 crates.io 的 1.0.0 旧版。
+> 推荐从 GitHub Release 归档安装（v1.6.0，含 `rvifm`/`rv` 与 SHA256SUMS）；
+> `cargo install rvifm` 对应 crates.io 1.6.0。
 
 ```bash
-cargo install rvifm          # crates.io 1.0.0（旧版）；同时安装 rvifm 与短别名 rv
+cargo install rvifm          # crates.io 1.6.0；同时安装 rvifm 与短别名 rv
 rvifm                        # 启动（rv 为等价短别名）
 rvifm --help                 # 命令行帮助
 ```
@@ -23,7 +23,7 @@ rvifm --help                 # 命令行帮助
 
 ## 2. 快速上手（5 分钟）
 
-> 安装提示：crates.io 版本滞后（1.0.0），`cargo install rvifm` 不是最新版；请用 GitHub Release 归档（v1.5.0）。
+> 安装提示：crates.io 与 GitHub Release 均为 1.6.0；两条渠道任选。
 
 > **新手推荐**：直接输入 `:tutor` 进入向导模式——**14 个模块 127 项覆盖全部
 > 键位与命令**（核心导航/文件操作/搜索/选择批量/marks/标签历史/视图排序/
