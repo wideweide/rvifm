@@ -1063,7 +1063,7 @@
 - [x] M93-3 :checksum sha256 + sidecar 校验 + 流式（见 SPEC M93；2026-11-28 完成：m933）
 - [x] M93-4 :sync 三策略 + 计划视图 + 删除二次确认（见 SPEC M93；2026-11-28 完成：missing/newer/mirror + --confirm + m934）
 - [x] M93-5 :extract job 化 + 目录撤销（见 SPEC M93；2026-11-28 完成：后台作业 + 撤销操作回传 + m935）
-- [ ] M93-6 Git hunk 丢弃默认关闭 + 脏工作区提醒（见 SPEC M93）
+- [x] M93-6 Git hunk 丢弃默认关闭 + 脏工作区提醒（见 SPEC M93；2026-11-28 完成：hunk_discard=false + D 键门禁 + m936）
 
 ## M94 — 质量债（2026-11-28 蒸馏，见 SPEC M94 节）
 

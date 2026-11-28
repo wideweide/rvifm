@@ -16132,3 +16132,9 @@ fn m935_extract_job_writes_members_and_returns_undo_ops() {
     assert!(!ops.is_empty(), "应回传撤销操作");
     assert!(dest.path().join("readme.md").is_file(), "成员落盘");
 }
+
+#[test]
+fn m936_hunk_discard_defaults_off() {
+    let cfg = Config::default();
+    assert!(!cfg.git.hunk_discard, "实验性 hunk 丢弃默认关闭");
+}

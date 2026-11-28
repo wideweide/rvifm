@@ -119,3 +119,6 @@ append_rules = [ { mime = "text/*", use = ["edit_text", "open"] } ]
 # ── 快速跳转别名（可选） ────────────────────────────────────────────────
 # [quickjump]
 # d = "~/Downloads"
+
+# M93-6：实验性 hunk 丢弃默认关闭（开启后 :diff 内 D 键可用）
+hunk_discard = false

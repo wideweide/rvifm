@@ -568,6 +568,15 @@ fn run_git_op(state: &mut AppState, op: &crate::state::GitOp, msg: &mut Option<S
                 return;
             };
             let original = std::fs::read(root.join(path)).ok();
+            let dirty_warning = std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .current_dir(&root)
+                .output()
+                .ok()
+                .filter(|o| !o.stdout.is_empty())
+                .map(|_| "⚠ 工作区有未提交修改，反向 apply 可能受影响；请先保存现场\n")
+                .unwrap_or_default();
+            let _ = dirty_warning;
             match crate::git::discard_hunk(&root, path, &data.hunks, *index) {
                 Ok(out) => {
                     if let Some(bytes) = original {
@@ -2632,7 +2641,12 @@ fn run_with_initial_mode(
                             }
                             // M71：块级丢弃（先预览确认，丢弃后 u 可撤销）。
                             KeyCode::Char('D') if diff.focus == crate::state::DiffFocus::Patch => {
-                                if let Some(data) = diff.selected() {
+                                if !state.config.git.hunk_discard {
+                                    msg = Some(
+                                        "hunk 丢弃为实验性功能，默认关闭（[git] hunk_discard=true 开启）"
+                                            .to_owned(),
+                                    );
+                                } else if let Some(data) = diff.selected() {
                                     let path = data.path.clone();
                                     let preview =
                                         crate::gitdiff::hunk_preview(&data.hunks, diff.hunk);
