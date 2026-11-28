@@ -1121,6 +1121,41 @@ impl Tab {
         (cur, total)
     }
 
+    /// M102-1：补齐 `entries`（左槽）全部条目的 size/perm/mtime/is_exec。
+    /// 用于 lazy_attrs 下按 size/mtime 排序——排序必须基于完整元数据，
+    /// 否则所有未补齐条目值均为 0，结果退化为按名称（静默错误）。
+    /// 返回补齐条数；非物理目录或 lazy_attrs 关闭时为 0。
+    pub fn fill_all_attrs(&mut self, config: &Config) -> usize {
+        if !config.ui.lazy_attrs {
+            return 0;
+        }
+        let crate::tab::Location::Physical(root) = &self.location else {
+            return 0;
+        };
+        let mut filled = 0usize;
+        for item in self.entries.iter_mut() {
+            if item.mtime != 0 || !item.perm.is_empty() {
+                continue;
+            }
+            let path = root.join(&item.name);
+            let Ok(meta) = std::fs::metadata(&path).or_else(|_| std::fs::symlink_metadata(&path))
+            else {
+                continue;
+            };
+            item.size = meta.len();
+            item.perm = perm_string(&meta);
+            item.mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            item.is_exec = !item.is_dir && is_executable(&meta, &item.name);
+            filled += 1;
+        }
+        filled
+    }
+
     /// M18-1：就地应用单字段排序（对话框入口；光标保持在同一文件上）。
     pub fn apply_sort(&mut self, spec: SortSpec, config: Config) {
         self.apply_sort_multi(vec![spec], config);
@@ -1131,6 +1166,13 @@ impl Tab {
     pub fn apply_sort_multi(&mut self, specs: Vec<SortSpec>, config: Config) {
         if specs.is_empty() {
             return;
+        }
+        // M102-1：size/mtime 排序前补齐全部元数据（lazy_attrs 首屏跳过 stat）。
+        if specs
+            .iter()
+            .any(|s| matches!(s.field, SortField::Size | SortField::Mtime) && config.ui.lazy_attrs)
+        {
+            let _ = self.fill_all_attrs(&config);
         }
         self.sort = Some(specs);
         let keep = self.entries.get(self.cursor).map(|i| i.name.clone());
@@ -1154,10 +1196,13 @@ impl Tab {
     /// M47-4：右 pane 的 `:sort`——复用左 pane 的 `apply_sort_multi`，临时
     /// 投影右栏条目/光标/排序状态后交换回来，保证比较器只有一份实现。
     pub fn apply_sort_multi_focused(&mut self, specs: Vec<SortSpec>, config: Config) {
+        // M102-1：位置也投影，补齐元数据时才能 stat 到右栏目录。
+        std::mem::swap(&mut self.location, &mut self.right.location);
         std::mem::swap(&mut self.entries, &mut self.right.entries);
         std::mem::swap(&mut self.cursor, &mut self.right.cursor);
         std::mem::swap(&mut self.sort, &mut self.right.sort);
         self.apply_sort_multi(specs, config);
+        std::mem::swap(&mut self.location, &mut self.right.location);
         std::mem::swap(&mut self.entries, &mut self.right.entries);
         std::mem::swap(&mut self.cursor, &mut self.right.cursor);
         std::mem::swap(&mut self.sort, &mut self.right.sort);

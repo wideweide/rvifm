@@ -16512,3 +16512,84 @@ fn m1001_tutor_session_narrow_single_column() {
     assert!(compact.contains("掌握0/"), "计数并入底部提示行: {compact}");
     assert!(compact.contains("Ctrl+Y掌握"), "底部快捷键提示: {compact}");
 }
+
+#[test]
+fn m1021_sort_size_refills_lazy_attrs() {
+    let tmp = TempDir::new().unwrap();
+    let mut expected: Vec<(String, u64)> = Vec::new();
+    for i in 0..120u64 {
+        let name = format!("f{i:03}.dat");
+        let size = ((i * 37) % 101) * 64 + 1;
+        fs::write(tmp.path().join(&name), vec![b'x'; size as usize]).unwrap();
+        expected.push((name, size));
+    }
+    expected.sort_by_key(|(_, s)| *s);
+    let cfg = Config::default();
+    assert!(cfg.ui.lazy_attrs);
+    let mut tab = Tab::from_physical(tmp.path(), cfg.clone()).unwrap();
+    // 模拟 lazy_attrs 首屏：全部属性为 0（测试态加载器不置零，故手动还原）。
+    for item in &mut tab.entries {
+        item.size = 0;
+        item.mtime = 0;
+        item.perm.clear();
+    }
+    tab.apply_sort_multi(
+        vec![crate::tab::SortSpec {
+            field: crate::tab::SortField::Size,
+            desc: false,
+        }],
+        cfg,
+    );
+    let got: Vec<(&str, u64)> = tab
+        .entries
+        .iter()
+        .map(|e| (e.name.as_str(), e.size))
+        .collect();
+    let want: Vec<(&str, u64)> = expected.iter().map(|(n, s)| (n.as_str(), *s)).collect();
+    assert_eq!(got, want, "size 排序须基于补齐后的真实大小");
+}
+
+#[test]
+fn m1021_sort_mtime_refills_lazy_attrs_on_focused_pane() {
+    let tmp = TempDir::new().unwrap();
+    let mut expected: Vec<(String, u64)> = Vec::new();
+    for i in 0..30u64 {
+        let name = format!("r{i:02}.dat");
+        let path = tmp.path().join(&name);
+        fs::write(&path, vec![b'x'; (i + 1) as usize]).unwrap();
+        let t = 1_700_000_000 + i * 60;
+        let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(t);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        expected.push((name, t));
+    }
+    expected.sort_by_key(|(_, t)| *t);
+    let cfg = Config::default();
+    let mut tab = Tab::from_physical(tmp.path(), cfg.clone()).unwrap();
+    tab.right = crate::tab::Pane::from_physical(tmp.path(), cfg.clone()).unwrap();
+    tab.focus = crate::tab::Focus::Right;
+    for item in &mut tab.right.entries {
+        item.size = 0;
+        item.mtime = 0;
+        item.perm.clear();
+    }
+    tab.apply_sort_multi_focused(
+        vec![crate::tab::SortSpec {
+            field: crate::tab::SortField::Mtime,
+            desc: false,
+        }],
+        cfg,
+    );
+    let got: Vec<(&str, u64)> = tab
+        .right
+        .entries
+        .iter()
+        .map(|e| (e.name.as_str(), e.mtime))
+        .collect();
+    let want: Vec<(&str, u64)> = expected.iter().map(|(n, t)| (n.as_str(), *t)).collect();
+    assert_eq!(got, want, "右 pane 按 mtime 排序须基于补齐后的真实时间");
+}

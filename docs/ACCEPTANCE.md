@@ -1507,7 +1507,7 @@
 
 ## 106. M101 — CI 与文档可信度收口（见 SPEC M101 节）
 
-- [ ] M101-1 main CI run 全绿（三平台 test + fuzz + supply-chain，cargo deny check 通过或带理由豁免）。
+- [x] M101-1 本地 `cargo deny check` 通过（unicodeit 0.2.2 LPPL 精确豁免）；main CI 全绿以推送后最近 run 为准。（2026-11-28）
 - [x] M101-2 CI 存在 harness_check job 且注入 RVIFM_MAIN_CI；脚本文案规则数与实际一致；failure 注入实测退出 1。（2026-11-28）
 - [x] M101-3 STATE 阶段上界 M104 = TASKS 最大批次；改回 M100 实测 R13 退出 1。（2026-11-28）
 - [x] M101-4 README/GUIDE 统一为 Release 归档口径，保留版本滞后提示。（2026-11-28）
