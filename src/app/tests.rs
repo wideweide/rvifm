@@ -16181,3 +16181,29 @@ fn m953_tutor_command_coverage_at_least_90_percent() {
         infos.len()
     );
 }
+
+#[test]
+fn m954_git_log_command_returns_commit() {
+    let tmp = TempDir::new().unwrap();
+    let run = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(tmp.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    run(&["init", "-q"]);
+    run(&["config", "user.email", "t@e"]);
+    run(&["config", "user.name", "T"]);
+    fs::write(tmp.path().join("a.txt"), "x").unwrap();
+    run(&["add", "a.txt"]);
+    run(&["commit", "-q", "-m", "hello-commit"]);
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let out = crate::app::exec::exec_command_impl(&mut state, "log 1").unwrap();
+    assert!(format!("{out:?}").contains("hello-commit"), "{out:?}");
+}

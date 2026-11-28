@@ -3612,6 +3612,65 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 ),
             }
         }
+        // M95-4：Git 扩展命令（复用 git CLI 零依赖路线）。
+        Some("log") => {
+            let root = git_root_of(state.active_tab().focus_base())
+                .ok_or_else(|| "log: 当前目录不在 git 仓库中".to_owned())?;
+            let n = parts.next().unwrap_or("10");
+            let out = crate::git::run_git(&root, &["log", "--oneline", "-n", n])?;
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("git log:\n{out}")),
+            })
+        }
+        Some("branch") => {
+            let root = git_root_of(state.active_tab().focus_base())
+                .ok_or_else(|| "branch: 当前目录不在 git 仓库中".to_owned())?;
+            match parts.next() {
+                None => {
+                    let cur = crate::git::run_git(&root, &["branch", "--show-current"])?;
+                    let all = crate::git::run_git(&root, &["branch", "--list"])?;
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("当前分支: {cur}\n{all}")),
+                    })
+                }
+                Some(name) => {
+                    crate::git::run_git(&root, &["checkout", name])?;
+                    crate::app::jobs::refresh_tab_panes(state, state.active);
+                    Ok(ExecOutcome::Done {
+                        msg: Some(format!("已切换到分支 {name}")),
+                    })
+                }
+            }
+        }
+        Some("stash") => {
+            let root = git_root_of(state.active_tab().focus_base())
+                .ok_or_else(|| "stash: 当前目录不在 git 仓库中".to_owned())?;
+            let action = parts.next().unwrap_or("list");
+            let (args, label) = match action {
+                "list" => (vec!["stash", "list"], "stash 列表"),
+                "pop" => (vec!["stash", "pop"], "已弹出最近 stash"),
+                _ => return Err("stash: 仅支持 list | pop".to_owned()),
+            };
+            let out = crate::git::run_git(&root, &args)?;
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("{label}: {out}")),
+            })
+        }
+        Some("blame") => {
+            let root = git_root_of(state.active_tab().focus_base())
+                .ok_or_else(|| "blame: 当前目录不在 git 仓库中".to_owned())?;
+            let tab = state.active_tab();
+            let name = tab
+                .focused_entries()
+                .get(tab.focused_cursor())
+                .map(|e| e.name.clone())
+                .ok_or_else(|| "blame: 无选中文件".to_owned())?;
+            let out = crate::git::run_git(&root, &["blame", "--", &name])?;
+            let preview: Vec<&str> = out.lines().take(12).collect();
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("blame {name}:\n{}", preview.join("\n"))),
+            })
+        }
         Some("remote") => {
             // M19-4：进入远端（remotes.toml 覆盖 ssh config 别名）；无参列出。
             match parts.next() {
