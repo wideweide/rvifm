@@ -2292,6 +2292,14 @@ append_rules = [
 - 不启用内嵌图片/公式的协议叠加（与 rvifm 自己的 ImageEngine 重复）；图片先显示为 alt 文本。
 - 不降级 ratatui 版本、不引入第二份 ratatui。
 
+## M95 — 体验治理与新能力（2026-11-28 蒸馏，排队执行）
+
+**MUST**
+- **行为冻结政策**：自 1.5 起，键位/布局类变更必须保留至少一个版本的兼容别名或显式迁移提示；CHANGELOG 增加「行为变更」小节。已发生且用户批准的变更（`V` 移除、`Space` 仍为切 pane、M73→M80→M81 焦点样式反复）以迁移说明形式补记，不回滚。
+- 视觉决策沉淀为 `docs/design-tokens.md`：颜色/边框/焦点语义一次定稿，后续只做参数化调整。
+- 向导命令覆盖率 ≥90%：补 `:view`/`:grep`/`:frecency`/`:link`/`:goto`/`:gitui` 到 maintenance/search_filter 模块（保持 14 模块结构，条目数随之增长并更新严格计数测试）。
+- 新增能力按优先级：Git `:log`/`:blame`/`:stash`/`:branch`；`:split`/`:join` 与 `:du --tree`；`:undolist` 与 `rvifm doctor` + panic hook 环形日志。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
