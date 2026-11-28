@@ -15644,3 +15644,52 @@ fn m891_visual_t_commits_and_toggles_range() {
         "全标记区间再按 t 全取消"
     );
 }
+
+#[test]
+fn m892_tag_move_down_and_up_with_count() {
+    let tmp = TempDir::new().unwrap();
+    for name in ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let layers = config::keymap_layers();
+    let keymap = crate::keymap::Keymap::with_layers(layers.prepend, layers.append, layers.replace);
+    let mut input = InputState::with_keymap(keymap);
+    let mut msg = None;
+    state.active_tab_mut().cursor = 4;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('3'),
+        KeyModifiers::NONE,
+    );
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('K'),
+        KeyModifiers::NONE,
+    );
+    eprintln!(
+        "DBG msg={msg:?} count={:?} tags={:?} cursor={}",
+        input.count,
+        state.active_tab().tags,
+        state.active_tab().cursor
+    );
+    assert_eq!(state.active_tab().tags.len(), 4, "3K 标记当前+上三项");
+    assert_eq!(state.active_tab().cursor, 1, "向上移动三步");
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('J'),
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        state.active_tab().tags.len(),
+        4,
+        "J 标记当前+下一项（均已标记）"
+    );
+    assert_eq!(state.active_tab().cursor, 2, "J 下移一步");
+}

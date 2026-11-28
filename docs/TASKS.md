@@ -1027,7 +1027,7 @@
 ## M89 — 多选模型统一（2026-11-28，见 SPEC M89 节）
 
 - [x] M89-1 Visual `t` 提交/翻转选区到 tags 并退出 visual（见 SPEC M89；2026-11-28 完成：m891 + m478 适配）
-- [ ] M89-2 Normal `J`/`K` 标记当前 + 移动（含 count，N+1 语义）（见 SPEC M89）
+- [x] M89-2 Normal `J`/`K` 标记当前 + 移动（含 count，N+1 语义）（见 SPEC M89；2026-11-28 完成：m892 + keymap Action）
 - [ ] M89-3 tags 渲染统一为 v 的背景样式 + 状态栏计数保留（见 SPEC M89）
 - [ ] M89-4 文档/验收/门禁（见 SPEC M89）
 

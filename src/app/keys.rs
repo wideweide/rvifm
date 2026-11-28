@@ -595,6 +595,51 @@ pub(crate) fn live_find_key(state: &mut AppState, msg: &mut Option<String>, key:
     false
 }
 
+/// M89-2：标记当前条目并沿方向移动 N 步（共 N+1 项）。
+fn tag_move_impl(state: &mut AppState, msg: &mut Option<String>, down: bool, n: usize) {
+    let tab = state.active_tab_mut();
+    if tab.on_parent_row {
+        *msg = Some("`..` 行仅导航".to_owned());
+        return;
+    }
+    let right = tab.focus == crate::tab::Focus::Right;
+    let len = if right {
+        tab.right.entries.len()
+    } else {
+        tab.entries.len()
+    };
+    if len == 0 {
+        return;
+    }
+    let mut cursor = if right { tab.right.cursor } else { tab.cursor };
+    let mut tagged = 0usize;
+    for step in 0..=n {
+        let name = if right {
+            tab.right.entries.get(cursor).map(|e| e.name.clone())
+        } else {
+            tab.entries.get(cursor).map(|e| e.name.clone())
+        };
+        if let Some(name) = name {
+            if right {
+                tab.right.tags.insert(name);
+            } else {
+                tab.tags.insert(name);
+            }
+            tagged += 1;
+        }
+        if step < n {
+            cursor =
+                (cursor as isize + if down { 1 } else { -1 }).clamp(0, len as isize - 1) as usize;
+        }
+    }
+    if right {
+        tab.right.cursor = cursor;
+    } else {
+        tab.cursor = cursor;
+    }
+    *msg = Some(format!("J/K 已标记 {tagged} 项"));
+}
+
 /// M86-2：删除指定下标的 frecency 记录（仅数据，不删文件）；`u` 可恢复。
 fn frecency_delete_indices(
     pane: &mut crate::tab::FrecencyPane,
@@ -1293,6 +1338,10 @@ pub(crate) fn handle_key(
         viewport_h: u16,
     ) -> Option<Outcome> {
         match action {
+            Some(action @ (Action::TagMoveDown | Action::TagMoveUp)) => {
+                let n = count.unwrap_or(1).max(1);
+                tag_move_impl(state, msg, action == Action::TagMoveDown, n);
+            }
             Some(Action::ToTop) => {
                 // M24-5：Ngg → 光标定位到第 N 行（1-based）。
                 // M41-1：焦点分派——右 pane 焦点下 gg/Ngg 作用于右 pane 列表。
@@ -2331,6 +2380,12 @@ pub(crate) fn handle_key(
         KeyCode::Char('t') => {
             input.count = None;
             state.active_tab_mut().toggle_tag();
+        }
+        KeyCode::Char('J') | KeyCode::Char('K') if !ctrl => {
+            // M89-2：默认绑定走单键分派，需在此显式消费 count。
+            let n = input.count.take().unwrap_or(1).max(1);
+            input.count = None;
+            tag_move_impl(state, msg, key.code == KeyCode::Char('J'), n);
         }
         KeyCode::Char('w') => {
             // M13-9：view 模式切换（预览窗格完整内容视图 ↔ 摘要预览）。

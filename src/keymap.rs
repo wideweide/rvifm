@@ -47,6 +47,9 @@ pub enum Action {
     // 选择与标记
     ToggleVisual,
     ToggleTag,
+    /// M89-2：标记当前条目并向下（J）/向上（K）移动，count 语义 N+1。
+    TagMoveDown,
+    TagMoveUp,
     // 文件操作
     DeleteSelected,
     /// yank（FIX-2：yy——选中条目放入复制缓冲区，p/P 消费）。
@@ -127,6 +130,8 @@ impl Action {
             "viewport_bottom" => ViewportBottom,
             "toggle_visual" | "visual" => ToggleVisual,
             "toggle_tag" | "tag" => ToggleTag,
+            "tag_move_down" | "tag_j" => TagMoveDown,
+            "tag_move_up" | "tag_k" => TagMoveUp,
             "delete_selected" | "delete" => DeleteSelected,
             "yank" => Yank,
             "delete_permanent" | "delete_hard" => DeletePermanent,
@@ -292,6 +297,8 @@ impl Keymap {
             (vec![k(Char('w'))], ToggleView),
             (vec![k(Char('v'))], ToggleVisual),
             (vec![k(Char('t'))], ToggleTag),
+            (vec![k(Char('J'))], TagMoveDown),
+            (vec![k(Char('K'))], TagMoveUp),
             (vec![k(Char('p'))], PutCopy),
             (vec![k(Char('P'))], PutMove),
             (vec![k(Char('u'))], Undo),
