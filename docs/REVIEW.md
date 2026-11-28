@@ -68,7 +68,8 @@
 
 ## 发布闭环（2026-11-28，v1.6.0）
 
-- main CI run 46138557911：三平台 test + fuzz + supply-chain + harness consistency 全绿（自审修复 Windows 2s 加载阈值抖动后）。
-- tag `v1.6.0` → tag run 46140235498：三平台 test + supply-chain + 3 release 腿 + release-checksums 全绿；GitHub Release 含 3 musl 归档与 3 行 SHA256SUMS。
+- main CI run 46143616681（最终工作流修正后）：三平台 test + fuzz + supply-chain + harness consistency 全绿（自审修复 Windows 2s 加载阈值抖动后）。
+- tag `v1.6.0`（指向 35f6ea0）→ tag run 46145048740：三平台 test + supply-chain + 3 release 腿 + release-checksums 全绿；GitHub Release 含 3 musl 归档与 3 行 SHA256SUMS。
 - crates.io `rvifm 1.6.0` 已发布（API `max_version=1.6.0`），实现双渠道交付闭环。
+- 自审追加：首次 tag run 46140235498 因 fuzz 25m 超时 + harness 在 tag 误注入 CI 结论而取消；已放宽 fuzz 到 45m、harness 仅 main 运行，重打 tag 后 46145048740 全绿；Release 归档由 `--clobber` 重传，版本不变。
 - 发布前自审修复：deny 许可证精确豁免、harness 入 CI + 阶段上界规则、排序补齐、传输队列 spawn/暂停边角、CI 性能阈值抖动。
