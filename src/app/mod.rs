@@ -905,6 +905,13 @@ fn run_with_initial_mode(
                 list_h = list_h.saturating_sub(panel_h);
             }
             state.active_tab_mut().sync_viewport_scroll(list_h);
+            let right_focus = state.active_tab().focus == crate::tab::Focus::Right;
+            let scroll = if right_focus {
+                state.active_tab().right.scroll
+            } else {
+                state.active_tab().scroll
+            };
+            state.fill_visible_attrs(state.active, right_focus, scroll, list_h);
         }
         // M42：预览跟随——焦点留在原 pane 时，任何输入/鼠标/命令导致的
         // 光标或目录变化，都在绘制前同步到对侧预览（预览窗格内不跟随）。

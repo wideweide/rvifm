@@ -19,6 +19,8 @@ terminal_in_new_window = true
 scrolloff = 0
 # 文件列表显示大小 / 修改时间列（窄终端自动隐藏）
 attrs_column = true
+# M92-2：目录首屏只取名称/类型，size/mtime 按可见行异步补齐（大目录更快）
+lazy_attrs = true
 # 退出保存标签会话、启动恢复
 session_restore = true
 # 文件列表 git 状态列（非 git 仓库自动隐藏）

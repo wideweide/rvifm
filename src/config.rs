@@ -214,6 +214,9 @@ pub struct UiConfig {
     /// M46-7：`:help` 在 tmux/screen 新窗口打开（默认开）；无复用器或关闭时
     /// 回退应用内不透明帮助覆盖层。
     pub help_in_new_window: bool,
+    /// M92-2：懒加载属性——目录首屏只取名称/类型，size/mtime 按可见行补齐。
+    #[serde(default)]
+    pub lazy_attrs: bool,
 }
 
 /// M39-6：主区布局模式——`[ui] layout`。
@@ -267,6 +270,7 @@ impl Default for UiConfig {
             pane_separator: false,
             layout: None,
             help_in_new_window: true,
+            lazy_attrs: true,
         }
     }
 }

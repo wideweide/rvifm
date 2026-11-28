@@ -838,6 +838,47 @@ impl AppState {
         });
     }
 
+    /// M92-2：按可见行补齐 size/mtime/perm（懒加载属性第二阶段）。
+    pub fn fill_visible_attrs(&mut self, tab_id: usize, right: bool, start: usize, count: usize) {
+        let Some(tab) = self.tabs.get_mut(tab_id) else {
+            return;
+        };
+        let base = if right {
+            &tab.right.location
+        } else {
+            &tab.location
+        };
+        let crate::tab::Location::Physical(dir) = base else {
+            return;
+        };
+        let entries = if right {
+            &mut tab.right.entries
+        } else {
+            &mut tab.entries
+        };
+        let len = entries.len();
+        let begin = start.min(len);
+        let end = start.saturating_add(count).min(len);
+        for item in entries[begin..end].iter_mut() {
+            if item.mtime != 0 || !item.perm.is_empty() {
+                continue;
+            }
+            let path = dir.join(&item.name);
+            let Ok(meta) = std::fs::metadata(&path).or_else(|_| std::fs::symlink_metadata(&path))
+            else {
+                continue;
+            };
+            item.size = meta.len();
+            item.perm = crate::tab::perm_string(&meta);
+            item.mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+        }
+    }
+
     /// M92-1：投递目录异步加载；UI 线程保留旧列表直到结果到达。
     pub fn request_dir_load(
         &mut self,

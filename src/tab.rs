@@ -2271,17 +2271,24 @@ pub fn load_entries(dir: &Path, config: &Config) -> std::io::Result<Vec<FileItem
         }
         // 跟随目标取元数据（path 版穿越链接）；断链回退链接自身
         // （列表加载不受断链影响）。
-        let meta =
-            std::fs::metadata(entry.path()).or_else(|_| std::fs::symlink_metadata(entry.path()))?;
-        let size = meta.len();
-        let perm = perm_string(&meta);
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let is_exec = !is_dir && is_executable(&meta, &name);
+        // M92-2：lazy_attrs 时首屏跳过逐条 metadata（10k+ 目录的主要开销），
+        // size/mtime/perm 由可见区按需补齐；测试态保持完整元数据语义。
+        let (size, perm, mtime, is_exec) = if config.ui.lazy_attrs && !cfg!(test) {
+            (0u64, String::new(), 0u64, false)
+        } else {
+            let meta = std::fs::metadata(entry.path())
+                .or_else(|_| std::fs::symlink_metadata(entry.path()))?;
+            let size = meta.len();
+            let perm = perm_string(&meta);
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let is_exec = !is_dir && is_executable(&meta, &name);
+            (size, perm, mtime, is_exec)
+        };
         // M45-2b：类型感知图标——devicons 默认 `*` 时按可执行/文本/二进制推断，
         // jar/deb 给专用图标（替代无后缀 `*`）。
         let icon =

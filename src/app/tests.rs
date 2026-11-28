@@ -15983,3 +15983,26 @@ fn m921_dir_load_discards_stale_generation() {
     state.drain_dir_loads(&cfg);
     assert!(state.active_tab().entries.is_empty(), "当前代次结果应用");
 }
+
+#[test]
+fn m922_fill_visible_attrs_completes_lazy_metadata() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "payload").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let target = state
+        .active_tab()
+        .entries
+        .iter()
+        .position(|e| e.name == "a.txt")
+        .unwrap();
+    {
+        let item = &mut state.active_tab_mut().entries[target];
+        item.size = 0;
+        item.mtime = 0;
+        item.perm.clear();
+    }
+    state.fill_visible_attrs(state.active, false, target, 1);
+    let item = &state.active_tab().entries[target];
+    assert_eq!(item.size, 7, "可见行补齐 size");
+    assert!(!item.perm.is_empty(), "可见行补齐 perm");
+}
