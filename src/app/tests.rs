@@ -16397,3 +16397,22 @@ fn m992_narrow_detail_mode_shows_second_line() {
     assert!(compact.contains("4.0KiB"), "第二行应显示大小: {compact}");
     assert!(compact.contains('·'), "第二行分隔符: {compact}");
 }
+
+#[test]
+fn m993_tiny_terminal_shows_hint() {
+    let tmp = TempDir::new().unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(20, 4)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..4u16 {
+        for x in 0..20u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("终端过小"), "{compact}");
+}

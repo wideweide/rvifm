@@ -1718,6 +1718,18 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
 }
 
 pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg: Option<&str>) {
+    // M99-3：极小终端直接给出可读提示，不渲染破碎布局。
+    if frame.area().width < 30 || frame.area().height < 6 {
+        frame.render_widget(ratatui::widgets::Clear, frame.area());
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from("终端过小（至少需要 30 列 × 6 行）"),
+                Line::from("请放大终端窗口或旋转手机屏幕后重试"),
+            ]),
+            frame.area(),
+        );
+        return;
+    }
     // M69：git diff overlay（早于普通目录列表渲染）。
     if matches!(
         mode,
