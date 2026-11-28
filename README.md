@@ -149,7 +149,7 @@ vifm 是一个成熟、强大的双栏文件管理器，但它的许多核心能
 
 ## 快速开始
 
-> `cargo install rvifm` 可直接安装发布版本（同时安装 `rvifm` 与短别名 `rv` 两个二进制），本地开发用 `cargo run`。
+> 推荐下载 GitHub Release 归档（v1.5.0，含 `rvifm`/`rv` 与 SHA256SUMS）；`cargo install rvifm` 拿到的是 crates.io 的 1.0.0 旧版，本地开发用 `cargo run`。
 
 ```bash
 # 构建

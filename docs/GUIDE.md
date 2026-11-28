@@ -6,8 +6,11 @@
 
 ## 1. 安装与启动
 
+> 推荐从 GitHub Release 归档安装（v1.5.0，含 `rvifm`/`rv` 与 SHA256SUMS）；
+> `cargo install rvifm` 对应 crates.io 的 1.0.0 旧版。
+
 ```bash
-cargo install rvifm          # 同时安装 rvifm 与短别名 rv
+cargo install rvifm          # crates.io 1.0.0（旧版）；同时安装 rvifm 与短别名 rv
 rvifm                        # 启动（rv 为等价短别名）
 rvifm --help                 # 命令行帮助
 ```

@@ -1120,7 +1120,7 @@
 - [ ] M101-1 修 cargo deny check / supply-chain job 全绿（见 SPEC M101）
 - [x] M101-2 harness_check 接入 CI job + 注入 RVIFM_MAIN_CI + 规则数文案（见 SPEC M101；2026-11-28 完成：ci.yml harness job + 十二条文案 + failure 注入实测失败）
 - [x] M101-3 harness 阶段上界规则 + STATE 阶段上界 M104（见 SPEC M101；2026-11-28 完成：R13 + 制造漂移实测失败）
-- [ ] M101-4 README 安装段与顶部提示统一 + GUIDE 同步（见 SPEC M101）
+- [x] M101-4 README 安装段与顶部提示统一 + GUIDE 同步（见 SPEC M101；2026-11-28 完成：Release 归档口径）
 - [ ] M101-5 文档/验收/门禁（见 SPEC M101）
 
 ## M102 — lazy_attrs 排序正确性（2026-11-28，见 SPEC M102 节）
