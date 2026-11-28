@@ -2210,7 +2210,7 @@ append_rules = [
 - 修 Windows/macOS 主题与高亮测试：主题全局状态改为可注入（`ThemeCtx`）或 `TEST_LOCK` 覆盖所有颜色断言；排查 syntect 资源跨平台加载差异。main CI 三平台全绿，run 链接写入 TASKS。
 - 修 `scripts/harness_check.py` 正则（`\.` 退化、版本模式写死 `0.x`）与 R6 的提前 `break`；R1 覆盖全部 `Mxx/FIX-x/REL-x` 批次段；用故意制造的漂移逐条证伪。
 - 新增 R10（PLAN↔TASKS 状态一致）、R11（Release 资产集合 = CI 矩阵集合、SHA256SUMS 行数 = 归档数、crates `max_version` 与 Cargo 一致或文档显式标注滞后）、R12（main 最近 run 必须为 success 才能写「全绿」），在 CI 中为 required。
-- 分发对齐：发布 1.5.1 到 crates.io，**或**在 README/GUIDE 顶部标注「cargo 安装版本滞后，最新功能请用 Release 归档」（用户既有决策倾向后者，待执行时确认）。
+- 分发对齐（用户 2026-11-28 拍板：**不发布 crates.io、不 bump 版本、不做 GitHub Release**）：在 README/GUIDE 顶部标注「cargo 安装版本滞后（1.0.0），最新功能请用 GitHub Release 归档」。
 - 术语治理：批次记录区分「本机 Linux 绿 / CI 三平台绿 / tag 发布绿」三态；STATE 精简自相矛盾长句。
 
 ## M91 — 传输补完（原评估稿 M90；目标 1.6.0）
