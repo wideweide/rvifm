@@ -9,7 +9,6 @@
 
 // M8-1 仅固化数据结构与分级；消费方：M8-2（redb events/snapshot 持久化）、
 // M8-4（重放评分）、M8-6（pick 子命令）。
-#![allow(dead_code)]
 
 use crate::store::Store;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -1463,6 +1462,7 @@ pub struct PickOptions {
     pub accepted_ignored: Vec<String>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn parse_pick_args(args: &[String]) -> std::io::Result<(String, String)> {
     parse_pick_options(args).map(|o| (o.topic, o.query))
 }

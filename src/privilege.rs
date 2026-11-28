@@ -17,8 +17,6 @@
 //! Windows（UAC 机制不同）：SIMPLIFIED 尽力而为——仅提示不支持。
 //! 整体 cfg(unix) 门控。
 
-#![allow(dead_code)]
-
 /// askpass FIFO 文件名前缀（`/tmp` 下，0600 权限）。
 pub const FIFO_PREFIX: &str = "rvifm-askpass-";
 

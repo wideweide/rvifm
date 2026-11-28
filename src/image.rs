@@ -13,7 +13,6 @@
 //! M11-1 固化引擎层；消费方：M11-2（PreviewRenderer 接入）。
 
 // M11-1 引擎层先行；TUI 预览接线在 M11-2 接入。
-#![allow(dead_code)]
 
 use std::path::Path;
 

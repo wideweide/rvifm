@@ -11,7 +11,6 @@
 //! M9-6（用户 TOML 主题）、TUI 渲染接线。
 
 // M9-2 引擎层先行；set_active/builtin_names 的 TUI 接线在 M9-3 接入。
-#![allow(dead_code)]
 
 use std::path::Path;
 

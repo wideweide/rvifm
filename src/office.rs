@@ -8,7 +8,6 @@
 //! M11-8 固化提取层；消费方：M11-9（PreviewRenderer 分支接入）。
 
 // M11-8 提取层先行；PreviewRenderer 分支在 M11-9 接入。
-#![allow(dead_code)]
 
 use std::path::Path;
 

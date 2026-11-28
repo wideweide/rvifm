@@ -1067,7 +1067,7 @@
 
 ## M94 — 质量债（2026-11-28 蒸馏，见 SPEC M94 节）
 
-- [ ] M94-1 移除 10 个模块的文件级 allow(dead_code)（见 SPEC M94）
+- [x] M94-1 移除 10 个模块的文件级 allow(dead_code)（见 SPEC M94；2026-11-28 完成：clippy -D warnings 全绿，仅 parse_pick_args 按符号保留）
 - [ ] M94-2 sftp 覆盖率 ≥60%（见 SPEC M94）
 - [ ] M94-3 fuzz 24h 长跑回填结果（见 SPEC M94）
 - [ ] M94-4 拆分 app/tests.rs（见 SPEC M94）

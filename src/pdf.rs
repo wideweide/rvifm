@@ -10,7 +10,6 @@
 //! 默认构建只承诺文本提取（SPEC OUT_OF_SCOPE：不保证零配置视觉预览）。
 
 // M11-10 探测链先行；TUI 预览分支在 M11-11 接入，exprim 视觉路径 M11-13。
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

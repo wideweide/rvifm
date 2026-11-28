@@ -10,7 +10,6 @@
 
 // M10-1/M10-3 固化键位形状；Resolver 为独立测试用入口（handle_key 内联序列
 // 解析），PutCopy/PutMove 的 yy 缓冲区在 M10-7 接入。
-#![allow(dead_code)]
 
 use ratatui::crossterm::event::KeyCode;
 

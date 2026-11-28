@@ -7,8 +7,6 @@
 //! M8-8 仅固化共享渲染入口与文本/目录实现；消费方：M11-1/M11-2
 //! （图像渲染）、M11-9（Office 接入）——届时 TUI 接入预览窗格。
 
-#![allow(dead_code)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

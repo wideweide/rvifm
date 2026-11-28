@@ -12,7 +12,6 @@
 
 // M8-2 仅固化 schema 与 tick 语义；消费方：M8-3（record 子命令）、
 // M8-4（重放评分）、M8-5（compaction）。
-#![allow(dead_code)]
 
 use crate::frecency::{EntryRecord, SnapshotEntry};
 use redb::{ReadableDatabase, ReadableTable};

@@ -6,7 +6,6 @@
 
 // M7-1 仅固化抽象形状；消费方：M7-2（ZipFs 实现）与 M7-4（导航接入）。
 // M7-2 的 ZipFs 公开但尚未接入导航。
-#![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
