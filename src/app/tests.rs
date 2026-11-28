@@ -15951,3 +15951,35 @@ fn m916_upload_resumes_after_two_simulated_disconnects() {
     }
     assert_eq!(store.lock().unwrap().clone(), data, "三次重试后内容完整");
 }
+
+#[test]
+fn m921_dir_load_discards_stale_generation() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let original = state.active_tab().entries.len();
+    let stale = crate::state::DirLoadResult {
+        generation: state.dir_generation.wrapping_add(1),
+        tab_id: 0,
+        right: false,
+        path: tmp.path().to_path_buf(),
+        entries: Ok(Vec::new()),
+    };
+    state.dir_load_tx.send(stale).unwrap();
+    let cfg = state.config.clone();
+    state.drain_dir_loads(&cfg);
+    assert_eq!(
+        state.active_tab().entries.len(),
+        original,
+        "过期代次结果被丢弃"
+    );
+    let fresh = crate::state::DirLoadResult {
+        generation: state.dir_generation,
+        tab_id: 0,
+        right: false,
+        path: tmp.path().to_path_buf(),
+        entries: Ok(Vec::new()),
+    };
+    state.dir_load_tx.send(fresh).unwrap();
+    state.drain_dir_loads(&cfg);
+    assert!(state.active_tab().entries.is_empty(), "当前代次结果应用");
+}

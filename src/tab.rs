@@ -778,7 +778,7 @@ pub(crate) fn looks_binary(path: &Path) -> bool {
 }
 
 /// M47-4：左右 pane 共用的排序比较器（目录优先 + 逐字段链 + 名称平手）。
-fn sort_entries_specs(entries: &mut [FileItem], specs: &[SortSpec], config: &Config) {
+pub(crate) fn sort_entries_specs(entries: &mut [FileItem], specs: &[SortSpec], config: &Config) {
     let dirs_first = config.sort_dirs_first;
     entries.sort_by(|a, b| {
         let dir_cmp = if dirs_first {

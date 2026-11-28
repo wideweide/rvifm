@@ -418,6 +418,10 @@ pub struct AppState {
     pub preview_tx: std::sync::mpsc::Sender<crate::state::PreviewJobResult>,
     pub preview_rx: std::sync::mpsc::Receiver<crate::state::PreviewJobResult>,
     pub preview_generation: u64,
+    /// M92-1：目录异步加载通道与代次（UI 线程不阻塞 read_dir/stat）。
+    pub dir_load_tx: std::sync::mpsc::Sender<DirLoadResult>,
+    pub dir_load_rx: std::sync::mpsc::Receiver<DirLoadResult>,
+    pub dir_generation: u64,
     /// M61：当前大文件的只读 mmap 视口读取器（路径变化时重建）。
     pub viewport_text: Option<crate::viewport::ViewportText>,
     /// M69：`:diff` 只读 diff overlay 会话（仅内存，退出即丢弃）。
@@ -618,6 +622,15 @@ pub struct PreviewJobResult {
     pub kind: PreviewJobKind,
     pub payload: crate::preview::ViewerPayload,
     pub image: Option<image::DynamicImage>,
+}
+
+/// M92-1：异步目录加载结果（generation 丢弃过期结果）。
+pub struct DirLoadResult {
+    pub generation: u64,
+    pub tab_id: usize,
+    pub right: bool,
+    pub path: PathBuf,
+    pub entries: std::io::Result<Vec<crate::tab::FileItem>>,
 }
 
 /// M85：单张图片的线程化协议状态。每图独立请求/响应通道：切换图片时旧
@@ -825,6 +838,94 @@ impl AppState {
         });
     }
 
+    /// M92-1：投递目录异步加载；UI 线程保留旧列表直到结果到达。
+    pub fn request_dir_load(
+        &mut self,
+        tab_id: usize,
+        right: bool,
+        dir: &std::path::Path,
+        config: Config,
+    ) {
+        self.dir_generation = self.dir_generation.wrapping_add(1);
+        let generation = self.dir_generation;
+        let tx = self.dir_load_tx.clone();
+        let path = dir.to_path_buf();
+        #[cfg(test)]
+        {
+            // 测试保持同步语义，避免异步时序让断言不稳定。
+            let entries = crate::tab::Tab::load_for(
+                &crate::tab::Location::Physical(path.clone()),
+                config.clone(),
+            );
+            let _ = tx.send(DirLoadResult {
+                generation,
+                tab_id,
+                right,
+                path,
+                entries,
+            });
+            self.drain_dir_loads(&config);
+            return;
+        }
+        #[cfg(not(test))]
+        std::thread::spawn(move || {
+            let entries =
+                crate::tab::Tab::load_for(&crate::tab::Location::Physical(path.clone()), config);
+            let _ = tx.send(DirLoadResult {
+                generation,
+                tab_id,
+                right,
+                path,
+                entries,
+            });
+        });
+        #[cfg(not(test))]
+        let _ = tx;
+    }
+
+    /// M92-1：收割目录加载结果；仅当前代次且路径仍匹配才应用。
+    pub fn drain_dir_loads(&mut self, config: &Config) {
+        while let Ok(result) = self.dir_load_rx.try_recv() {
+            if result.generation != self.dir_generation {
+                continue;
+            }
+            let Some(tab) = self.tabs.get_mut(result.tab_id) else {
+                continue;
+            };
+            let (loc, entries_ref, cursor_ref, filter_ref, sort_ref) = if result.right {
+                (
+                    &tab.right.location,
+                    &mut tab.right.entries,
+                    &mut tab.right.cursor,
+                    &tab.right.filter,
+                    &tab.right.sort,
+                )
+            } else {
+                (
+                    &tab.location,
+                    &mut tab.entries,
+                    &mut tab.cursor,
+                    &tab.filter,
+                    &tab.sort,
+                )
+            };
+            if loc.base_dir() != result.path.as_path() {
+                continue;
+            }
+            let Ok(mut loaded) = result.entries else {
+                continue;
+            };
+            if let Some(pat) = filter_ref {
+                loaded.retain(|item| crate::tab::filter_matches(pat, &item.name));
+            }
+            if let Some(specs) = sort_ref {
+                crate::tab::sort_entries_specs(&mut loaded, specs, config);
+            }
+            *entries_ref = loaded;
+            *cursor_ref = (*cursor_ref).min(entries_ref.len().saturating_sub(1));
+        }
+    }
+
     /// M86-8：粘贴冲突选项——同路径（原地粘贴）只给 rename/skip/skip all；
     /// 跨路径追加 append the tail / overwrite / overwrite all。
     pub fn paste_conflict_options(&self) -> Vec<&'static str> {
@@ -962,6 +1063,7 @@ impl AppState {
             eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
         }
         let preview_channel = std::sync::mpsc::channel();
+        let (dir_tx, dir_rx) = std::sync::mpsc::channel();
         Self {
             tabs: vec![initial],
             active: 0,
@@ -983,6 +1085,9 @@ impl AppState {
             preview_tx: preview_channel.0,
             preview_rx: preview_channel.1,
             preview_generation: 0,
+            dir_load_tx: dir_tx,
+            dir_load_rx: dir_rx,
+            dir_generation: 0,
             viewport_text: None,
             git_diff: None,
             git_undo: None,

@@ -2,10 +2,38 @@ use super::*;
 
 /// 刷新 tab 的双 pane（M14-1）：左 pane 走 Tab::refresh，右 pane 走 Pane::refresh。
 pub(crate) fn refresh_tab_panes(state: &mut AppState, tab_id: usize) {
+    // M92-1：物理目录走后台 ListLoader（generation 丢弃旧结果），UI 线程不
+    // 再同步 read_dir + 逐条 metadata；归档/远端仍走原同步刷新。
     let cfg = state.config.clone();
+    let (left_dir, right_dir) = state
+        .tabs
+        .get(tab_id)
+        .map(|tab| {
+            (
+                match &tab.location {
+                    Location::Physical(p) => Some(p.clone()),
+                    _ => None,
+                },
+                match &tab.right.location {
+                    Location::Physical(p) => Some(p.clone()),
+                    _ => None,
+                },
+            )
+        })
+        .unwrap_or((None, None));
+    if let Some(dir) = left_dir {
+        state.request_dir_load(tab_id, false, &dir, cfg.clone());
+    }
+    if let Some(dir) = right_dir {
+        state.request_dir_load(tab_id, true, &dir, cfg.clone());
+    }
     if let Some(tab) = state.tabs.get_mut(tab_id) {
-        let _ = tab.refresh(cfg.clone());
-        let _ = tab.right.refresh(cfg);
+        if !matches!(tab.location, Location::Physical(_)) {
+            let _ = tab.refresh(cfg.clone());
+        }
+        if !matches!(tab.right.location, Location::Physical(_)) {
+            let _ = tab.right.refresh(cfg);
+        }
     }
 }
 

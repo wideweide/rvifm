@@ -1058,6 +1058,9 @@ fn run_with_initial_mode(
             state.git_cache_at.insert(dir, std::time::Instant::now());
         }
         crate::git::sync_status_trigger(&mut state);
+        // M92-1：收割后台目录加载结果（代次 + 路径双校验）。
+        let dir_cfg = state.config.clone();
+        state.drain_dir_loads(&dir_cfg);
         // M60-1：收割后台预览载荷（只接受当前代次；快速导航不渲染中间预览）。
         state.drain_preview_results();
         // M85：收割后台 resize+encode 结果（ThreadProtocol 更新）。
