@@ -1401,16 +1401,18 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             ];
             spans.extend(highlight_query_spans(&e.path, &pane.query));
             spans.extend(highlight_query_spans(&bm, &pane.query));
-            // M76-3：行尾右对齐显示评分，便于对比命中质量。
-            spans.push(Span::styled(
-                format!("{:>7.1}", e.score),
-                Style::new().fg(Color::DarkGray),
-            ));
             // M75-3：v 可视选择范围与当前光标同样反显。
             let in_visual = pane
                 .visual
                 .is_some_and(|a| (a.min(pane.cursor)..=a.max(pane.cursor)).contains(&idx));
-            ListItem::new(Line::from(spans)).style(if idx == pane.cursor || in_visual {
+            let selected = idx == pane.cursor || in_visual;
+            // M105-3：选中行整行反显，原 DarkGray 得分在反色背景上几乎不可见；
+            // 选中行用黑字、未选中行用亮灰，保证首条（默认光标）得分可读。
+            spans.push(Span::styled(
+                format!("{:>7.1}", e.score),
+                Style::new().fg(if selected { Color::Black } else { Color::Gray }),
+            ));
+            ListItem::new(Line::from(spans)).style(if selected {
                 Style::new().add_modifier(Modifier::REVERSED)
             } else {
                 Style::new()

@@ -16676,3 +16676,57 @@ fn m1051_frecency_overlay_keeps_opposite_pane_without_preview() {
     );
     assert!(text.contains("opposite.txt"), "对侧原面板未被遮罩: {text}");
 }
+
+#[test]
+fn m1053_first_row_score_is_visible() {
+    use crate::frecency::{Grade, ScoredEntry};
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let entry = |name: &str, score: f64| ScoredEntry {
+        path: tmp.path().join(name).to_string_lossy().into_owned(),
+        topic: "file".to_owned(),
+        keyword: String::new(),
+        score,
+        grade: Grade::None,
+        last_visit: 0,
+    };
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![entry("a.txt", 12.5), entry("b.txt", 3.0)],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal
+        .draw(|f| crate::app::render::render_frecency_panes(f, &state))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    for y in 1..4u16 {
+        let row: String = (0..80u16)
+            .map(|x| buf[(x, y)].symbol().to_owned())
+            .collect();
+        println!("row{y}: {row:?}");
+    }
+    // 首条（默认光标）得分在反显背景上须用可读前景色，而不是 DarkGray。
+    let row2: String = (0..80u16)
+        .map(|x| buf[(x, 2)].symbol().to_owned())
+        .collect();
+    let score_cell = row2.find("12.5").expect("首行得分文本应存在") as u16;
+    assert_ne!(
+        buf[(score_cell, 2)].fg,
+        ratatui::style::Color::DarkGray,
+        "选中行得分不得沿用反显后不可读的 DarkGray"
+    );
+}
