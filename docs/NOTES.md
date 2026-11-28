@@ -1797,3 +1797,5 @@ rvifm record  → 静默记录访问
 - **成功状态实证**：`suspend_execute`（`src/app/exec.rs:186`）以 `Command::status()` **等待外部程序退出**并拿到 `ExitStatus`，但只经 `run_external_current_result` 转字符串、丢弃布尔；因此 vim 等 block opener 有明确成功/失败状态，M98-3 需保留并回传。系统 opener `Ok(None)` 仅代表 spawn 成功，按 spawn 成功记录。
 - **钩子异步化评估**：post 钩子（含 frecency 记录）可完全异步——核心发带 id 事件，单线程 writer 串行写 redb，退出前 flush；pre 钩子因为需要「中止操作」必须同步等待（带 200ms 超时），不能全异步，否则取消语义不存在。已登记 M98-3/M98-4。
 - **编号**：M98（M97 为上一批次）；仅登记，等待确认执行。
+
+- **M98 口径再修正（用户确认）**：记录以 opener 调用成功为准，不等外部程序退出；`suspend_execute` 的 ExitStatus 仅做可选冲销；编辑器无 mux 时走分离进程避免长时间阻塞。M98-3/-4 已同步。

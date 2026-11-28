@@ -2305,14 +2305,14 @@ append_rules = [
 **评估结论（投递 NOTES/REVIEW）**
 - 维持 AGENTS §5.1「不做插件系统」。所有扩展走**外部进程 + TOML 声明 + stdin/stdout JSON**，无 in-process 脚本、无 unsafe、无新编译期依赖。
 - `:theme` 移除，统一为 `:colorscheme`（vim/vifm 通用名）：无参分组列出「内置 39 / 捆绑 snowwhite / 用户目录」，带参切换，`--save` 写回配置。
-- 外部打开器可确认成功状态：`suspend_execute` 当前只回消息串、丢弃 `ExitStatus.success()`（M98-3 修复）；系统 opener `Ok(None)` 仅代表 spawn 成功、目标程序无回执，按「spawn 成功即记录」处理。
+- 外部打开器记录口径（用户 2026-11-28 修正）：**以「调用成功」为准**，不为等 vim 退出而阻塞；系统 opener `Ok(None)`、复用器新窗口成功、block opener 挂起前均立即发 `open_post`。`suspend_execute` 的 `ExitStatus` 仅用于可选 `open_failed` 补偿（best-effort），不进记录关键路径；无复用器时编辑器可走分离进程避免阻塞。
 - 全部 frecency 记录改为**钩子事件驱动、异步串行写入**：核心只发事件（带唯一 id），后台单线程 worker 写 redb；退出前 flush，保证不丢。pre 钩子因需可取消，保留同步+超时（默认 200ms）；post 钩子全异步。
 
 **MUST**
 - M98-1 移除 `:theme`，新增 `:colorscheme`（含无参列表、`--save` 持久化、用户主题目录展示）。
 - M98-2 轻量扩展点：`[commands]` 用户命令注册表、`[preview] providers` 外部预览 provider、`[ui] statusline_cmd` 外部状态栏生成器、`[hooks]` 事件钩子、纯 TOML 配置包；全部外部进程 + JSON，超时与失败回退明确。
 - M98-3 钩子事件总线：`open_pre/open_post`、`delete_pre/delete_post`、`rename_pre/rename_post`、`enter_dir`、`job_done`、`cmd_ok`；pre 可配 `abort_on_error`，post 异步排队。
-- M98-4 frecency 记录统一改为 post 钩子异步写入：目录导航、文件打开、命令成功、bookmark 变更、删除/恢复全部发事件；去掉散落的 `record_*` 直调与 file 条目前置记录；`pick` 仍纯只读。
+- M98-4 frecency 记录统一改为 post 钩子异步写入：目录导航、文件打开（调用即成功）、命令成功、bookmark 变更、删除/恢复全部发事件；去掉散落的 `record_*` 直调与 file 条目前置记录；`pick` 仍纯只读；非零退出可用可选 `open_failed` 事件冲销。
 - M98-5 文档/验收/门禁（仅提交代码，不 bump / tag / Release）。
 
 **OUT_OF_SCOPE**
