@@ -1780,3 +1780,10 @@ rvifm record  → 静默记录访问
 - **WHY**：用户提供的 Arke 分析强调「主线程不阻塞」。核对后确认 rvifm 在预览链已落地同构设计：M60 worker + generation、M61 mmap 视口、M62/M85 图片后台预缩放/编码、M83 始终高亮+视口渲染、150ms debounce、generation 丢弃过期结果。**不重复立项**是本次蒸馏的核心判断。
 - **真实缺口**：① 文本预览无乐观占位（只有图片有「解码中…」）；② `text_preview_cache` 是「满 16 条 clear」、`special_preview` 是单槽，均非 LRU。登记为 M96-1/M96-2。
 - **交叉引用**：目录列举/排序、文件夹大小（`:du`）、运维命令的同步阻塞已由 M92/M93 覆盖，不在 M96 重复。
+
+
+### 2026-11-28 — M97 蒸馏决策（Markdown 渲染方案 A）
+
+- **选型**：用户选定 `pulldown-cmark-mdcat` 2.20.2 库模式（ratatui ^0.30 匹配；mpL-2.0 AND Apache-2.0），不引入 `MdcatWidget` 事件循环；`ratatui-markdown` 因 ratatui 0.29 冲突、`mdfrier` 因 GPL-3.0 冲突均排除。
+- **架构复用**：Markdown 样式行走 M60 special preview worker，结果进 M83 viewer —— 导航/检索/视口/黄底叠加全部复用，不新增键位。
+- **排队**：按 §8.3 登记为 M97，排在 M96 之后；当前执行指针仍是 M93-2（按顺序）。

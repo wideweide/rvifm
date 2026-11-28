@@ -2273,6 +2273,25 @@ append_rules = [
 - 不重做已在 M60/M61/M62/M83/M85 落地的异步预览、视口裁剪、图片后台编码、debounce 与 generation 取消。
 - 不重复登记 M92/M93 的目录/运维异步化。
 
+## M97 — Markdown 预览渲染（2026-11-28 蒸馏，用户选定方案 A）
+
+**调研结论**
+- 当前 `.md` 预览走 `structured_preview` 的近似实现（删 `#`/`**`/反引号），无 GFM 语义、无代码高亮、无表格。
+- 候选：`pulldown-cmark-mdcat` 2.20.2（ratatui ^0.30，与项目 0.30.2 匹配，MPL-2.0 AND Apache-2.0）；`ratatui-markdown` 0.3.6（ratatui ^0.29，版本冲突）；`mdfrier` 3.0.7（GPL-3.0，许可冲突）；`termimad`（非 ratatui，集成摩擦大）；自写 pulldown-cmark 渲染（可控但工作量大）。
+- 用户选定 **A：`pulldown-cmark-mdcat` 库模式**，只产出 `ratatui::Text`/样式行，不引入自带事件循环的 widget。
+
+**MUST**
+- 依赖 `pulldown-cmark-mdcat = 2.20.2`，关闭默认 feature，按最小需要启用库模式（不用 `MdcatWidget` 的图片/公式叠加）；若 `text_from_str` 已满足则不加 `ratatui` feature。
+- `.md`/`.markdown` 预览改走 M60 的 special preview worker：后台解析+渲染为 `Vec<Line<'static>>`，替换 `structured_preview` 的标记剥离近似实现；支持 GFM 标题/列表/表格/引用/代码块，代码块复用现有 syntect 主题。
+- 渲染结果进入现有 `:view` viewer：直接复用 `j/k/gg/G`、`/`、`n/N`、视口裁剪、黄底查询叠加；不新增键位。
+- 性能：按 `(path,mtime,size)` 缓存（M96 LRU 落地后受益）、150ms 防抖 + generation 丢弃过期结果、仅渲染可见行；缓存未命中时显示占位（M96-1）。
+- `[preview] markdown_render = true` 配置开关（默认开），false 回退现有纯文本近似预览。
+- 文档/验收/门禁，仅提交代码。
+
+**OUT_OF_SCOPE**
+- 不启用内嵌图片/公式的协议叠加（与 rvifm 自己的 ImageEngine 重复）；图片先显示为 alt 文本。
+- 不降级 ratatui 版本、不引入第二份 ratatui。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
