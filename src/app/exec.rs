@@ -5762,7 +5762,8 @@ pub(crate) fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>)
         *msg = Some("归档视图只读（解压后可修改）".to_owned());
         return;
     };
-    let names: Vec<String> = state.active_tab().tags.iter().cloned().collect();
+    // M86-6：取焦点栏标记（否则右栏 d/D 会误删左栏标记对应的文件）。
+    let names: Vec<String> = state.active_tab().focused_tags().iter().cloned().collect();
     let mut done = 0;
     let mut first_err = None;
     for name in &names {
@@ -5795,8 +5796,8 @@ pub(crate) fn execute_tag_delete(state: &mut AppState, msg: &mut Option<String>)
     let cfg = state.config.clone();
     if let Some(tab) = state.tabs.get_mut(state.active) {
         let _ = tab.refresh(cfg);
-        // M3-4：批量删除完成后清空标记状态。
-        tab.clear_tags();
+        // M86-6：只清焦点栏的标记，不影响另一栏的选择集。
+        tab.clear_tags_focused();
     }
     let permanent = state.pending_permanent_delete;
     state.pending_permanent_delete = false;
