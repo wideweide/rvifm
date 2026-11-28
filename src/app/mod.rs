@@ -1194,6 +1194,16 @@ fn run_with_initial_mode(
             last_seq_len = 0;
         }
         // M36-7 + M103-1：传输队列消费——SFTP 走 worker 线程，UI 只消费完成事件。
+        // 暂停/取消的队首先轮到队尾，避免阻塞后续条目。
+        if state.transfer_queue.first().is_some_and(|e| {
+            matches!(
+                e.state,
+                crate::state::TransferState::Paused | crate::state::TransferState::Cancelled
+            ) && !e.in_flight
+        }) {
+            let head = state.transfer_queue.remove(0);
+            state.transfer_queue.push(head);
+        }
         if !state.transfer_queue.is_empty()
             && state
                 .transfer_queue
@@ -1229,7 +1239,9 @@ fn run_with_initial_mode(
                     entry.in_flight = true;
                     state.transfer_queue.push(entry);
                     let tx = state.transfer_tx.clone();
-                    let _ = std::thread::Builder::new()
+                    let retry_src = src.clone();
+                    let retry_dest = dest.clone();
+                    let spawned = std::thread::Builder::new()
                         .name("rvifm-xfer".to_owned())
                         .spawn(move || {
                             let result = upload_chunked(&backend, &src, &dest);
@@ -1241,6 +1253,17 @@ fn run_with_initial_mode(
                                 result,
                             });
                         });
+                    if spawned.is_err() {
+                        if let Some(e) = state
+                            .transfer_queue
+                            .iter_mut()
+                            .find(|e| e.in_flight && e.src == retry_src && e.dest == retry_dest)
+                        {
+                            e.in_flight = false;
+                            e.state = crate::state::TransferState::Pending;
+                        }
+                        msg = Some("传输 worker 启动失败，条目已复位".to_owned());
+                    }
                 } else {
                     let uploaded = state
                         .remote_sessions
@@ -1302,7 +1325,9 @@ fn run_with_initial_mode(
                 entry.in_flight = true;
                 state.transfer_queue.push(entry);
                 let tx = state.transfer_tx.clone();
-                let _ = std::thread::Builder::new()
+                let retry_src = src.clone();
+                let retry_dest = dest.clone();
+                let spawned = std::thread::Builder::new()
                     .name("rvifm-xfer".to_owned())
                     .spawn(move || {
                         let result = crate::app::exec::download_chunked(&backend, &src, &dest);
@@ -1314,6 +1339,17 @@ fn run_with_initial_mode(
                             result,
                         });
                     });
+                if spawned.is_err() {
+                    if let Some(e) = state
+                        .transfer_queue
+                        .iter_mut()
+                        .find(|e| e.in_flight && e.src == retry_src && e.dest == retry_dest)
+                    {
+                        e.in_flight = false;
+                        e.state = crate::state::TransferState::Pending;
+                    }
+                    msg = Some("传输 worker 启动失败，条目已复位".to_owned());
+                }
             } else {
                 let downloaded = state.remote_sessions.get(&remote_name).map(|backend| {
                     crate::app::exec::download_chunked(backend.as_ref(), &src, &dest)
