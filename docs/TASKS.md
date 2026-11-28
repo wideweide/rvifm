@@ -1105,7 +1105,7 @@
 ## M99 — Termux / 窄屏适配（2026-11-28，见 SPEC M99 节）
 
 - [x] M99-1 宽度断点自动单栏 + 焦点 pane 投影/标识（见 SPEC M99；2026-11-28 完成：narrow_threshold + 焦点右栏单栏渲染 + [左]/[右] + m991）
-- [ ] M99-2 窄屏列表密度 filename/detail（见 SPEC M99）
+- [x] M99-2 窄屏列表密度 filename/detail（见 SPEC M99；2026-11-28 完成：左右栏第二行元数据 + m992）
 - [ ] M99-3 极小终端提示 + 高度收缩（见 SPEC M99）
 - [ ] M99-4 图标纯文本降级配置（见 SPEC M99）
 - [ ] M99-5 termux-open opener 示例 + 文档/验收/门禁（见 SPEC M99）

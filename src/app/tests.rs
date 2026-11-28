@@ -16375,3 +16375,25 @@ fn m991_narrow_screen_shows_focused_right_pane() {
     assert!(compact.contains("[右]"), "{compact}");
     assert!(compact.contains("right.txt"), "{compact}");
 }
+
+#[test]
+fn m992_narrow_detail_mode_shows_second_line() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("big.txt"), vec![b'x'; 4096]).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.ui.narrow_list_mode = "detail".to_owned();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..60u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("4.0KiB"), "第二行应显示大小: {compact}");
+    assert!(compact.contains('·'), "第二行分隔符: {compact}");
+}

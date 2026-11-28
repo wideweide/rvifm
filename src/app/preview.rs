@@ -616,8 +616,12 @@ pub(crate) fn render_right_pane(
         .enumerate()
         .map(|(idx, item)| {
             // M21-E1：属性列自适应（与左 pane 同口径）。
-            let show_attrs =
-                state.config.ui.attrs_column && list_area.width as usize >= MIN_ATTRS_INNER_WIDTH;
+            let narrow = state.config.ui.narrow_threshold > 0
+                && frame.area().width < state.config.ui.narrow_threshold;
+            let narrow_detail = narrow && state.config.ui.narrow_list_mode == "detail";
+            let show_attrs = state.config.ui.attrs_column
+                && !narrow
+                && list_area.width as usize >= MIN_ATTRS_INNER_WIDTH;
             // M25-5：git 状态列（与左 pane 同口径；右 pane 独立目录缓存）。
             let git_col = show_attrs && state.config.ui.git_column;
             let git_map = if git_col {
@@ -703,7 +707,24 @@ pub(crate) fn render_right_pane(
                 let attr = format!("{:>10}  {}", size, crate::tab::format_mtime_min(item.mtime));
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
-            let mut li = ListItem::new(Line::from(spans));
+            let mut li = if narrow_detail {
+                let size = if item.is_dir {
+                    "<DIR>".to_owned()
+                } else {
+                    crate::tab::format_size(item.size)
+                };
+                let detail = Line::from(Span::styled(
+                    format!(
+                        "    {} · {}",
+                        size,
+                        crate::tab::format_mtime_min(item.mtime)
+                    ),
+                    Style::new().fg(ratatui::style::Color::DarkGray),
+                ));
+                ListItem::new(vec![Line::from(spans), detail])
+            } else {
+                ListItem::new(Line::from(spans))
+            };
             // M89-3：右栏 v 选区与 t 标记同背景样式（与左栏一致）。
             if row_reversed || tab.right.tags.contains(&item.name) {
                 li = li.style(crate::app::render::selected_row_style(focused));

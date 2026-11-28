@@ -1913,7 +1913,10 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             }
         };
         // M21-E1：属性列自适应——配置开关 + 窄终端隐藏（文件名优先）。
+        // M99-2：窄屏不挤占水平空间；detail 模式用第二行显示元数据。
+        let narrow_detail = narrow && state.config.ui.narrow_list_mode == "detail";
         let show_attrs = state.config.ui.attrs_column
+            && !narrow
             && left_inner.width as usize >= MIN_ATTRS_INNER_WIDTH
             && tab.tree.is_none(); // 树视图相对路径较长，不挤属性列
         // M25-5：git 状态列（属性区内；开关 + 就绪数据，否则占位对齐）。
@@ -2025,7 +2028,24 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 let base_style = crate::theme::style("file_icon");
                 // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
                 // 光标行由 highlight_style 叠加。
-                let mut li = ListItem::new(Line::from(spans)).style(base_style);
+                let mut li = if narrow_detail {
+                    let size = if item.is_dir {
+                        "<DIR>".to_owned()
+                    } else {
+                        crate::tab::format_size(item.size)
+                    };
+                    let detail = Line::from(Span::styled(
+                        format!(
+                            "    {} · {}",
+                            size,
+                            crate::tab::format_mtime_min(item.mtime)
+                        ),
+                        Style::new().fg(Color::DarkGray),
+                    ));
+                    ListItem::new(vec![Line::from(spans), detail]).style(base_style)
+                } else {
+                    ListItem::new(Line::from(spans)).style(base_style)
+                };
                 // M89-3：v 连续选区与 t 持久标记统一为同一背景样式，视觉上
                 // 「临时选择 → t 提交为持久标记」不跳变；状态栏 N tagged 区分来源。
                 if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi)
