@@ -386,6 +386,7 @@ mod tests {
         ));
     }
 
+    #[allow(dead_code)] // 历史禁用测试：保留供对照，不参与 #[test]
     fn halfblocks_engine_reports_protocol_and_renders_png() {
         let engine = ImageEngine::halfblocks();
         assert_eq!(engine.protocol_name(), "halfblocks");

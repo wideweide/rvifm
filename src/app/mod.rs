@@ -604,7 +604,11 @@ fn run_git_op(state: &mut AppState, op: &crate::state::GitOp, msg: &mut Option<S
                 state.git_diff = Some(fresh);
             }
         }
-        Err(e) => *msg = Some(e),
+        Err(e) => {
+            let err = crate::state::AppError::from_git(&e);
+            let _ = err.kind; // 状态栏按 hint 给出可操作提示（M94-5）
+            *msg = Some(err.render());
+        }
     }
 }
 

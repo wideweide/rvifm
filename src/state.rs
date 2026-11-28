@@ -630,6 +630,56 @@ pub struct PreviewJobResult {
     pub image: Option<image::DynamicImage>,
 }
 
+/// M94-5：错误类型化——状态栏区分「可重试 / 需确认 / 需提权」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppErrorKind {
+    Retryable,
+    NeedsConfirm,
+    NeedsPrivilege,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppError {
+    pub kind: AppErrorKind,
+    pub context: String,
+    pub hint: Option<String>,
+}
+
+impl AppError {
+    /// 从 git 写操作的字符串错误推断类别与提示。
+    pub fn from_git(text: &str) -> Self {
+        let lower = text.to_ascii_lowercase();
+        let (kind, hint) = if lower.contains("permission") || lower.contains("eacces") {
+            (
+                AppErrorKind::NeedsPrivilege,
+                Some("可尝试提权后重试".to_owned()),
+            )
+        } else if lower.contains("conflict") || lower.contains("dirty") {
+            (
+                AppErrorKind::NeedsConfirm,
+                Some("先处理冲突/未提交修改再重试".to_owned()),
+            )
+        } else if lower.contains("timeout") || lower.contains("connection") {
+            (AppErrorKind::Retryable, Some("可稍后重试".to_owned()))
+        } else {
+            (AppErrorKind::Other, None)
+        };
+        Self {
+            kind,
+            context: text.to_owned(),
+            hint,
+        }
+    }
+
+    pub fn render(&self) -> String {
+        match &self.hint {
+            Some(hint) => format!("{}（{hint}）", self.context),
+            None => self.context.clone(),
+        }
+    }
+}
+
 /// M93-1：磁盘占用后台扫描结果。
 pub struct DuResult {
     pub base: PathBuf,

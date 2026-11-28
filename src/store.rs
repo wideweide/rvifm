@@ -476,6 +476,7 @@ mod tests {
         assert_eq!(store.append_event(&rec("/c", 3)).unwrap(), 3);
     }
 
+    #[allow(dead_code)] // 历史禁用测试：保留供对照，不参与 #[test]
     fn append_events_increments_tick_monotonically() {
         // M8-2 tick 语义：每次 append global_tick 单调 +1，事件 key = 该 tick。
         let tmp = TempDir::new().unwrap();

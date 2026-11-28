@@ -16138,3 +16138,14 @@ fn m936_hunk_discard_defaults_off() {
     let cfg = Config::default();
     assert!(!cfg.git.hunk_discard, "实验性 hunk 丢弃默认关闭");
 }
+
+#[test]
+fn m945_app_error_classifies_git_failures() {
+    use crate::state::{AppError, AppErrorKind};
+    let e = AppError::from_git("permission denied");
+    assert_eq!(e.kind, AppErrorKind::NeedsPrivilege);
+    assert!(e.render().contains("提权"));
+    let e = AppError::from_git("connection timeout");
+    assert_eq!(e.kind, AppErrorKind::Retryable);
+    assert!(e.render().contains("重试"));
+}

@@ -1460,10 +1460,10 @@
 ## 99. M94 — 质量债（见 SPEC M94 节）
 
 - [ ] M94-1 文件级 allow(dead_code) 清零。
-- [ ] M94-2 sftp 覆盖率 ≥60%。
-- [ ] M94-3 fuzz 24h 回填 NOTES。
-- [ ] M94-4 tests.rs 拆分完成。
-- [ ] M94-5 AppError 类型化落地。
+- [deferred] M94-2 sftp 覆盖率 ≥60%（deferred：外部 sshd/mock 环境）。
+- [deferred] M94-3 fuzz 24h 回填 NOTES（deferred：长跑环境）。
+- [deferred] M94-4 tests.rs 拆分完成（deferred：纯重构）。
+- [x] M94-5 AppError 类型化落地。（2026-11-28：m945）
 
 ## 100. M95 — 体验治理与新能力（见 SPEC M95 节）
 
