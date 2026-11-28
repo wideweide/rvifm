@@ -1666,8 +1666,14 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
     if files_area.width > 0 {
         let files_focused = diff.focus == crate::state::DiffFocus::Files;
+        // M106-1：标题带项目名与分支，多仓库/多工作区下可辨识。
+        let files_title = if diff.project.is_empty() {
+            "diff · 变更文件".to_owned()
+        } else {
+            format!("diff · {} [{}] · 变更文件", diff.project, diff.branch)
+        };
         let files_block = ratatui::widgets::Block::bordered()
-            .title("diff · 变更文件")
+            .title(files_title)
             .border_style(if files_focused {
                 pane_border_style(true)
             } else {

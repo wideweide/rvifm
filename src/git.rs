@@ -361,6 +361,26 @@ pub fn diff_payload(
 }
 
 /// M70：执行 git 写命令（逐参数传递，不经 shell）；失败返回可读错误。
+/// M106-1：diff 标题用的项目名与分支（一次性采集，避免每帧跑 git CLI）。
+/// 非 git/无分支时给出可读占位，不 panic。
+pub fn repo_info(root: &Path) -> (String, String) {
+    let project = root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "未知项目".to_owned());
+    let branch = run_git(root, &["branch", "--show-current"])
+        .ok()
+        .filter(|b| !b.is_empty())
+        .or_else(|| {
+            run_git(root, &["rev-parse", "--short", "HEAD"])
+                .ok()
+                .map(|h| format!("detached {h}"))
+        })
+        .unwrap_or_else(|| "无分支".to_owned());
+    (project, branch)
+}
+
 pub fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = std::process::Command::new("git");
     cmd.args(args)

@@ -16909,3 +16909,31 @@ fn m1057_frecency_status_shows_confirmation_message() {
         "确认提示须覆盖普通状态提示: {text}"
     );
 }
+
+#[test]
+fn m1061_diff_title_shows_project_and_branch() {
+    let tmp = TempDir::new().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(tmp.path())
+        .status();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut diff = crate::state::GitDiffSession::open(tmp.path().to_path_buf()).unwrap();
+    diff.project = "demo-proj".to_owned();
+    diff.branch = "feature/x".to_owned();
+    state.git_diff = Some(diff);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::GitDiff, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let text: String = (0..24u16)
+        .flat_map(|y| {
+            (0..100u16)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(text.contains("demo-proj"), "标题应含项目名: {text}");
+    assert!(text.contains("feature/x"), "标题应含分支: {text}");
+}

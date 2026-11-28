@@ -808,6 +808,9 @@ pub enum DiffFocus {
 #[derive(Debug)]
 pub struct GitDiffSession {
     pub root: PathBuf,
+    /// M106-1：标题展示用的项目名/分支（open 时采集一次）。
+    pub project: String,
+    pub branch: String,
     pub files: Vec<(String, char, char)>,
     pub cursor: usize,
     pub focus: DiffFocus,
@@ -832,8 +835,11 @@ impl GitDiffSession {
     pub fn open(root: PathBuf) -> std::io::Result<Self> {
         let files = crate::git::changed_files(&root)?;
         let (tx, rx) = std::sync::mpsc::channel();
+        let (project, branch) = crate::git::repo_info(&root);
         Ok(Self {
             root,
+            project,
+            branch,
             files,
             cursor: 0,
             focus: DiffFocus::Files,
