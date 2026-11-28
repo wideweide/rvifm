@@ -1023,3 +1023,10 @@
 
 - [x] M88-1 clip_name 中间省略 + 扩展名链保留（见 SPEC M88；2026-11-28 完成：Unicode 宽度 + .pdf.md5 扩展链）
 - [x] M88-2 单测 + 文档/验收/门禁（见 SPEC M88；2026-11-28 完成：m881 + GUIDE/help + 全门禁）
+
+## M89 — 多选模型统一（2026-11-28，见 SPEC M89 节）
+
+- [ ] M89-1 Visual `t` 提交/翻转选区到 tags 并退出 visual（见 SPEC M89）
+- [ ] M89-2 Normal `J`/`K` 标记当前 + 移动（含 count，N+1 语义）（见 SPEC M89）
+- [ ] M89-3 tags 渲染统一为 v 的背景样式 + 状态栏计数保留（见 SPEC M89）
+- [ ] M89-4 文档/验收/门禁（见 SPEC M89）

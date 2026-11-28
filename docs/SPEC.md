@@ -2185,6 +2185,24 @@ append_rules = [
 - 新增 `clip_name` 纯函数单测（含 CJK、`.pdf.md5`、极小预算）。
 - GUIDE/help 同步省略策略；验收与门禁通过。
 
+## M89 — 多选模型统一：v 选择 → t 提交标记 + J/K 标记移动（2026-11-28 蒸馏，待用户确认）
+
+**调研依据**
+- 本机 vifm `vifm-help.txt:824`：visual 模式下 Normal 键「作用于已选条目」；`t` 在 Normal 下是 toggle 当前文件标记（:623）；`av`/`Ctrl-G` 提供 append/remove/invert 选区编辑；count 走操作符（`d[count]j`）。
+- yazi：`Space` toggle 当前项并自动下移一项；非连续多段 = `v` 选段 → `Space` 提交 → 移动 → 重复（官方讨论 sxyazi/yazi#1581）。
+- ranger：`Space` 离散标记、`V` 连续 visual、`J/K` 仅半页移动；vim 只支持单一连续 visual，无 `J/K` 选择键。
+
+**MUST**
+- Normal `t`：保持现状（开关当前条目标记）。
+- Visual `t`：把当前 visual 区间提交/翻转到焦点栏 `tags` 集合——区间内存在未标记项则全部标记，已全部标记则全部取消；**提交后退出 visual**（用户按推荐确认），便于继续选下一段。
+- Normal `J` / `K`：标记当前条目并向下/上移动；支持 count，`N K` = 标记当前 + 向上移动 N 项（共 N+1 项，与 yazi `Space` 同款语义）；与 `t` 共用同一 `tags` 集合。
+- 视觉统一：`t` 标记行改用与 `v` 相同的背景样式（`selected_row_style`），使「v 临时区间 → t 提交为持久标记」在视觉上不跳变；状态栏保留 `N tagged` 计数区分来源。
+- 每栏独立的 `tags` 集合语义不变；`d`/`D` 与 `:unselect` 行为不变（前者删文件、后者只清标记）。
+
+**OUT_OF_SCOPE**
+- 不引入 vifm `av`/`Ctrl-G` 的 append/remove/invert 选区编辑状态机（用户选方案 2 的简洁路线，保留未来扩展空间）。
+- 不改 `Space` 的切 pane 语义。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。
