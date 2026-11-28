@@ -1870,3 +1870,9 @@ rvifm record  → 静默记录访问
 - M105-4 裁决：`w`/Tab 进入预览后 `j/k` 承担列表光标移动（预览跟随当前条目、滚动归零），预览内部滚动改用 `Ctrl+J/K`——避免「预览打开后列表完全不可移动」，与 M49-1 原「j/k 只滚预览」语义冲突时以用户本轮反馈为准。
 - M105-6 根因：`open_selected` 只在 `Ok(None)`（系统 opener 兜底）分支记录文件访问；默认 `[opener] edit_text = vim %s` 命中 `Ok(Some(cmd))` 后直接返回，从未调用 `record_file_open`，因此 `l` 后 `o` 与重启后 `o` 都检索不到。修复为在命中分支派发前记录（M98「调用被接受即成功」口径）。重启可见性由生产同步 `flush_visits` + `load_jump_entries` 每次重放 events 保证；单测按既有约定跳过真实 redb 写入。
 - M105-7 根因：`frec_pane_key` 在 `r` 时确已写入确认 msg，但 `render_frecency_panes` 每次清空并重写状态行为固定提示，覆盖了 msg；改为新增 `render_frecency_panes_with_msg`，有 msg 时优先以警示样式显示（与删除确认同风格）。
+
+### 2026-11-29 — M105 批处理收尾
+
+- 8/8 任务完成；新增 5 项回归测试（m1051/m1053/m1054/m1055/m1056/m1057，其中 m551 改版）。
+- 全门禁通过：fmt、clippy -D warnings、build、test（728 单元 + 14 集成）、cargo deny check、harness 十三条、rvifm --version 1.6.0。并行单测偶发 `m791_git_cache_ttl_and_clear`/`nav3_histprev_histnext_exec_and_tab_isolation` 临时目录竞态，串行复跑全绿（既有已知抖动，CI 以 --test-threads=1 为准）。
+- 本批不 bump、不 tag、不发布；Release 仍为 v1.6.0（M101–M104 批次）。
