@@ -1336,23 +1336,45 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
 
     // 焦点 pane：Frecency 搜索 UI。
     let visible = filter_jump(&pane.entries, &pane.query);
-    // M34-5/M47-5/M49-12：标题随模式变化，`[filter xxx]` 用 :view 同款黄底高亮。
-    let [topline, pane_body] =
+    // M105-2：标题栏即输入框——与 Normal 模式同尺寸（1 行），不再在底部预留
+    // 3 行。单行空间不够画完整边框，退化为底横线表示输入态。
+    let [topline, inner] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frec_area);
     frame.render_widget(ratatui::widgets::Clear, topline);
-    // M86-2：SEARCH 态在列表底部留 3 行给带边框输入框；NORMAL 态沿用 1 行提示。
-    let input_height = if pane.normal {
-        0
-    } else {
-        3.min(pane_body.height)
-    };
-    let [inner, input_area] =
-        Layout::vertical([Constraint::Min(0), Constraint::Length(input_height)]).areas(pane_body);
-    // M75-4：搜索态不显示标题与 [filter …]，只以底部输入框呈现关键词。
     if pane.normal {
         let title_spans = vec![Span::from("Frecency - 高频目录/文件搜索 - NORMAL 模式")];
         frame.render_widget(
             Paragraph::new(Line::from(title_spans)).style(vifm_style("TopLineSel")),
+            topline,
+        );
+    } else {
+        let blink = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() % 1000 < 500)
+            .unwrap_or(true);
+        let caret = if blink { "▋" } else { " " };
+        // 预览获得焦点时输入失焦：颜色与其它组件焦点样式同源同步。
+        // 单行空间无法容纳完整边框，改用下划线（标题行下方横线）表示输入态。
+        let focused = !pane.preview_focus;
+        let input_fg = if focused {
+            Color::LightYellow
+        } else {
+            Color::DarkGray
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("/", Style::new().fg(input_fg)),
+                Span::styled(
+                    pane.query.clone(),
+                    Style::new().fg(input_fg).add_modifier(Modifier::UNDERLINED),
+                ),
+                Span::styled(
+                    caret,
+                    Style::new()
+                        .fg(input_fg)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ),
+            ])),
             topline,
         );
     }
@@ -1425,7 +1447,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         });
         crate::app::preview::render_view_path(frame, state, &path, preview_area, viewer.as_ref());
     }
-    // M86-2：SEARCH 用与其它组件同源焦点样式的带边框输入框 + 闪烁光标。
+    // M105-2：输入框已上移到标题行；状态行只给模式提示，不再画第二套输入框。
     frame.render_widget(ratatui::widgets::Clear, status_area);
     if pane.normal {
         let hint = format!(
@@ -1433,29 +1455,13 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             visible.len()
         );
         frame.render_widget(Paragraph::new(hint), status_area);
-    } else if input_area.height >= 3 {
-        let blink = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() % 1000 < 500)
-            .unwrap_or(true);
-        let caret = if blink { "▋" } else { " " };
-        let block = ratatui::widgets::Block::bordered()
-            .title("搜索")
-            .border_style(pane_border_style(true));
-        frame.render_widget(ratatui::widgets::Clear, input_area);
+    } else {
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("/", Style::new().fg(Color::LightYellow)),
-                Span::from(pane.query.clone()),
-                Span::styled(
-                    caret,
-                    Style::new()
-                        .fg(Color::LightYellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]))
-            .block(block),
-            input_area,
+            Paragraph::new(format!(
+                "搜索模式｜关键词实时过滤，Esc 回 NORMAL，Enter 跳转（{} 项）",
+                visible.len()
+            )),
+            status_area,
         );
     }
 }

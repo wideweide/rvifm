@@ -3864,25 +3864,32 @@ fn m551_search_input_line_has_border_and_caret() {
     terminal
         .draw(|f| crate::app::render::render_frecency_panes(f, &state))
         .unwrap();
-    // M86-2：搜索态无标题，改为带边框输入框（标题「搜索」+ 内容回显）。
+    // M105-2：标题栏即输入框——单行、与 Normal 同尺寸，底横线（下划线）
+    // 表示输入态；不再有底部 3 行边框输入框。
     assert!(
-        !row(&terminal, 1).contains("SEARCH"),
+        row(&terminal, 1).contains("/abc"),
         "{:?}",
         row(&terminal, 1)
     );
     let snapshot = terminal.backend().buffer().clone();
-    let mut all = String::new();
-    for y in 0..12u16 {
-        for x in 0..80u16 {
-            all.push_str(snapshot[(x, y)].symbol());
-        }
-    }
+    let underlined = (0..80u16).any(|x| {
+        snapshot[(x, 1)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    });
+    assert!(underlined, "标题行应以下划线表示输入态");
+    let all: String = (0..12u16)
+        .flat_map(|y| {
+            (0..80u16)
+                .map(|x| snapshot[(x, y)].symbol().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(!all.contains('│'), "不应再画完整边框: {all}");
     assert!(
-        all.replace(' ', "").contains("搜索"),
-        "输入框标题可见: {all}"
+        all.replace(' ', "").contains("搜索模式"),
+        "状态行给出模式提示: {all}"
     );
-    assert!(all.contains("/abc"), "输入框应回显 query: {all}");
-    assert!(all.contains('│'), "输入框应有边框: {all}");
 
     state.active_tab_mut().pane_frecency = Some(pane(true, "abc"));
     terminal
@@ -3891,7 +3898,7 @@ fn m551_search_input_line_has_border_and_caret() {
     assert!(row(&terminal, 1).contains("NORMAL"));
     let status = row(&terminal, 11);
     assert!(!status.contains('▋'), "Normal 态不应有输入框光标: {status}");
-    assert!(status.contains("NORMAL模式"), "{status}");
+    assert!(status.contains("NORMAL"), "{status}");
 }
 
 #[test]
