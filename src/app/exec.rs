@@ -3096,32 +3096,80 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Ok(ExecOutcome::EnterDupView)
         }
         Some("checksum") => {
-            // M37-6：校验和——选中项生成 sidecar（md5sum -c 兼容）。
+            // M93-3：流式校验和生成 + sidecar 校验（md5/sha256）。
+            let args: Vec<&str> = parts.collect();
+            let algo = args.first().copied().unwrap_or("md5");
+            if !matches!(algo, "md5" | "sha256") {
+                return Err("checksum: 算法仅 md5 | sha256".to_owned());
+            }
+            let verify = args.iter().skip(1).any(|a| *a == "verify");
+            let base = physical_base(state)?;
+            let sidecar = base.join(format!("checksum.{algo}"));
+            use sha2::Digest as _;
+            let stream_hash = |path: &std::path::Path| -> Result<String, String> {
+                let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+                let mut buf = vec![0u8; 256 * 1024];
+                if algo == "md5" {
+                    let mut h = md5::Md5::new();
+                    loop {
+                        let n =
+                            std::io::Read::read(&mut file, &mut buf).map_err(|e| e.to_string())?;
+                        if n == 0 {
+                            break;
+                        }
+                        h.update(&buf[..n]);
+                    }
+                    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+                } else {
+                    let mut h = sha2::Sha256::new();
+                    loop {
+                        let n =
+                            std::io::Read::read(&mut file, &mut buf).map_err(|e| e.to_string())?;
+                        if n == 0 {
+                            break;
+                        }
+                        h.update(&buf[..n]);
+                    }
+                    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+                }
+            };
+            if verify {
+                let body = std::fs::read_to_string(&sidecar)
+                    .map_err(|e| format!("checksum: sidecar 读取失败: {e}"))?;
+                let mut ok = 0usize;
+                let mut bad = Vec::new();
+                for line in body.lines().filter(|l| !l.trim().is_empty()) {
+                    let Some((expected, name)) = line.split_once(" *") else {
+                        continue;
+                    };
+                    let path = base.join(name);
+                    match stream_hash(&path) {
+                        Ok(actual) if actual == expected => ok += 1,
+                        Ok(actual) => bad.push(format!("{name}: 期望 {expected} 实得 {actual}")),
+                        Err(e) => bad.push(format!("{name}: {e}")),
+                    }
+                }
+                return Ok(ExecOutcome::Done {
+                    msg: Some(format!(
+                        "checksum verify: {ok} 项通过{}",
+                        if bad.is_empty() {
+                            String::new()
+                        } else {
+                            format!("，{} 项失败\n{}", bad.len(), bad.join("\n"))
+                        }
+                    )),
+                });
+            }
             let names = selected_names(state);
             if names.is_empty() {
                 return Err("checksum: 无选中条目".to_owned());
             }
-            let base = physical_base(state)?;
             let mut lines = Vec::new();
             for name in &names {
-                let p = base.join(name);
-                match std::fs::read(&p) {
-                    Ok(data) => {
-                        use md5::Md5;
-                        use sha2::Digest as _;
-                        let mut h = Md5::new();
-                        h.update(&data);
-                        let hex = h
-                            .finalize()
-                            .iter()
-                            .map(|b| format!("{b:02x}"))
-                            .collect::<String>();
-                        lines.push(format!("{hex} *{name}"));
-                    }
-                    Err(e) => return Err(format!("checksum: {name}: {e}")),
-                }
+                let hex =
+                    stream_hash(&base.join(name)).map_err(|e| format!("checksum: {name}: {e}"))?;
+                lines.push(format!("{hex} *{name}"));
             }
-            let sidecar = base.join("checksum.md5");
             std::fs::write(&sidecar, lines.join("\n") + "\n")
                 .map_err(|e| format!("checksum: sidecar 写入失败: {e}"))?;
             Ok(ExecOutcome::Done {

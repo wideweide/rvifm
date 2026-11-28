@@ -16065,3 +16065,17 @@ fn m932_dup_three_stage_finds_identical_files() {
     assert_eq!(result.entries.len(), 1, "一组重复: {:?}", result.entries);
     assert_eq!(result.entries[0].1, 2);
 }
+
+#[test]
+fn m933_checksum_sha256_generate_and_verify() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), b"checksum payload").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().tags.insert("a.txt".to_owned());
+    let r = crate::app::exec::exec_command_impl(&mut state, "checksum sha256").unwrap();
+    assert!(format!("{r:?}").contains("checksum"), "{r:?}");
+    let sidecar = tmp.path().join("checksum.sha256");
+    assert!(sidecar.is_file());
+    let v = crate::app::exec::exec_command_impl(&mut state, "checksum sha256 verify").unwrap();
+    assert!(format!("{v:?}").contains("1 项通过"), "{v:?}");
+}
