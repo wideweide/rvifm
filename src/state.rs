@@ -454,13 +454,12 @@ pub struct AppState {
     /// M85：当前图片的线程化协议（每图独立通道，避免 id 重置碰撞）。
     pub thread_preview: std::cell::RefCell<Option<ThreadPreview>>,
     /// M60-4：Office/归档/PDF 文本预览的后台行缓存（仅内存）。
-    pub special_preview: Option<(PathBuf, Vec<String>)>,
+    pub special_preview: PreviewCache<PathBuf, (PathBuf, Vec<String>)>,
     pub special_pending: Option<PathBuf>,
     /// M53-5/M83：文本预览行缓存（key = path+mtime+size），`Arc` 让命中
     /// 只克隆指针，避免每帧整文件 `Vec<String>` 拷贝。
-    pub text_preview_cache: std::cell::RefCell<
-        std::collections::HashMap<HighlightCacheKey, std::sync::Arc<Vec<String>>>,
-    >,
+    pub text_preview_cache:
+        std::cell::RefCell<PreviewCache<HighlightCacheKey, std::sync::Arc<Vec<String>>>>,
     /// M21-F5：外部变更监听——watcher 持有监听目标（活动 tab 的物理目录），
     /// rx 承接事件。归档/远端视图不监听（None）；监听失败静默降级。
     pub watcher: Option<(std::path::PathBuf, notify::RecommendedWatcher)>,
@@ -633,6 +632,53 @@ pub struct PreviewJobResult {
     pub kind: PreviewJobKind,
     pub payload: crate::preview::ViewerPayload,
     pub image: Option<image::DynamicImage>,
+}
+
+/// M96-2：有界 LRU 缓存（命中移到队尾，超容量淘汰最久未用项）。
+#[derive(Debug)]
+pub struct PreviewCache<K, V> {
+    map: std::collections::HashMap<K, V>,
+    order: std::collections::VecDeque<K>,
+    cap: usize,
+}
+
+impl<K: Eq + std::hash::Hash + Clone, V: Clone> PreviewCache<K, V> {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            map: std::collections::HashMap::new(),
+            order: std::collections::VecDeque::new(),
+            cap: cap.max(1),
+        }
+    }
+
+    pub fn peek(&self, key: &K) -> Option<&V> {
+        self.map.get(key)
+    }
+
+    pub fn get_cloned(&mut self, key: &K) -> Option<V> {
+        let value = self.map.get(key).cloned()?;
+        if let Some(k) = self
+            .order
+            .iter()
+            .position(|k| k == key)
+            .and_then(|p| self.order.remove(p))
+        {
+            self.order.push_back(k);
+        }
+        Some(value)
+    }
+
+    pub fn insert(&mut self, key: K, value: V) {
+        if !self.map.contains_key(&key)
+            && self.order.len() >= self.cap
+            && let Some(old) = self.order.pop_front()
+        {
+            self.map.remove(&old);
+        }
+        self.order.retain(|k| k != &key);
+        self.order.push_back(key.clone());
+        self.map.insert(key, value);
+    }
 }
 
 /// M94-5：错误类型化——状态栏区分「可重试 / 需确认 / 需提权」。
@@ -1076,11 +1122,7 @@ impl AppState {
 
     /// M60-4：Office/归档/PDF 文本预览行后台计算（缓存未命中时）。
     pub fn ensure_special_preview(&mut self, path: &std::path::Path, external_enabled: bool) {
-        if self
-            .special_preview
-            .as_ref()
-            .is_some_and(|(p, _)| p == path)
-        {
+        if self.special_preview.peek(&path.to_path_buf()).is_some() {
             return;
         }
         if self.special_pending.as_deref() == Some(path) {
@@ -1131,7 +1173,10 @@ impl AppState {
                     if self.special_pending.as_deref() == Some(result.payload.path.as_path()) {
                         self.special_pending = None;
                     }
-                    self.special_preview = Some((result.payload.path, result.payload.lines));
+                    self.special_preview.insert(
+                        result.payload.path.clone(),
+                        (result.payload.path, result.payload.lines),
+                    );
                 }
                 PreviewJobKind::Viewer => {
                     if result.generation != self.preview_generation {
@@ -1214,9 +1259,9 @@ impl AppState {
             image_pending: None,
             image_generation: 0,
             thread_preview: std::cell::RefCell::new(None),
-            special_preview: None,
+            special_preview: PreviewCache::new(8),
             special_pending: None,
-            text_preview_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+            text_preview_cache: std::cell::RefCell::new(PreviewCache::new(16)),
             watcher: None,
             watch_rx: None,
             live_recorded: std::collections::HashMap::new(),

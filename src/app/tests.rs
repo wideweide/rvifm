@@ -183,11 +183,11 @@ fn m604_archive_preview_lines_load_in_worker() {
     state.ensure_special_preview(&zip, false);
     assert!(state.special_pending.is_some());
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while state.special_preview.is_none() && std::time::Instant::now() < deadline {
+    while state.special_preview.peek(&zip).is_none() && std::time::Instant::now() < deadline {
         state.drain_preview_results();
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    let (path, lines) = state.special_preview.as_ref().expect("后台列目录应完成");
+    let (path, lines) = state.special_preview.peek(&zip).expect("后台列目录应完成");
     assert_eq!(path, &zip);
     assert!(!lines.is_empty());
 }
@@ -16244,4 +16244,40 @@ fn m956_undolist_reports_stack() {
     });
     let out = crate::app::exec::exec_command_impl(&mut state, "undolist").unwrap();
     assert!(format!("{out:?}").contains("Create"), "{out:?}");
+}
+
+#[test]
+fn m961_preview_shows_optimistic_placeholder() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("a.txt");
+    fs::write(&path, "content").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().view_mode = true;
+    state.active_tab_mut().viewer = None;
+    state.active_tab_mut().viewer_pending = Some((path.clone(), std::time::Instant::now()));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(90, 12)).unwrap();
+    terminal
+        .draw(|f| crate::app::preview::render_view_content(f, &state, f.area()))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..12u16 {
+        for x in 0..90u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("预览生成中"), "{compact}");
+}
+
+#[test]
+fn m962_preview_cache_evicts_least_recently_used() {
+    let mut cache = crate::state::PreviewCache::new(2);
+    cache.insert(1u32, "a".to_owned());
+    cache.insert(2, "b".to_owned());
+    assert_eq!(cache.get_cloned(&1).as_deref(), Some("a"));
+    cache.insert(3, "c".to_owned());
+    assert!(cache.peek(&1).is_some(), "刚访问的 key 保留");
+    assert!(cache.peek(&2).is_none(), "最久未用被淘汰");
+    assert_eq!(cache.get_cloned(&3).as_deref(), Some("c"));
 }

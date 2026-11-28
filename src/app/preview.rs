@@ -229,13 +229,34 @@ pub(crate) fn render_view_path(
         title_area,
     );
     let inner = area;
+    // M96-1：乐观占位——后台 viewer 载荷未就绪时立即给出可读反馈，
+    // 不让用户盯着旧内容或空白等待。
+    if state
+        .active_tab()
+        .viewer_pending
+        .as_ref()
+        .is_some_and(|(p, _)| p == &path)
+        && tab.viewer.as_ref().and_then(|v| v.path.as_ref()) != Some(&path)
+    {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!(
+                    "预览生成中… {}",
+                    path.display().to_string().replace('\\', "/")
+                )),
+                Line::from("（后台加载；移动光标或按 Esc 可取消等待）"),
+            ]),
+            inner,
+        );
+        return;
+    }
     // M21-F7：PDF/Office 分流——走共享 PreviewRenderer（pdf-inspector
     // 文本提取先行 / office_oxide 提取），失败按类型提示；不落文本读取
     // 通用路径（杜绝"无法读取（非 UTF-8 或已删除）"误报）。
     match crate::preview::preview_kind(&path) {
         crate::preview::PreviewKind::Office => {
             let inner = area;
-            if let Some((_, lines)) = state.special_preview.as_ref().filter(|(p, _)| p == &path) {
+            if let Some((_, lines)) = state.special_preview.peek(&path) {
                 let rendered = lines
                     .iter()
                     .take(inner.height.max(1) as usize)
@@ -254,7 +275,7 @@ pub(crate) fn render_view_path(
             let inner = area;
             // M46-8：按 (路径, mtime, size) 缓存成员列表，同一归档预览不再
             // 每帧重复打开/全量解压（firefox tarball 等 xz/bz2 秒出提示）。
-            if let Some((_, lines)) = state.special_preview.as_ref().filter(|(p, _)| p == &path) {
+            if let Some((_, lines)) = state.special_preview.peek(&path) {
                 let rendered = lines
                     .iter()
                     .take(inner.height.max(1) as usize)
@@ -339,9 +360,9 @@ pub(crate) fn render_view_path(
     } else {
         let cached: Option<std::sync::Arc<Vec<String>>> = state
             .text_preview_cache
-            .try_borrow()
+            .try_borrow_mut()
             .ok()
-            .and_then(|cache| cache.get(&key).cloned());
+            .and_then(|mut cache| cache.get_cloned(&key));
         let parsed = if let Some(hit) = cached {
             hit
         } else {
@@ -359,9 +380,6 @@ pub(crate) fn render_view_path(
                     .collect(),
             );
             if let Ok(mut cache) = state.text_preview_cache.try_borrow_mut() {
-                if cache.len() >= 16 {
-                    cache.clear();
-                }
                 cache.insert(key.clone(), parsed.clone());
             }
             parsed
