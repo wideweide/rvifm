@@ -1041,25 +1041,25 @@
 
 ## M91 — 传输补完（2026-11-28 蒸馏，见 SPEC M91 节）
 
-- [ ] M91-1 TransferTask 状态机（见 SPEC M91）
+- [x] M91-1 TransferTask 状态机（见 SPEC M91；2026-11-28 完成：六态 + 进度/重试字段 + m911）
 - [x] M91-2 上传流式化（File + 1MB 块，删除整文件 read）（见 SPEC M91；2026-11-28 完成：m912 2.5MB mock 后端验证）
 - [x] M91-3 下载流式化（read_range 循环写 .part）（见 SPEC M91；2026-11-28 完成：m913 + m322 现场保留）
 - [x] M91-4 队列双向 + 暂停/恢复/重试 + 进度（见 SPEC M91；2026-11-28 完成：m914 + p/r/x 键 + Download 消费）
 - [x] M91-5 max_in_memory_bytes 护栏与失败降级（见 SPEC M91；2026-11-28 完成：m915 + 超限降级为流式下载队列）
-- [ ] M91-6 1GB 断网三次续传 + 内存 < 64MB 验收（见 SPEC M91）
+- [deferred] M91-6 1GB 断网三次续传 + 内存 < 64MB 验收（deferred：真实环境；m916 模拟三次重连通过）
 
 ## M92 — 目录性能（2026-11-28 蒸馏，见 SPEC M92 节）
 
 - [x] M92-1 ListLoader 工作线程 + 代数号 + 首屏先出（见 SPEC M92；2026-11-28 完成：m921 + jobs.rs 异步刷新；测试态保持同步）
 - [x] M92-2 元数据分阶段与可见区优先（见 SPEC M92；2026-11-28 完成：lazy_attrs + fill_visible_attrs + m922）
 - [x] M92-3 外部变更 refresh 去抖（见 SPEC M92；2026-11-28 完成：m923 + 150ms 窗口）
-- [ ] M92-4 bench 复跑写回新基线（见 SPEC M92）
+- [x] M92-4 bench 复跑写回新基线（见 SPEC M92；2026-11-28 完成：100k 6.83s→450.97ms）
 - [x] M92-5 bench 进 nightly CI，阈值 ±10%（见 SPEC M92；2026-11-28 完成：.github/workflows/bench.yml，450.97ms±10%）
 
 ## M93 — 运维深度（2026-11-28 蒸馏，见 SPEC M93 节）
 
 - [x] M93-1 :du 作业化 + 结果虚拟视图（见 SPEC M93；2026-11-28 完成：后台扫描 + DuView + m931）
-- [ ] M93-2 :dup 三段式哈希 + inode + 视图（见 SPEC M93）
+- [x] M93-2 :dup 三段式哈希 + inode + 视图（见 SPEC M93；2026-11-28 完成：m932 + DupView）
 - [x] M93-3 :checksum sha256 + sidecar 校验 + 流式（见 SPEC M93；2026-11-28 完成：m933）
 - [x] M93-4 :sync 三策略 + 计划视图 + 删除二次确认（见 SPEC M93；2026-11-28 完成：missing/newer/mirror + --confirm + m934）
 - [x] M93-5 :extract job 化 + 目录撤销（见 SPEC M93；2026-11-28 完成：后台作业 + 撤销操作回传 + m935）
@@ -1075,12 +1075,12 @@
 
 ## M95 — 体验治理与新能力（2026-11-28 蒸馏，见 SPEC M95 节）
 
-- [ ] M95-1 行为冻结政策 + 兼容别名 + CHANGELOG 行为变更小节（见 SPEC M95）
-- [ ] M95-2 design-tokens 文档（见 SPEC M95）
+- [x] M95-1 行为冻结政策 + 兼容别名 + CHANGELOG 行为变更小节（见 SPEC M95；2026-11-28 完成）
+- [x] M95-2 design-tokens 文档（见 SPEC M95；2026-11-28 完成：docs/design-tokens.md）
 - [x] M95-3 向导命令覆盖率 ≥90%（见 SPEC M95；2026-11-28 完成：55/59=93%，14 模块 114 项 + m953/m641）
 - [x] M95-4 :log/:blame/:stash/:branch（见 SPEC M95；2026-11-28 完成：m954 + git CLI 复用）
 - [x] M95-5 :split/:join 与 :du --tree（见 SPEC M95；2026-11-28 完成：流式分块 + 回合测试 + 树形缩进）
-- [ ] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95）
+- [x] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95；2026-11-28 完成：m956 + doctor + hook）
 
 ## M96 — Arke 异步原则复核：预览性能余项（2026-11-28，见 SPEC M96 节）
 
