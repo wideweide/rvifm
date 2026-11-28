@@ -16350,3 +16350,28 @@ fn m983_hook_events_are_configurable() {
     assert_eq!(crate::hooks::HookEvent::EnterDir.name(), "enter_dir");
     assert!(crate::hooks::HookEvent::DeletePre.is_pre());
 }
+
+#[test]
+fn m991_narrow_screen_shows_focused_right_pane() {
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(right.path().join("right.txt"), "R").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().focus = crate::tab::Focus::Right;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..60u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("[右]"), "{compact}");
+    assert!(compact.contains("right.txt"), "{compact}");
+}

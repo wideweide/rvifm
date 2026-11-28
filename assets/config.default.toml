@@ -35,6 +35,11 @@ pane_separator = false
 # help_in_new_window = true
 
 # ── 预览 ────────────────────────────────────────────────────────────────
+# M99：窄屏（<80 列）自动单栏；0 禁用；列表密度 filename|detail
+narrow_threshold = 80
+narrow_list_mode = "filename"
+# M99：无 Nerd Font 时设为 false，图标降级为纯文本标记
+icons = true
 [preview]
 # PDF 图像预览页数：0=关闭 / 1=首页（默认）/ 2=前两页
 pdf_image_pages = 1

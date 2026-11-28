@@ -239,6 +239,15 @@ pub struct UiConfig {
     /// M98-2：外部 statusline 生成器（shell 命令，stdout 为状态栏文本）。
     #[serde(default)]
     pub statusline_cmd: Option<String>,
+    /// M99：窄屏阈值（列数），低于此宽度强制单栏；0 = 禁用自动回退。
+    #[serde(default)]
+    pub narrow_threshold: u16,
+    /// M99：窄屏列表密度（filename | detail）。
+    #[serde(default)]
+    pub narrow_list_mode: String,
+    /// M99：关闭 devicons glyph，改用纯文本标记（无 Nerd Font 时）。
+    #[serde(default = "default_true")]
+    pub icons: bool,
     /// M92-2：懒加载属性——目录首屏只取名称/类型，size/mtime 按可见行补齐。
     #[serde(default)]
     pub lazy_attrs: bool,
@@ -296,6 +305,9 @@ impl Default for UiConfig {
             layout: None,
             help_in_new_window: true,
             statusline_cmd: None,
+            narrow_threshold: 80,
+            narrow_list_mode: "filename".to_owned(),
+            icons: true,
             lazy_attrs: true,
         }
     }
@@ -1245,4 +1257,8 @@ fn merge_toml(base: &mut toml::Value, pack: toml::Value) {
             base_table.insert(key.clone(), value.clone());
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }

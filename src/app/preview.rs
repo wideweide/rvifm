@@ -535,10 +535,18 @@ pub(crate) fn render_right_pane(
     // M27-2：vifm 模式（pane_borders=false）——顶部路径行（TopLine/
     // TopLineSel 背景色区分焦点），无整框边框。
     let borders = state.config.ui.pane_borders;
+    // M99-1：窄屏单栏时明确标注焦点侧别。
+    let narrow = state.config.ui.narrow_threshold > 0
+        && frame.area().width < state.config.ui.narrow_threshold;
+    let right_path = format!(
+        "{}{}",
+        if narrow { "[右] " } else { "" },
+        tab.right.location.display_path().replace('\\', "/")
+    );
     let inner = if borders {
         let pane = ratatui::widgets::Block::bordered()
             .title(crate::app::render::path_line_text_fit(
-                tab.right.location.display_path().replace('\\', "/"),
+                right_path.clone(),
                 tab.right.filter.as_deref(),
                 area.width,
             ))
@@ -556,7 +564,7 @@ pub(crate) fn render_right_pane(
         };
         frame.render_widget(
             Paragraph::new(Line::from(crate::app::render::path_line_text_fit(
-                tab.right.location.display_path().replace('\\', "/"),
+                right_path.clone(),
                 tab.right.filter.as_deref(),
                 area.width,
             )))

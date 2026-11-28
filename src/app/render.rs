@@ -1752,7 +1752,14 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     let tab = state.active_tab();
     // M14-2：标签栏（1 行）——M39-6：命名标签 + 溢出滚动（共享 spans）。
-    let layout = state.config.ui.layout();
+    // M99-1：窄屏宽度断点覆盖静态 layout（旋转即时生效，无设备特判）。
+    let narrow = state.config.ui.narrow_threshold > 0
+        && frame.area().width < state.config.ui.narrow_threshold;
+    let layout = if narrow {
+        crate::config::LayoutMode::Single
+    } else {
+        state.config.ui.layout()
+    };
     let viewing = tab.view_mode;
     let [tab_bar_area, left_area, right_area, status_area] =
         pane_layout(frame.area(), layout, viewing);
@@ -1813,13 +1820,20 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         crate::app::preview::render_view_content(frame, state, bottom);
     }
     // M39-6：Single——查看器占全宽（列表隐藏）；Dual——对侧预览。
-    if single_viewer || view_in_left {
+    if narrow && tab.focus == crate::tab::Focus::Right && !viewing {
+        // M99-1：单栏下直接渲染焦点右栏（左栏区域复用为唯一视图）。
+        crate::app::preview::render_right_pane(frame, state, mode, left_area);
+    } else if single_viewer || view_in_left {
         crate::app::preview::render_view_content(frame, state, left_area);
     } else {
         let left_inner = if borders {
             let left_pane = ratatui::widgets::Block::bordered()
                 .title(path_line_text_fit(
-                    tab.location.display_path().replace('\\', "/"),
+                    format!(
+                        "{}{}",
+                        if narrow { "[左] " } else { "" },
+                        tab.location.display_path().replace('\\', "/")
+                    ),
                     tab.filter.as_deref(),
                     left_area.width,
                 ))
@@ -1837,7 +1851,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
             };
             frame.render_widget(
                 Paragraph::new(Line::from(path_line_text_fit(
-                    tab.location.display_path().replace('\\', "/"),
+                    format!(
+                        "{}{}",
+                        if narrow { "[左] " } else { "" },
+                        tab.location.display_path().replace('\\', "/")
+                    ),
                     tab.filter.as_deref(),
                     left_area.width,
                 )))
