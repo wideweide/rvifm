@@ -16006,3 +16006,17 @@ fn m922_fill_visible_attrs_completes_lazy_metadata() {
     assert_eq!(item.size, 7, "可见行补齐 size");
     assert!(!item.perm.is_empty(), "可见行补齐 perm");
 }
+
+#[test]
+fn m923_fs_refresh_debounce_window() {
+    let now = std::time::Instant::now();
+    assert!(crate::app::fs_refresh_due(None, now));
+    assert!(!crate::app::fs_refresh_due(
+        Some(now),
+        now + std::time::Duration::from_millis(100)
+    ));
+    assert!(crate::app::fs_refresh_due(
+        Some(now),
+        now + std::time::Duration::from_millis(200)
+    ));
+}

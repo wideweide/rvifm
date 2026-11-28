@@ -334,6 +334,11 @@ pub(crate) enum InputMode {
     },
 }
 
+/// M92-3：外部变更刷新去抖判定（150ms 窗口）。纯函数便于测试。
+pub(crate) fn fs_refresh_due(last: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    last.is_none_or(|t| now.duration_since(t) >= std::time::Duration::from_millis(150))
+}
+
 /// 是否需要保留用户输入法以输入自然语言。其它模式（包括 Normal、确认框和菜单）
 /// 使用英文快捷键；JumpSelect 进入其 Vim 操作态后也属于 Normal 操作。
 /// M48-9：Normal 模式周期切英文的到期判定（纯函数便于测试）。
@@ -876,6 +881,8 @@ fn run_with_initial_mode(
     // （不吞后续按键）。`seq_len` 变化检测用于区分"同一段待决"与"新键"。
     let seq_timeout_ms = state.config.keymap.seq_timeout_ms;
     let mut seq_deadline: Option<std::time::Instant> = None;
+    // M92-3：外部变更刷新去抖（150ms 窗口内多次事件合并为一次）。
+    let mut last_fs_refresh: Option<std::time::Instant> = None;
     let mut last_seq_len = 0usize;
     // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
     let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
@@ -1051,12 +1058,16 @@ fn run_with_initial_mode(
             }
         }
         if fs_dirty {
-            // AUDIT-8：自动刷新失败不再静默（可读提示进状态栏）。
-            if let Some(e) = refresh_on_fs_change(&mut state) {
-                msg = Some(e);
+            let now = std::time::Instant::now();
+            if fs_refresh_due(last_fs_refresh, now) {
+                last_fs_refresh = Some(now);
+                // AUDIT-8：自动刷新失败不再静默（可读提示进状态栏）。
+                if let Some(e) = refresh_on_fs_change(&mut state) {
+                    msg = Some(e);
+                }
+                // M25-5/M79-1：外部变更 → git 状态缓存整体失效。
+                crate::git::clear_git_cache(&mut state);
             }
-            // M25-5/M79-1：外部变更 → git 状态缓存整体失效（触发器按可见目录重查）。
-            crate::git::clear_git_cache(&mut state);
         }
         // M25-5：收割 git 状态查询结果（回填缓存）+ 按需触发新查询。
         while let Ok((dir, res)) = git_rx.try_recv() {
