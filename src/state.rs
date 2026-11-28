@@ -312,6 +312,8 @@ pub struct TransferQueueEntry {
     pub transferred: u64,
     pub retries: u32,
     pub error: Option<String>,
+    /// M103-1：已投递 worker，等待结果；避免同条目重复派发。
+    pub in_flight: bool,
 }
 
 /// M32-1/M36：no-op 控制标志（同步粘贴路径的取消/暂停句柄——恒 false）。
@@ -433,6 +435,9 @@ pub struct AppState {
     pub dir_load_tx: std::sync::mpsc::Sender<DirLoadResult>,
     pub dir_load_rx: std::sync::mpsc::Receiver<DirLoadResult>,
     pub dir_generation: u64,
+    /// M103-1：传输 worker 完成通道（UI 只消费事件，不阻塞等待）。
+    pub transfer_tx: std::sync::mpsc::Sender<TransferDone>,
+    pub transfer_rx: std::sync::mpsc::Receiver<TransferDone>,
     /// M61：当前大文件的只读 mmap 视口读取器（路径变化时重建）。
     pub viewport_text: Option<crate::viewport::ViewportText>,
     /// M69：`:diff` 只读 diff overlay 会话（仅内存，退出即丢弃）。
@@ -757,6 +762,15 @@ pub struct DirLoadResult {
     pub right: bool,
     pub path: PathBuf,
     pub entries: std::io::Result<Vec<crate::tab::FileItem>>,
+}
+
+/// M103-1：传输 worker 完成事件（只含标识与结果，UI 据此更新队列）。
+pub struct TransferDone {
+    pub src: PathBuf,
+    pub dest: PathBuf,
+    pub remote: String,
+    pub direction: crate::app::TransferDirection,
+    pub result: Result<(), (u64, String)>,
 }
 
 /// M85：单张图片的线程化协议状态。每图独立请求/响应通道：切换图片时旧
@@ -1253,6 +1267,7 @@ impl AppState {
             eprintln!("appstate tutor_progress: {:?}", t0.elapsed());
         }
         let preview_channel = std::sync::mpsc::channel();
+        let transfer_channel = std::sync::mpsc::channel::<TransferDone>();
         let (dir_tx, dir_rx) = std::sync::mpsc::channel();
         let (du_tx, du_rx) = std::sync::mpsc::channel();
         let (md_tx, md_rx) = std::sync::mpsc::channel();
@@ -1281,6 +1296,8 @@ impl AppState {
             dir_load_tx: dir_tx,
             dir_load_rx: dir_rx,
             dir_generation: 0,
+            transfer_tx: transfer_channel.0,
+            transfer_rx: transfer_channel.1,
             du_tx,
             du_rx,
             du_result: None,

@@ -74,3 +74,43 @@ expected = "打开/关闭查看器（与 `w` 同语义）；`j/k` 滚动、`/` �
 id = "cmd_gitui"
 prompt = "在 git 仓库内输入 `:gitui`（了解即可）。"
 expected = "按 gitui→ziggity→lazygit 优先级探测外部 git TUI 并挂起 rvifm；均未安装时给出可读错误，不改变仓库状态。"
+
+[[items]]
+id = "cmd_export_ext"
+prompt = "在样例目录输入 `:export`（了解即可）。"
+expected = "导出当前清单为文本；不改动源文件，先在小目录理解输出格式。"
+
+[[items]]
+id = "cmd_prune_ext"
+prompt = "在样例目录输入 `:prune`（了解即可）。"
+expected = "按规则裁剪冗余项，执行前显示计划；真实数据上谨慎确认。"
+
+[[items]]
+id = "cmd_purge_ext"
+prompt = "输入 `:purge --before=7`（了解即可）。"
+expected = "按时间清理暂存/缓存，属于不可恢复操作，须先看清范围。"
+
+[[items]]
+id = "cmd_stats_ext"
+prompt = "输入 `:stats`。"
+expected = "显示当前目录条目/大小统计，只读。"
+
+[[items]]
+id = "cmd_colorscheme_ext"
+prompt = "输入 `:colorscheme` 查看主题分组，再输入 `:colorscheme snowwhite`。"
+expected = "无参分组列出内置/捆绑/用户主题；带参立即切换；`--save` 写回配置。"
+
+[[items]]
+id = "cmd_split_ext"
+prompt = "在样例大文件上输入 `:split`（了解即可）。"
+expected = "按大小分块生成计划并预览；确认后才写入，可用 `u` 撤销。"
+
+[[items]]
+id = "cmd_join_ext"
+prompt = "对 `:split` 产生的分块输入 `:join`（了解即可）。"
+expected = "按分块顺序合并回原文件；计划确认后执行，可用 `u` 撤销。"
+
+[[items]]
+id = "cmd_undolist_ext"
+prompt = "输入 `:undolist` 查看撤销栈。"
+expected = "列出全局撤销操作（含所属 tab/路径），`u` 仍按栈顶撤销；跨 tab 可定位。"

@@ -518,11 +518,11 @@ mod tests {
     /// 内嵌内容必须全部可解析且 id 唯一（内嵌内容为编译期事实，测试固化）。
     #[test]
     fn builtin_modules_count_is_current() {
-        // M46-12/M95：14 模块 114 项（M95 补命令覆盖 +9）。
+        // M46-12/M95/M104：14 模块 127 项（M104 补 13 项命令覆盖）。
         let modules = builtin_modules();
         assert_eq!(modules.len(), 14, "模块数应为 14");
         let total: usize = modules.iter().map(|m| m.items.len()).sum();
-        assert_eq!(total, 114, "导师条目总数应为 114");
+        assert_eq!(total, 127, "导师条目总数应为 127");
     }
 
     #[test]

@@ -196,6 +196,19 @@ impl std::fmt::Debug for SftpBackend {
 }
 
 impl SftpBackend {
+    /// M103-1：共享同一 actor 线程的轻量句柄（克隆 mpsc 发送端），供传输
+    /// worker 线程使用——不新建 SSH 连接，也不把 `AppState` 整体搬进线程。
+    #[must_use]
+    pub fn clone_handle(&self) -> Self {
+        Self {
+            cmd_tx: self.cmd_tx.clone(),
+            params: self.params.clone(),
+            password: self.password.clone(),
+        }
+    }
+}
+
+impl SftpBackend {
     /// 连接远端并启动 actor 线程（阻塞调用线程至连接完成/超时）。
     pub fn connect(params: &SftpParams) -> Result<Self, RemoteError> {
         let (cmd_tx, cmd_rx) = std_mpsc::channel::<SftpCmd>();

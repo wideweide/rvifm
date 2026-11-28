@@ -15830,6 +15830,7 @@ fn m914_queue_overlay_shows_states_and_bidirectional_entries() {
             transferred: 128,
             retries: 1,
             error: None,
+            in_flight: false,
         });
     }
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).unwrap();
@@ -16592,4 +16593,20 @@ fn m1021_sort_mtime_refills_lazy_attrs_on_focused_pane() {
         .collect();
     let want: Vec<(&str, u64)> = expected.iter().map(|(n, t)| (n.as_str(), *t)).collect();
     assert_eq!(got, want, "右 pane 按 mtime 排序须基于补齐后的真实时间");
+}
+
+#[test]
+fn m1032_queue_part_offset_reads_resume_meta() {
+    let dest = std::path::PathBuf::from("/tmp/rvifm-m1032-target.bin");
+    let part = crate::app::exec::resume_part_path("xfer", &dest);
+    let meta = format!(
+        "{}\n",
+        "offset = 4096\ntotal = 8192\nsrc_mtime = 1700000000\nhead_hash = \"abc\""
+    );
+    fs::write(format!("{}.meta", part.display()), meta).unwrap();
+    assert_eq!(
+        crate::app::exec::queue_part_offset("xfer", &dest, true),
+        4096
+    );
+    fs::remove_file(format!("{}.meta", part.display())).ok();
 }

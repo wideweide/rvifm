@@ -3,9 +3,9 @@
 > 本文件是中断恢复的锚点：只回答“现在跑到哪、下一步是什么”。需求定义见 [SPEC.md](SPEC.md)，任务清单见 [TASKS.md](TASKS.md)，决策理由见 [NOTES.md](NOTES.md)，评估结论见 [REVIEW.md](REVIEW.md)。详细历史以 git log 为准，本文件不重复流水账。
 
 - **更新时间**：2026-11-27
-- **当前阶段**：**M0–M104（M0–M100 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；M101–M104 已登记，M101 执行中）；v1.5.0 GitHub Release 已发布**（2026-11-27；tag CI run 45996577565 全绿；三 musl 归档 + SHA256SUMS 3 行；人工项 deferred）。
-- **当前任务**：M101–M104 已蒸馏登记（待用户确认后执行）。沿用「crates.io 不发布、不 bump 版本、不做 GitHub Release」口径。
-- **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（728 单测 + 14 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
+- **当前阶段**：**M0–M104（M0–M104 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭）；v1.5.0 GitHub Release 已发布**（2026-11-27；tag CI run 45996577565 全绿；三 musl 归档 + SHA256SUMS 3 行；人工项 deferred）。
+- **当前任务**：M101–M104 已完成（14/14）。沿用「crates.io 不发布、不 bump 版本、不做 GitHub Release」口径。（2026-11-28）
+- **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（729 单测 + 14 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 
 ## 进行中 / 暂停 / 延期

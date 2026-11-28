@@ -58,3 +58,8 @@ expected = "帮助页不透明、j/k 滚动、`/` 输入搜索（n/N 跳转）�
 id = "ime_normal_mode"
 prompt = "Linux 中文输入法开启时，按 `:` 进入命令行，再按 Esc 返回 Normal。"
 expected = "Normal 自动切到英文；切回窗口或在 Normal 再按 Esc 也会防御性切英文（不覆盖已保存状态）；重新进入文本输入模式恢复之前的输入法状态。未安装 IBus/Fcitx 时不影响快捷键。"
+
+[[items]]
+id = "cmd_doctor"
+prompt = "在终端执行 `rvifm doctor`。"
+expected = "输出版本、配置路径、主题与远端依赖诊断快照；只读，不修改任何文件。"

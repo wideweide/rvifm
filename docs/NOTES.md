@@ -1824,3 +1824,11 @@ rvifm record  → 静默记录访问
 - **WHY**：本轮最大落差是「代码层约 85%、交付层约 50%、可发现层约 60%」——不是功能不足，而是 CI 红、门禁未插电、排序回归与新命令暗功能。先修可信度与正确性，发布口径维持不变。
 - **P2/可选项投递**：sftp 覆盖率、fuzz 24h、`app/tests.rs` 拆分已在 TASKS 保持 deferred；缩略图网格 / rar / FTP/WebDAV / 包分发 / 英文文档为评估稿「可选 M105+」，仅记入 REVIEW 摘要，不新增长期任务。
 - **执行口径**：本轮仅蒸馏登记，等待用户确认；未改代码、未跑门禁。
+
+### 2026-11-28 — M101–M104 执行记录
+
+- **M101-1**：supply-chain 失败根因是 `unicodeit 0.2.2`（MIT AND LPPL-1.3c）经 `pulldown-cmark-mdcat 2.20.2` 进入依赖图；在 `deny.toml` 用 `[[licenses.exceptions]]` 精确豁免该 crate，本地 `cargo deny check` 全绿（仅未命中通告的 warning）。
+- **M101-2/3**：harness 加 `harness` job（聚合 needs 结论注入 `RVIFM_MAIN_CI`），新增 R13（STATE 阶段上界 = TASKS 最大批次），制造漂移实测退出 1；文案改为「十三条」。
+- **M102**：`lazy_attrs` 下 size/mtime 排序前 `fill_all_attrs` 补齐全部条目；右栏入口同时投影 location。全量基线 `full_attrs_sort_100k` 本机中位 1.48s，与首屏 450.97ms 口径不同，不再混算加速比。
+- **M103（SIMPLIFIED）**：SFTP 后端用 `SftpBackend::clone_handle()`（克隆 mpsc 发送端共享 actor 线程）投递 worker，UI 只消费 `TransferDone` 并按 `.part.meta` 回传字节进度；非 SFTP（测试 mock 等）保留同步路径。暂停/取消通过丢弃 worker 结果保持 UI 状态一致，**不中断已在途 IO**（受 RemoteFs 无 Send 约束与会话所有权限制）；失败 3 次内重试 + 队尾轮转退避，1GB 真实实测保持 deferred。
+- **M104**：`:log/:blame/:stash/:branch/:split/:join/:undolist` 进入 `COMMAND_NAMES`（补全可见）+ help + GUIDE + 向导；`rvifm doctor` 补 help/GUIDE/向导。向导按「全部 `:` 命令」口径 66/66 = 100%（14 模块 127 项）；`V`/单键 `g` 的实际兼容别名仍未采纳，M95-1 的迁移说明已存在。

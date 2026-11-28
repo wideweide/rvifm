@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### M101–M104 可信度与可发现性收口（仅提交代码，发布口径见下方用户决策）
+
+- supply-chain 修复：unicodeit 0.2.2 的 LPPL-1.3c 精确豁免；harness 接入 CI 并注入 main CI 结论；STATE 阶段上界规则 R13；README/GUIDE 安装口径统一为 Release 归档。
+- lazy_attrs 下 size/mtime 排序前补齐全部元数据，新增全量 stat + 排序 bench 基线（1.48s）。
+- SFTP 传输队列后台化（共享 actor 句柄 + worker + 字节进度 + 3 次重试）。
+- 7 条新命令进入补全/help/GUIDE/向导，doctor 补文档；向导覆盖率按全命令口径 100%（14 模块 127 项）。
+
 ### M100 tutor 窄屏显示适配（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `:tutor` 在 <80 列下对话框全宽、列表省略描述、短提示；Session 面板单列并把计数并入底部提示行；宽屏布局不变。

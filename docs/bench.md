@@ -46,6 +46,14 @@ cargo bench --bench rvifm_bench -- copy_1gb # 单组
 | `natural_sort/sort_10k_natural` | 6.47 ms | 3.26 ms | ≈2× 慢（本机 Linux vs 旧 Windows，异平台不可直接对比） |
 | `natural_sort/sort_10k_lexical` | 451 µs | 588 µs | 略快 |
 | `frecency_replay/replay_100k_events` | 58.1 ms | 65.0 ms | 略快 |
+| `load_100k/full_attrs_sort_100k`（M102-2 新增） | **1.48 s** | 6.83 s（全量 stat，旧机/旧平台） | 全量元数据 + size 排序，与首屏基线**口径不同**，不可混算加速比 |
 
 > 平台不同（Windows Server 2016 → Linux），除 `load_100k` 的架构性差异外，
 > 其余数字只作同机后续回归对照，不与旧基线做跨平台结论。
+
+## M102-2 双基线说明
+
+- **首屏基线** `load_entries_100k`：`lazy_attrs=true`，只构造条目、跳过逐条 stat，代表打开大目录的首次响应。
+- **全量基线** `full_attrs_sort_100k`：`lazy_attrs=false`，逐条 stat 后按 size 排序，代表 `:sort size` / `:sort mtime` 在 lazy 模式下补齐元数据后的真实代价。
+- 两套基线并列记录；6.83 s → 450.97 ms 只描述首屏路径变化，**不代表全量元数据路径也加速 15×**。
+- 全量基线本机实测（Linux/rustc 1.95，sample_size=10）：`[1.4194 s 1.4798 s 1.5553 s]`，中位 **1.48 s**；该数字与旧 6.83 s 跨平台不可直接比较。

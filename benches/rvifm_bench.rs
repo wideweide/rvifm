@@ -173,6 +173,30 @@ fn bench_load_100k(c: &mut Criterion) {
     g.finish();
 }
 
+/// M102-2：全量 stat + 按大小排序基线（与首屏 `load_entries_100k` 并列）。
+/// `lazy_attrs=false` 还原旧全量元数据路径，再按 size 排序，用于验证
+/// 排序正确性的代价，不与首屏数字混用。
+fn bench_load_and_sort_100k(c: &mut Criterion) {
+    let big = big_dir();
+    let mut cfg = Config::default();
+    cfg.ui.lazy_attrs = false;
+    let specs = vec![tab::SortSpec {
+        field: tab::SortField::Size,
+        desc: false,
+    }];
+    let mut g = c.benchmark_group("load_100k");
+    g.sample_size(10);
+    g.bench_function("full_attrs_sort_100k", |b| {
+        b.iter(|| {
+            let mut tab =
+                tab::Tab::from_physical(black_box(&big.path), black_box(cfg.clone())).unwrap();
+            tab.apply_sort_multi(black_box(specs.clone()), black_box(cfg.clone()));
+            black_box(tab.entries.len());
+        })
+    });
+    g.finish();
+}
+
 fn bench_natural_sort(c: &mut Criterion) {
     // 1 万个混合数字文件名排序（自然 vs 字典序对照）。
     let names: Vec<String> = (0..10_000)
@@ -240,6 +264,7 @@ criterion_group!(
     benches,
     bench_dir_load,
     bench_load_100k,
+    bench_load_and_sort_100k,
     bench_natural_sort,
     bench_frecency_replay,
     bench_copy_1gb

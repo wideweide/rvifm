@@ -40,3 +40,23 @@ id = "git_diff_fullscreen"
 prompt = "在 git 仓库内输入 `:diff`，再按 `|`。"
 requires = "git"
 expected = "补丁按文件类型语法高亮；`|` 进全屏左右对照（连续分隔线 + 增删行/词级差异高亮），`=` 完整文件、`^w` 换行、`J/K` 跳 hunk。"
+
+[[items]]
+id = "git_log"
+prompt = "在 git 仓库内输入 `:log`。"
+expected = "显示提交历史只读列表；非 git 仓库给可读提示，不修改仓库。"
+
+[[items]]
+id = "git_blame"
+prompt = "光标停在受版本控制的文件上输入 `:blame`。"
+expected = "逐行显示提交归属（作者/提交号），只读；无 git 仓库给可读提示。"
+
+[[items]]
+id = "git_stash"
+prompt = "在 git 仓库内输入 `:stash`（了解即可）。"
+expected = "列出/应用 stash；写操作需确认，不自动改写工作区。"
+
+[[items]]
+id = "git_branch"
+prompt = "在 git 仓库内输入 `:branch`。"
+expected = "只读列出本地分支与当前分支标记，不执行切换。"

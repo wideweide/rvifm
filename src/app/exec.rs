@@ -1115,6 +1115,7 @@ pub(crate) fn remote_open_file(
                 transferred: 0,
                 retries: 0,
                 error: None,
+                in_flight: false,
             });
             return Ok(Some(format!("{e}（已加入流式下载队列，:queue 查看进度）")));
         }
@@ -2206,6 +2207,8 @@ pub(crate) fn command_infos() -> Vec<(String, String)> {
 pub(crate) const COMMAND_NAMES: &[&str] = &[
     "archive",
     "asc",
+    "blame",
+    "branch",
     "bmark",
     "bmarks",
     "bmgo",
@@ -2235,6 +2238,8 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "histnext",
     "histprev",
     "history",
+    "join",
+    "log",
     "jobs",
     "keyword",
     "link",
@@ -2250,6 +2255,8 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "remote",
     "rename",
     "sort",
+    "split",
+    "stash",
     "stats",
     "sync",
     "tabclose",
@@ -2262,6 +2269,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "trash",
     "tree",
     "tutor",
+    "undolist",
     "view",
 ];
 
@@ -5267,6 +5275,20 @@ struct XferPartMeta {
     head_hash: String,
 }
 
+/// M103-2：读取在途分块的字节进度（每 100ms 由 UI 线程轮询 .part.meta）。
+pub(crate) fn queue_part_offset(remote: &str, dest: &Path, upload: bool) -> u64 {
+    let part = if upload {
+        resume_part_path("xfer", dest)
+    } else {
+        resume_part_path(remote, dest)
+    };
+    std::fs::read_to_string(part_meta_path(&part))
+        .ok()
+        .and_then(|t| toml::from_str::<XferPartMeta>(&t).ok())
+        .map(|m| m.offset)
+        .unwrap_or(0)
+}
+
 fn part_meta_path(part: &Path) -> PathBuf {
     let mut s = part.to_string_lossy().into_owned();
     s.push_str(".meta");
@@ -5464,6 +5486,7 @@ pub(crate) fn paste_yanked_remote(
                 transferred: 0,
                 retries: 0,
                 error: None,
+                in_flight: false,
             });
         }
         *msg = Some(format!(

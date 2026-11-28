@@ -1193,71 +1193,96 @@ fn run_with_initial_mode(
             seq_deadline = None;
             last_seq_len = 0;
         }
-        // M36-7：传输队列消费（每次 poll 前——头条目上传同步执行）。
-        let mut return_or_skip = false;
+        // M36-7 + M103-1：传输队列消费——SFTP 走 worker 线程，UI 只消费完成事件。
         if !state.transfer_queue.is_empty()
             && state
                 .transfer_queue
                 .first()
-                .map(|e| e.direction == crate::app::jobs::TransferDirection::Upload)
+                .map(|e| {
+                    e.direction == crate::app::jobs::TransferDirection::Upload
+                        && e.state == crate::state::TransferState::Pending
+                        && !e.in_flight
+                })
                 .unwrap_or(false)
         {
             let mut entry = state.transfer_queue.remove(0);
             if entry.state == crate::state::TransferState::Paused
                 || entry.state == crate::state::TransferState::Cancelled
             {
-                // 暂停/取消项留在队列里并轮到队尾，不阻塞其它条目。
                 state.transfer_queue.push(entry.clone());
                 state.transfer_queue.rotate_left(1);
-                return_or_skip = true;
             } else {
                 entry.state = crate::state::TransferState::Running;
-            }
-            if !return_or_skip {
                 let remote_name = entry.remote.clone();
                 let tab_id = entry.tab_id;
                 let src = entry.src.clone();
                 let dest = entry.dest.clone();
-                // 后端借用限于此作用域，之后才能安全改 state/entry。
-                let uploaded = state
+                // SFTP 后端用共享 actor 句柄投递 worker；其它后端（测试 mock /
+                // 非 SFTP 实现）保持原同步路径，行为不变。
+                let handle = state
                     .remote_sessions
                     .get(&remote_name)
-                    .map(|backend| upload_chunked(backend.as_ref(), &src, &dest));
-                match uploaded {
-                    Some(Ok(())) => {
-                        entry.state = crate::state::TransferState::Done;
-                        state.undo_stack.push(crate::state::UndoableOp::Remote {
-                            tab_id,
-                            remote: remote_name,
-                            kind: crate::state::RemoteUndo::Create {
-                                path: dest,
-                                is_dir: false,
-                            },
+                    .and_then(|b| b.as_any())
+                    .and_then(|a| a.downcast_ref::<crate::remote::sftp::SftpBackend>())
+                    .map(crate::remote::sftp::SftpBackend::clone_handle);
+                if let Some(backend) = handle {
+                    entry.in_flight = true;
+                    state.transfer_queue.push(entry);
+                    let tx = state.transfer_tx.clone();
+                    let _ = std::thread::Builder::new()
+                        .name("rvifm-xfer".to_owned())
+                        .spawn(move || {
+                            let result = upload_chunked(&backend, &src, &dest);
+                            let _ = tx.send(crate::state::TransferDone {
+                                src,
+                                dest,
+                                remote: remote_name,
+                                direction: crate::app::jobs::TransferDirection::Upload,
+                                result,
+                            });
                         });
+                } else {
+                    let uploaded = state
+                        .remote_sessions
+                        .get(&remote_name)
+                        .map(|backend| upload_chunked(backend.as_ref(), &src, &dest));
+                    match uploaded {
+                        Some(Ok(())) => {
+                            entry.state = crate::state::TransferState::Done;
+                            state.undo_stack.push(crate::state::UndoableOp::Remote {
+                                tab_id,
+                                remote: remote_name,
+                                kind: crate::state::RemoteUndo::Create {
+                                    path: dest,
+                                    is_dir: false,
+                                },
+                            });
+                        }
+                        Some(Err((_, e))) => {
+                            entry.state = crate::state::TransferState::Failed;
+                            entry.error = Some(e.clone());
+                            msg = Some(format!("queue: {} 失败: {e}", entry.src.display()));
+                        }
+                        None => {
+                            entry.state = crate::state::TransferState::Failed;
+                            entry.error = Some("远端会话不存在".to_owned());
+                        }
                     }
-                    Some(Err((_, e))) => {
-                        entry.state = crate::state::TransferState::Failed;
-                        entry.error = Some(e.clone());
-                        msg = Some(format!("queue: {} 失败: {e}", entry.src.display()));
-                    }
-                    None => {
-                        entry.state = crate::state::TransferState::Failed;
-                        entry.error = Some("远端会话不存在".to_owned());
+                    refresh_tab_panes(&mut state, tab_id);
+                    if entry.state != crate::state::TransferState::Done {
+                        state.transfer_queue.push(entry);
                     }
                 }
-                refresh_tab_panes(&mut state, tab_id);
-            }
-            if entry.state != crate::state::TransferState::Done {
-                state.transfer_queue.push(entry);
             }
         }
-        // M91-4：队列消费——Download 条目走流式下载（与 Upload 对称）。
+        // M91-4/M103-1：下载队列——SFTP 同样后台化。
         if state
             .transfer_queue
             .first()
             .map(|e| {
                 e.direction == crate::app::jobs::TransferDirection::Download
                     && e.state == crate::state::TransferState::Pending
+                    && !e.in_flight
             })
             .unwrap_or(false)
         {
@@ -1267,33 +1292,123 @@ fn run_with_initial_mode(
             let tab_id = entry.tab_id;
             let src = entry.src.clone();
             let dest = entry.dest.clone();
-            let downloaded = state
+            let handle = state
                 .remote_sessions
                 .get(&remote_name)
-                .map(|backend| crate::app::exec::download_chunked(backend.as_ref(), &src, &dest));
-            match downloaded {
-                Some(Ok(())) => {
-                    entry.state = crate::state::TransferState::Done;
-                    state.undo_stack.push(crate::state::UndoableOp::Create {
-                        tab_id,
-                        path: dest,
-                        recursive: false,
-                    });
-                }
-                Some(Err((offset, e))) => {
-                    entry.state = crate::state::TransferState::Failed;
-                    entry.transferred = offset;
-                    entry.error = Some(e);
-                }
-                None => {
-                    entry.state = crate::state::TransferState::Failed;
-                    entry.error = Some("远端会话不存在".to_owned());
-                }
-            }
-            refresh_tab_panes(&mut state, tab_id);
-            if entry.state != crate::state::TransferState::Done {
+                .and_then(|b| b.as_any())
+                .and_then(|a| a.downcast_ref::<crate::remote::sftp::SftpBackend>())
+                .map(crate::remote::sftp::SftpBackend::clone_handle);
+            if let Some(backend) = handle {
+                entry.in_flight = true;
                 state.transfer_queue.push(entry);
+                let tx = state.transfer_tx.clone();
+                let _ = std::thread::Builder::new()
+                    .name("rvifm-xfer".to_owned())
+                    .spawn(move || {
+                        let result = crate::app::exec::download_chunked(&backend, &src, &dest);
+                        let _ = tx.send(crate::state::TransferDone {
+                            src,
+                            dest,
+                            remote: remote_name,
+                            direction: crate::app::jobs::TransferDirection::Download,
+                            result,
+                        });
+                    });
+            } else {
+                let downloaded = state.remote_sessions.get(&remote_name).map(|backend| {
+                    crate::app::exec::download_chunked(backend.as_ref(), &src, &dest)
+                });
+                match downloaded {
+                    Some(Ok(())) => {
+                        entry.state = crate::state::TransferState::Done;
+                        state.undo_stack.push(crate::state::UndoableOp::Create {
+                            tab_id,
+                            path: dest,
+                            recursive: false,
+                        });
+                    }
+                    Some(Err((offset, e))) => {
+                        entry.state = crate::state::TransferState::Failed;
+                        entry.transferred = offset;
+                        entry.error = Some(e);
+                    }
+                    None => {
+                        entry.state = crate::state::TransferState::Failed;
+                        entry.error = Some("远端会话不存在".to_owned());
+                    }
+                }
+                refresh_tab_panes(&mut state, tab_id);
+                if entry.state != crate::state::TransferState::Done {
+                    state.transfer_queue.push(entry);
+                }
             }
+        }
+        // M103-1/2：收割 worker 结果并按 .part.meta 更新字节进度（UI 不阻塞）。
+        let mut xfer_undos: Vec<(usize, crate::state::UndoableOp)> = Vec::new();
+        let mut retry_idxs: Vec<usize> = Vec::new();
+        while let Ok(done) = state.transfer_rx.try_recv() {
+            let found = state.transfer_queue.iter().position(|e| {
+                e.in_flight && e.src == done.src && e.dest == done.dest && e.remote == done.remote
+            });
+            let Some(idx) = found else { continue };
+            let cancelled = matches!(
+                state.transfer_queue[idx].state,
+                crate::state::TransferState::Cancelled | crate::state::TransferState::Paused
+            );
+            let entry = &mut state.transfer_queue[idx];
+            entry.in_flight = false;
+            if cancelled {
+                continue; // 暂停/取消后丢弃 worker 结果，UI 状态保持用户选择。
+            }
+            match done.result {
+                Ok(()) => {
+                    entry.state = crate::state::TransferState::Done;
+                    entry.error = None;
+                    let op = if done.direction == crate::app::jobs::TransferDirection::Upload {
+                        crate::state::UndoableOp::Remote {
+                            tab_id: entry.tab_id,
+                            remote: done.remote,
+                            kind: crate::state::RemoteUndo::Create {
+                                path: done.dest,
+                                is_dir: false,
+                            },
+                        }
+                    } else {
+                        crate::state::UndoableOp::Create {
+                            tab_id: entry.tab_id,
+                            path: done.dest,
+                            recursive: false,
+                        }
+                    };
+                    xfer_undos.push((entry.tab_id, op));
+                }
+                Err((offset, err)) => {
+                    entry.transferred = offset;
+                    entry.error = Some(err.clone());
+                    if entry.retries < 3 {
+                        // M103-2：失败重试（计数 + 队尾轮转退避），三次后固定 Failed。
+                        entry.retries += 1;
+                        entry.state = crate::state::TransferState::Pending;
+                        retry_idxs.push(idx);
+                    } else {
+                        entry.state = crate::state::TransferState::Failed;
+                        msg = Some(format!("queue: {} 失败: {err}", entry.src.display()));
+                    }
+                }
+            }
+        }
+        for idx in retry_idxs.into_iter().rev() {
+            let entry = state.transfer_queue.remove(idx);
+            state.transfer_queue.push(entry);
+        }
+        for (tab_id, op) in xfer_undos {
+            state.undo_stack.push(op);
+            refresh_tab_panes(&mut state, tab_id);
+        }
+        for entry in state.transfer_queue.iter_mut().filter(|e| e.in_flight) {
+            let upload = entry.direction == crate::app::jobs::TransferDirection::Upload;
+            entry.transferred =
+                crate::app::exec::queue_part_offset(&entry.remote, &entry.dest, upload);
         }
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞；
         // 有待决序列时预算收缩到超时余量（AUDIT-6）。
