@@ -16416,3 +16416,23 @@ fn m993_tiny_terminal_shows_hint() {
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(compact.contains("终端过小"), "{compact}");
 }
+
+#[test]
+fn m994_icons_false_uses_plain_text_markers() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.txt"), "A").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.config.ui.icons = false;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..80u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    assert!(text.contains("[F]"), "纯文本图标标记: {text}");
+}

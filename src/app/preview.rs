@@ -208,7 +208,14 @@ pub(crate) fn render_view_path(
                 leaf
             };
             let spans = vec![
-                Span::from(format!("{indent}{} ", item.icon.glyph)),
+                Span::from(format!(
+                    "{indent}{}",
+                    crate::app::render::icon_prefix(
+                        item.icon.glyph,
+                        item.is_dir,
+                        state.config.ui.icons
+                    )
+                )),
                 Span::styled(label, filetype_style(item.filetype_class())),
             ];
             lines.push(Line::from(spans));
@@ -656,7 +663,11 @@ pub(crate) fn render_right_pane(
             };
             let mut spans = vec![
                 Span::from(crate::app::render::LIST_LEADING_BLANK),
-                Span::from(format!("{} ", item.icon.glyph)),
+                Span::from(crate::app::render::icon_prefix(
+                    item.icon.glyph,
+                    item.is_dir,
+                    state.config.ui.icons,
+                )),
             ];
             match active_query
                 .as_deref()

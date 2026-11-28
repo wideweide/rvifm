@@ -467,6 +467,17 @@ pub(crate) fn clip_name(name: &str, budget: usize) -> String {
     out
 }
 
+/// M99-4：图标降级——关闭 glyph 时用纯文本标记，终端缺 Nerd Font 不显示豆腐块。
+pub(crate) fn icon_prefix(icon: char, is_dir: bool, enabled: bool) -> String {
+    if enabled {
+        format!("{icon} ")
+    } else if is_dir {
+        "[D] ".to_owned()
+    } else {
+        "[F] ".to_owned()
+    }
+}
+
 /// M21-F1：类型着色——主题命名样式（`ft_dir` 等）优先，缺失时回落 16 色
 /// 近似（yazi filetype + vifm 配色语义：目录青/可执行绿/链接紫/归档红/
 /// 图片亮蓝/视频黄/代码蓝；Other 不着色）。
@@ -1251,7 +1262,7 @@ pub(crate) fn render_live_find(frame: &mut Frame, state: &AppState, msg: Option<
             let icon = crate::icons::icon_for_active(&item.path);
             let mut spans = vec![
                 Span::from(LIST_LEADING_BLANK),
-                Span::from(format!("{} ", icon.glyph)),
+                Span::from(icon_prefix(icon.glyph, false, state.config.ui.icons)),
             ];
             spans.extend(highlight_query_spans(
                 &item.path.to_string_lossy().replace('\\', "/"),
@@ -1340,7 +1351,7 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
             };
             let mut spans = vec![
                 Span::from(LIST_LEADING_BLANK),
-                Span::from(format!("{} ", icon.glyph)),
+                Span::from(icon_prefix(icon.glyph, false, state.config.ui.icons)),
             ];
             spans.extend(highlight_query_spans(&e.path, &pane.query));
             spans.extend(highlight_query_spans(&bm, &pane.query));
@@ -1972,7 +1983,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 // 图标/树缩进进前缀 span，目录后缀 `/` 跟在名称之后。
                 let mut spans: Vec<Span> = vec![
                     Span::from(LIST_LEADING_BLANK),
-                    Span::from(format!("{} ", item.icon.glyph)),
+                    Span::from(icon_prefix(
+                        item.icon.glyph,
+                        item.is_dir,
+                        state.config.ui.icons,
+                    )),
                 ];
                 let mut budget = name_budget;
                 if tab.tree.is_some() {
