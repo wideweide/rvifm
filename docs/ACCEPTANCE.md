@@ -1430,7 +1430,7 @@
 - [ ] M90-1 main CI 三平台绿且 run 链接写入 TASKS。
 - [ ] M90-2 harness_check 原有五条规则均可用漂移证伪。
 - [ ] M90-3 R10/R11/R12 新增并在 CI 为 required。
-- [ ] M90-4 README/GUIDE 显式标注 cargo 安装版本滞后（用户拍板不发布 crates.io）。
+- [x] M90-4 README/GUIDE 显式标注 cargo 安装版本滞后（用户拍板不发布 crates.io）。（2026-11-28）
 - [ ] M90-5 批次记录采用「本机绿 / CI 绿 / tag 绿」三态措辞。
 
 ## 96. M91 — 传输补完（见 SPEC M91 节）

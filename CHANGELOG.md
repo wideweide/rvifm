@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+> 安装口径：crates.io 停在 1.0.0（用户决策不发布），README/GUIDE 已显式标注版本滞后；
+> 最新功能请下载 GitHub Release 归档。本版本不 bump、不打 tag、不新建 Release。
+
 ### M86 test.md 实测反馈批次（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 预览：扩展文本类型覆盖 + lossy 解码去乱码；`:view` 标题改「路径 · 预览」，去掉无意义行数/截断提示。
