@@ -1813,3 +1813,14 @@ rvifm record  → 静默记录访问
 
 - 用户确认 M99 主界面适配后，tutor 仍需最小渲染层补丁匹配窄屏；不改 tutor 数据/进度/键位，不新增配置项，复用 `narrow_threshold`。
 - 编号 M100（M99 已关闭）；仅登记并执行，不 bump / tag / Release。
+
+### 2026-11-28 — `~/rc.md` 复核报告蒸馏（M101–M104）
+
+- **来源与归档**：用户提供 `/home/dlt/rc.md`（基线 2727040 / M100-2），原文归档 `docs/reviews/REVIEW-2026-11-28-rc.md`（同名 `REVIEW-2026-11-28.md` 已占用，加 `-rc` 后缀）。只登记结论与 WHY，不复制聊天全文。
+- **编号**：报告建议 M101–M104，TASKS 无同号冲突，沿用原号。
+- **已核验证据（2026-11-28）**：HEAD 2727040 工作树干净；run 46131729042 `conclusion=failure`，三平台 test + fuzz success、supply-chain failure；`.github/` 无 `harness_check`/`RVIFM_MAIN_CI`；脚本尾部仍写「九条」但已含 R10–R12；`STATE.md` 阶段仍 M0–M85；`tab.rs:2276` lazy 置 0、`apply_sort_multi` 直接排序；8 条新命令 help/GUIDE/tutor grep 均为 0；README:152 与 :5 安装口径矛盾。
+- **CUT（发布）**：报告 P0「尽快发 1.6.0 / 明确滚动源码分发」与用户既有决策冲突——用户明确「不 bump、不 tag、不做 Release、crates.io 停 1.0.0」。M101 OUT_OF_SCOPE 固定此口径；改变须用户显式指令。
+- **CUT（重复立项）**：报告 M104-3「行为变更政策落地 + 兼容别名」与 M95-1 已交付的 `CHANGELOG.md`「行为变更（M95 起登记）」小节及迁移提示重合，不重复登记；实际 alias（`V`/单键 `g`）另行拍板。
+- **WHY**：本轮最大落差是「代码层约 85%、交付层约 50%、可发现层约 60%」——不是功能不足，而是 CI 红、门禁未插电、排序回归与新命令暗功能。先修可信度与正确性，发布口径维持不变。
+- **P2/可选项投递**：sftp 覆盖率、fuzz 24h、`app/tests.rs` 拆分已在 TASKS 保持 deferred；缩略图网格 / rar / FTP/WebDAV / 包分发 / 英文文档为评估稿「可选 M105+」，仅记入 REVIEW 摘要，不新增长期任务。
+- **执行口径**：本轮仅蒸馏登记，等待用户确认；未改代码、未跑门禁。

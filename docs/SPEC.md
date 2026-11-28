@@ -2349,6 +2349,50 @@ append_rules = [
 - 窄屏 tutor 列表状态区预留从 5 行降到 3 行；宽屏保持不变。
 - 文档/验收/门禁（仅提交代码，不 bump / tag / Release）。
 
+## M101 — CI 与文档可信度收口（2026-11-28 蒸馏，原报告 M101；P0）
+
+**评估结论（来源：用户提供的复核报告，归档 `docs/reviews/REVIEW-2026-11-28-rc.md`）**
+- 三平台 test job 全绿（run 46131729042），但同一 run 的 supply-chain `cargo deny check` exit 4，整条 main run 仍 failure；时间上与 M97 Markdown 依赖树引入重合。
+- `scripts/harness_check.py` 正则/R6 已修、R10/R11/R12 已实现，但 `.github/` 无调用、无 `RVIFM_MAIN_CI` 注入，R12 休眠；尾部仍打印「九条规则全部通过」，实际已达 12 条。
+- `STATE.md` 当前阶段仍写 M0–M85（代码已到 M100），R1 只匹配「执行中」字样，抓不到阶段上界过期。
+- README 顶部已标 crates 滞后，但安装段仍写 `cargo install rvifm` 可直接安装发布版本，与顶部提示矛盾；GUIDE 同类矛盾。
+
+**MUST**
+- 定位并修复 `cargo deny check` 命中项（新 Markdown 依赖树优先排查），必要时在 `deny.toml` 加带理由的豁免；main run 全绿（三平台 test + fuzz + supply-chain）。
+- 把 `harness_check.py` 接入 CI required job，注入 `RVIFM_MAIN_CI`；修正脚本尾部规则数文案为实际条数。
+- 新增 harness 静态规则：STATE「当前阶段」批次上界须等于 TASKS 最大批次号；据此把 STATE 阶段上界更新到 M100。
+- README 安装段与顶部提示统一为「GitHub Release 归档安装」口径（当前 Release v1.5.0）；GUIDE 同步。CI 注入 failure 时 README/STATE 不得写「全绿」（R12 可证伪）。
+
+**OUT_OF_SCOPE**
+- **不发布 1.6.0 / 1.5.1、不 bump 版本、不 tag、不新建 GitHub Release，crates.io 仍停 1.0.0**：这是用户已明确口径，报告 P0「尽快发版」建议不采纳；如需改变须用户显式指令（见 NOTES）。
+
+## M102 — lazy_attrs 排序正确性（2026-11-28 蒸馏，原报告 M102；P1）
+
+**评估结论**：100k 首屏 450.97ms（旧 6.83s）达成，但新 bench 测的是「首屏跳过全量 stat」，口径与旧值不同；`tab.rs:2276` 在 `lazy_attrs` 下把 size/mtime/perm 置 0，`apply_sort_multi` 直接对现有 `entries` 排序，大目录 `:sort size` / `:sort mtime` 结果错误（退化为按名称），比慢更伤信任。
+
+**MUST**
+- 按 `Size` / `Mtime` 排序且 `lazy_attrs` 开启时，先补齐全部条目元数据（异步、带进度、可取消）再排序；或在无法补齐时禁用 lazy 并给出明确提示。补 1000 个随机大小文件的严格有序回归测试。
+- 增加「全量 stat + 排序」bench 基线，与首屏基线并列；在 README/CHANGELOG/`docs/bench.md` 说明「首屏 vs 全量」两套口径，不得混用 6.83s→450ms 的倍数表述。
+
+## M103 — 队列后台化（2026-11-28 蒸馏，原报告 M103；P1）
+
+**评估结论**：`TransferState` 六态与流式内存护栏已落地，但队列消费仍在 UI 线程的 `event::poll` 循环内同步执行；1GB 文件在该 tick 阻塞 UI，进度只能按条目更新。流式内存目标达成，后台执行目标未达成。
+
+**MUST**
+- 传输消费移到 worker 线程，按字节回传进度（建议 100ms 节流），UI 只消费事件；运行中暂停/取消真正生效，失败重试计数与退避。
+- 1GB + 断网三次 + 内存峰值 <64MB 的真实实测按 AGENTS「需人工验证延期」规则处理，可自动部分须有断言。
+
+## M104 — 命令可发现性收口（2026-11-28 蒸馏，原报告 M104；P1）
+
+**评估结论**：14 模块 / 114 项向导质量高，但按「全部 `:` 命令」口径覆盖率仅 49/63 = 78%，TASKS 的 55/59 = 93% 分母更窄；8 条新命令（`:log`/`:blame`/`:stash`/`:branch`/`:split`/`:join`/`:undolist`/`rvifm doctor`）在 help/GUIDE/tutor 三处全缺，命令补全也无描述，处于「暗功能」状态。
+
+**MUST**
+- 补齐上述命令的 help.txt、GUIDE、补全描述与向导条目；向导按「全部 `:` 命令」口径覆盖率 ≥90%，更新严格计数测试。
+- 文档/验收/门禁（仅提交代码，不 bump / tag / Release）。
+
+**OUT_OF_SCOPE**
+- 报告 M104-3「行为变更政策落地」与 M95-1 已完成的 `CHANGELOG.md`「行为变更（M95 起登记）」小节及迁移提示重合，不重复立项；若需为 `V`/单键 `g` 增加实际兼容别名，须另行拍板（见 NOTES）。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

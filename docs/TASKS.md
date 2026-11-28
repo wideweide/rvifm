@@ -1114,3 +1114,29 @@
 
 - [x] M100-1 tutor 窄屏显示适配（对话框/列表/提示/Session 面板/状态区）（见 SPEC M100；2026-11-28 完成：tutor_dialog_rect_for + 单列面板 + 3 测试）
 - [x] M100-2 文档/验收/门禁（见 SPEC M100；2026-11-28 完成：GUIDE/help/CHANGELOG + 全门禁）
+
+## M101 — CI 与文档可信度收口（2026-11-28，见 SPEC M101 节）
+
+- [ ] M101-1 修 cargo deny check / supply-chain job 全绿（见 SPEC M101）
+- [ ] M101-2 harness_check 接入 CI required job + 注入 RVIFM_MAIN_CI + 规则数文案（见 SPEC M101）
+- [ ] M101-3 harness 阶段上界规则 + STATE 阶段更新到 M100（见 SPEC M101）
+- [ ] M101-4 README 安装段与顶部提示统一 + GUIDE 同步（见 SPEC M101）
+- [ ] M101-5 文档/验收/门禁（见 SPEC M101）
+
+## M102 — lazy_attrs 排序正确性（2026-11-28，见 SPEC M102 节）
+
+- [ ] M102-1 size/mtime 排序前补齐元数据 + 严格有序回归测试（见 SPEC M102）
+- [ ] M102-2 全量 stat + 排序 bench 基线 + 口径说明（见 SPEC M102）
+- [ ] M102-3 文档/验收/门禁（见 SPEC M102）
+
+## M103 — 队列后台化（2026-11-28，见 SPEC M103 节）
+
+- [ ] M103-1 传输 worker 线程 + 字节进度回传 + UI 只消费事件（见 SPEC M103）
+- [ ] M103-2 运行中暂停/取消 + 失败重试退避 + 1GB 实测分诊（见 SPEC M103）
+- [ ] M103-3 文档/验收/门禁（见 SPEC M103）
+
+## M104 — 命令可发现性收口（2026-11-28，见 SPEC M104 节）
+
+- [ ] M104-1 8 条新命令补 help/GUIDE/补全描述（见 SPEC M104）
+- [ ] M104-2 tutor 补新模块 + 全命令口径覆盖率 ≥90%（见 SPEC M104）
+- [ ] M104-3 文档/验收/门禁（见 SPEC M104）
