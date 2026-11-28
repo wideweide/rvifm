@@ -1327,6 +1327,9 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
         pane_layout(frame.area(), crate::config::LayoutMode::Dual, false);
     let (frec_area, preview_area) =
         preview_layout_areas(frame.area(), tab.focus, state.config.preview.fixed_side);
+    // M105-1：先清焦点侧整块区域，原列表条目的焦点高亮背景不得从
+    // 搜索/预览层缝隙透出；对侧不清除，保持原目录面板可见（仅供查看）。
+    frame.render_widget(ratatui::widgets::Clear, frec_area);
     // 标签栏照常渲染（M39-6 共享 spans：命名标签 + 溢出滚动）。
     let tab_spans = tab_bar_spans(state, tab_bar_area.width, false);
     frame.render_widget(Paragraph::new(Line::from(tab_spans)), tab_bar_area);
@@ -1407,6 +1410,8 @@ pub(crate) fn render_frecency_panes(frame: &mut Frame, state: &AppState) {
     if (state.config.preview.frecency_preview || pane.preview_focus)
         && let Some(entry) = visible.get(pane.cursor)
     {
+        // M105-1：预览区完整覆盖对侧（含原 pane 高亮），不留透明缝隙。
+        frame.render_widget(ratatui::widgets::Clear, preview_area);
         let path = std::path::PathBuf::from(&entry.path);
         let viewer = pane.preview_focus.then(|| crate::tab::ViewerState {
             scroll: pane.preview_scroll,

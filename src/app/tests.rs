@@ -16612,3 +16612,60 @@ fn m1032_queue_part_offset_reads_resume_meta() {
     );
     fs::remove_file(format!("{}.meta", part.display())).ok();
 }
+
+#[test]
+fn m1051_frecency_overlay_keeps_opposite_pane_without_preview() {
+    use crate::frecency::{Grade, ScoredEntry};
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(right.path().join("opposite.txt"), "R").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    state.active_tab_mut().pane_frecency = Some(crate::tab::FrecencyPane {
+        entries: vec![ScoredEntry {
+            path: left
+                .path()
+                .join("frec-only.txt")
+                .to_string_lossy()
+                .into_owned(),
+            topic: "file".to_owned(),
+            keyword: String::new(),
+            score: 12.5,
+            grade: Grade::None,
+            last_visit: 0,
+        }],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let text: String = (0..24u16)
+        .flat_map(|y| {
+            (0..80u16)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        text.contains("frec-only.txt"),
+        "焦点侧显示 frecency 结果: {text}"
+    );
+    assert!(text.contains("opposite.txt"), "对侧原面板未被遮罩: {text}");
+}
