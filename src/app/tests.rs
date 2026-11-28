@@ -2279,7 +2279,7 @@ fn m321_remote_with_reconnect_guards() {
 #[test]
 fn m304_cmdmark_command_arm() {
     // 写全局 frecency DB（set_keyword_topic_now）——STORE 锁串行。
-    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let _guard = STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // M30-4：:cmdmark——默认标最近会话命令；显式命令文本；`-` 清除；
     // 非法书签名/空历史可读错误。
     let tmp = TempDir::new().unwrap();
@@ -5715,7 +5715,7 @@ fn fix7_3_mk_and_mkdir_apply_to_focused_right_pane() {
 
 #[test]
 fn fix7_2_frecency_o_dispatches_from_both_panes() {
-    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let _guard = STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = TempDir::new().unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     state.active_tab_mut().right =
@@ -8684,7 +8684,7 @@ static STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn exec_j_and_big_j_open_jump_selectors() {
     // M8-12：:j → 仅目录；:J → 仅文件。open_store_readonly 读全局
     // config 路径（测试机 DB 可能为空/缺失——entries 数量不参与断言）。
-    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let _guard = STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut state = make_state(1).1;
     let r = exec_command_impl(&mut state, "j");
     match r {
@@ -9686,7 +9686,9 @@ fn feat3_file_command_shows_info() {
 fn m34_1_vifm_style_prefers_theme_derivation_over_16color_fallback() {
     // M34-1：激活主题后 vifm 组走 token 推导（gruvbox 色板）；无主题回退
     // M27-2 的 16 色。持 TEST_LOCK 与颜色敏感测试串行。
-    let _guard = crate::theme::TEST_LOCK.lock().unwrap();
+    let _guard = crate::theme::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     crate::theme::set_builtin("gruvbox-dark").unwrap();
     let s = crate::app::render::vifm_style("TopLine");
     assert_eq!(s.fg, Some(ratatui::style::Color::Rgb(254, 128, 25)));
@@ -9706,7 +9708,9 @@ fn audit13_theme_command_switches_lists_and_errors() {
     // 未知主题可读错误（不 panic）。列表/图标渲染经 theme::style /
     // active_variant 即时跟随（filetype_style 已接线，见 M21-F1）。
     // 持 theme::TEST_LOCK 与颜色敏感渲染测试串行，结束复位全局主题。
-    let _guard = crate::theme::TEST_LOCK.lock().unwrap();
+    let _guard = crate::theme::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
@@ -10603,7 +10607,7 @@ fn nav4_merge_session_visits_orders_recent() {
 #[test]
 fn nav4_recent_exec_opens_selector() {
     // :recent → OpenJump{Recent}（空 store 容忍，形态断言同 :j/:J）。
-    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let _guard = STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut state = make_state(1).1;
     match exec_command_impl(&mut state, "recent") {
         Ok(ExecOutcome::OpenJump { kind, .. }) => assert_eq!(kind, JumpKind::Recent),
@@ -13372,7 +13376,9 @@ fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
     // AUDIT-13：本测试断言 Rgb 前景 == 语法着色——与主题激活类测试
     // 持 theme::TEST_LOCK 串行（激活主题后图标/列表样式为 Rgb，
     // 会污染此断言）。
-    let _guard = crate::theme::TEST_LOCK.lock().unwrap();
+    let _guard = crate::theme::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     // ACCEPTANCE §20 M21-E3：.rs/.py/.json 预览有高亮；.txt shebang 推断
     // 或安全降级；大文件截断提示。
     let tmp = TempDir::new().unwrap();
@@ -13455,8 +13461,10 @@ fn m21e3_syntax_highlight_shebang_infer_and_truncation_hint() {
     // M86-1：标题清爽化为「路径 · 预览」，不再塞入行号/「已截断」。
     let buf = draw_with(&mut state, "big.txt");
     let text = pane_text(&buf).replace(' ', "");
-    assert!(text.contains("big.txt·预览"), "清爽标题可见: {text}");
+    // 极长临时路径（macOS/Windows）会把标题栏裁到只剩路径前缀；
+    // 因此只断言「无行号/截断提示」+ 正文可见，不依赖标题后缀。
     assert!(!text.contains("已截断"), "不再显示截断提示: {text}");
+    assert!(text.contains("line0"), "查看器正文可见: {text}");
 }
 
 #[test]
@@ -14371,7 +14379,7 @@ fn m252_bmark_tag_validation() {
 #[test]
 fn m252_bmgo_missing_tag_errors() {
     // M25-2：:bmgo 未知 tag → 可读错误不静默（读全局 store，串行锁）。
-    let _guard = STORE_TEST_LOCK.lock().unwrap();
+    let _guard = STORE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.txt"), "A").unwrap();
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());

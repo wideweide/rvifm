@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn set_builtin_known_theme_enables_styles() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_builtin("ayu-dark").unwrap();
         // 激活后样式解析不再返回默认（以常见命名样式验证存在即可）。
         // 具体样式名由主题 TOML 决定——用 palette 常见的 "background" 探测。
@@ -335,7 +335,7 @@ mod tests {
         // AUDIT-13：activate 内置优先；用户目录命中次之；均未命中 → 可读
         // Err（不 panic、不改变当前主题）。激活测试持 TEST_LOCK（与颜色
         // 敏感渲染测试串行）并在结束复位，避免全局样式污染。
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let name = builtin_names().first().expect("内置主题非空").clone();
         activate(&name).unwrap();
 
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn derive_vifm_groups_under_gruvbox_dark() {
         // M34-1：gruvbox-dark 下 vifm 组经标准 token 推导（视觉等价 vifm gruvbox）。
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_builtin("gruvbox-dark").unwrap();
         let tl = derive_vifm_group("TopLine").unwrap();
         assert_eq!(
@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn derive_vifm_group_none_without_theme_or_tokens() {
         // M34-1：无主题 / 主题缺标准 token / 未知组名 → None（整组 16 色回退）。
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         reset_active();
         assert!(derive_vifm_group("TopLine").is_none());
         let tmp = TempDir::new().unwrap();
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn dracula_builtin_activates_and_derives() {
         // M34-1 验证项：`[ui] theme = "dracula"` 生效（activate 链 + 通用推导）。
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         activate("dracula").unwrap();
         assert!(matches!(
             active_variant(),
@@ -433,7 +433,7 @@ mod tests {
     fn bundled_snowwhite_activates_exact_vifm_values() {
         // M34-2：snowwhite 捆绑主题——浅色 variant + vifm 高亮组精确值
         //（TopLine fg16/bg255 黑字浅灰底；selected fg208 橙）。
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         activate("snowwhite").unwrap();
         assert!(matches!(
             active_variant(),
@@ -460,7 +460,7 @@ mod tests {
     fn bundled_names_listed_and_unknown_still_errors() {
         // M34-2：`:theme` 列表含捆绑主题；未知名可读错误；内置层不受影响。
         assert!(builtin_names().iter().any(|n| n == "snowwhite"));
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert!(set_bundled("no-such-theme-xyz").is_err());
         set_builtin("gruvbox-dark").unwrap();
         reset_active();
