@@ -16020,3 +16020,30 @@ fn m923_fs_refresh_debounce_window() {
         now + std::time::Duration::from_millis(200)
     ));
 }
+
+#[test]
+fn m931_du_view_renders_scan_result() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.bin"), vec![7u8; 2048]).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.du_result = Some(crate::state::DuResult {
+        base: tmp.path().to_path_buf(),
+        entries: vec![("a.bin".to_owned(), 2048)],
+        total: 2048,
+        scanned: 1,
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::DuView { cursor: 0 }, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..10u16 {
+        for x in 0..100u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("磁盘占用"), "{compact}");
+    assert!(compact.contains("a.bin"), "{compact}");
+}

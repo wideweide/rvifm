@@ -197,6 +197,8 @@ pub(crate) enum InputMode {
     LiveFind,
     /// M69：git diff 只读 overlay（数据存于 AppState.git_diff）。
     GitDiff,
+    /// M93-1：`:du` 后台扫描结果视图。
+    DuView { cursor: usize },
     /// M69：diff 补丁内搜索输入。
     GitDiffSearch { input: String },
     /// M70：git 写操作确认。
@@ -1076,6 +1078,11 @@ fn run_with_initial_mode(
             state.git_cache_at.insert(dir, std::time::Instant::now());
         }
         crate::git::sync_status_trigger(&mut state);
+        // M93-1：收割 `:du` 后台扫描结果并打开视图。
+        if let Ok(result) = state.du_rx.try_recv() {
+            state.du_result = Some(result);
+            mode = InputMode::DuView { cursor: 0 };
+        }
         // M92-1：收割后台目录加载结果（代次 + 路径双校验）。
         let dir_cfg = state.config.clone();
         state.drain_dir_loads(&dir_cfg);
@@ -1293,6 +1300,34 @@ fn run_with_initial_mode(
                 }
             }
             match &mut mode {
+                InputMode::DuView { cursor } => {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => mode = InputMode::Normal,
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let len = state
+                                    .du_result
+                                    .as_ref()
+                                    .map(|r| r.entries.len())
+                                    .unwrap_or(0);
+                                if len > 0 {
+                                    *cursor = (*cursor + 1).min(len - 1);
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => *cursor = cursor.saturating_sub(1),
+                            KeyCode::Char('d') => {
+                                if let Some(result) = &state.du_result
+                                    && let Some((name, _)) = result.entries.get(*cursor)
+                                {
+                                    let _ = name;
+                                    msg = Some("DuView: 选中项删除需在目录列表中执行".to_owned());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    continue;
+                }
                 InputMode::Command {
                     input,
                     hist_pos,

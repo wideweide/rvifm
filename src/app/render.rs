@@ -2169,6 +2169,35 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         );
         return;
     }
+    if let InputMode::DuView { cursor } = mode {
+        let lines: Vec<Line> = if let Some(result) = &state.du_result {
+            let mut out = vec![Line::from(format!(
+                "总计 {}（扫描 {} 项）",
+                crate::tab::format_size(result.total),
+                result.scanned
+            ))];
+            for (i, (name, size)) in result.entries.iter().enumerate() {
+                out.push(Line::styled(
+                    format!("{:<60} {}", name, crate::tab::format_size(*size)),
+                    if i == *cursor {
+                        Style::new().add_modifier(Modifier::REVERSED)
+                    } else {
+                        Style::new()
+                    },
+                ));
+            }
+            out
+        } else {
+            vec![Line::from("扫描中…")]
+        };
+        frame.render_widget(
+            Paragraph::new(lines).block(
+                ratatui::widgets::Block::bordered().title("磁盘占用（j/k 选择 dd 删除 Esc 关闭）"),
+            ),
+            frame.area(),
+        );
+        return;
+    }
     if let InputMode::Queue { cursor } = mode {
         // M36-7：传输队列覆盖层（j/k 选择、x 取消条目、Esc 关闭）。
         let mut lines: Vec<Line> = Vec::new();
@@ -2769,7 +2798,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
     }
     let status = match mode {
         InputMode::LiveFind => Line::from(String::new()), // 覆盖层提前 return，不可达（M55-2）
-        InputMode::GitDiff
+        InputMode::DuView { .. }
+        | InputMode::GitDiff
         | InputMode::GitDiffSearch { .. }
         | InputMode::GitDiffConfirm { .. }
         | InputMode::GitCommitInput { .. } => {

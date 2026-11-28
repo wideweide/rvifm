@@ -418,6 +418,10 @@ pub struct AppState {
     pub preview_tx: std::sync::mpsc::Sender<crate::state::PreviewJobResult>,
     pub preview_rx: std::sync::mpsc::Receiver<crate::state::PreviewJobResult>,
     pub preview_generation: u64,
+    /// M93-1：`:du` 后台扫描通道与结果。
+    pub du_tx: std::sync::mpsc::Sender<DuResult>,
+    pub du_rx: std::sync::mpsc::Receiver<DuResult>,
+    pub du_result: Option<DuResult>,
     /// M92-1：目录异步加载通道与代次（UI 线程不阻塞 read_dir/stat）。
     pub dir_load_tx: std::sync::mpsc::Sender<DirLoadResult>,
     pub dir_load_rx: std::sync::mpsc::Receiver<DirLoadResult>,
@@ -622,6 +626,14 @@ pub struct PreviewJobResult {
     pub kind: PreviewJobKind,
     pub payload: crate::preview::ViewerPayload,
     pub image: Option<image::DynamicImage>,
+}
+
+/// M93-1：磁盘占用后台扫描结果。
+pub struct DuResult {
+    pub base: PathBuf,
+    pub entries: Vec<(String, u64)>,
+    pub total: u64,
+    pub scanned: usize,
 }
 
 /// M92-1：异步目录加载结果（generation 丢弃过期结果）。
@@ -1105,6 +1117,7 @@ impl AppState {
         }
         let preview_channel = std::sync::mpsc::channel();
         let (dir_tx, dir_rx) = std::sync::mpsc::channel();
+        let (du_tx, du_rx) = std::sync::mpsc::channel();
         Self {
             tabs: vec![initial],
             active: 0,
@@ -1129,6 +1142,9 @@ impl AppState {
             dir_load_tx: dir_tx,
             dir_load_rx: dir_rx,
             dir_generation: 0,
+            du_tx,
+            du_rx,
+            du_result: None,
             viewport_text: None,
             git_diff: None,
             git_undo: None,

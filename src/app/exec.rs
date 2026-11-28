@@ -2949,55 +2949,50 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Ok(ExecOutcome::Done { msg: Some(msg) })
         }
         Some("du") => {
-            // M37-4：磁盘占用——当前目录递归聚合（并行省略——顺序遍历
-            // 万条上限内可接受；SIMPLIFIED）；结果消息 top-5 + 总计。
+            // M93-1：后台扫描，UI 线程不阻塞；结果由 run 循环落到 DuView。
             let base = physical_base(state)?;
-            let mut entries: Vec<(String, u64)> = Vec::new();
-            let mut total: u64 = 0;
-            let mut stack = vec![base.clone()];
-            let mut count = 0usize;
-            while let Some(dir) = stack.pop() {
-                if count >= 10_000 {
-                    break;
-                }
-                let Ok(rd) = std::fs::read_dir(&dir) else {
-                    continue;
-                };
-                for e in rd.flatten() {
-                    count += 1;
-                    let meta = match e.metadata() {
-                        Ok(m) => m,
-                        Err(_) => continue,
+            let tx = state.du_tx.clone();
+            std::thread::spawn(move || {
+                let mut entries: Vec<(String, u64)> = Vec::new();
+                let mut total = 0u64;
+                let mut stack = vec![base.clone()];
+                let mut scanned = 0usize;
+                while let Some(dir) = stack.pop() {
+                    if scanned >= 10_000 {
+                        break;
+                    }
+                    let Ok(rd) = std::fs::read_dir(&dir) else {
+                        continue;
                     };
-                    if meta.is_dir() {
-                        stack.push(e.path());
-                    } else {
-                        total += meta.len();
-                        if !e.path().eq(&base) {
-                            entries.push((
-                                e.path()
-                                    .strip_prefix(&base)
-                                    .map(|p| p.to_string_lossy().into_owned())
-                                    .unwrap_or_default(),
-                                meta.len(),
-                            ));
+                    for e in rd.flatten() {
+                        scanned += 1;
+                        let Ok(meta) = e.metadata() else { continue };
+                        if meta.is_dir() {
+                            stack.push(e.path());
+                        } else {
+                            total += meta.len();
+                            if e.path() != base {
+                                entries.push((
+                                    e.path()
+                                        .strip_prefix(&base)
+                                        .map(|p| p.to_string_lossy().into_owned())
+                                        .unwrap_or_default(),
+                                    meta.len(),
+                                ));
+                            }
                         }
                     }
                 }
-            }
-            entries.sort_by_key(|e| std::cmp::Reverse(e.1));
-            let top: Vec<String> = entries
-                .iter()
-                .take(5)
-                .map(|(n, s)| format!("  {n}: {}", crate::tab::format_size(*s)))
-                .collect();
+                entries.sort_by_key(|e| std::cmp::Reverse(e.1));
+                let _ = tx.send(crate::state::DuResult {
+                    base,
+                    entries,
+                    total,
+                    scanned,
+                });
+            });
             Ok(ExecOutcome::Done {
-                msg: Some(format!(
-                    "du: 总计 {}（{} 项扫描）\n{}",
-                    crate::tab::format_size(total),
-                    count,
-                    top.join("\n")
-                )),
+                msg: Some("du: 后台扫描中…".to_owned()),
             })
         }
         Some("dup") => {
