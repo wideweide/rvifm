@@ -1885,3 +1885,4 @@ rvifm record  → 静默记录访问
 - **边界**：保持 git CLI 子进程（不引入 git2/gitoxide）、diff 只读与写操作确认流程不变。
 - **执行口径**：本轮仅蒸馏登记，等待用户确认；不 bump / tag / Release。
 - M106-2：`diff.query` 此前只被用于 n/N 跳转，渲染完全未消费——搜索「不可用」的根因。现用 `highlight_diff_line` 在已着色行上叠加黄底命中高亮（保留增删配色）；`render_width` 以 Cell 记录每帧补丁宽度，n/N 与提交跳转改用同一宽度，避免固定 100 列与实际换行行错位。
+- M106-3：全屏对照时文件列表区宽度为 0，但 focus 仍可能是 Files，导致 j/k 改不可见的文件光标，表现为「快捷键失效」；现在按 `patch_only` 把导航键路由到补丁。`row_count`/`hunk_starts` 用 Cell/RefCell 缓存最近一帧结果，消除按键触发的 `diff.rows()` 重算。

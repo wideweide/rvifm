@@ -827,6 +827,9 @@ pub struct GitDiffSession {
     /// M106-2：最近一帧补丁区宽度；n/N 据此计算命中行，避免用固定 100 列
     /// 与实际换行后的渲染行错位。
     pub render_width: std::cell::Cell<usize>,
+    /// M106-3：最近一帧的行数/hunk 起始行缓存，避免每次按键重算整份 diff。
+    pub row_count: std::cell::Cell<usize>,
+    pub hunk_starts: std::cell::RefCell<Vec<usize>>,
     pub generation: u64,
     pub tx: std::sync::mpsc::Sender<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
     pub rx: std::sync::mpsc::Receiver<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
@@ -856,6 +859,8 @@ impl GitDiffSession {
             hscroll: 0,
             query: None,
             render_width: std::cell::Cell::new(100),
+            row_count: std::cell::Cell::new(0),
+            hunk_starts: std::cell::RefCell::new(Vec::new()),
             generation: 0,
             tx,
             rx,
@@ -903,6 +908,19 @@ impl GitDiffSession {
 
     pub fn selected(&self) -> Option<&crate::gitdiff::DiffFileData> {
         self.selected_path().and_then(|p| self.data.get(p))
+    }
+
+    /// M106-3：Esc/q 分层退出——双栏对照态先退出对照，返回 true 才退出模块。
+    pub fn exit_step(&mut self) -> bool {
+        if self.side_by_side {
+            self.side_by_side = false;
+            self.fullscreen = false;
+            self.full = false;
+            self.focus = crate::state::DiffFocus::Patch;
+            false
+        } else {
+            true
+        }
     }
 
     /// 当前补丁面板的渲染行与 hunk 起始行（供滚动、搜索与 J/K 共用）。

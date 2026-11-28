@@ -16961,3 +16961,20 @@ fn m1062_diff_search_highlights_matches() {
     let unchanged = crate::app::render::highlight_diff_line(&line, None);
     assert_eq!(unchanged.spans.len(), 1, "无查询不得改变行");
 }
+
+#[test]
+fn m1063_side_by_side_exit_is_layered() {
+    let tmp = TempDir::new().unwrap();
+    let _ = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(tmp.path())
+        .status();
+    let mut diff = crate::state::GitDiffSession::open(tmp.path().to_path_buf()).unwrap();
+    diff.side_by_side = true;
+    diff.fullscreen = true;
+    diff.full = true;
+    diff.focus = crate::state::DiffFocus::Files;
+    assert!(!diff.exit_step(), "第一次只退出对照");
+    assert!(!diff.side_by_side && !diff.fullscreen && !diff.full);
+    assert!(diff.exit_step(), "第二次才退出 git 模块");
+}

@@ -1783,7 +1783,7 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
             .set(left_inner.width.saturating_add(right_inner.width) as usize);
         frame.render_widget(left_block, left_area);
         frame.render_widget(right_block, right_area);
-        let (rows, _) = match diff.selected() {
+        let (rows, starts) = match diff.selected() {
             Some(data) => crate::gitdiff::render_side_by_side_styled(
                 data,
                 diff.full,
@@ -1792,6 +1792,8 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        diff.row_count.set(rows.len());
+        *diff.hunk_starts.borrow_mut() = starts;
         let shown: Vec<(Line, Line)> = rows
             .into_iter()
             .skip(diff.patch_scroll)
@@ -1816,18 +1818,17 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
         let patch_inner = patch_block.inner(patch_area);
         diff.render_width.set(patch_inner.width as usize);
         frame.render_widget(patch_block, patch_area);
-        let rows = match diff.selected() {
-            Some(data) => {
-                crate::gitdiff::render_unified_styled(
-                    &data.hunks,
-                    &data.path,
-                    diff.wrap,
-                    patch_inner.width as usize,
-                )
-                .0
-            }
-            None => vec![Line::from("正在读取 diff…")],
+        let (rows, starts) = match diff.selected() {
+            Some(data) => crate::gitdiff::render_unified_styled(
+                &data.hunks,
+                &data.path,
+                diff.wrap,
+                patch_inner.width as usize,
+            ),
+            None => (vec![Line::from("正在读取 diff…")], Vec::new()),
         };
+        diff.row_count.set(rows.len());
+        *diff.hunk_starts.borrow_mut() = starts;
         let shown: Vec<Line> = rows
             .into_iter()
             .skip(diff.patch_scroll)

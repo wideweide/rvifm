@@ -435,10 +435,23 @@ pub fn render_side_by_side_styled(
                 .unwrap_or_default();
             let lrows = styled_chunks(&tl, &left, wrap, half, "");
             let rrows = styled_chunks(&tr, &right, wrap, half, "");
+            // M106-4：完整文件视图不能丢掉增删高亮——行不同则左红右绿，
+            // 与补丁视图的 DiffLineKind 配色同源。
+            let changed = left != right;
+            let base_l = if changed {
+                Style::new().bg(Color::Rgb(80, 20, 20))
+            } else {
+                Style::new()
+            };
+            let base_r = if changed {
+                Style::new().bg(Color::Rgb(20, 80, 20))
+            } else {
+                Style::new()
+            };
             for k in 0..lrows.len().max(rrows.len()) {
                 let l = lrows.get(k).cloned().unwrap_or_default();
                 let r = rrows.get(k).cloned().unwrap_or_default();
-                rows.push((Line::from(l), Line::from(r)));
+                rows.push((Line::from(l).style(base_l), Line::from(r).style(base_r)));
             }
         }
         return (rows, starts);
@@ -537,6 +550,30 @@ mod tests {
         assert_eq!(hunks[0].lines[1].old_no, Some(2));
         assert_eq!(hunks[0].lines[2].kind, DiffLineKind::Add);
         assert_eq!(hunks[0].lines[2].new_no, Some(2));
+    }
+
+    #[test]
+    fn m1064_full_view_keeps_diff_highlight() {
+        let data = DiffFileData {
+            path: "f.txt".to_owned(),
+            hunks: Vec::new(),
+            old_full: vec!["keep".to_owned(), "old".to_owned()],
+            new_full: vec!["keep".to_owned(), "new".to_owned()],
+            staged: false,
+        };
+        let (rows, _) = render_side_by_side_styled(&data, true, false, 80);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0.style.bg, None, "相同行不应着色");
+        assert_eq!(
+            rows[1].0.style.bg,
+            Some(Color::Rgb(80, 20, 20)),
+            "差异行左侧红底"
+        );
+        assert_eq!(
+            rows[1].1.style.bg,
+            Some(Color::Rgb(20, 80, 20)),
+            "差异行右侧绿底"
+        );
     }
 
     #[test]

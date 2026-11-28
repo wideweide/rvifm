@@ -2742,8 +2742,20 @@ fn run_with_initial_mode(
                     let mut undo = false;
                     let mut pending_op: Option<crate::state::GitOp> = None;
                     if let Some(diff) = state.git_diff.as_mut() {
+                        // M106-3：全屏双栏对照时文件列表让位，所有导航键作用于补丁；
+                        // 行数/hunk 起点用最近一帧缓存，避免每次按键重算整份 diff。
+                        let patch_only = diff.side_by_side && diff.fullscreen;
+                        let files_visible = !patch_only;
                         match key.code {
-                            KeyCode::Esc | KeyCode::Char('q') => exit = true,
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                if diff.exit_step() {
+                                    exit = true;
+                                } else {
+                                    msg = Some(
+                                        "已退出双栏对照（再按 Esc/q 退出 git 模块）".to_owned(),
+                                    );
+                                }
+                            }
                             KeyCode::Tab => {
                                 diff.focus = match diff.focus {
                                     crate::state::DiffFocus::Files => {
@@ -2755,18 +2767,21 @@ fn run_with_initial_mode(
                                 };
                             }
                             KeyCode::Char('j') | KeyCode::Down
-                                if diff.focus == crate::state::DiffFocus::Files =>
+                                if files_visible
+                                    && diff.focus == crate::state::DiffFocus::Files =>
                             {
                                 diff.cursor =
                                     (diff.cursor + n).min(diff.files.len().saturating_sub(1));
                             }
                             KeyCode::Char('k') | KeyCode::Up
-                                if diff.focus == crate::state::DiffFocus::Files =>
+                                if files_visible
+                                    && diff.focus == crate::state::DiffFocus::Files =>
                             {
                                 diff.cursor = diff.cursor.saturating_sub(n);
                             }
                             KeyCode::Char('g') | KeyCode::Char('G')
-                                if diff.focus == crate::state::DiffFocus::Files =>
+                                if files_visible
+                                    && diff.focus == crate::state::DiffFocus::Files =>
                             {
                                 diff.cursor = if key.code == KeyCode::Char('g') {
                                     0
@@ -2775,23 +2790,21 @@ fn run_with_initial_mode(
                                 };
                             }
                             KeyCode::Char('j') | KeyCode::Down => {
-                                let (rows, _) = diff.rows(100);
-                                diff.patch_scroll =
-                                    (diff.patch_scroll + n).min(rows.len().saturating_sub(1));
+                                let last = diff.row_count.get().saturating_sub(1);
+                                diff.patch_scroll = (diff.patch_scroll + n).min(last);
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
                                 diff.patch_scroll = diff.patch_scroll.saturating_sub(n);
                             }
                             KeyCode::Char('g') | KeyCode::Char('G') => {
-                                let (rows, _) = diff.rows(100);
                                 diff.patch_scroll = if key.code == KeyCode::Char('g') {
                                     0
                                 } else {
-                                    rows.len().saturating_sub(1)
+                                    diff.row_count.get().saturating_sub(1)
                                 };
                             }
                             KeyCode::Char('J') => {
-                                let (_, starts) = diff.rows(100);
+                                let starts = diff.hunk_starts.borrow().clone();
                                 if !starts.is_empty() {
                                     diff.hunk = (diff.hunk + 1).min(starts.len() - 1);
                                     diff.patch_scroll = starts[diff.hunk];
@@ -2799,7 +2812,7 @@ fn run_with_initial_mode(
                             }
                             KeyCode::Char('K') => {
                                 diff.hunk = diff.hunk.saturating_sub(1);
-                                let (_, starts) = diff.rows(100);
+                                let starts = diff.hunk_starts.borrow().clone();
                                 if let Some(row) = starts.get(diff.hunk) {
                                     diff.patch_scroll = *row;
                                 }
@@ -2881,7 +2894,10 @@ fn run_with_initial_mode(
                                     pending_op = Some(op);
                                 }
                             }
-                            KeyCode::Char('d') if diff.focus == crate::state::DiffFocus::Files => {
+                            KeyCode::Char('d')
+                                if files_visible
+                                    && diff.focus == crate::state::DiffFocus::Files =>
+                            {
                                 if let Some(path) = diff.selected_path().map(str::to_owned) {
                                     let op = crate::state::GitOp::DiscardFile(path);
                                     if state.config.git.confirm_destructive {
