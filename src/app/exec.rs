@@ -4785,6 +4785,20 @@ pub(crate) fn live_search_jump(
 /// `l`/Enter 与鼠标再击共用的打开逻辑（FEAT-1）：目录/归档 → enter_selected
 /// 导航（FIX-3：归档文件优先于 opener）；普通文件 → 系统 opener（M11-7）。
 pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
+    // M98-3：open_pre 钩子（可取消）。
+    if let Some(path) = state
+        .active_tab()
+        .focused_entries()
+        .get(state.active_tab().focused_cursor())
+        .map(|e| e.name.clone())
+    {
+        let cfg = state.config.clone();
+        let payload = format!("{{\"path\":\"{}\"}}", crate::hooks::json_escape(&path));
+        if !crate::hooks::fire_pre(&cfg, crate::hooks::HookEvent::OpenPre, &payload) {
+            *msg = Some("open_pre 钩子取消打开".to_owned());
+            return;
+        }
+    }
     // FEAT-2/M48-3：焦点在 `..` 行 → 等价 `h`（返回上级；归档根回物理目录）。
     if state.active_tab().focused_on_parent_row() {
         let cfg = state.config.clone();
@@ -4921,6 +4935,12 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
                 // M21-E8：打开成功记录文件访问（o/:J 可见）。
                 let tab_id = state.active;
                 record_file_open(state, tab_id, &path);
+                let cfg = state.config.clone();
+                let payload = format!(
+                    "{{\"path\":\"{}\"}}",
+                    crate::hooks::json_escape(&path.to_string_lossy())
+                );
+                crate::hooks::fire_post(&cfg, crate::hooks::HookEvent::OpenPost, &payload);
                 *msg = None;
             }
             Err(e) => *msg = Some(format!("打开失败: {e}")),

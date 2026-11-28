@@ -12,6 +12,7 @@ pub mod frecency;
 pub mod git;
 pub mod gitdiff;
 pub mod highlight;
+pub mod hooks;
 pub mod icons;
 pub mod image;
 pub mod ime;

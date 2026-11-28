@@ -16340,3 +16340,13 @@ fn m982_config_packs_deep_merge() {
     assert_eq!(cfg.ui.theme.as_deref(), Some("dracula"));
     assert!(!cfg.ui.attrs_column, "基础字段保留");
 }
+
+#[test]
+fn m983_hook_events_are_configurable() {
+    let mut cfg = Config::default();
+    cfg.hooks.insert("cmd_ok".into(), "true".into());
+    crate::hooks::fire_post(&cfg, crate::hooks::HookEvent::CmdOk, "{\"ok\":true}");
+    assert!(cfg.hooks.contains_key("cmd_ok"));
+    assert_eq!(crate::hooks::HookEvent::EnterDir.name(), "enter_dir");
+    assert!(crate::hooks::HookEvent::DeletePre.is_pre());
+}

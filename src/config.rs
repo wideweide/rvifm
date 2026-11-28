@@ -55,6 +55,9 @@ pub struct Config {
     /// M98-2：[hooks] 事件钩子（事件名 → shell 模板，stdin 为 JSON）。
     #[serde(default)]
     pub hooks: std::collections::BTreeMap<String, String>,
+    /// M98-3：pre 钩子失败是否取消操作（默认 false = 仅记录失败）。
+    #[serde(default)]
+    pub hook_abort: bool,
     /// M98-2：配置包（相对配置目录的 TOML 片段，按序深合并）。
     #[serde(default)]
     pub packs: Vec<String>,
@@ -381,6 +384,7 @@ impl Default for Config {
             command: CommandConfig::default(),
             commands: std::collections::BTreeMap::new(),
             hooks: std::collections::BTreeMap::new(),
+            hook_abort: false,
             packs: Vec::new(),
         }
     }

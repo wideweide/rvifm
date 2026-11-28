@@ -1063,6 +1063,12 @@ fn run_with_initial_mode(
         while let Ok(update) = job_rx.try_recv() {
             let id = update.job_id;
             let changed = state.apply_job_update(update);
+            let cfg = state.config.clone();
+            crate::hooks::fire_post(
+                &cfg,
+                crate::hooks::HookEvent::JobDone,
+                &format!("{{\"id\":{id}}}"),
+            );
             msg = Some(if changed {
                 format!("后台作业 {id} 完成（可 u 撤销）")
             } else {
@@ -1580,6 +1586,14 @@ fn run_with_initial_mode(
                                 let patterns = state.config.frecency.ignore_patterns.clone();
                                 state.record_cmd_history(&line);
                                 crate::frecency::record_command_line_now(&line, &patterns);
+                            }
+                            if result.is_ok() {
+                                let cfg = state.config.clone();
+                                crate::hooks::fire_post(
+                                    &cfg,
+                                    crate::hooks::HookEvent::CmdOk,
+                                    "{\"ok\":true}",
+                                );
                             }
                             match result {
                                 Ok(ExecOutcome::Quit) => {
