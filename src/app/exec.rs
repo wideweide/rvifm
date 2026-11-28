@@ -3188,15 +3188,27 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let mut direction = "left-to-right";
             let mut apply = false;
             let mut delete = false;
+            let mut confirm = false;
+            let mut strategy = "missing";
             for a in &args {
                 match *a {
                     "left-to-right" | "l2r" => direction = "left-to-right",
                     "right-to-left" | "r2l" => direction = "right-to-left",
                     "--apply" => apply = true,
-                    "--delete" => delete = true,
+                    "--delete" => {
+                        delete = true;
+                        strategy = "mirror";
+                    }
+                    "--confirm" => confirm = true,
+                    "missing" => strategy = "missing",
+                    "newer" => strategy = "newer",
+                    "mirror" => {
+                        strategy = "mirror";
+                        delete = true;
+                    }
                     other => {
                         return Err(format!(
-                            "sync: 未知参数 {other}（left-to-right|right-to-left [--apply] [--delete]）"
+                            "sync: 未知参数 {other}（missing|newer|mirror|left-to-right|right-to-left [--apply] [--delete] [--confirm]）"
                         ));
                     }
                 }
@@ -3230,7 +3242,21 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             let mut to_delete: Vec<PathBuf> = Vec::new();
             for item in src_items.iter().filter(|i| !i.is_dir) {
                 let dst = dst_base.join(&item.name);
-                if !dst.exists() {
+                let copy = if !dst.exists() {
+                    true
+                } else if strategy == "newer" {
+                    std::fs::metadata(src_base.join(&item.name))
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        > std::fs::metadata(&dst)
+                            .and_then(|m| m.modified())
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                } else {
+                    false
+                };
+                if copy {
                     to_copy.push(item.name.clone().into());
                 }
             }
@@ -3243,12 +3269,30 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 }
             }
             let _ = (src_base, src_items, dst_base);
+            if apply && delete && !to_delete.is_empty() && !confirm {
+                return Err(format!(
+                    "sync: {} 个目标文件将被删除；请再次执行 `:sync {direction} --apply --delete --confirm` 确认",
+                    to_delete.len()
+                ));
+            }
             if !apply {
                 return Ok(ExecOutcome::Done {
                     msg: Some(format!(
-                        "sync({direction}) 计划: 复制 {} 项、删除 {} 项（--apply 执行、--delete 启用删除）",
+                        "sync({direction}/{strategy}) 计划: 复制 {} 项、删除 {} 项\n复制: {}\n删除: {}\n（--apply 执行，删除需 --confirm 二次确认）",
                         to_copy.len(),
-                        to_delete.len()
+                        to_delete.len(),
+                        to_copy
+                            .iter()
+                            .take(10)
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        to_delete
+                            .iter()
+                            .take(10)
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )),
                 });
             }

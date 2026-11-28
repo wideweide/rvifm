@@ -1999,7 +1999,7 @@ fn m373_sync_dry_run_apply_and_delete() {
 
     // --apply --delete：删除目标独有。
     assert_eq!(
-        exec_command(&mut state, "sync l2r --apply --delete"),
+        exec_command(&mut state, "sync l2r --apply --delete --confirm"),
         Ok(false)
     );
     assert!(r.path().join("l.txt").exists(), "重新同步");
@@ -16078,4 +16078,33 @@ fn m933_checksum_sha256_generate_and_verify() {
     assert!(sidecar.is_file());
     let v = crate::app::exec::exec_command_impl(&mut state, "checksum sha256 verify").unwrap();
     assert!(format!("{v:?}").contains("1 项通过"), "{v:?}");
+}
+
+#[test]
+fn m934_sync_newer_strategy_copies_only_newer_source() {
+    let left = TempDir::new().unwrap();
+    let right = TempDir::new().unwrap();
+    fs::write(left.path().join("a.txt"), b"new").unwrap();
+    fs::write(right.path().join("a.txt"), b"old").unwrap();
+    let mut state = AppState::new(Tab::from_physical(left.path(), Config::default()).unwrap());
+    state.active_tab_mut().right =
+        crate::tab::Pane::from_physical(right.path(), Config::default()).unwrap();
+    // 让源文件 mtime 明显更新。
+    let newer = std::time::SystemTime::now() + std::time::Duration::from_secs(10);
+    std::fs::File::options()
+        .write(true)
+        .open(left.path().join("a.txt"))
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(newer))
+        .unwrap();
+    let outcome =
+        crate::app::exec::exec_command_impl(&mut state, "sync l2r newer --apply").unwrap();
+    assert!(
+        matches!(outcome, crate::app::ExecOutcome::Done { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(right.path().join("a.txt")).unwrap(),
+        "new"
+    );
 }

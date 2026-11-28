@@ -1061,7 +1061,7 @@
 - [x] M93-1 :du 作业化 + 结果虚拟视图（见 SPEC M93；2026-11-28 完成：后台扫描 + DuView + m931）
 - [ ] M93-2 :dup 三段式哈希 + inode + 视图（见 SPEC M93）
 - [x] M93-3 :checksum sha256 + sidecar 校验 + 流式（见 SPEC M93；2026-11-28 完成：m933）
-- [ ] M93-4 :sync 三策略 + 计划视图 + 删除二次确认（见 SPEC M93）
+- [x] M93-4 :sync 三策略 + 计划视图 + 删除二次确认（见 SPEC M93；2026-11-28 完成：missing/newer/mirror + --confirm + m934）
 - [ ] M93-5 :extract job 化 + 目录撤销（见 SPEC M93）
 - [ ] M93-6 Git hunk 丢弃默认关闭 + 脏工作区提醒（见 SPEC M93）
 
