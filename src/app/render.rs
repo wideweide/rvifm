@@ -2969,10 +2969,15 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 }
                 None => String::new(),
             };
-            let mut spans = vec![
-                Span::styled(selected, Style::new().add_modifier(Modifier::BOLD)),
-                Span::from(format!(" | {} items", tab.entries.len())),
-            ];
+            let mut spans = Vec::new();
+            if let Some(text) = &state.statusline_text {
+                spans.push(Span::from(format!("{text} | ")));
+            }
+            spans.push(Span::styled(
+                selected,
+                Style::new().add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::from(format!(" | {} items", tab.entries.len())));
             if let Some(r) = &tab.results {
                 // M17 SRCH：结果视图指示（类别 + 查询 + 条数 + 截断）。
                 let kind = match r.kind {

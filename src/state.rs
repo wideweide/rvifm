@@ -457,6 +457,10 @@ pub struct AppState {
     pub special_preview: PreviewCache<PathBuf, (PathBuf, Vec<String>)>,
     /// M97：Markdown 样式行后台渲染结果（与 viewer 同源导航）。
     pub md_preview: PreviewCache<PathBuf, (PathBuf, Vec<ratatui::text::Line<'static>>)>,
+    /// M98-2：外部 statusline 生成器结果与通道（异步、不阻塞绘制）。
+    pub statusline_text: Option<String>,
+    pub statusline_tx: std::sync::mpsc::Sender<String>,
+    pub statusline_rx: std::sync::mpsc::Receiver<String>,
     /// M97：Markdown 渲染结果通道（独立于 PreviewJobResult，避免改动所有构造点）。
     pub md_tx: std::sync::mpsc::Sender<(u64, PathBuf, Vec<ratatui::text::Line<'static>>)>,
     pub md_rx: std::sync::mpsc::Receiver<(u64, PathBuf, Vec<ratatui::text::Line<'static>>)>,
@@ -1160,8 +1164,10 @@ impl AppState {
             return;
         }
         let tx = self.preview_tx.clone();
+        let providers = self.config.preview.providers.clone();
         std::thread::spawn(move || {
-            let lines = crate::preview::load_special_preview_lines(&target, external_enabled);
+            let lines =
+                crate::preview::load_special_preview_lines(&target, external_enabled, &providers);
             let _ = tx.send(PreviewJobResult {
                 generation,
                 kind: PreviewJobKind::Special,
@@ -1250,6 +1256,7 @@ impl AppState {
         let (dir_tx, dir_rx) = std::sync::mpsc::channel();
         let (du_tx, du_rx) = std::sync::mpsc::channel();
         let (md_tx, md_rx) = std::sync::mpsc::channel();
+        let (statusline_tx, statusline_rx) = std::sync::mpsc::channel();
         Self {
             tabs: vec![initial],
             active: 0,
@@ -1288,6 +1295,9 @@ impl AppState {
             image_generation: 0,
             thread_preview: std::cell::RefCell::new(None),
             special_preview: PreviewCache::new(8),
+            statusline_text: None,
+            statusline_tx,
+            statusline_rx,
             md_preview: PreviewCache::new(8),
             md_tx,
             md_rx,

@@ -909,6 +909,8 @@ fn run_with_initial_mode(
     let mut seq_deadline: Option<std::time::Instant> = None;
     // M92-3：外部变更刷新去抖（150ms 窗口内多次事件合并为一次）。
     let mut last_fs_refresh: Option<std::time::Instant> = None;
+    // M98-2：外部 statusline 生成器最多每秒一次，后台执行不阻塞绘制。
+    let mut last_statusline: Option<std::time::Instant> = None;
     let mut last_seq_len = 0usize;
     // M13-8：后台作业通道（多作业共存，run 退出时 rx 关闭）。
     let (job_tx, job_rx) = std::sync::mpsc::channel::<crate::state::JobUpdate>();
@@ -1080,6 +1082,30 @@ fn run_with_initial_mode(
                     Err(e) => format!("上传失败: {e}"),
                 });
             }
+        }
+        // M98-2：外部 statusline（后台线程，1s 节流；失败回退上次结果）。
+        let now_statusline = std::time::Instant::now();
+        if let Some(cmd) = state.config.ui.statusline_cmd.clone()
+            && last_statusline.is_none_or(|t| {
+                now_statusline.duration_since(t) >= std::time::Duration::from_secs(1)
+            })
+        {
+            last_statusline = Some(now_statusline);
+            let tx = state.statusline_tx.clone();
+            std::thread::spawn(move || {
+                let text = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(&cmd)
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                    .unwrap_or_default();
+                let _ = tx.send(text);
+            });
+        }
+        while let Ok(text) = state.statusline_rx.try_recv() {
+            state.statusline_text = Some(text);
         }
         // M21-F5：外部变更监听——先同步监听目标（导航/切 tab 后重挂或卸载），
         // 再抽干事件；创建/删除/重命名/修改触发刷新（光标跟随原条目）。

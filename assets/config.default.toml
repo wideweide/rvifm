@@ -125,3 +125,14 @@ hunk_discard = false
 
 # M97：Markdown 预览渲染（false 回退纯文本近似预览）
 markdown_render = true
+
+# ── M98 轻量扩展点（全部外部进程 + JSON，无脚本执行）─────────────────
+# [commands]
+#   mkdoc = "vim %f"          # :mkdoc 调用注册表命令
+# [hooks]
+#   open_post = "echo '{\"path\":\"%f\"}' >> ~/.config/rvifm/hook.log"
+# [preview]
+#   providers = { "*.log" = "tail -n 80 %f" }
+# [ui]
+#   statusline_cmd = "echo ready"
+# packs = ["theme-pack.toml", "keymap-pack.toml"]   # 相对配置目录，按序深合并

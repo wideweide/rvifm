@@ -84,7 +84,32 @@ pub fn load_viewer_payload(path: &Path) -> ViewerPayload {
 }
 
 /// M60-4：后台计算 Office/归档/PDF 文本的预览行（只读；不碰 Frame/redb）。
-pub fn load_special_preview_lines(path: &Path, external_enabled: bool) -> Vec<String> {
+pub fn load_special_preview_lines(
+    path: &Path,
+    external_enabled: bool,
+    providers: &std::collections::BTreeMap<String, String>,
+) -> Vec<String> {
+    // M98-2：外部 provider 优先（glob 命中 → shell 命令，stdout 作为预览行）。
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    if let Some((_, cmd)) = providers
+        .iter()
+        .find(|(pat, _)| crate::tab::glob_match(pat, &name))
+    {
+        let quoted = crate::opener::shell_quote(&path.to_string_lossy());
+        let expanded = cmd.replace("%f", &quoted).replace("%s", &quoted);
+        if let Ok(out) = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(expanded)
+            .output()
+            && out.status.success()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            return text.lines().take(200).map(str::to_owned).collect();
+        }
+    }
     match preview_kind(path) {
         PreviewKind::Archive => {
             let cache = ArchivePreviewCache::default();

@@ -49,6 +49,15 @@ pub struct Config {
     /// M50：命令补全/变量展开选项（[command] 表）。
     #[serde(default)]
     pub command: CommandConfig,
+    /// M98-2：[commands] 用户命令注册表（名称 → shell 模板）。
+    #[serde(default)]
+    pub commands: std::collections::BTreeMap<String, String>,
+    /// M98-2：[hooks] 事件钩子（事件名 → shell 模板，stdin 为 JSON）。
+    #[serde(default)]
+    pub hooks: std::collections::BTreeMap<String, String>,
+    /// M98-2：配置包（相对配置目录的 TOML 片段，按序深合并）。
+    #[serde(default)]
+    pub packs: Vec<String>,
 }
 
 /// FIX-9：[ime] 输入法切换选项；默认仅 Linux 开启自动检测。
@@ -154,6 +163,9 @@ pub struct PreviewConfig {
     pub image_protocol_query: bool,
     /// M97：`.md` 走完整 Markdown 渲染；false 回退纯文本近似预览。
     pub markdown_render: bool,
+    /// M98-2：外部预览 provider（glob → shell 命令，stdout 作为预览行）。
+    #[serde(default)]
+    pub providers: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for PreviewConfig {
@@ -168,6 +180,7 @@ impl Default for PreviewConfig {
             image_max_side: 1600,
             image_protocol_query: true,
             markdown_render: true,
+            providers: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -220,6 +233,9 @@ pub struct UiConfig {
     /// M46-7：`:help` 在 tmux/screen 新窗口打开（默认开）；无复用器或关闭时
     /// 回退应用内不透明帮助覆盖层。
     pub help_in_new_window: bool,
+    /// M98-2：外部 statusline 生成器（shell 命令，stdout 为状态栏文本）。
+    #[serde(default)]
+    pub statusline_cmd: Option<String>,
     /// M92-2：懒加载属性——目录首屏只取名称/类型，size/mtime 按可见行补齐。
     #[serde(default)]
     pub lazy_attrs: bool,
@@ -276,6 +292,7 @@ impl Default for UiConfig {
             pane_separator: false,
             layout: None,
             help_in_new_window: true,
+            statusline_cmd: None,
             lazy_attrs: true,
         }
     }
@@ -362,6 +379,9 @@ impl Default for Config {
             keymap: KeymapConfig::default(),
             ime: ImeConfig::default(),
             command: CommandConfig::default(),
+            commands: std::collections::BTreeMap::new(),
+            hooks: std::collections::BTreeMap::new(),
+            packs: Vec::new(),
         }
     }
 }
@@ -491,19 +511,36 @@ fn opener_hint(raw: &str) -> Option<&'static str> {
 /// M45-3a：错误信息带文件路径、单行压缩后的具体字段原因，以及修复指引；
 /// 解析失败整体回退默认值（不改分层引擎）。
 pub fn load_from(path: &std::path::Path) -> Result<Config, String> {
-    match std::fs::read_to_string(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
-        Err(e) => Err(format!("读取配置失败（{}）: {e}", path.display())),
-        Ok(text) => toml::from_str(&text).map_err(|e| {
-            let raw = e.to_string();
-            let detail = compact_toml_error(&raw);
-            let base = format!("配置解析失败（{}）: {detail}", path.display());
-            match opener_hint(&raw) {
-                Some(hint) => format!("{base}；{hint}"),
-                None => format!("{base}；完整示例见 :help 或 README（已回退默认配置）"),
-            }
-        }),
+    let parse_err = |e: toml::de::Error| {
+        let raw = e.to_string();
+        let detail = compact_toml_error(&raw);
+        let base = format!("配置解析失败（{}）: {detail}", path.display());
+        match opener_hint(&raw) {
+            Some(hint) => format!("{base}；{hint}"),
+            None => format!("{base}；完整示例见 :help 或 README（已回退默认配置）"),
+        }
+    };
+    let text = match std::fs::read_to_string(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Config::default()),
+        Err(e) => return Err(format!("读取配置失败（{}）: {e}", path.display())),
+        Ok(text) => text,
+    };
+    let cfg: Config = toml::from_str(&text).map_err(parse_err)?;
+    if cfg.packs.is_empty() {
+        return Ok(cfg);
     }
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut value: toml::Value =
+        toml::from_str(&text).unwrap_or(toml::Value::Table(Default::default()));
+    for pack in &cfg.packs {
+        let pack_path = parent.join(pack);
+        if let Ok(body) = std::fs::read_to_string(&pack_path)
+            && let Ok(pack_value) = toml::from_str::<toml::Value>(&body)
+        {
+            merge_toml(&mut value, pack_value);
+        }
+    }
+    Ok(value.try_into::<Config>().unwrap_or(cfg))
 }
 
 /// 按平台默认位置加载配置（启动入口用）。
@@ -1186,4 +1223,22 @@ pub fn set_theme_in_config(name: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&path, body)
+}
+
+/// M98-2：TOML 深合并（包覆盖基础表，新增键追加）。
+fn merge_toml(base: &mut toml::Value, pack: toml::Value) {
+    let Some(pack_table) = pack.as_table() else {
+        *base = pack;
+        return;
+    };
+    let Some(base_table) = base.as_table_mut() else {
+        return;
+    };
+    for (key, value) in pack_table {
+        if let Some(existing) = base_table.get_mut(key) {
+            merge_toml(existing, value.clone());
+        } else {
+            base_table.insert(key.clone(), value.clone());
+        }
+    }
 }

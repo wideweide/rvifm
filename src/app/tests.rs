@@ -16303,3 +16303,40 @@ fn m971_markdown_preview_renders_heading() {
         "Markdown 后台渲染完成"
     );
 }
+
+#[test]
+fn m982_user_commands_and_preview_provider() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state
+        .config
+        .commands
+        .insert("hello".into(), "echo hi".into());
+    let out = crate::app::exec::exec_command_impl(&mut state, "hello").unwrap();
+    assert!(
+        matches!(out, crate::app::ExecOutcome::RunExternal { .. }),
+        "{out:?}"
+    );
+    let log = tmp.path().join("x.log");
+    fs::write(&log, "ignored").unwrap();
+    let mut providers = std::collections::BTreeMap::new();
+    providers.insert("*.log".to_owned(), "echo provider".to_owned());
+    let lines = crate::preview::load_special_preview_lines(&log, false, &providers);
+    assert_eq!(lines, vec!["provider".to_owned()]);
+}
+
+#[test]
+fn m982_config_packs_deep_merge() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path().join("config.toml");
+    let pack = tmp.path().join("pack.toml");
+    fs::write(&pack, "[ui]\ntheme = \"dracula\"\n").unwrap();
+    fs::write(
+        &base,
+        "packs = [\"pack.toml\"]\n[ui]\nattrs_column = false\n",
+    )
+    .unwrap();
+    let cfg = crate::config::load_from(&base).unwrap();
+    assert_eq!(cfg.ui.theme.as_deref(), Some("dracula"));
+    assert!(!cfg.ui.attrs_column, "基础字段保留");
+}

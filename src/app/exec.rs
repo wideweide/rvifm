@@ -2605,6 +2605,13 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             None => return Ok(ExecOutcome::Done { msg: None }),
         }
     }
+    // M98-2：[commands] 用户命令注册表优先于内建命令名。
+    if let Some(name) = cmd_head
+        && let Some(tpl) = state.config.commands.get(name)
+    {
+        let cmd = substitute_vars(tpl, state)?;
+        return Ok(ExecOutcome::RunExternal { cmd });
+    }
     match cmd_head {
         None => Ok(ExecOutcome::Done { msg: None }),
         // M69：`:diff` 只读 git 差异浏览（不替代 gi/:gitui）。
