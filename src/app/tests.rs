@@ -15768,3 +15768,35 @@ fn m912_upload_is_streamed_and_content_matches() {
     crate::app::exec::upload_chunked(&fs, &src, &dest).unwrap();
     assert_eq!(store.lock().unwrap().get(&dest).cloned().unwrap(), data);
 }
+
+#[test]
+fn m913_download_is_streamed_and_content_matches() {
+    struct MemFs(Vec<u8>);
+    impl crate::remote::RemoteFs for MemFs {
+        fn list(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            Ok(Vec::new())
+        }
+        fn read(&self, _p: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            Ok(self.0.clone())
+        }
+        fn metadata(
+            &self,
+            _p: &std::path::Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            Ok(crate::remote::RemoteMeta {
+                size: self.0.len() as u64,
+                mtime: 0,
+                is_dir: false,
+            })
+        }
+    }
+    let tmp = TempDir::new().unwrap();
+    let data: Vec<u8> = (0..2_500_000u64).map(|i| (i % 239) as u8).collect();
+    let fs = MemFs(data.clone());
+    let dest = tmp.path().join("downloaded.bin");
+    crate::app::exec::download_chunked(&fs, std::path::Path::new("/remote.bin"), &dest).unwrap();
+    assert_eq!(fs::read(&dest).unwrap(), data);
+}

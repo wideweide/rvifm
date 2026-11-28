@@ -4883,6 +4883,36 @@ fn remote_head_hash(backend: &dyn crate::remote::RemoteFs, dest: &Path) -> Optio
 
 /// M36-6：分块上传 + 偏移续传——每 1MB 块 write_range 推进；连接类失败
 /// 保存 offset 到 `.part.meta`（含头哈希）并返回 Err(offset)；重试时：
+/// M91-3：流式下载——按 1MB `read_range` 写入本地临时文件，内存恒定。
+pub(crate) fn download_chunked(
+    backend: &dyn crate::remote::RemoteFs,
+    src: &std::path::Path,
+    dest: &std::path::Path,
+) -> Result<(), (u64, String)> {
+    const CHUNK: u64 = 1024 * 1024;
+    let meta = backend
+        .metadata(src)
+        .map_err(|e| (0, format!("元数据读取失败: {e}")))?;
+    let total = meta.size;
+    let mut file =
+        std::fs::File::create(dest).map_err(|e| (0, format!("临时文件创建失败: {e}")))?;
+    use std::io::Write as _;
+    let mut offset = 0u64;
+    while offset < total {
+        let len = CHUNK.min(total - offset);
+        let chunk = backend
+            .read_range(src, offset, len)
+            .map_err(|e| (offset, e.to_string()))?;
+        if chunk.is_empty() {
+            break;
+        }
+        file.write_all(&chunk)
+            .map_err(|e| (offset, format!("写入失败: {e}")))?;
+        offset += chunk.len() as u64;
+    }
+    Ok(())
+}
+
 /// `.part.meta` 存在 → `read_range` 校验远端头部哈希一致 → 从 offset 续
 /// （write_range）；不一致/缺失 → 从头。完成（offset==total）→ 删 meta。
 pub(crate) fn upload_chunked(
@@ -5205,51 +5235,11 @@ pub(crate) fn paste_remote_to_local(
     let mut first_err: Option<String> = None;
     let tab_id = state.active;
     for src in &buffer.paths {
-        // M36-2：**单次 read**（消除 R-3 双读——read 一次同时拿数据与
-        // 失败信息；metadata 先记远端 mtime）；连接类失败 → .part 现场
-        // 保留 + 自动重连一次后重新 read。写入走临时文件 + 原子 rename。
-        let (read_out, src_meta) = state
+        // M91-3：流式下载（1MB 块），不再把远端文件整体读进内存。
+        let src_meta = state
             .remote_sessions
             .get(remote)
-            .map(|be| (be.read(src), be.metadata(src).ok()))
-            .unwrap_or((
-                Err(crate::remote::RemoteError::Other("会话已断开".into())),
-                None,
-            ));
-        let data = match read_out {
-            Ok(d) => d,
-            Err(e) if e.is_connection_class() => {
-                let part = resume_part_path(remote, src);
-                let _ = std::fs::write(&part, b"");
-                match remote_reconnect_session(state, remote) {
-                    Ok(()) => {
-                        let retry = state
-                            .remote_sessions
-                            .get(remote)
-                            .ok_or_else(|| "remote: 会话已断开".to_owned())
-                            .and_then(|be| be.read(src).map_err(|e2| e2.to_string()));
-                        match retry {
-                            Ok(d) => d,
-                            Err(e2) => {
-                                first_err = Some(format!(
-                                    "重连后仍读取失败: {e2}（.part 现场: {}）",
-                                    part.display()
-                                ));
-                                break;
-                            }
-                        }
-                    }
-                    Err(e2) => {
-                        first_err = Some(format!("{e2}（.part 现场: {}）", part.display()));
-                        break;
-                    }
-                }
-            }
-            Err(e) => {
-                first_err = Some(e.to_string());
-                break;
-            }
-        };
+            .and_then(|be| be.metadata(src).ok());
         let name = src
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -5267,7 +5257,14 @@ pub(crate) fn paste_remote_to_local(
                 .map(|e| e.to_string_lossy().into_owned())
                 .unwrap_or_default()
         ));
-        let write_r = std::fs::write(&tmp_dest, &data).and_then(|()| {
+        let write_r = (|| -> Result<(), std::io::Error> {
+            let backend = state
+                .remote_sessions
+                .get(remote)
+                .ok_or_else(|| std::io::Error::other("remote: 会话已断开"))?;
+            download_chunked(backend.as_ref(), src, &tmp_dest).map_err(|(offset, e)| {
+                std::io::Error::other(format!("{e}（已下载 {offset} 字节）"))
+            })?;
             if let Some(meta) = &src_meta {
                 // 远端 mtime（Unix 秒）→ SystemTime → 本地文件保留。
                 if meta.mtime > 0 {
@@ -5279,7 +5276,7 @@ pub(crate) fn paste_remote_to_local(
                 }
             }
             std::fs::rename(&tmp_dest, &dest)
-        });
+        })();
         match write_r {
             Ok(()) => {
                 state.undo_stack.push(crate::state::UndoableOp::Create {
@@ -5290,8 +5287,11 @@ pub(crate) fn paste_remote_to_local(
                 done += 1;
             }
             Err(e) => {
+                // M91-3：保留 .part 现场供重试；临时下载文件清理。
+                let part = resume_part_path(remote, src);
+                let _ = std::fs::write(&part, b"");
                 let _ = std::fs::remove_file(&tmp_dest);
-                first_err = Some(e.to_string());
+                first_err = Some(format!("{e}（.part 现场: {}）", part.display()));
                 break;
             }
         }
