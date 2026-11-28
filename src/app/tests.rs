@@ -7274,7 +7274,8 @@ fn m478_selection_stays_in_its_pane_after_focus_switch() {
         KeyCode::Char('t'),
         KeyModifiers::NONE,
     );
-    assert!(state.active_tab().right.visual.is_some());
+    // M89-1：visual 内 t 提交选区到 tags 后退出 visual。
+    assert!(state.active_tab().right.visual.is_none());
     assert!(!state.active_tab().right.tags.is_empty());
 
     press(&mut state, &mut input, KeyCode::Tab, KeyModifiers::NONE);
@@ -7282,12 +7283,8 @@ fn m478_selection_stays_in_its_pane_after_focus_switch() {
     assert!(state.active_tab().visual.is_none(), "左栏未被右栏选区污染");
     assert!(state.active_tab().tags.is_empty(), "左栏未被右栏 tag 污染");
     assert!(
-        state.active_tab().right.visual.is_some(),
-        "右栏保留自己的选区"
-    );
-    assert!(
         !state.active_tab().right.tags.is_empty(),
-        "右栏保留自己的 tag"
+        "右栏保留自己提交的 tag"
     );
 
     let backend = ratatui::backend::TestBackend::new(80, 12);
@@ -15607,4 +15604,43 @@ fn m874_failed_command_is_not_recorded() {
     );
     assert!(state.cmd_history.is_empty(), "失败命令不入会话历史");
     assert!(state.history_commands.is_empty(), "失败命令不入外部历史");
+}
+
+#[test]
+fn m891_visual_t_commits_and_toggles_range() {
+    let tmp = TempDir::new().unwrap();
+    for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
+        fs::write(tmp.path().join(name), "").unwrap();
+    }
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    // v 选 a~c，t 提交。
+    state.active_tab_mut().visual = Some(0);
+    state.active_tab_mut().cursor = 2;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('t'),
+        KeyModifiers::NONE,
+    );
+    let tab = state.active_tab();
+    assert!(tab.visual.is_none(), "提交后退出 visual");
+    assert_eq!(tab.tags.len(), 3, "区间三项被标记: {msg:?}");
+    // 再次 v 同一区间并按 t：已全部标记 → 全部取消。
+    let mut state = state;
+    state.active_tab_mut().visual = Some(0);
+    state.active_tab_mut().cursor = 2;
+    press_msg(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyCode::Char('t'),
+        KeyModifiers::NONE,
+    );
+    assert!(
+        state.active_tab().tags.is_empty(),
+        "全标记区间再按 t 全取消"
+    );
 }

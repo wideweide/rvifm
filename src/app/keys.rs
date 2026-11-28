@@ -1103,6 +1103,50 @@ pub(crate) fn handle_key(
     if key.kind != KeyEventKind::Press {
         return Outcome::Continue; // Release 先过滤，避免误消费待决序列。
     }
+    // M89-1：visual 内 t = 把当前选区提交/翻转到 t 标记集合，随后退出 visual；
+    // 与 Normal 态单键 t 的 toggle 语义一致，且左右栏各自独立。
+    if key.code == KeyCode::Char('t') && state.active_tab().focused_visual_range().is_some() {
+        input.count = None;
+        let names = {
+            let tab = state.active_tab();
+            let (lo, hi) = tab.focused_visual_range().unwrap_or((0, 0));
+            let entries = tab.focused_entries();
+            let hi = hi.min(entries.len().saturating_sub(1));
+            (lo..=hi)
+                .filter_map(|i| entries.get(i).map(|e| e.name.clone()))
+                .collect::<Vec<_>>()
+        };
+        let all_tagged = names
+            .iter()
+            .all(|n| state.active_tab().focused_tags().contains(n));
+        {
+            let tab = state.active_tab_mut();
+            let tags = if tab.focus == crate::tab::Focus::Right {
+                &mut tab.right.tags
+            } else {
+                &mut tab.tags
+            };
+            for name in &names {
+                if all_tagged {
+                    tags.remove(name);
+                } else {
+                    tags.insert(name.clone());
+                }
+            }
+            if tab.focus == crate::tab::Focus::Right {
+                tab.right.visual = None;
+            } else {
+                tab.visual = None;
+            }
+        }
+        *msg = Some(format!(
+            "{} {} 个标记",
+            if all_tagged { "已取消" } else { "已提交" },
+            names.len()
+        ));
+        return Outcome::Continue;
+    }
+
     // M24-4：可视模式 d/y/x 直接对选中区域执行（不再需要 dd/yy 序列）。
     if state.active_tab().visual.is_some() {
         match key.code {
