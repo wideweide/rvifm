@@ -4943,7 +4943,15 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
                 crate::hooks::fire_post(&cfg, crate::hooks::HookEvent::OpenPost, &payload);
                 *msg = None;
             }
-            Err(e) => *msg = Some(format!("打开失败: {e}")),
+            Err(e) => {
+                let cfg = state.config.clone();
+                let payload = format!(
+                    "{{\"error\":\"{}\"}}",
+                    crate::hooks::json_escape(&e.to_string())
+                );
+                crate::hooks::fire_post(&cfg, crate::hooks::HookEvent::OpenFailed, &payload);
+                *msg = Some(format!("打开失败: {e}"));
+            }
         }
         return;
     }
@@ -6425,9 +6433,7 @@ pub(crate) fn record_live_visit(state: &mut AppState, tab_id: usize, side: char)
         keyword: String::new(),
     };
     #[cfg(not(test))]
-    if let Err(e) = crate::frecency::flush_visits(std::slice::from_ref(&record)) {
-        eprintln!("rvifm: 实时访问记录写入失败: {e}");
-    }
+    crate::hooks::record_async(record);
     #[cfg(test)]
     let _ = &record;
 }

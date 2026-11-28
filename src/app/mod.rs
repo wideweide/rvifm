@@ -1597,6 +1597,7 @@ fn run_with_initial_mode(
                             }
                             match result {
                                 Ok(ExecOutcome::Quit) => {
+                                    crate::hooks::flush_records();
                                     flush_session_visits(&state);
                                     crate::session::save_session(&state);
                                     cleanup_temp_opens(&mut state);

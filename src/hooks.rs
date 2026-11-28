@@ -102,3 +102,71 @@ pub fn json_escape(s: &str) -> String {
     }
     out
 }
+
+/// M98-4：全局异步 frecency 写入线程（调用方只投递记录，不阻塞）。
+type VisitMsg = (
+    crate::frecency::EntryRecord,
+    Option<std::sync::mpsc::Sender<()>>,
+);
+
+#[cfg_attr(test, allow(dead_code))]
+static VISIT_TX: std::sync::OnceLock<std::sync::mpsc::Sender<VisitMsg>> =
+    std::sync::OnceLock::new();
+
+#[cfg_attr(test, allow(dead_code))]
+fn visit_sender() -> &'static std::sync::mpsc::Sender<VisitMsg> {
+    VISIT_TX.get_or_init(|| {
+        let (tx, rx): (
+            std::sync::mpsc::Sender<VisitMsg>,
+            std::sync::mpsc::Receiver<VisitMsg>,
+        ) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for (record, ack) in rx {
+                let _ = crate::frecency::flush_visits(std::slice::from_ref(&record));
+                if let Some(ack) = ack {
+                    let _ = ack.send(());
+                }
+            }
+        });
+        tx
+    })
+}
+
+/// 异步投递一次访问记录；测试态跳过真实 redb 写入。
+pub fn record_async(record: crate::frecency::EntryRecord) {
+    #[cfg(test)]
+    {
+        let _ = record;
+        return;
+    }
+    #[cfg(not(test))]
+    let _ = visit_sender().send((record, None));
+}
+
+/// 退出前等待在途记录写完（best-effort）。
+pub fn flush_records() {
+    #[cfg(test)]
+    return;
+    #[cfg(not(test))]
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if visit_sender()
+            .send((placeholder_record(), Some(tx)))
+            .is_ok()
+        {
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(2));
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn placeholder_record() -> crate::frecency::EntryRecord {
+    crate::frecency::EntryRecord {
+        path: String::new(),
+        topic: "cmd".to_owned(),
+        kind: crate::frecency::EntryKind::Open,
+        ts: 0,
+        clock: 0,
+        keyword: String::new(),
+    }
+}

@@ -1099,5 +1099,5 @@
 - [x] M98-1 移除 :theme，新增 :colorscheme + --save（见 SPEC M98；2026-11-28 完成：分组列表 + 配置持久化）
 - [x] M98-2 五个轻量扩展点（外部进程 + TOML + JSON）（见 SPEC M98；2026-11-28 完成：commands/providers/statusline/hooks 配置/packs + m982）
 - [x] M98-3 钩子事件总线（pre 同步可取消 / post 异步）（见 SPEC M98；2026-11-28 完成：hooks 模块 + open/cmd/job 事件 + m983）
-- [ ] M98-4 frecency 改为 post 钩子异步串行写入 + 去掉散落直调（见 SPEC M98）
+- [x] M98-4 frecency 改为 post 钩子异步串行写入 + 去掉 file 前置记录（见 SPEC M98；2026-11-28 完成：hooks::record_async + flush + open_failed）
 - [ ] M98-5 文档/验收/门禁（见 SPEC M98）

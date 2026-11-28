@@ -740,19 +740,17 @@ pub(crate) fn frec_pane_key(
                 state.active_tab_mut().pane_frecency = None;
                 match picked {
                     Some(entry) => {
-                        // M86-2：文件条目在打开/定位前即异步记一次访问（用户口径：
-                        // 无可靠返回状态时，执行前记录），避免 l/Enter 后漏记。
-                        let (topic, path) = (entry.topic.clone(), entry.path.clone());
-                        if topic == "file" {
-                            crate::app::exec::record_file_open(
-                                state,
-                                state.active,
-                                std::path::Path::new(&path),
-                            );
-                        }
+                        // M98-4：改为成功后记录（用户裁决），file 条目也走 post 事件。
+                        let topic = entry.topic.clone();
                         match jump_to(state, &entry) {
                             Ok(m) => {
-                                if topic != "file" {
+                                if topic == "file" {
+                                    crate::app::exec::record_file_open(
+                                        state,
+                                        state.active,
+                                        std::path::Path::new(&entry.path),
+                                    );
+                                } else {
                                     crate::app::exec::record_live_visit(state, state.active, 'L');
                                 }
                                 *msg = Some(m);
