@@ -1151,3 +1151,39 @@ dl = "bad"
         assert!(cfg.preview.image_protocol_query);
     }
 }
+
+/// M98-1：把主题名写回用户配置的 `[ui] theme`（不存在则创建最小配置）。
+pub fn set_theme_in_config(name: &str) -> std::io::Result<()> {
+    let path = config_path();
+    let mut body = std::fs::read_to_string(&path).unwrap_or_default();
+    let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+    let line = format!("theme = \"{escaped}\"");
+    let mut found = false;
+    let lines: Vec<String> = body
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with("theme =") {
+                found = true;
+                format!(
+                    "{}{}",
+                    l.chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>(),
+                    line
+                )
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect();
+    body = lines.join("\n") + "\n";
+    if !found {
+        body.push_str("\n[ui]\n");
+        body.push_str(&line);
+        body.push('\n');
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, body)
+}

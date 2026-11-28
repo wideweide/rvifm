@@ -2257,7 +2257,7 @@ pub(crate) const COMMAND_NAMES: &[&str] = &[
     "tabname",
     "tabnew",
     "tag",
-    "theme",
+    "colorscheme",
     "touch",
     "trash",
     "tree",
@@ -2557,7 +2557,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M24-8：compare 只读且不依赖光标位置，`..` 行放行。
             Some(
                 "cd" | "q" | "quit" | "help" | "histprev" | "histnext" | "history" | "his"
-                | "compare" | "sync" | "theme" | "bmark" | "bmarks" | "bmgo" | "delbmarks"
+                | "compare" | "sync" | "colorscheme" | "bmark" | "bmarks" | "bmgo" | "delbmarks"
                 | "queue" | "tutor",
             ) => {}
             Some(other) => return Err(format!("`..` 行仅导航（j 向下离开）: {other}")),
@@ -2570,7 +2570,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             Some(
                 "cd" | "q" | "quit" | "help" | "remote" | "histprev" | "histnext" | "history"
                 | "his" | "sort" | "find" | "grep" | "recent" | "file" | "rename" | "mkdir"
-                | "touch" | "copy" | "move" | "mk" | "theme" | "queue" | "tutor",
+                | "touch" | "copy" | "move" | "mk" | "colorscheme" | "queue" | "tutor",
             ) => {}
             Some(other) => {
                 // M22-4：去掉过时的"在 M20 接入"表述。
@@ -2585,8 +2585,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
             // M29-2：compare 重执行豁免——dp/do 后可重跑对比（结果替换）。
             // M39-1：goto 豁免——仅滚动 hex 查看器（不改结果）。
             Some(
-                "find" | "grep" | "sort" | "compare" | "goto" | "q" | "quit" | "help" | "theme"
-                | "tutor",
+                "find" | "grep" | "sort" | "compare" | "goto" | "q" | "quit" | "help"
+                | "colorscheme" | "tutor",
             ) => {}
             Some(other) => {
                 return Err(format!("搜索结果视图为只读（Esc 退出）: {other}"));
@@ -2597,7 +2597,8 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
     // M13-7：树视图只读——除 :tree（退出）/ :q / :help 外的命令拒绝。
     if state.active_tab().in_tree() {
         match cmd_head {
-            Some("tree") | Some("q" | "quit") | Some("help") | Some("theme") | Some("tutor") => {}
+            Some("tree") | Some("q" | "quit") | Some("help") | Some("colorscheme")
+            | Some("tutor") => {}
             Some(other) => {
                 return Err(format!("树视图为只读浏览（:tree 退出）: {other}"));
             }
@@ -2648,24 +2649,45 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 ),
             }
         }
-        Some("theme") => {
-            // AUDIT-13：运行时主题切换（内置优先、用户主题次之）；
-            // 无参列出可用主题（内置 + 用户目录）。
-            let name = parts.collect::<Vec<&str>>().join(" ");
+        Some("colorscheme") => {
+            // M98-1：vim/vifm 通用命名；无参分组列出，带参切换，--save 写回配置。
+            let args = parts.collect::<Vec<&str>>();
+            let save = args.contains(&"--save");
+            let name = args
+                .iter()
+                .filter(|a| **a != "--save")
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" ");
             if name.is_empty() {
-                let mut names = crate::theme::builtin_names();
-                names.extend(crate::theme::discover_user_themes());
+                let builtins = crate::theme::builtin_names();
+                let bundled = crate::theme::bundled_names();
+                let users = crate::theme::discover_user_themes();
                 return Ok(ExecOutcome::Done {
-                    msg: Some(format!("可用主题: {}", names.join(", "))),
+                    msg: Some(format!(
+                        "内置({}): {}\n捆绑({}): {}\n用户({}): {}",
+                        builtins.len(),
+                        builtins.join(", "),
+                        bundled.len(),
+                        bundled.join(", "),
+                        users.len(),
+                        users.join(", ")
+                    )),
                 });
             }
             crate::theme::activate(&name).map_err(|e| e.to_string())?;
+            if save {
+                crate::config::set_theme_in_config(&name).map_err(|e| e.to_string())?;
+            }
             let variant = match crate::theme::active_variant() {
                 opaline::schema::ThemeVariant::Light => "light",
                 _ => "dark",
             };
             Ok(ExecOutcome::Done {
-                msg: Some(format!("主题已切换: {name}（{variant}）")),
+                msg: Some(format!(
+                    "colorscheme: {name}（{variant}）{}",
+                    if save { " 已写入配置" } else { "" }
+                )),
             })
         }
         Some("bmark") => {

@@ -9705,7 +9705,7 @@ fn m34_1_vifm_style_prefers_theme_derivation_over_16color_fallback() {
 
 #[test]
 fn audit13_theme_command_switches_lists_and_errors() {
-    // AUDIT-13：`:theme` 运行时切换（内置优先）；无参列出可用主题；
+    // AUDIT-13/M98-1：`:colorscheme` 运行时切换（内置优先）；无参列出可用主题；
     // 未知主题可读错误（不 panic）。列表/图标渲染经 theme::style /
     // active_variant 即时跟随（filetype_style 已接线，见 M21-F1）。
     // 持 theme::TEST_LOCK 与颜色敏感渲染测试串行，结束复位全局主题。
@@ -9719,21 +9719,22 @@ fn audit13_theme_command_switches_lists_and_errors() {
         .first()
         .expect("内置主题非空")
         .clone();
-    match exec_command_impl(&mut state, &format!("theme {first}")) {
+    match exec_command_impl(&mut state, &format!("colorscheme {first}")) {
         Ok(ExecOutcome::Done { msg }) => {
             let m = msg.unwrap();
-            assert!(m.contains("主题已切换") && m.contains(&first), "msg: {m}");
+            assert!(m.contains("colorscheme:") && m.contains(&first), "msg: {m}");
         }
         other => panic!("expected Done, got {other:?}"),
     }
-    match exec_command_impl(&mut state, "theme") {
+    match exec_command_impl(&mut state, "colorscheme") {
         Ok(ExecOutcome::Done { msg }) => {
             let m = msg.unwrap();
-            assert!(m.contains("可用主题") && m.contains(&first), "msg: {m}");
+            assert!(m.contains("内置(") && m.contains(&first), "msg: {m}");
         }
         other => panic!("expected Done, got {other:?}"),
     }
-    let err = exec_command_impl(&mut state, "theme no-such-theme-xyz").expect_err("未知主题应报错");
+    let err =
+        exec_command_impl(&mut state, "colorscheme no-such-theme-xyz").expect_err("未知主题应报错");
     assert!(
         err.contains("激活失败") && err.contains("no-such-theme-xyz"),
         "{err}"

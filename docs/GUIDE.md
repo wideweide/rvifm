@@ -227,7 +227,7 @@ S                排序对话框；:sort 字段,... 多字段排序
 :tree [depth]    树视图（只读快照）
 :compare [byname|bycontents]   左右 pane 目录对比；dp/do 同步（只读边界内可逆）
 :jobs            后台作业（x 取消、p 暂停/恢复、Enter 详情）
-:theme [名]      切换主题（运行时即时生效）
+:colorscheme [名]      切换主题（运行时即时生效）
 :trash           暂存区菜单
 :histprev / :histnext / :history   目录历史
 :goto <偏移>     hex 查看器偏移跳转（0x 十六进制或十进制）
@@ -302,7 +302,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 编译依赖；命令缺失或失败时保持原行为。可用 `[ime] enabled = false` 关闭。
 `s` 打开新终端窗口或 rvifm 失焦期间会暂停强制切英文（输入法是桌面全局状态，避免干扰窗口内的 vim/中文输入）；回到 rvifm 并按键或 FocusGained 后恢复。
 
-完整字段与示例见 README「配置」章节；主题可用名可用 `:theme` 无参列出。
+完整字段与示例见 README「配置」章节；主题可用名可用 `:colorscheme` 无参列出。
 
 > 最近批次（M46）的用户可见变化：`/` 搜索高亮只作用于焦点 pane；`h`→`l` 往返还原
 > 光标；`:extract` 解压后立即刷新目标栏；`:help` 不透明、支持页内 `/` 搜索，并在
@@ -359,7 +359,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 | 分类 | 键位 |
 |---|---|
 | 导航 | `j/k` `↑↓←→`（同 k/j/h/l）`l/Enter` `h` `gg/G` `Ctrl-d/u` `..` |
-| 焦点/视图 | `Tab` `w`/`:view` `S` `:sort` `:tree` `:theme` `Ctrl-G` |
+| 焦点/视图 | `Tab` `w`/`:view` `S` `:sort` `:tree` `:colorscheme` `Ctrl-G` |
 | 搜索 | `/` `n/N` `={glob}` `f/F{字符}` `:find` `:grep` |
 | 选择/批量 | `v` `t` `:select` `:unselect` `:tag` |
 | 粘贴冲突 | 同名时弹选项：同路径 rename/skip/skip all；异路径另加 append the tail/overwrite/overwrite all |
@@ -382,7 +382,7 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 | `:select` `:unselect` `:tag` | 批量选择与操作 |
 | `:bmark` `:bmarks` `:bmgo` `:delbmarks` `:keyword` | 书签族 |
 | `:tabnew` `:tabclose` `:tabmove` | 标签管理 |
-| `:sort` `:tree` `:view` `:theme` | 视图控制 |
+| `:sort` `:tree` `:view` `:colorscheme` | 视图控制 |
 | `:remote` | SFTP |
 | `:jobs` `:trash` `:file` `:history` | 任务 / 暂存区 / 详情 / 历史 |
 | `:!` `s` `gi` | 外部命令 / shell / git TUI |
