@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### M98 轻量扩展点 + 钩子化记录（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- 移除 `:theme`，统一 `:colorscheme`（分组列出、切换、`--save` 持久化）。
+- `[commands]`/`[preview] providers`/`[ui] statusline_cmd`/`[hooks]`/TOML 配置包五个扩展点，全部外部进程 + JSON，无脚本执行。
+- 钩子事件总线：pre 可取消（200ms 超时）、post 异步；frecency 文件访问改为成功后异步写入 + 退出 flush，`pick` 仍只读。
+
 ## 行为变更（M95 起登记）
 
 - `V`（原与 `v` 同实现的行可视）在 M86-7 移除；统一用 `v` 进入可视选择，visual 内 `t` 提交为持久标记（M89）。
