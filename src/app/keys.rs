@@ -641,7 +641,7 @@ fn tag_move_impl(state: &mut AppState, msg: &mut Option<String>, down: bool, n: 
 }
 
 /// M86-2：删除指定下标的 frecency 记录（仅数据，不删文件）；`u` 可恢复。
-fn frecency_delete_indices(
+pub(crate) fn frecency_delete_indices(
     pane: &mut crate::tab::FrecencyPane,
     indices: Vec<usize>,
     msg: &mut Option<String>,
@@ -652,6 +652,14 @@ fn frecency_delete_indices(
         .filter_map(|i| visible.get(*i).cloned())
         .collect();
     let count = targets.len();
+    // M105-5：删除前记住被删区间下方的条目；删除后按路径重新定位光标，
+    // 即使条目整体上移，焦点仍落在该条目上（而非保持原行号）。
+    let below_path = indices
+        .iter()
+        .copied()
+        .max()
+        .and_then(|i| visible.get(i.saturating_add(1)))
+        .map(|e| e.path.clone());
     for entry in targets {
         let topic = entry.topic.clone();
         let path = entry.path.clone();
@@ -659,8 +667,16 @@ fn frecency_delete_indices(
         pane.last_deleted_many.push((topic, path));
         pane.entries.retain(|e| e.path != entry.path);
     }
-    let remain = filter_jump(&pane.entries, &pane.query).len();
-    pane.cursor = pane.cursor.min(remain.saturating_sub(1));
+    let remain: Vec<_> = filter_jump(&pane.entries, &pane.query);
+    let deleted_before = indices.iter().filter(|i| **i <= pane.cursor).count();
+    pane.cursor = below_path
+        .as_deref()
+        .and_then(|p| remain.iter().position(|e| e.path == p))
+        .unwrap_or_else(|| {
+            pane.cursor
+                .saturating_sub(deleted_before)
+                .min(remain.len().saturating_sub(1))
+        });
     *msg = Some(format!("已删除 {count} 条 frecency 记录（u 恢复）"));
 }
 

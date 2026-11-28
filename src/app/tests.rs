@@ -16794,3 +16794,48 @@ fn m1054_jk_moves_frecency_cursor_while_preview_focused() {
     assert_eq!(pane.cursor, 1, "Ctrl+J 不应移动光标");
     assert_eq!(pane.preview_scroll, 1, "Ctrl+J 应滚动预览");
 }
+
+#[test]
+fn m1055_multi_delete_focus_follows_below_item() {
+    use crate::frecency::{Grade, ScoredEntry};
+    let tmp = TempDir::new().unwrap();
+    let entry = |n: u32| ScoredEntry {
+        path: tmp
+            .path()
+            .join(format!("f{n}.txt"))
+            .to_string_lossy()
+            .into_owned(),
+        topic: "file".to_owned(),
+        keyword: String::new(),
+        score: (n as f64) + 1.0,
+        grade: Grade::None,
+        last_visit: 0,
+    };
+    let mut pane = crate::tab::FrecencyPane {
+        entries: (0..4).map(entry).collect(),
+        query: String::new(),
+        cursor: 1,
+        normal: true,
+        g_pending: false,
+        preview_focus: false,
+        preview_scroll: 0,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: Some(1),
+        last_deleted_many: Vec::new(),
+    };
+    let mut msg = None;
+    crate::app::keys::frecency_delete_indices(&mut pane, vec![1, 2], &mut msg);
+    assert_eq!(pane.entries.len(), 2);
+    assert_eq!(pane.cursor, 1, "焦点应落在原被删区间下方条目（上移后位置）");
+    assert!(
+        pane.entries[pane.cursor].path.ends_with("f3.txt"),
+        "{:?}",
+        pane.entries[pane.cursor].path
+    );
+}
