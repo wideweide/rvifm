@@ -14842,6 +14842,9 @@ fn m42_1_tutor_render_list_and_panel() {
     // M42-1：渲染——列表覆盖层（模块行/键提示）与底部 Panel
     // （prompt/expected/进度/键提示/结算 Summary）；Panel 态主 TUI 背景可见。
     let (_tmp, state) = make_state(3);
+    // M100-1：本用例验证宽屏排版，显式关闭窄屏断点（70 列 < 默认 80）。
+    let mut state = state;
+    state.config.ui.narrow_threshold = 0;
     let compact = |buf: &ratatui::backend::TestBackend, w: u16, h: u16| {
         (0..h)
             .map(|y| {
@@ -14870,7 +14873,6 @@ fn m42_1_tutor_render_list_and_panel() {
     // 会话 Panel：prompt/expected/右列键提示；背景标签栏仍可见。
     let module = crate::tutor::module_by_id("core_nav").unwrap();
     let mode = InputMode::Normal;
-    let mut state = state;
     state.tutor = Some(crate::tutor::TutorSession {
         module: module.clone(),
         idx: 0,
@@ -16435,4 +16437,78 @@ fn m994_icons_false_uses_plain_text_markers() {
         }
     }
     assert!(text.contains("[F]"), "纯文本图标标记: {text}");
+}
+
+#[test]
+fn m1001_tutor_dialog_full_width_on_narrow() {
+    let area = ratatui::layout::Rect::new(0, 0, 60, 20);
+    let narrow = tutor_dialog_rect_for(area, true);
+    assert_eq!((narrow.x, narrow.width, narrow.height), (0, 60, 16));
+    let wide = tutor_dialog_rect_for(area, false);
+    assert_eq!((wide.x, wide.width), (6, 48));
+}
+
+#[test]
+fn m1001_tutor_list_narrow_drops_description_and_short_hint() {
+    let tmp = TempDir::new().unwrap();
+    let state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
+    terminal
+        .draw(|f| {
+            render(
+                f,
+                &state,
+                &InputMode::TutorList {
+                    cursor: 0,
+                    search: None,
+                },
+                None,
+            )
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..60u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("tutor_meta"), "模块 id 应保留: {compact}");
+    assert!(!text.contains("本模式的按键"), "窄屏应省略描述: {text}");
+    assert!(compact.contains("j/kEnter/q"), "窄屏短提示: {compact}");
+}
+
+#[test]
+fn m1001_tutor_session_narrow_single_column() {
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    // 宿主 ~/.config 下的真实学习进度不得影响测试（AGENTS §7）。
+    state.tutor_progress = Default::default();
+    let base = crate::tutor::module_by_id("core_nav").unwrap();
+    state.tutor = Some(crate::tutor::TutorSession {
+        module: crate::tutor::TutorModule {
+            items: base.items.iter().take(1).cloned().collect(),
+            ..base.clone()
+        },
+        idx: 0,
+        marks: Vec::new(),
+        done: false,
+        review: false,
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
+    terminal
+        .draw(|f| render(f, &state, &InputMode::Normal, None))
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut text = String::new();
+    for y in 0..20u16 {
+        for x in 0..60u16 {
+            text.push_str(buf[(x, y)].symbol());
+        }
+    }
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("预期:"), "窄屏仍显示预期: {compact}");
+    assert!(compact.contains("掌握0/"), "计数并入底部提示行: {compact}");
+    assert!(compact.contains("Ctrl+Y掌握"), "底部快捷键提示: {compact}");
 }

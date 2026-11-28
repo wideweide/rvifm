@@ -726,6 +726,27 @@ pub(crate) fn tutor_dialog_rect(area: ratatui::layout::Rect) -> ratatui::layout:
     }
 }
 
+/// M100-1：窄屏对话框用全宽（保留垂直比例），宽屏走原 80% 居中逻辑。
+pub(crate) fn tutor_dialog_rect_for(
+    area: ratatui::layout::Rect,
+    narrow: bool,
+) -> ratatui::layout::Rect {
+    use ratatui::layout::Rect;
+    if !narrow {
+        return tutor_dialog_rect(area);
+    }
+    if area.height <= 10 {
+        return area;
+    }
+    let h = (area.height * 80 / 100).max(1);
+    Rect {
+        x: area.x,
+        y: area.y + (area.height - h) / 2,
+        width: area.width,
+        height: h,
+    }
+}
+
 /// M56-4：总体学习进度 `(已完成模块, 模块总数, 已掌握功能点, 功能点总数, 百分比)`。
 /// 按稳定模块 ID 从进度表聚合，不依赖 rvifm 版本。
 pub(crate) fn tutor_overall_progress(
@@ -1443,8 +1464,11 @@ fn render_tutor_list(
     search: Option<&str>,
     editing: bool,
 ) {
+    // M100-1：窄屏 tutor 全宽面板/短提示（复用 M99 `narrow_threshold`）。
+    let narrow = state.config.ui.narrow_threshold > 0
+        && frame.area().width < state.config.ui.narrow_threshold;
     // M74-2：只清对话框矩形，并用不透明底色覆盖原文字，双栏上下文仍可见。
-    let dialog = tutor_dialog_rect(frame.area());
+    let dialog = tutor_dialog_rect_for(frame.area(), narrow);
     frame.render_widget(ratatui::widgets::Clear, dialog);
     let modules = crate::tutor::builtin_modules();
     let filtered: Vec<_> = modules
@@ -1466,10 +1490,11 @@ fn render_tutor_list(
                 .map(|p| p.mastered.len())
                 .unwrap_or(0);
             let label = tutor_progress_label(total, mastered);
-            Line::from(format!(
-                "{label} {:<14} {} — {}",
-                m.id, m.name, m.description
-            ))
+            Line::from(if narrow {
+                format!("{label} {:<14} {}", m.id, m.name)
+            } else {
+                format!("{label} {:<14} {} — {}", m.id, m.name, m.description)
+            })
         })
         .collect();
     let block = ratatui::widgets::Block::bordered()
@@ -1477,7 +1502,13 @@ fn render_tutor_list(
         .title("🎓 向导模式 (:tutor)")
         .title_bottom(
             ratatui::text::Line::from(if editing {
-                " ↑↓=选择 Enter=应用 Esc=清除 "
+                if narrow {
+                    " ↑↓ Enter Esc "
+                } else {
+                    " ↑↓=选择 Enter=应用 Esc=清除 "
+                }
+            } else if narrow {
+                " j/k Enter / q "
             } else {
                 " j/k=选择 Enter/l=进入 /=搜索 d=重置 q/Esc=关闭 "
             })
@@ -1485,7 +1516,7 @@ fn render_tutor_list(
         );
     let inner = block.inner(dialog);
     frame.render_widget(block, dialog);
-    let status_h = 5u16.min(inner.height.saturating_sub(2));
+    let status_h = (if narrow { 3u16 } else { 5u16 }).min(inner.height.saturating_sub(2));
     let [mut list_area, status_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(status_h)]).areas(inner);
     if let Some(q) = search {
@@ -2775,7 +2806,8 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
         // M42-1：底部 Tutor Panel——主 TUI 背景保持可见（操作上下文），
         // 面板占底部约 1/4（状态栏其下不受影响）。左列 prompt/expected，
         // 右列进度与按键提示；done 为结算 Summary。
-        let panel_h = (frame.area().height / 4).clamp(6, 10);
+        // M100-1：窄屏面板上限降到 8 行，给软键盘弹出后留更多列表空间。
+        let panel_h = (frame.area().height / 4).clamp(6, if narrow { 8 } else { 10 });
         let panel_y = frame.area().height.saturating_sub(panel_h + 1);
         let panel_area = ratatui::layout::Rect {
             x: 0,
@@ -2834,7 +2866,11 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                     "模块完成！掌握 {mastered}/{total}，未掌握 {skipped}。"
                 )),
                 Line::from("未掌握项已记录（M42-2 起本地持久化，下次进入优先复习）。"),
-                Line::from("Enter=继续学习其它模块（:tutor）  Ctrl+Q 退出（作答已即时保存）。"),
+                Line::from(if narrow {
+                    "Enter=其它模块  Ctrl+Q 退出（已保存）"
+                } else {
+                    "Enter=继续学习其它模块（:tutor）  Ctrl+Q 退出（作答已即时保存）。"
+                }),
             ];
             frame.render_widget(Paragraph::new(lines).block(block), panel_area);
         } else if let Some(item) = module.items.get(*idx) {
@@ -2844,12 +2880,22 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 ratatui::layout::Constraint::Length(1),
             ])
             .areas(inner);
-            let [left, separator, right] = ratatui::layout::Layout::horizontal([
-                ratatui::layout::Constraint::Percentage(68),
-                ratatui::layout::Constraint::Length(1),
-                ratatui::layout::Constraint::Min(0),
-            ])
-            .areas(body);
+            let (left, separator, right) = if narrow {
+                // M100-1：窄屏单列——去掉竖线与右侧计数列。
+                (
+                    body,
+                    ratatui::layout::Rect::default(),
+                    ratatui::layout::Rect::default(),
+                )
+            } else {
+                let [l, sp, r] = ratatui::layout::Layout::horizontal([
+                    ratatui::layout::Constraint::Percentage(68),
+                    ratatui::layout::Constraint::Length(1),
+                    ratatui::layout::Constraint::Min(0),
+                ])
+                .areas(body);
+                (l, sp, r)
+            };
             let mut left_lines = vec![
                 Line::from(Span::styled(
                     format!("💡 {}", item.prompt),
@@ -2878,18 +2924,25 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 Paragraph::new(left_lines).wrap(ratatui::widgets::Wrap { trim: true }),
                 left,
             );
-            frame.render_widget(Paragraph::new(sep_lines), separator);
-            frame.render_widget(
-                Paragraph::new(right_lines).wrap(ratatui::widgets::Wrap { trim: true }),
-                right,
-            );
-            frame.render_widget(
-                Paragraph::new(Line::from(
-                    "[Ctrl+Y] 掌握   [Ctrl+N] 未掌握   [Ctrl+Q] 退出",
-                ))
-                .alignment(ratatui::layout::Alignment::Right),
-                hint_line,
-            );
+            if !narrow {
+                frame.render_widget(Paragraph::new(sep_lines), separator);
+                frame.render_widget(
+                    Paragraph::new(right_lines).wrap(ratatui::widgets::Wrap { trim: true }),
+                    right,
+                );
+            }
+            let (hint, align) = if narrow {
+                (
+                    format!("掌握 {mastered}/{total} · Ctrl+Y 掌握 / Ctrl+N 未掌握 / Ctrl+Q 退出"),
+                    ratatui::layout::Alignment::Left,
+                )
+            } else {
+                (
+                    "[Ctrl+Y] 掌握   [Ctrl+N] 未掌握   [Ctrl+Q] 退出".to_owned(),
+                    ratatui::layout::Alignment::Right,
+                )
+            };
+            frame.render_widget(Paragraph::new(Line::from(hint)).alignment(align), hint_line);
         } else {
             // idx 越界兜底（正常不可达：done 先于越界成立）。
             frame.render_widget(
