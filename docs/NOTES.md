@@ -1789,3 +1789,11 @@ rvifm record  → 静默记录访问
 - **排队**：按 §8.3 登记为 M97，排在 M96 之后；当前执行指针仍是 M93-2（按顺序）。
 
 - **M97 完成记录**：`pulldown-cmark-mdcat =2.20.2`（ratatui feature）后台生成样式行；`[preview] markdown_render` 配置；结果走独立 md channel + generation + LRU。CI 本机全绿；并行测试偶发 flake（m791/nav4）连续两次全量重跑通过，属已知全局状态顺序依赖。
+
+
+### 2026-11-28 — M98 蒸馏决策（异步钩子化）
+
+- **移除 theme**：用户明确移除 `:theme`，统一 `:colorscheme`（对齐 vim/vifm 命名），并支持 `--save` 持久化。
+- **成功状态实证**：`suspend_execute`（`src/app/exec.rs:186`）以 `Command::status()` **等待外部程序退出**并拿到 `ExitStatus`，但只经 `run_external_current_result` 转字符串、丢弃布尔；因此 vim 等 block opener 有明确成功/失败状态，M98-3 需保留并回传。系统 opener `Ok(None)` 仅代表 spawn 成功，按 spawn 成功记录。
+- **钩子异步化评估**：post 钩子（含 frecency 记录）可完全异步——核心发带 id 事件，单线程 writer 串行写 redb，退出前 flush；pre 钩子因为需要「中止操作」必须同步等待（带 200ms 超时），不能全异步，否则取消语义不存在。已登记 M98-3/M98-4。
+- **编号**：M98（M97 为上一批次）；仅登记，等待确认执行。

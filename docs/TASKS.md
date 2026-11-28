@@ -1093,3 +1093,11 @@
 - [x] M97-1 接入 pulldown-cmark-mdcat 库模式 + 后台样式行生成（见 SPEC M97）
 - [x] M97-2 viewer 导航/检索复用 + 缓存/防抖/视口对接（见 SPEC M97）
 - [x] M97-3 配置项 + 文档/验收/门禁（见 SPEC M97）
+
+## M98 — 轻量扩展点 + 钩子化记录（2026-11-28，见 SPEC M98 节）
+
+- [ ] M98-1 移除 :theme，新增 :colorscheme + --save（见 SPEC M98）
+- [ ] M98-2 五个轻量扩展点（外部进程 + TOML + JSON）（见 SPEC M98）
+- [ ] M98-3 钩子事件总线（pre 同步可取消 / post 异步）（见 SPEC M98）
+- [ ] M98-4 frecency 改为 post 钩子异步串行写入 + 去掉散落直调（见 SPEC M98）
+- [ ] M98-5 文档/验收/门禁（见 SPEC M98）
