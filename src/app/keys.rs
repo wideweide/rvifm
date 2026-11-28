@@ -679,17 +679,19 @@ pub(crate) fn frec_pane_key(
     }
     let visible_len = filter_jump(&pane.entries, &pane.query).len();
     let bottom = visible_len.saturating_sub(1);
-    // M49-1：Tab 进入右侧预览后，j/k 滚动预览、/ 搜索、n/N 跳转；
-    // 左侧列表保持可见但不响应 j/k。
+    // M105-4：Tab 进入预览后，j/k 仍移动左侧列表光标（预览跟随当前条目），
+    // 预览内部滚动改用 Ctrl+J/K；/ 搜索、n/N 跳转保留。
     if pane.preview_focus {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Tab | KeyCode::Char(' ') | KeyCode::Esc => pane.preview_focus = false,
             KeyCode::Char('j') | KeyCode::Down if !ctrl => {
-                pane.preview_scroll = pane.preview_scroll.saturating_add(1);
+                pane.cursor = (pane.cursor + 1).min(bottom);
+                pane.preview_scroll = 0;
             }
             KeyCode::Char('k') | KeyCode::Up if !ctrl => {
-                pane.preview_scroll = pane.preview_scroll.saturating_sub(1);
+                pane.cursor = pane.cursor.saturating_sub(1);
+                pane.preview_scroll = 0;
             }
             KeyCode::Char('J') | KeyCode::Char('K') if ctrl => {
                 if ctrl && key.code == KeyCode::Char('J') {

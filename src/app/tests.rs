@@ -16730,3 +16730,67 @@ fn m1053_first_row_score_is_visible() {
         "选中行得分不得沿用反显后不可读的 DarkGray"
     );
 }
+
+#[test]
+fn m1054_jk_moves_frecency_cursor_while_preview_focused() {
+    use crate::frecency::{Grade, ScoredEntry};
+    let tmp = TempDir::new().unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    let entry = |name: &str| ScoredEntry {
+        path: tmp.path().join(name).to_string_lossy().into_owned(),
+        topic: "file".to_owned(),
+        keyword: String::new(),
+        score: 1.0,
+        grade: Grade::None,
+        last_visit: 0,
+    };
+    let mut pane = crate::tab::FrecencyPane {
+        entries: vec![entry("a.txt"), entry("b.txt"), entry("c.txt")],
+        query: String::new(),
+        cursor: 0,
+        normal: true,
+        g_pending: false,
+        preview_focus: true,
+        preview_scroll: 7,
+        preview_query: None,
+        preview_match: 0,
+        d_pending: false,
+        y_pending: false,
+        last_deleted: None,
+        r_pending: false,
+        last_keyword: None,
+        visual: None,
+        last_deleted_many: Vec::new(),
+    };
+    state.active_tab_mut().pane_frecency = Some(pane.clone());
+    let mut input = crate::app::InputState::default();
+    let mut msg = None;
+    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+    crate::app::keys::frec_pane_key(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyEvent {
+            code: KeyCode::Char('j'),
+            kind: KeyEventKind::Press,
+            ..key(KeyCode::Char('j'))
+        },
+    );
+    pane = state.active_tab().pane_frecency.clone().unwrap();
+    assert_eq!(pane.cursor, 1, "j 应移动列表光标");
+    assert_eq!(pane.preview_scroll, 0, "切换条目后预览滚动归零");
+    crate::app::keys::frec_pane_key(
+        &mut state,
+        &mut input,
+        &mut msg,
+        KeyEvent {
+            code: KeyCode::Char('J'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            ..key(KeyCode::Char('J'))
+        },
+    );
+    pane = state.active_tab().pane_frecency.clone().unwrap();
+    assert_eq!(pane.cursor, 1, "Ctrl+J 不应移动光标");
+    assert_eq!(pane.preview_scroll, 1, "Ctrl+J 应滚动预览");
+}
