@@ -7049,9 +7049,11 @@ fn large_directory_load_and_render_fast() {
         .unwrap();
     let draw = t1.elapsed();
 
-    // 宽松上限（CI 速度波动安全）：加载与单帧渲染均 < 2s。
-    assert!(load.as_secs() < 2, "load too slow: {load:?}");
-    assert!(draw.as_secs() < 2, "draw too slow: {draw:?}");
+    // M101-6：CI Windows runner 实测可到 2.54s（并发/IO 抖动）；上限放宽
+    // 到 5s，仍远低于优化前全量 stat 基线（~6.8s），可拦住量级回归。
+    // 精确性能回归由 bench 基线承担，单测只做粗粒度守护。
+    assert!(load.as_secs() < 5, "load too slow: {load:?}");
+    assert!(draw.as_secs() < 5, "draw too slow: {draw:?}");
 }
 
 #[test]
