@@ -413,6 +413,13 @@ pub(crate) enum ExecOutcome {
     EnterGitDiff,
     /// M93-2：打开查重结果视图。
     EnterDupView,
+    /// M93-5：后台归档解压作业（测试态仍同步执行，故仅生产构造）。
+    #[cfg_attr(test, allow(dead_code))]
+    SpawnExtract {
+        host: std::path::PathBuf,
+        dest: std::path::PathBuf,
+        tab_id: usize,
+    },
     /// 命令完成，可携带状态栏提示。
     Done {
         msg: Option<String>,
@@ -1606,6 +1613,22 @@ fn run_with_initial_mode(
                                         normal: false,
                                         g_pending: false,
                                     };
+                                }
+                                Ok(ExecOutcome::SpawnExtract { host, dest, tab_id }) => {
+                                    let op = format!("extract:{}", host.display());
+                                    if let Some(e) = spawn_job_from_plan(
+                                        &mut state,
+                                        &job_tx,
+                                        &op,
+                                        &[],
+                                        &dest,
+                                        &host,
+                                    ) {
+                                        msg = Some(e);
+                                    } else {
+                                        let _ = tab_id;
+                                        msg = Some("extract: 后台解压已入 :jobs".to_owned());
+                                    }
                                 }
                                 Ok(ExecOutcome::SpawnJob {
                                     op,

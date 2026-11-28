@@ -211,6 +211,90 @@ fn execute_archive_job(
 /// M26-1：`op = "archive:<fmt>:<cs>"` → 归档创建（tags 打包 + 校验文件，
 /// 产物与校验各入一条撤销记录）。返回（撤销记录列表, 终态）；纯同步，
 /// 供后台线程与测试共用。
+pub(crate) fn execute_extract_job(
+    host: &str,
+    dest_dir: &std::path::Path,
+    tab_id: usize,
+    controls: &crate::state::JobControls<'_>,
+) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    use std::sync::atomic::Ordering;
+    let mut ops = Vec::new();
+    let mut stack = vec![String::new()];
+    let mut applied = 0usize;
+    let mut first_err: Option<String> = None;
+    let Ok(mut archive) = crate::archive::open_dispatch(std::path::Path::new(host)) else {
+        return (
+            ops,
+            crate::state::JobStatus::Failed {
+                err: "归档打开失败".to_owned(),
+            },
+        );
+    };
+    while let Some(dir) = stack.pop() {
+        wait_while_paused(controls.pause, controls.cancel);
+        if controls.cancel.load(Ordering::Relaxed) {
+            return (
+                ops,
+                crate::state::JobStatus::Cancelled {
+                    summary: format!("解压取消（已完成 {applied} 个成员）"),
+                },
+            );
+        }
+        let Ok(entries) = archive.list(&dir) else {
+            continue;
+        };
+        for entry in entries {
+            if entry.is_dir {
+                stack.push(entry.path);
+                continue;
+            }
+            if entry.size > crate::archive::MAX_MEMBER_READ_BYTES {
+                first_err = Some(format!("{}: 超出单成员上限", entry.path));
+                continue;
+            }
+            let rel = entry.path.trim_start_matches('/');
+            let dest = dest_dir.join(rel);
+            // zip-slip：相对成员路径不得含 ..，落点必须仍在目标目录内。
+            let allowed = !rel.split('/').any(|c| c == "..") && dest.starts_with(dest_dir);
+            if !allowed {
+                first_err = Some(format!("zip-slip 拒绝: {}", entry.path));
+                continue;
+            }
+            if let Some(parent) = dest.parent().filter(|p| std::fs::create_dir_all(p).is_ok()) {
+                ops.push(crate::state::UndoableOp::Create {
+                    tab_id,
+                    path: parent.to_path_buf(),
+                    recursive: true,
+                });
+            }
+            match archive
+                .read(&entry.path)
+                .and_then(|data| std::fs::write(&dest, data).map_err(std::io::Error::other))
+            {
+                Ok(()) => {
+                    ops.push(crate::state::UndoableOp::Create {
+                        tab_id,
+                        path: dest,
+                        recursive: false,
+                    });
+                    applied += 1;
+                    controls.progress.processed.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(e) => first_err = Some(format!("{}: {e}", entry.path)),
+            }
+        }
+    }
+    match first_err {
+        Some(err) => (ops, crate::state::JobStatus::Failed { err }),
+        None => (
+            ops,
+            crate::state::JobStatus::Done {
+                summary: format!("解压 {applied} 个成员完成"),
+            },
+        ),
+    }
+}
+
 pub(crate) fn execute_job_body(
     op: &str,
     names: &[String],
@@ -219,6 +303,10 @@ pub(crate) fn execute_job_body(
     tab_id: usize,
     controls: &crate::state::JobControls<'_>,
 ) -> (Vec<crate::state::UndoableOp>, crate::state::JobStatus) {
+    // M93-5：归档解压作业化（后台写盘，逐成员进度 + 撤销操作回传）。
+    if let Some(host) = op.strip_prefix("extract:") {
+        return execute_extract_job(host, target, tab_id, controls);
+    }
     // M26-1：归档创建分支——整段原子（不做逐项取消；取消在启动前检查）。
     if let Some(rest) = op.strip_prefix("archive:") {
         return execute_archive_job(rest, names, base, target, tab_id, controls);

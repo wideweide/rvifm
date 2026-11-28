@@ -16108,3 +16108,27 @@ fn m934_sync_newer_strategy_copies_only_newer_source() {
         "new"
     );
 }
+
+#[test]
+fn m935_extract_job_writes_members_and_returns_undo_ops() {
+    let tmp = TempDir::new().unwrap();
+    let zip = tmp.path().join("src.zip");
+    crate::archive::make_test_zip(&zip);
+    let dest = TempDir::new().unwrap();
+    let progress = crate::state::JobProgress::default();
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let pause = std::sync::atomic::AtomicBool::new(false);
+    let controls = crate::state::JobControls {
+        cancel: &cancel,
+        pause: &pause,
+        progress: &progress,
+    };
+    let (ops, status) =
+        crate::app::jobs::execute_extract_job(&zip.to_string_lossy(), dest.path(), 0, &controls);
+    assert!(
+        matches!(status, crate::state::JobStatus::Done { .. }),
+        "{status:?}"
+    );
+    assert!(!ops.is_empty(), "应回传撤销操作");
+    assert!(dest.path().join("readme.md").is_file(), "成员落盘");
+}
