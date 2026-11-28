@@ -1096,7 +1096,7 @@
 
 ## M98 — 轻量扩展点 + 钩子化记录（2026-11-28，见 SPEC M98 节）
 
-- [ ] M98-1 移除 :theme，新增 :colorscheme + --save（见 SPEC M98）
+- [x] M98-1 移除 :theme，新增 :colorscheme + --save（见 SPEC M98；2026-11-28 完成：分组列表 + 配置持久化）
 - [ ] M98-2 五个轻量扩展点（外部进程 + TOML + JSON）（见 SPEC M98）
 - [ ] M98-3 钩子事件总线（pre 同步可取消 / post 异步）（见 SPEC M98）
 - [ ] M98-4 frecency 改为 post 钩子异步串行写入 + 去掉散落直调（见 SPEC M98）
