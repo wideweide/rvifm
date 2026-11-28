@@ -16839,3 +16839,27 @@ fn m1055_multi_delete_focus_follows_below_item() {
         pane.entries[pane.cursor].path
     );
 }
+
+#[test]
+fn m1056_opener_rule_match_records_file_access() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("note.txt"), "hello").unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().cursor = 0;
+    let mut msg = None;
+    open_selected(&mut state, &mut msg);
+    // 默认 [opener] edit_text = vim %s 命中规则（Ok(Some) 分支），仍须记录。
+    assert!(
+        state.pending_external.is_some() || msg.is_some(),
+        "应走 opener 规则分支: {msg:?}"
+    );
+    let recorded = state
+        .live_recorded
+        .keys()
+        .any(|(t, k, p)| *t == state.active && *k == 'F' && p.contains("note.txt"));
+    assert!(
+        recorded,
+        "命中 opener 规则打开文件后 o 应检索得到: {:?}",
+        state.live_recorded
+    );
+}

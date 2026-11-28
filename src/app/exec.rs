@@ -4920,6 +4920,17 @@ pub(crate) fn open_selected(state: &mut AppState, msg: &mut Option<String>) {
         // （block=true 交 run 循环挂起），未命中/系统项回退系统 opener。
         match crate::opener::open_with_layers(&state.config.open, &state.config.opener, &path) {
             Ok(Some(cmd)) => {
+                // M105-6：命中 opener 规则（含默认 `edit_text = vim %s`）同样是
+                // 「调用被接受的成功打开」——按 M98 口径在派发前记录，避免
+                // `l` 打开后 `o` 与重启后 `o` 都检索不到该文件。
+                let tab_id = state.active;
+                record_file_open(state, tab_id, &path);
+                let cfg = state.config.clone();
+                let payload = format!(
+                    "{{\"path\":\"{}\"}}",
+                    crate::hooks::json_escape(&path.to_string_lossy())
+                );
+                crate::hooks::fire_post(&cfg, crate::hooks::HookEvent::OpenPost, &payload);
                 // M48-2：文本编辑类 block 规则优先在新终端窗口执行，避免 vim
                 // 覆盖 rvifm 界面；无复用器/关闭时回退挂起 TUI 的旧行为。
                 if text_like && state.config.ui.terminal_in_new_window {
