@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M35-2：harness 一致性检查（七条规则）。
+"""M35-2：harness 一致性检查（十二条规则）。
 
 CI（required check）与本地 pre-commit 共用。退出码非 0 = 存在漂移。
 用法：python3 scripts/harness_check.py [repo_root]
@@ -189,4 +189,4 @@ if problems:
     for p in problems:
         print("  " + p)
     sys.exit(1)
-print("harness_check: OK（九条规则全部通过）")
+print("harness_check: OK（十二条规则全部通过）")

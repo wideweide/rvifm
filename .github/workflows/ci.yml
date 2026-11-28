@@ -98,6 +98,23 @@ jobs:
           name: test-output-${{ matrix.os }}
           path: test-output.txt
 
+  # M101-2：harness 文档一致性门禁（R12 注入 main CI 结论）。
+  # needs 取其余 job 的聚合结论；本 job 自身不参与，避免自指。
+  harness:
+    name: harness consistency
+    if: always()
+    needs: [test, fuzz, supply-chain]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: harness_check
+        env:
+          RVIFM_MAIN_CI: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
+        run: python3 scripts/harness_check.py
+
   # M40-2：cargo-fuzz 模糊测试（SPEC M40-2 SIMPLIFIED——CI 内 10 分钟总量；
   # 24h 本地长跑记录随 Linux 开发机，见 NOTES）。libFuzzer 需 nightly。
   fuzz:

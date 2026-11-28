@@ -27,6 +27,14 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# M101-1：M97 Markdown 预览经 pulldown-cmark-mdcat 2.20.2 引入 unicodeit 0.2.2，
+# 其许可为 "MIT AND LPPL-1.3c"（OSI 批准；仅用于 Unicode → LaTeX 符号转换）。
+# 只对该 crate 精确豁免 LPPL-1.3c，不全局放开，避免影响其它依赖的许可证门禁。
+[[licenses.exceptions]]
+allow = ["LPPL-1.3c"]
+name = "unicodeit"
+version = "0.2.2"
+
 [advisories]
 version = 2
 yanked = "warn"

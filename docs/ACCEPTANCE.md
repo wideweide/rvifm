@@ -1508,7 +1508,7 @@
 ## 106. M101 — CI 与文档可信度收口（见 SPEC M101 节）
 
 - [ ] M101-1 main CI run 全绿（三平台 test + fuzz + supply-chain，cargo deny check 通过或带理由豁免）。
-- [ ] M101-2 CI 存在 harness_check required job 且注入 RVIFM_MAIN_CI；脚本文案规则数与实际一致；制造漂移可失败。
+- [x] M101-2 CI 存在 harness_check job 且注入 RVIFM_MAIN_CI；脚本文案规则数与实际一致；failure 注入实测退出 1。（2026-11-28）
 - [ ] M101-3 STATE 阶段上界与 TASKS 最大批次一致，制造过期可失败。
 - [ ] M101-4 README 安装段与顶部版本滞后提示一致；GUIDE 同步；CI failure 注入时无「全绿」表述。
 - [ ] M101-5 文档/验收/门禁，仅提交代码。
