@@ -46,7 +46,8 @@ rvifm 帮助（vim 风格文件管理器）
 
 == 选择、标记与批量 ==
   v               可视选择（j/k 扩选，Esc 退出）
-  t               标记/取消标记（BOLD+下划线高亮；d 批量删除 / D 永久删除）
+  t               标记/取消当前项；visual 内 t=提交/翻转选区为标记并退出
+  J / K           标记当前项并下/上移动；3K=标记当前+上三项（共四项）
   t               标记/取消标记当前条目（tag）
   :select {glob}  按 pattern 批量标记（无参=当前条目）
   :unselect       同上取消（无参=清空全部）
@@ -288,3 +289,6 @@ M88 长文件名：名称列按 Unicode 宽度以 `…` 中间省略并保留尾
 
 粘贴冲突：同名时弹出选项——同路径 rename/skip/skip all，
   异路径另加 append the tail/overwrite/overwrite all；j/k 选择，y/Enter 应用，Esc 取消。
+
+M89 多选模型：v 选连续区间 → t 提交为持久标记（与 v 同背景高亮）；
+  J/K 标记当前并移动，count=N+1；d/D 删除标记文件，:unselect 仅清标记。

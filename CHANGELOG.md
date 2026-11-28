@@ -17,6 +17,10 @@
 
 - 按 Unicode 单元格宽度在名称列内以 `…` 中间省略，保留 `.pdf.md5`/`.tar.gz` 等尾部扩展链；大小/时间列不再被挤压。
 
+### M89 多选模型统一（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `v` 选连续区间、`t` 提交/翻转到持久标记并退出 visual；`J`/`K` 标记当前并移动，count 为 N+1；标记行与 v 选区共用背景样式，`N tagged` 计数保留。
+
 ### M87 命令补全对齐 fzf/frecency（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - `:` 直达补全（SEARCH/Normal 双模式），`!` 切外部命令源，实时过滤默认首项；↑↓/Ctrl+j/k 导航，移除 Tab；有匹配 Enter 填充 / Ctrl+Enter 执行，无匹配均执行输入内容；外部命令 Normal 态 dd/u；仅记录成功命令。
