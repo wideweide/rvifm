@@ -1097,6 +1097,7 @@ fn run_with_initial_mode(
             last_seq_len = 0;
         }
         // M36-7：传输队列消费（每次 poll 前——头条目上传同步执行）。
+        let mut return_or_skip = false;
         if !state.transfer_queue.is_empty()
             && state
                 .transfer_queue
@@ -1104,24 +1105,53 @@ fn run_with_initial_mode(
                 .map(|e| e.direction == crate::app::jobs::TransferDirection::Upload)
                 .unwrap_or(false)
         {
-            let entry = state.transfer_queue.remove(0);
-            if let Some(backend) = state.remote_sessions.get(&entry.remote) {
-                match upload_chunked(backend.as_ref(), &entry.src, &entry.dest) {
-                    Ok(()) => {
+            let mut entry = state.transfer_queue.remove(0);
+            if entry.state == crate::state::TransferState::Paused
+                || entry.state == crate::state::TransferState::Cancelled
+            {
+                // 暂停/取消项留在队列里并轮到队尾，不阻塞其它条目。
+                state.transfer_queue.push(entry.clone());
+                state.transfer_queue.rotate_left(1);
+                return_or_skip = true;
+            } else {
+                entry.state = crate::state::TransferState::Running;
+            }
+            if !return_or_skip {
+                let remote_name = entry.remote.clone();
+                let tab_id = entry.tab_id;
+                let src = entry.src.clone();
+                let dest = entry.dest.clone();
+                // 后端借用限于此作用域，之后才能安全改 state/entry。
+                let uploaded = state
+                    .remote_sessions
+                    .get(&remote_name)
+                    .map(|backend| upload_chunked(backend.as_ref(), &src, &dest));
+                match uploaded {
+                    Some(Ok(())) => {
+                        entry.state = crate::state::TransferState::Done;
                         state.undo_stack.push(crate::state::UndoableOp::Remote {
-                            tab_id: entry.tab_id,
-                            remote: entry.remote.clone(),
+                            tab_id,
+                            remote: remote_name,
                             kind: crate::state::RemoteUndo::Create {
-                                path: entry.dest.clone(),
+                                path: dest,
                                 is_dir: false,
                             },
                         });
                     }
-                    Err((_, e)) => {
+                    Some(Err((_, e))) => {
+                        entry.state = crate::state::TransferState::Failed;
+                        entry.error = Some(e.clone());
                         msg = Some(format!("queue: {} 失败: {e}", entry.src.display()));
                     }
+                    None => {
+                        entry.state = crate::state::TransferState::Failed;
+                        entry.error = Some("远端会话不存在".to_owned());
+                    }
                 }
-                refresh_tab_panes(&mut state, entry.tab_id);
+                refresh_tab_panes(&mut state, tab_id);
+            }
+            if entry.state != crate::state::TransferState::Done {
+                state.transfer_queue.push(entry);
             }
         }
         // M13-8：事件轮询（100ms）——后台作业完成即时感知，UI 不空转阻塞；

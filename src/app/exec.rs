@@ -5006,6 +5006,10 @@ pub(crate) fn paste_yanked_remote(
                 dest,
                 tab_id,
                 remote: remote.clone(),
+                state: crate::state::TransferState::Pending,
+                transferred: 0,
+                retries: 0,
+                error: None,
             });
         }
         *msg = Some(format!(

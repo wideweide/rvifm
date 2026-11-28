@@ -15699,3 +15699,10 @@ fn m892_tag_move_down_and_up_with_count() {
     );
     assert_eq!(state.active_tab().cursor, 2, "J 下移一步");
 }
+
+#[test]
+fn m911_transfer_state_machine_defaults() {
+    use crate::state::TransferState;
+    assert_eq!(TransferState::default(), TransferState::Pending);
+    assert_ne!(TransferState::Done, TransferState::Failed);
+}

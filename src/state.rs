@@ -279,6 +279,18 @@ pub enum YankSource {
     },
 }
 
+/// M91-1：传输任务状态机（队列条目携带进度与重试次数）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransferState {
+    #[default]
+    Pending,
+    Running,
+    Paused,
+    Done,
+    Failed,
+    Cancelled,
+}
+
 /// M36-7：传输队列条目（粘贴入队；顺序消费）。
 #[derive(Debug, Clone)]
 pub struct TransferQueueEntry {
@@ -290,6 +302,11 @@ pub struct TransferQueueEntry {
     pub tab_id: usize,
     /// 远端会话名（下载用；上传空）。
     pub remote: String,
+    /// M91-1：任务状态、已传字节、重试次数与最近错误。
+    pub state: TransferState,
+    pub transferred: u64,
+    pub retries: u32,
+    pub error: Option<String>,
 }
 
 /// M32-1/M36：no-op 控制标志（同步粘贴路径的取消/暂停句柄——恒 false）。
