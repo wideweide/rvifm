@@ -2950,6 +2950,9 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
         }
         Some("du") => {
             // M93-1：后台扫描，UI 线程不阻塞；结果由 run 循环落到 DuView。
+            // M95-5：`--tree` 让结果按路径层级缩进。
+            let parts: Vec<&str> = parts.collect();
+            let tree = parts.contains(&"--tree");
             let base = physical_base(state)?;
             let tx = state.du_tx.clone();
             std::thread::spawn(move || {
@@ -2989,6 +2992,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                     entries,
                     total,
                     scanned,
+                    tree,
                 });
             });
             Ok(ExecOutcome::Done {
@@ -3092,6 +3096,7 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                 entries: groups,
                 total: 0,
                 scanned: count,
+                tree: false,
             });
             Ok(ExecOutcome::EnterDupView)
         }
@@ -3611,6 +3616,91 @@ pub(crate) fn exec_command_impl(state: &mut AppState, line: &str) -> Result<Exec
                         .to_owned(),
                 ),
             }
+        }
+        // M95-5：文件分割 / 合并（分块流式，逐文件入撤销栈）。
+        Some("split") => {
+            let size: u64 = parts
+                .next()
+                .ok_or_else(|| "split: 缺少块大小（字节）".to_owned())?
+                .parse()
+                .map_err(|_| "split: 块大小非法".to_owned())?;
+            if size == 0 {
+                return Err("split: 块大小须 > 0".to_owned());
+            }
+            let base = physical_base(state)?;
+            let names = selected_names(state);
+            if names.is_empty() {
+                return Err("split: 无选中文件".to_owned());
+            }
+            let tab_id = state.active;
+            let mut made = 0usize;
+            for name in &names {
+                let src = base.join(name);
+                let mut file =
+                    std::fs::File::open(&src).map_err(|e| format!("split: {name}: {e}"))?;
+                let mut buf = vec![0u8; size.min(1024 * 1024) as usize];
+                let mut idx = 1usize;
+                loop {
+                    let want = (size as usize).min(buf.len());
+                    let mut filled = 0usize;
+                    while filled < want {
+                        let n = std::io::Read::read(&mut file, &mut buf[filled..want])
+                            .map_err(|e| format!("split: {name}: {e}"))?;
+                        if n == 0 {
+                            break;
+                        }
+                        filled += n;
+                    }
+                    if filled == 0 {
+                        break;
+                    }
+                    let part = base.join(format!("{name}.part{idx:03}"));
+                    std::fs::write(&part, &buf[..filled])
+                        .map_err(|e| format!("split: 写入失败: {e}"))?;
+                    state.undo_stack.push(crate::state::UndoableOp::Create {
+                        tab_id,
+                        path: part,
+                        recursive: false,
+                    });
+                    made += 1;
+                    idx += 1;
+                    if (idx - 1) as u64 * size
+                        >= std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0)
+                    {
+                        break;
+                    }
+                }
+            }
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("split: 生成 {made} 个分块（u 可逆）")),
+            })
+        }
+        Some("join") => {
+            let base = physical_base(state)?;
+            let names = selected_names(state);
+            if names.len() < 2 {
+                return Err("join: 至少选中两个分块".to_owned());
+            }
+            let out_name = parts.next().unwrap_or("joined.bin");
+            let out = base.join(out_name);
+            if out.exists() {
+                return Err(format!("join: 目标已存在 {out_name}"));
+            }
+            let mut data = Vec::new();
+            for name in &names {
+                data.extend(
+                    std::fs::read(base.join(name)).map_err(|e| format!("join: {name}: {e}"))?,
+                );
+            }
+            std::fs::write(&out, &data).map_err(|e| format!("join: 写入失败: {e}"))?;
+            state.undo_stack.push(crate::state::UndoableOp::Create {
+                tab_id: state.active,
+                path: out,
+                recursive: false,
+            });
+            Ok(ExecOutcome::Done {
+                msg: Some(format!("join: {out_name}（{} 字节，u 可逆）", data.len())),
+            })
         }
         // M95-4：Git 扩展命令（复用 git CLI 零依赖路线）。
         Some("log") => {

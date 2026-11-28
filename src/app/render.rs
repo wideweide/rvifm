@@ -2205,8 +2205,17 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 result.scanned
             ))];
             for (i, (name, size)) in result.entries.iter().enumerate() {
+                let shown = if result.tree {
+                    format!(
+                        "{}{}",
+                        "  ".repeat(name.matches('/').count()),
+                        name.rsplit('/').next().unwrap_or(name)
+                    )
+                } else {
+                    name.clone()
+                };
                 out.push(Line::styled(
-                    format!("{:<60} {}", name, crate::tab::format_size(*size)),
+                    format!("{:<60} {}", shown, crate::tab::format_size(*size)),
                     if i == *cursor {
                         Style::new().add_modifier(Modifier::REVERSED)
                     } else {

@@ -686,6 +686,8 @@ pub struct DuResult {
     pub entries: Vec<(String, u64)>,
     pub total: u64,
     pub scanned: usize,
+    /// M95-5：`:du --tree` 按路径层级缩进显示。
+    pub tree: bool,
 }
 
 /// M92-1：异步目录加载结果（generation 丢弃过期结果）。

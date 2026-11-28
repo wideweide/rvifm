@@ -16032,6 +16032,7 @@ fn m931_du_view_renders_scan_result() {
         entries: vec![("a.bin".to_owned(), 2048)],
         total: 2048,
         scanned: 1,
+        tree: false,
     });
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 10)).unwrap();
     terminal
@@ -16206,4 +16207,26 @@ fn m954_git_log_command_returns_commit() {
     let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
     let out = crate::app::exec::exec_command_impl(&mut state, "log 1").unwrap();
     assert!(format!("{out:?}").contains("hello-commit"), "{out:?}");
+}
+
+#[test]
+fn m955_split_and_join_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let data: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+    fs::write(tmp.path().join("blob.bin"), &data).unwrap();
+    let mut state = AppState::new(Tab::from_physical(tmp.path(), Config::default()).unwrap());
+    state.active_tab_mut().tags.insert("blob.bin".to_owned());
+    let r = crate::app::exec::exec_command_impl(&mut state, "split 256").unwrap();
+    assert!(format!("{r:?}").contains("4 个分块"), "{r:?}");
+    state.active_tab_mut().tags.clear();
+    for i in 1..=4 {
+        state
+            .active_tab_mut()
+            .tags
+            .insert(format!("blob.bin.part{i:03}"));
+    }
+    state.active_tab_mut().refresh(Config::default()).unwrap();
+    let j = crate::app::exec::exec_command_impl(&mut state, "join joined.bin").unwrap();
+    assert!(format!("{j:?}").contains("join"), "{j:?}");
+    assert_eq!(fs::read(tmp.path().join("joined.bin")).unwrap(), data);
 }

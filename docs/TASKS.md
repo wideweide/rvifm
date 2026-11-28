@@ -1079,7 +1079,7 @@
 - [ ] M95-2 design-tokens 文档（见 SPEC M95）
 - [x] M95-3 向导命令覆盖率 ≥90%（见 SPEC M95；2026-11-28 完成：55/59=93%，14 模块 114 项 + m953/m641）
 - [x] M95-4 :log/:blame/:stash/:branch（见 SPEC M95；2026-11-28 完成：m954 + git CLI 复用）
-- [ ] M95-5 :split/:join 与 :du --tree（见 SPEC M95）
+- [x] M95-5 :split/:join 与 :du --tree（见 SPEC M95；2026-11-28 完成：流式分块 + 回合测试 + 树形缩进）
 - [ ] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95）
 
 ## M96 — Arke 异步原则复核：预览性能余项（2026-11-28，见 SPEC M96 节）
