@@ -4,7 +4,7 @@
 
 - **更新时间**：2026-11-27
 - **当前阶段**：**M0–M85 + FIX/REL-4 + FIX-7/8/9 + REL-7 全部实现关闭；v1.5.0 GitHub Release 已发布**（2026-11-27；tag CI run 45996577565 全绿；三 musl 归档 + SHA256SUMS 3 行；人工项 deferred）。
-- **当前任务**：M100 tutor 窄屏显示适配执行中（2 任务）。沿用「crates.io 不发布、不 bump 版本、不做 GitHub Release」口径。
+- **当前任务**：M100 tutor 窄屏显示适配已完成（2/2）。沿用「crates.io 不发布、不 bump 版本、不做 GitHub Release」口径。
 - **阶段状态**：M0–M38-3 + AUDIT + MISC 全部完成（726 单测 + 14 集成，checkpoint 2bff891）；M11-6 清单第 1 项 foot 已过；**0.9.0/0.10.0 经用户决策跳过不再发布**（版本序列 0.8.0 → 0.11.0 → 0.11.1）
 - **基线**：不固化 commit hash，以执行时的 `HEAD` 为准；提交文档后 HEAD 变化属正常，无需回改本文档
 

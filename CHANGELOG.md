@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### M100 tutor 窄屏显示适配（仅提交代码，不触发版本 bump / tag / GitHub Release）
+
+- `:tutor` 在 <80 列下对话框全宽、列表省略描述、短提示；Session 面板单列并把计数并入底部提示行；宽屏布局不变。
+
 ### M99 Termux / 窄屏适配（仅提交代码，不触发版本 bump / tag / GitHub Release）
 
 - 宽度断点自动单栏 + 焦点侧标识；窄屏 filename/detail 列表密度；极小终端提示；图标纯文本降级；Termux `termux-open` 可选 opener 示例。

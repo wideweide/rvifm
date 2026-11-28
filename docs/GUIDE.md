@@ -401,3 +401,8 @@ engine。从其它窗口切回 rvifm（终端 FocusGained）或在 Normal 模式
 - `[ui] narrow_list_mode = "filename"`（默认）窄屏只显示文件名；`"detail"` 第二行显示 `大小 · 日期`。
 - 极小终端（<30 列或 <6 行）显示可读提示；`[ui] icons = false` 把图标降级为 `[D]`/`[F]` 纯文本。
 - Termux 可选：在 `opener.example.toml` 中启用 `termux-open` 规则，让打开行为走 Android 系统流程。
+
+## M100 tutor 窄屏显示
+
+- 窄屏（< `[ui] narrow_threshold`）下 `:tutor` 模块列表用全宽对话框、只显示 `进度 · id · 名称`（省略描述），底部提示精简为 `j/k Enter / q`。
+- 向导 Session 面板窄屏改单列（去掉右侧计数列与竖线），「掌握 x/y」并入底部提示行，面板高度上限降到 8 行；宽屏布局完全不变。

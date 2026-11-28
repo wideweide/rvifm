@@ -295,3 +295,5 @@ M89 多选模型：v 选连续区间 → t 提交为持久标记（与 v 同背�
 
 M99 窄屏适配：<80 列自动单栏并标注 [左]/[右]；[ui] narrow_list_mode=filename|detail；
   极小终端给可读提示；[ui] icons=false 用 [D]/[F] 纯文本图标；Termux 可选 termux-open 规则。
+
+M100 tutor 窄屏：<80 列时 :tutor 全宽、列表省略描述、短提示；Session 面板单列，计数并入底部提示。
