@@ -1028,7 +1028,7 @@
 
 - [x] M89-1 Visual `t` 提交/翻转选区到 tags 并退出 visual（见 SPEC M89；2026-11-28 完成：m891 + m478 适配）
 - [x] M89-2 Normal `J`/`K` 标记当前 + 移动（含 count，N+1 语义）（见 SPEC M89；2026-11-28 完成：m892 + keymap Action）
-- [ ] M89-3 tags 渲染统一为 v 的背景样式 + 状态栏计数保留（见 SPEC M89）
+- [x] M89-3 tags 渲染统一为 v 的背景样式 + 状态栏计数保留（见 SPEC M89；2026-11-28 完成：左右栏同 selected_row_style）
 - [ ] M89-4 文档/验收/门禁（见 SPEC M89）
 
 ## M90 — 可信度恢复（2026-11-28 蒸馏，见 SPEC M90 节）

@@ -2008,17 +2008,12 @@ pub(crate) fn render(frame: &mut Frame, state: &AppState, mode: &InputMode, msg:
                 // 可视选择范围内的行反显（M3-1）；tag 标记行加粗（M3-2）；
                 // 光标行由 highlight_style 叠加。
                 let mut li = ListItem::new(Line::from(spans)).style(base_style);
-                let mut mods = Modifier::empty();
-                if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
-                    // M80-2：可视选区与选中项同源明暗；失焦更浅。
+                // M89-3：v 连续选区与 t 持久标记统一为同一背景样式，视觉上
+                // 「临时选择 → t 提交为持久标记」不跳变；状态栏 N tagged 区分来源。
+                if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi)
+                    || tab.tags.contains(&item.name)
+                {
                     li = li.style(selected_row_style(left_focused));
-                }
-                if tab.tags.contains(&item.name) {
-                    // M86-6：单独 BOLD 在部分主题下不明显，叠加下划线让 t 标记可见。
-                    mods |= Modifier::BOLD | Modifier::UNDERLINED;
-                }
-                if mods != Modifier::empty() {
-                    li = li.style(Style::new().add_modifier(mods));
                 }
                 li
             })

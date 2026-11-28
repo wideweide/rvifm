@@ -6715,10 +6715,10 @@ fn render_shows_tag_bold_and_count() {
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
 
-    // 标记行加粗，未标记行不加粗——M21-F1 后 tab 栏行 0、pane 边框行 1、
-    // `..` 行占行 2（FEAT-2），条目行 3 起（条目文本列 1 起）。
-    assert!(buffer[(1, 4)].modifier.contains(Modifier::BOLD));
-    assert!(!buffer[(1, 3)].modifier.contains(Modifier::BOLD));
+    // M89-3：标记行与 v 选区同背景反显（焦点侧 REVERSED）。
+    assert!(buffer[(1, 4)].modifier.contains(Modifier::REVERSED));
+    // 行 3 是光标行（自带 REVERSED），用行 5（未标记且非光标）验证不误染。
+    assert!(!buffer[(1, 5)].modifier.contains(Modifier::REVERSED));
 
     // 状态栏计数。
     let status = (0..120u16)
@@ -7293,12 +7293,10 @@ fn m478_selection_stays_in_its_pane_after_focus_switch() {
         .draw(|f| render(f, &state, &InputMode::Normal, None))
         .unwrap();
     let buf = terminal.backend().buffer().clone();
-    let left_bold =
-        (0..40u16).any(|x| (3..5).any(|y| buf[(x, y)].modifier.contains(Modifier::BOLD)));
-    let right_bold =
-        (41..80u16).any(|x| (3..5).any(|y| buf[(x, y)].modifier.contains(Modifier::BOLD)));
-    assert!(!left_bold, "左栏不应显示右栏的多选状态");
-    assert!(right_bold, "右栏应保留自己的多选状态");
+    let left_bg = (0..40u16).any(|x| (3..5).any(|y| buf[(x, y)].bg != Color::Reset));
+    let right_bg = (41..80u16).any(|x| (3..5).any(|y| buf[(x, y)].bg != Color::Reset));
+    assert!(!left_bg, "左栏不应显示右栏的多选状态");
+    assert!(right_bg, "右栏应保留自己的多选状态");
 }
 
 #[test]

@@ -657,20 +657,9 @@ pub(crate) fn render_right_pane(
                 spans.push(Span::styled(attr, Style::new().add_modifier(Modifier::DIM)));
             }
             let mut li = ListItem::new(Line::from(spans));
-            let mut modifiers = Modifier::empty();
-            // M47-7：复用 row_reversed（含 !on_parent_row 守卫）——顶部 `..` 行
-            // 高亮时第一条真实条目不得同时反显（原无条件 idx==cursor）。
-            if row_reversed {
-                // M73-2：焦点侧反显，失焦侧浅灰底表达选中项。
-                // M80-2：选中项背景同源明暗，失焦更浅。
+            // M89-3：右栏 v 选区与 t 标记同背景样式（与左栏一致）。
+            if row_reversed || tab.right.tags.contains(&item.name) {
                 li = li.style(crate::app::render::selected_row_style(focused));
-            }
-            if tab.right.tags.contains(&item.name) {
-                // M86-6：与左栏同款可见高亮。
-                modifiers |= Modifier::BOLD | Modifier::UNDERLINED;
-            }
-            if modifiers != Modifier::empty() {
-                li = li.style(Style::new().add_modifier(modifiers));
             }
             li
         })
