@@ -2826,7 +2826,7 @@ fn run_with_initial_mode(
                             }
                             KeyCode::Char('n') | KeyCode::Char('N') => {
                                 if let Some(q) = diff.query.clone() {
-                                    let (rows, _) = diff.rows(100);
+                                    let (rows, _) = diff.rows(diff.render_width.get());
                                     let lower = q.to_lowercase();
                                     let hits: Vec<usize> = rows
                                         .iter()
@@ -2942,8 +2942,16 @@ fn run_with_initial_mode(
                             CmdInput::Submit => {
                                 let q = search_input.trim().to_owned();
                                 if let Some(diff) = state.git_diff.as_mut() {
-                                    diff.query = (!q.is_empty()).then_some(q);
-                                    diff.patch_scroll = 0;
+                                    diff.query = (!q.is_empty()).then_some(q.clone());
+                                    diff.patch_scroll = if q.is_empty() {
+                                        0
+                                    } else {
+                                        let (rows, _) = diff.rows(diff.render_width.get());
+                                        let lower = q.to_lowercase();
+                                        rows.iter()
+                                            .position(|r| r.to_lowercase().contains(&lower))
+                                            .unwrap_or(0)
+                                    };
                                 }
                                 mode = InputMode::GitDiff;
                             }

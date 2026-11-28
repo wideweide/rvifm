@@ -1647,6 +1647,52 @@ fn render_git_confirm(frame: &mut Frame, op: &crate::state::GitOp, area: ratatui
 }
 
 /// M69：git diff 只读 overlay——左栏变更文件，右栏统一补丁/左右对照。
+/// M106-2：在已着色的 diff 行上叠加搜索命中高亮（保留原增删配色）。
+pub(crate) fn highlight_diff_line(line: &Line<'static>, query: Option<&str>) -> Line<'static> {
+    use std::borrow::Cow;
+    let Some(q) = query.filter(|q| !q.is_empty()) else {
+        return line.clone();
+    };
+    let ql = q.to_lowercase();
+    let mut spans = Vec::new();
+    for span in &line.spans {
+        let text = span.content.as_ref();
+        let lower = text.to_lowercase();
+        let mut pos = 0usize;
+        while let Some(rel) = lower[pos..].find(&ql) {
+            let start = pos + rel;
+            let end = start + ql.len();
+            if start > pos {
+                spans.push(Span {
+                    style: span.style,
+                    content: Cow::Owned(text[pos..start].to_owned()),
+                });
+            }
+            spans.push(Span {
+                style: span.style.patch(
+                    Style::new()
+                        .fg(Color::Black)
+                        .bg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                content: Cow::Owned(text[start..end].to_owned()),
+            });
+            pos = end;
+        }
+        if pos < text.len() {
+            spans.push(Span {
+                style: span.style,
+                content: Cow::Owned(text[pos..].to_owned()),
+            });
+        }
+    }
+    Line {
+        style: line.style,
+        alignment: line.alignment,
+        spans,
+    }
+}
+
 fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
     frame.render_widget(ratatui::widgets::Clear, frame.area());
     let Some(diff) = state.git_diff.as_ref() else {
@@ -1733,6 +1779,8 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
             .border_style(border);
         let left_inner = left_block.inner(left_area);
         let right_inner = right_block.inner(right_area);
+        diff.render_width
+            .set(left_inner.width.saturating_add(right_inner.width) as usize);
         frame.render_widget(left_block, left_area);
         frame.render_widget(right_block, right_area);
         let (rows, _) = match diff.selected() {
@@ -1752,7 +1800,10 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
                 let skip = diff.hscroll;
                 let l2 = l.spans.into_iter().skip(skip).collect::<Vec<_>>();
                 let r2 = r.spans.into_iter().skip(skip).collect::<Vec<_>>();
-                (Line::from(l2).style(l.style), Line::from(r2).style(r.style))
+                (
+                    highlight_diff_line(&Line::from(l2).style(l.style), diff.query.as_deref()),
+                    highlight_diff_line(&Line::from(r2).style(r.style), diff.query.as_deref()),
+                )
             })
             .collect();
         let (left_lines, right_lines): (Vec<_>, Vec<_>) = shown.into_iter().unzip();
@@ -1763,6 +1814,7 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
             .title(title)
             .border_style(border);
         let patch_inner = patch_block.inner(patch_area);
+        diff.render_width.set(patch_inner.width as usize);
         frame.render_widget(patch_block, patch_area);
         let rows = match diff.selected() {
             Some(data) => {
@@ -1786,7 +1838,7 @@ fn render_git_diff(frame: &mut Frame, state: &AppState, msg: Option<&str>) {
                     .into_iter()
                     .skip(diff.hscroll)
                     .collect::<Vec<_>>();
-                Line::from(spans).style(line.style)
+                highlight_diff_line(&Line::from(spans).style(line.style), diff.query.as_deref())
             })
             .collect();
         frame.render_widget(Paragraph::new(shown), patch_inner);

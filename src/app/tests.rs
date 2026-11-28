@@ -16937,3 +16937,27 @@ fn m1061_diff_title_shows_project_and_branch() {
     assert!(text.contains("demo-proj"), "标题应含项目名: {text}");
     assert!(text.contains("feature/x"), "标题应含分支: {text}");
 }
+
+#[test]
+fn m1062_diff_search_highlights_matches() {
+    let line = ratatui::text::Line::from(vec![Span::styled(
+        "hello WORLD",
+        Style::new().fg(Color::Green),
+    )]);
+    let out = crate::app::render::highlight_diff_line(&line, Some("world"));
+    assert!(out.spans.len() >= 2, "命中应拆分 span: {out:?}");
+    let hit = out
+        .spans
+        .iter()
+        .find(|s| s.content.as_ref() == "WORLD")
+        .expect("命中片段应保留原文大小写");
+    assert_eq!(hit.style.bg, Some(Color::LightYellow));
+    let plain = out
+        .spans
+        .iter()
+        .find(|s| s.content.as_ref() == "hello ")
+        .expect("未命中片段应保留");
+    assert_eq!(plain.style.fg, Some(Color::Green));
+    let unchanged = crate::app::render::highlight_diff_line(&line, None);
+    assert_eq!(unchanged.spans.len(), 1, "无查询不得改变行");
+}

@@ -824,6 +824,9 @@ pub struct GitDiffSession {
     pub hunk: usize,
     pub hscroll: usize,
     pub query: Option<String>,
+    /// M106-2：最近一帧补丁区宽度；n/N 据此计算命中行，避免用固定 100 列
+    /// 与实际换行后的渲染行错位。
+    pub render_width: std::cell::Cell<usize>,
     pub generation: u64,
     pub tx: std::sync::mpsc::Sender<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
     pub rx: std::sync::mpsc::Receiver<(u64, String, std::io::Result<crate::gitdiff::DiffFileData>)>,
@@ -852,6 +855,7 @@ impl GitDiffSession {
             hunk: 0,
             hscroll: 0,
             query: None,
+            render_width: std::cell::Cell::new(100),
             generation: 0,
             tx,
             rx,

@@ -1884,3 +1884,4 @@ rvifm record  → 静默记录访问
 - **证据**：`render_git_diff`（render.rs:1650）文件列表标题硬编码 `diff · 变更文件`；`InputMode::GitDiff`（mod.rs:2735 起）把 `Esc`/`q` 统一置 `exit=true`，未对 `diff.side_by_side` 分层；`/` 与 n/N 分支存在但需核实对双栏/完整视图的覆盖；j/k、n/N 分支每次调 `diff.rows(100)` 重算行，是卡顿嫌疑点。
 - **边界**：保持 git CLI 子进程（不引入 git2/gitoxide）、diff 只读与写操作确认流程不变。
 - **执行口径**：本轮仅蒸馏登记，等待用户确认；不 bump / tag / Release。
+- M106-2：`diff.query` 此前只被用于 n/N 跳转，渲染完全未消费——搜索「不可用」的根因。现用 `highlight_diff_line` 在已着色行上叠加黄底命中高亮（保留增删配色）；`render_width` 以 Cell 记录每帧补丁宽度，n/N 与提交跳转改用同一宽度，避免固定 100 列与实际换行行错位。
