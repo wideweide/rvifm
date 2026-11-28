@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M35-2：harness 一致性检查（十二条规则）。
+"""M35-2：harness 一致性检查（十三条规则）。
 
 CI（required check）与本地 pre-commit 共用。退出码非 0 = 存在漂移。
 用法：python3 scripts/harness_check.py [repo_root]
@@ -183,10 +183,20 @@ ci_status = __import__("os").environ.get("RVIFM_MAIN_CI")
 if ci_status == "failure" and "全绿" in (readme + state):
     check("R12-CI", False, "main CI 为 failure，但 README/STATE 仍写「全绿」")
 
+# ── R13：STATE 阶段上界 = TASKS 最大批次号（M101-3）─────────────────
+all_batches = re.findall(r"^## (M\d+) — ", tasks, re.M)
+max_batch = max((int(b[1:]) for b in all_batches), default=0)
+stage_line = next((l for l in state.splitlines() if l.startswith("- **当前阶段**")), "")
+range_m = re.search(r"M\d+\s*[–-]\s*M(\d+)", stage_line)
+first_m = re.search(r"M(\d+)", stage_line)
+stage_max = int(range_m.group(1)) if range_m else (int(first_m.group(1)) if first_m else 0)
+check("R13-STAGE", stage_max == max_batch,
+      f"STATE 当前阶段上界 M{stage_max} ≠ TASKS 最大批次 M{max_batch}")
+
 # ── 结果 ─────────────────────────────────────────────────────────────
 if problems:
     print(f"harness_check: {len(problems)} 项不一致")
     for p in problems:
         print("  " + p)
     sys.exit(1)
-print("harness_check: OK（十二条规则全部通过）")
+print("harness_check: OK（十三条规则全部通过）")
