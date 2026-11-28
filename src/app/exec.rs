@@ -4891,8 +4891,13 @@ pub(crate) fn upload_chunked(
     dest: &Path,
 ) -> Result<(), (u64, String)> {
     const CHUNK: u64 = 1024 * 1024;
-    let src_data = std::fs::read(src).map_err(|e| (0, format!("本地读取失败: {e}")))?;
-    let total = src_data.len() as u64;
+    // M91-2：流式上传——按 1MB 块读取，不再把整个源文件读进内存。
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = std::fs::File::open(src).map_err(|e| (0, format!("本地读取失败: {e}")))?;
+    let total = file
+        .metadata()
+        .map_err(|e| (0, format!("元数据读取失败: {e}")))?
+        .len();
     let src_mtime = std::fs::metadata(src)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -4919,14 +4924,20 @@ pub(crate) fn upload_chunked(
     // 头哈希（首次写前记录——后续重试校验基准）。
     if offset == 0 {
         use sha2::{Digest, Sha256};
-        // 先写第一块（目标此时建立）。
-        let first_end = CHUNK.min(total);
+        // 先写第一块（目标此时建立），随后从该偏移继续读。
+        let mut first = vec![0u8; CHUNK.min(total) as usize];
+        let n = file
+            .read(&mut first)
+            .map_err(|e| (0, format!("读取失败: {e}")))?;
+        first.truncate(n);
         backend
-            .write_range(dest, 0, &src_data[..first_end as usize])
+            .write_range(dest, 0, &first)
             .map_err(|e| (0, e.to_string()))?;
-        offset = first_end;
+        offset = n as u64;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|e| (offset, format!("定位失败: {e}")))?;
         let mut h = Sha256::new();
-        h.update(&src_data[..first_end as usize]);
+        h.update(&first);
         let meta = XferPartMeta {
             offset,
             total,
@@ -4941,11 +4952,18 @@ pub(crate) fn upload_chunked(
     }
     // 块循环推进。
     while offset < total {
-        let end = (offset + CHUNK).min(total);
+        let mut buf = vec![0u8; CHUNK.min(total - offset) as usize];
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| (offset, format!("读取失败: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        buf.truncate(n);
         backend
-            .write_range(dest, offset, &src_data[offset as usize..end as usize])
+            .write_range(dest, offset, &buf)
             .map_err(|e| (offset, e.to_string()))?;
-        offset = end;
+        offset += n as u64;
         let meta_updated = std::fs::read_to_string(&meta_p)
             .ok()
             .and_then(|t| toml::from_str::<XferPartMeta>(&t).ok())

@@ -15706,3 +15706,65 @@ fn m911_transfer_state_machine_defaults() {
     assert_eq!(TransferState::default(), TransferState::Pending);
     assert_ne!(TransferState::Done, TransferState::Failed);
 }
+
+#[test]
+fn m912_upload_is_streamed_and_content_matches() {
+    use std::sync::{Arc, Mutex};
+    struct MemFs(Arc<Mutex<std::collections::HashMap<std::path::PathBuf, Vec<u8>>>>);
+    impl crate::remote::RemoteFs for MemFs {
+        fn list(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Vec<crate::remote::RemoteEntry>, crate::remote::RemoteError> {
+            Ok(Vec::new())
+        }
+        fn read(&self, path: &std::path::Path) -> Result<Vec<u8>, crate::remote::RemoteError> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .get(path)
+                .cloned()
+                .unwrap_or_default())
+        }
+        fn metadata(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<crate::remote::RemoteMeta, crate::remote::RemoteError> {
+            let size = self
+                .0
+                .lock()
+                .unwrap()
+                .get(path)
+                .map(|v| v.len() as u64)
+                .unwrap_or(0);
+            Ok(crate::remote::RemoteMeta {
+                size,
+                mtime: 0,
+                is_dir: false,
+            })
+        }
+        fn write_range(
+            &self,
+            path: &std::path::Path,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), crate::remote::RemoteError> {
+            let mut map = self.0.lock().unwrap();
+            let buf = map.entry(path.to_path_buf()).or_default();
+            let start = (offset as usize).min(buf.len());
+            buf.resize(start.max(buf.len()), 0);
+            buf.extend_from_slice(data);
+            Ok(())
+        }
+    }
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("big.bin");
+    let data: Vec<u8> = (0..2_500_000u64).map(|i| (i % 251) as u8).collect();
+    fs::write(&src, &data).unwrap();
+    let store = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let fs = MemFs(store.clone());
+    let dest = std::path::PathBuf::from("/remote/big.bin");
+    crate::app::exec::upload_chunked(&fs, &src, &dest).unwrap();
+    assert_eq!(store.lock().unwrap().get(&dest).cloned().unwrap(), data);
+}

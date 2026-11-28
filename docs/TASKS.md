@@ -1042,7 +1042,7 @@
 ## M91 — 传输补完（2026-11-28 蒸馏，见 SPEC M91 节）
 
 - [ ] M91-1 TransferTask 状态机（见 SPEC M91）
-- [ ] M91-2 上传流式化（见 SPEC M91）
+- [x] M91-2 上传流式化（File + 1MB 块，删除整文件 read）（见 SPEC M91；2026-11-28 完成：m912 2.5MB mock 后端验证）
 - [ ] M91-3 下载流式化（见 SPEC M91）
 - [ ] M91-4 队列双向 + 暂停/恢复/重试 + 进度（见 SPEC M91）
 - [ ] M91-5 max_in_memory_bytes 护栏与失败降级（见 SPEC M91）
