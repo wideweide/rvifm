@@ -2256,6 +2256,23 @@ append_rules = [
 - 向导命令覆盖率 ≥ 90%（补 `:view`/`:grep`/`:frecency`/`:link`/`:goto`/`:gitui`）。
 - 新增能力候选（按价值排序）：Git `:log`/`:blame`/`:stash`/`:branch`、`:split`/`:join`、`:du --tree`、`:undolist`、`rvifm doctor` + panic hook 环形日志、缩略图网格、包分发 manifest、向导 `:tutor --role ops|dev|new`、国际化 `[ui] language = en`。
 
+## M96 — Arke 异步原则复核：预览性能余项（2026-11-28 蒸馏，待确认）
+
+**评估结论（投递到 REVIEW/NOTES）**
+- Arke 的「Listing / sorting / thumbnails / folder sizes / search / file operations 全部 off UI thread」原则与 rvifm 已落地架构同源：M60 真异步预览（worker + generation）、M61 mmap 视口、M62/M85 图片后台预缩放与 ThreadProtocol 编码、M83 文本两段式消除、M53-8/M60 150ms 防抖与 generation 丢弃过期结果——**用户建议的多数项已经实现，不重复立项**。
+- 目录列举/排序、文件夹大小（`:du`）、运维命令的同步阻塞仍是真实短板，但已登记为 **M92（目录性能）与 M93（运维深度）**，本批次不重复。
+- 真正剩余且可独立落地的只有两项：预览乐观占位反馈、缓存淘汰策略（现为 16 条即整表 clear，非 LRU）。
+
+**MUST**
+- 光标移动后预览区立即显示轻量占位（路径 + 「预览生成中…」或上次内容的半透明底），后台结果到达后替换；文本/图片/PDF/Office 统一语义，避免旧内容闪回或空白等待。
+- 预览缓存淘汰由「满 16 条整表 clear」改为 LRU：`text_preview_cache` 与 `special_preview`（单槽）改为有容量上限的最近最少使用缓存；命中直接复用，key 仍含 mtime/size。
+- 保持现有 150ms 防抖与 generation 取消机制不变；不引入新线程模型，复用 `preview_tx/rx` 与 `image_generation`。
+- 文档/验收/门禁，仅提交代码。
+
+**OUT_OF_SCOPE**
+- 不重做已在 M60/M61/M62/M83/M85 落地的异步预览、视口裁剪、图片后台编码、debounce 与 generation 取消。
+- 不重复登记 M92/M93 的目录/运维异步化。
+
 ## 6. 待定事项
 
 6.1 为已定稿项，作为执行依据，不再需要每轮决策；6.2 为仍未拍板项，执行到对应任务时必须先决策并写入 `NOTES.md`。

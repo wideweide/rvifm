@@ -1081,3 +1081,9 @@
 - [ ] M95-4 :log/:blame/:stash/:branch（见 SPEC M95）
 - [ ] M95-5 :split/:join 与 :du --tree（见 SPEC M95）
 - [ ] M95-6 :undolist、rvifm doctor + panic hook 日志（见 SPEC M95）
+
+## M96 — Arke 异步原则复核：预览性能余项（2026-11-28，见 SPEC M96 节）
+
+- [ ] M96-1 预览乐观占位反馈（见 SPEC M96）
+- [ ] M96-2 预览缓存改 LRU 淘汰（见 SPEC M96）
+- [ ] M96-3 文档/验收/门禁（见 SPEC M96）

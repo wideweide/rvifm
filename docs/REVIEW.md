@@ -50,3 +50,9 @@
 - 可信度是主要短板：main HEAD 三平台 CI 连红（Windows/macOS 主题与高亮断言）；crates.io 仍停 1.0.0 而 README 引导 `cargo install`；harness_check 三条正则退化且 R6 提前 `break`，实际给出假绿；100k 目录 6.83s 未优化。
 - 结论按类型投递：可信度恢复 → M90；传输补完 → M91；目录性能 → M92；运维深度 → M93；质量债 → M94；体验治理 → M95。原稿 M89–M94 因 M89 已占用而顺延（见 NOTES）。
 - 本轮仅蒸馏登记，等待用户确认后执行；报告原文见 [reviews/REVIEW-2026-11-28.md](reviews/REVIEW-2026-11-28.md)。
+
+## 补充评估（2026-11-28，Arke 异步原则对照）
+
+- 用户提供的 Arke 分析核心是「UI 线程永不阻塞」；rvifm 预览链已具备同构实现（M60/M61/M62/M83/M85 + generation/debounce）。
+- 剩余真实缺口为乐观占位反馈与 LRU 缓存淘汰，已登记 M96；目录/运维异步化由 M92/M93 覆盖，不重复。
+- 本结论只登记，等待用户确认后执行；原文不复制，按 §8.2 投递到 SPEC/NOTES。
